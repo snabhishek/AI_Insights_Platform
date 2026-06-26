@@ -1,9 +1,33 @@
+"use client";
+
 import Image from "next/image";
-import LogoutButton from "./LogoutButton";
-import ThemeToggle from "./ThemeToggle";
-import UserProfile from "./UserProfile";
+import Button from "../../ui/Button";
+import ThemeToggle from "../../ui/ThemeToggle";
+import UserProfile from "../../ui/UserProfile";
+
+const LogoutIcon = (
+  <svg
+    xmlns="http://www.w3.org/2000/svg"
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+    <polyline points="16 17 21 12 16 7" />
+    <line x1="21" y1="12" x2="9" y2="12" />
+  </svg>
+);
 
 export default function Header() {
+  const handleLogout = () => {
+    // TODO: wire up actual auth/session sign-out
+  };
+
   return (
     <header className="flex h-[68px] w-full items-center justify-between bg-surface px-4 shadow-soft">
       {/* Left: logo wrapped in primary-colored container */}
@@ -25,7 +49,9 @@ export default function Header() {
           meta="Standard • 15 days • 100 tasks • 100.0M tokens left"
         />
         <ThemeToggle />
-        <LogoutButton />
+        <Button icon={LogoutIcon} onClick={handleLogout}>
+          Logout
+        </Button>
       </div>
     </header>
   );
