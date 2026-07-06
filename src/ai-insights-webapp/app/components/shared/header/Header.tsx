@@ -4,6 +4,8 @@ import Image from "next/image";
 import Button from "../../ui/Button";
 import ThemeToggle from "../../ui/ThemeToggle";
 import UserProfile from "../../ui/UserProfile";
+import WorkspaceSwitcher from "../../ui/WorkspaceSwitcher";
+import { useApp } from "../../providers/AppContext";
 
 const LogoutIcon = (
   <svg
@@ -24,29 +26,55 @@ const LogoutIcon = (
 );
 
 export default function Header() {
+  const {
+    userProfile,
+    workspaces,
+    activeWorkspaceId,
+    setActiveWorkspaceId,
+    addWorkspace,
+  } = useApp();
+
   const handleLogout = () => {
     // TODO: wire up actual auth/session sign-out
   };
 
+  const metaString = `${userProfile.role} • ${userProfile.daysRemaining} days • ${userProfile.tasksCount} tasks • ${userProfile.tokensLeft} tokens left`;
+
   return (
-    <header className="flex h-[68px] w-full items-center justify-between bg-surface px-4 shadow-soft">
-      {/* Left: logo wrapped in primary-colored container */}
-      <div className="flex items-center rounded-lg bg-primary px-3 py-2 shadow-soft">
-        <Image
-          src="/images/cei-logo-name.png"
-          alt="CEI"
-          width={88}
-          height={32}
-          priority
-          className="h-8 w-auto object-contain"
+    <header className="flex h-[68px] w-full items-center justify-between border-b border-border bg-surface px-4">
+      {/* Left: logo, divider, workspace switcher */}
+      <div className="flex items-center gap-4">
+        <div className="flex items-center rounded-lg bg-primary px-3 py-2 shadow-soft">
+          <Image
+            src="/images/cei-logo-name.png"
+            alt="CEI"
+            width={88}
+            height={32}
+            priority
+            className="h-8 w-auto object-contain"
+          />
+        </div>
+
+        <span className="h-7 w-px bg-border" aria-hidden="true" />
+
+        <WorkspaceSwitcher
+          workspaces={workspaces}
+          selectedId={activeWorkspaceId}
+          onSelect={setActiveWorkspaceId}
+          onCreate={() => {
+            const name = prompt("Enter new workspace name:");
+            if (name?.trim()) {
+              addWorkspace(name.trim());
+            }
+          }}
         />
       </div>
 
       {/* Right: user profile, theme toggle, logout */}
       <div className="flex items-center gap-5">
         <UserProfile
-          name="SanthoshKumaran"
-          meta="Standard • 15 days • 100 tasks • 100.0M tokens left"
+          name={userProfile.name}
+          meta={metaString}
         />
         <ThemeToggle />
         <Button icon={LogoutIcon} onClick={handleLogout}>

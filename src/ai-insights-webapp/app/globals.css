@@ -3,47 +3,50 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-    --color-primary: #111e57;
-    --color-primary-foreground: #ffffff;
+    --app-primary: #111e57;
+    --app-primary-foreground: #ffffff;
 
-    --color-background: #f6f7fb;
-    --color-surface: #ffffff;
-    --color-border: #e5e7eb;
-    --color-foreground: #111827;
-    --color-muted-foreground: #6b7280;
+    --app-background: #f6f7fb;
+    --app-surface: #ffffff;
+    --app-surface-muted: #f7f7f7;
+    --app-border: #e5e7eb;
+    --app-foreground: #111827;
+    --app-muted-foreground: #6b7280;
 
-    --shadow-soft: 0 0 0 2px rgba(0, 0, 0, 0.85), 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.08);
-    --shadow-soft-hover: 0 0 0 2px rgba(0, 0, 0, 0.85), 0 2px 4px rgba(16, 24, 40, 0.08), 0 8px 20px rgba(16, 24, 40, 0.12);
+    --app-shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.08);
+    --app-shadow-soft-hover: 0 2px 4px rgba(16, 24, 40, 0.08), 0 8px 20px rgba(16, 24, 40, 0.12);
 }
 
 .dark {
-    --color-primary: #111e57;
-    --color-primary-foreground: #ffffff;
+    --app-primary: #111e57;
+    --app-primary-foreground: #ffffff;
 
-    --color-background: #000000;
-    --color-surface: #1F2228;
-    --color-border: #2a2e36;
-    --color-foreground: #f3f4f6;
-    --color-muted-foreground: #9ca3af;
+    --app-background: #000000;
+    --app-surface: #1F2228;
+    --app-surface-muted: #16191e;
+    --app-border: #2a2e36;
+    --app-foreground: #f3f4f6;
+    --app-muted-foreground: #9ca3af;
 
-    --shadow-soft: 0 0 0 2px rgba(255, 255, 255, 0.14), 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.45);
-    --shadow-soft-hover: 0 0 0 2px rgba(255, 255, 255, 0.2), 0 2px 4px rgba(0, 0, 0, 0.45), 0 8px 20px rgba(0, 0, 0, 0.5);
+    --app-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.45);
+    --app-shadow-soft-hover: 0 2px 4px rgba(0, 0, 0, 0.45), 0 8px 20px rgba(0, 0, 0, 0.5);
 }
 
 @theme inline {
-    --color-primary: var(--color-primary);
-    --color-primary-foreground: var(--color-primary-foreground);
-    --color-background: var(--color-background);
-    --color-surface: var(--color-surface);
-    --color-border: var(--color-border);
-    --color-foreground: var(--color-foreground);
-    --color-muted-foreground: var(--color-muted-foreground);
+    --color-primary: var(--app-primary);
+    --color-primary-foreground: var(--app-primary-foreground);
+    --color-background: var(--app-background);
+    --color-surface: var(--app-surface);
+    --color-surface-muted: var(--app-surface-muted);
+    --color-border: var(--app-border);
+    --color-foreground: var(--app-foreground);
+    --color-muted-foreground: var(--app-muted-foreground);
 
-    --shadow-soft: var(--shadow-soft);
-    --shadow-soft-hover: var(--shadow-soft-hover);
+    --shadow-soft: var(--app-shadow-soft);
+    --shadow-soft-hover: var(--app-shadow-soft-hover);
 }
 
 body {
-    background-color: var(--color-background);
-    color: var(--color-foreground);
+    background-color: var(--app-background);
+    color: var(--app-foreground);
 }
