@@ -5,7 +5,7 @@ interface UserProfileProps {
 
 export default function UserProfile({ name, meta }: UserProfileProps) {
   return (
-    <div className="flex items-center gap-3 rounded-lg bg-surface px-3 py-1.5 shadow-soft">
+    <div className="flex items-center gap-3 rounded-lg bg-surface-muted px-3 py-1.5 shadow-soft">
       <div className="flex h-9 w-9 items-center justify-center rounded-md bg-primary text-white">
         <svg
           xmlns="http://www.w3.org/2000/svg"
