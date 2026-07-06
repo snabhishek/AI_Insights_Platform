@@ -1,10 +1,10 @@
 "use client";
 
 import Image from "next/image";
-import Button from "../../ui/Button";
-import ThemeToggle from "../../ui/ThemeToggle";
-import UserProfile from "../../ui/UserProfile";
-import WorkspaceSwitcher from "../../ui/WorkspaceSwitcher";
+import Button from "../ui/Button";
+import ThemeToggle from "../ui/ThemeToggle";
+import UserProfile from "../ui/UserProfile";
+import WorkspaceSwitcher from "../ui/WorkspaceSwitcher";
 import { useApp } from "../../providers/AppContext";
 
 const LogoutIcon = (
