@@ -1,8 +1,8 @@
 "use client";
 
 import React, { createContext, useContext, useState, useEffect } from "react";
-import MessageModal from "../datasource/MessageModal";
-import ConfirmationModal from "../datasource/ConfirmationModal";
+import MessageModal from "../shared/ui/MessageModal";
+import ConfirmationModal from "../shared/ui/ConfirmationModal";
 
 export interface ConnectionConfig {
   host?: string;
