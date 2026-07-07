@@ -13,7 +13,7 @@ const dbName = process.env.DB_NAME || "docspyre_app";
 const connectionString = `postgresql://${dbUser}:${dbPass}@${dbHost}:${dbPort}/${dbName}`;
 
 export default defineConfig({
-  schema: "./src/db/schema.ts",
+  schema: "./src/db/*.ts",
   out: "./drizzle",
   dialect: "postgresql",
   dbCredentials: {
