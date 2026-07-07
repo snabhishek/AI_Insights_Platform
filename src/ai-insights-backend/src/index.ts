@@ -6,6 +6,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { LocalFileService } from "./services/file.service";
 import { ConnectionTesterService } from "./services/connectionTester.service";
 import { PostgresConnectorRepository } from "./repositories/connector.repository";
+import workspaceRouter from "./routes/workspaces";
 import { ConnectorService } from "./services/connector.service";
 import { ConnectorController } from "./controllers/connector.controller";
 import createConnectorRouter from "./routes/connectors";
@@ -60,6 +61,7 @@ async function bootstrap() {
 
   // 4. Mount Main routers
   app.use("/api/connectors", createConnectorRouter(connectorController));
+  app.use("/api/workspaces", workspaceRouter);
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {

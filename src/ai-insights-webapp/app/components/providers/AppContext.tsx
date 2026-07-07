@@ -1,8 +1,9 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
 import MessageModal from "../shared/ui/MessageModal";
 import ConfirmationModal from "../shared/ui/ConfirmationModal";
+import CreateWorkspaceModal from "../shared/ui/CreateWorkspaceModal";
 
 export interface ConnectionConfig {
   host?: string;
@@ -27,6 +28,7 @@ export interface DataSource {
   health: "Healthy" | "Warning" | "Error";
   lastSyncTime: string;
   lastSyncDate: string;
+  workspaceId: string;
   assets: {
     tables: number;
     views: number | null;
@@ -39,9 +41,10 @@ export interface Project {
   id: string;
   name: string;
   role: "OWNER" | "MEMBER";
-  dataSources: string[]; // types of data sources
+  dataSources: string[];
   initials: string;
   workspaceId: string;
+  createdAt?: string;
 }
 
 export interface UserProfile {
@@ -64,16 +67,19 @@ export interface SystemRole {
 export interface Workspace {
   id: string;
   name: string;
+  isDefault?: boolean;
+  createdAt?: string;
 }
 
 interface AppContextType {
   workspaces: Workspace[];
   activeWorkspaceId: string;
   setActiveWorkspaceId: (id: string) => void;
-  addWorkspace: (name: string) => void;
+  addWorkspace: (name: string) => Promise<void>;
+  deleteWorkspace: (id: string) => Promise<void>;
   projects: Project[];
-  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[]) => void;
-  deleteProject: (id: string) => void;
+  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[]) => Promise<void>;
+  deleteProject: (id: string) => Promise<void>;
   dataSources: DataSource[];
   addDataSource: (name: string, type: DataSource["type"], subtext: string, config: ConnectionConfig) => Promise<void>;
   deleteDataSource: (id: string) => Promise<void>;
@@ -91,36 +97,10 @@ interface AppContextType {
   testConnection: (type: DataSource["type"], config: ConnectionConfig) => Promise<{ success: boolean; message: string; latencyMs: number }>;
   showAlert: (config: { title: string; message: string; type: "success" | "error" | "info"; logs?: string }) => void;
   showConfirm: (config: { title: string; message: string; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
+  openCreateWorkspace: () => void;
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-
-const INITIAL_PROJECTS: Project[] = [
-  {
-    id: "testing-project",
-    name: "Testing Project",
-    role: "MEMBER",
-    dataSources: ["postgres", "mysql", "excel"],
-    initials: "KA",
-    workspaceId: "personal",
-  },
-  {
-    id: "sample-project-2",
-    name: "Sample Project 2",
-    role: "OWNER",
-    dataSources: ["snowflake", "mongodb"],
-    initials: "KA",
-    workspaceId: "personal",
-  },
-  {
-    id: "sample-project",
-    name: "Sample Project",
-    role: "OWNER",
-    dataSources: ["sqlserver", "csv"],
-    initials: "KA",
-    workspaceId: "personal",
-  },
-];
 
 const INITIAL_ROLES: SystemRole[] = [
   {
@@ -139,16 +119,13 @@ const INITIAL_ROLES: SystemRole[] = [
   },
 ];
 
-const BACKEND_URL = "http://127.0.0.1:4000/api/connectors";
+const BACKEND_URL = "http://127.0.0.1:4000/api";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [workspaces, setWorkspaces] = useState<Workspace[]>([
-    { id: "personal", name: "Personal Workspace" },
-    { id: "team", name: "Team Workspace" },
-  ]);
-  const [activeWorkspaceId, setActiveWorkspaceId] = useState<string>("personal");
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState<string>("default");
 
-  const [projects, setProjects] = useState<Project[]>(INITIAL_PROJECTS);
+  const [projects, setProjects] = useState<Project[]>([]);
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [systemRoles, setSystemRoles] = useState<SystemRole[]>(INITIAL_ROLES);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
@@ -172,6 +149,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     onConfirm: () => void;
   }>({ title: "", message: "", onConfirm: () => {} });
 
+  // Create Workspace Modal state
+  const [createWsOpen, setCreateWsOpen] = useState(false);
+
   const showAlert = (config: typeof alertConfig) => {
     setAlertConfig(config);
     setAlertOpen(true);
@@ -191,56 +171,127 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     tasksCount: 100,
   });
 
-  // Fetch all data sources from backend on mount
+  // ─── Fetch workspaces on mount ──────────────────────────────────────────────
   useEffect(() => {
-    async function fetchSources() {
+    async function fetchWorkspaces() {
       try {
-        const res = await fetch(BACKEND_URL);
+        const res = await fetch(`${BACKEND_URL}/workspaces`);
         if (res.ok) {
-          const data = await res.json();
-          setDataSources(data);
+          const data: Workspace[] = await res.json();
+          setWorkspaces(data);
+          // Set active to the default workspace if currently on a stale id
+          const defaultWs = data.find((w) => w.isDefault);
+          if (defaultWs) {
+            setActiveWorkspaceIdState((prev) => {
+              // Keep selection if it still exists
+              return data.some((w) => w.id === prev) ? prev : defaultWs.id;
+            });
+          }
         }
       } catch (err) {
-        console.error("Failed to load connected sources from backend:", err);
+        console.error("Failed to load workspaces:", err);
       }
     }
-    fetchSources();
+    fetchWorkspaces();
   }, []);
 
-  const addWorkspace = (name: string) => {
-    const id = name.toLowerCase().replace(/\s+/g, "-");
-    if (workspaces.some((w) => w.id === id)) return;
-    setWorkspaces((prev) => [...prev, { id, name }]);
-    setActiveWorkspaceId(id);
+  // ─── Fetch projects + data sources when active workspace changes ────────────
+  const fetchWorkspaceData = useCallback(async (wsId: string) => {
+    try {
+      const [projRes, srcRes] = await Promise.all([
+        fetch(`${BACKEND_URL}/workspaces/${wsId}/projects`),
+        fetch(`${BACKEND_URL}/connectors?workspaceId=${wsId}`),
+      ]);
+      if (projRes.ok) setProjects(await projRes.json());
+      if (srcRes.ok) setDataSources(await srcRes.json());
+    } catch (err) {
+      console.error("Failed to load workspace data:", err);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (activeWorkspaceId) fetchWorkspaceData(activeWorkspaceId);
+  }, [activeWorkspaceId, fetchWorkspaceData]);
+
+  // ─── Workspace switching (auto-saves by fetching fresh state) ──────────────
+  const setActiveWorkspaceId = (id: string) => {
+    setActiveWorkspaceIdState(id);
+    // fetchWorkspaceData is triggered by the useEffect above on id change
   };
 
-  const addProject = (name: string, role: "OWNER" | "MEMBER", dataSources: string[]) => {
+  // ─── Create workspace ───────────────────────────────────────────────────────
+  const addWorkspace = async (name: string) => {
+    const res = await fetch(`${BACKEND_URL}/workspaces`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to create workspace");
+    setWorkspaces((prev) => [...prev, data]);
+    setActiveWorkspaceIdState(data.id);
+  };
+
+  // ─── Delete workspace ───────────────────────────────────────────────────────
+  const deleteWorkspace = async (id: string) => {
+    const res = await fetch(`${BACKEND_URL}/workspaces/${id}`, { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok) {
+      showAlert({ title: "Delete Failed", message: data.message || "Could not delete workspace.", type: "error" });
+      return;
+    }
+    setWorkspaces((prev) => prev.filter((w) => w.id !== id));
+    // Switch to default if we just deleted the active workspace
+    setActiveWorkspaceIdState((prev) => (prev === id ? "default" : prev));
+  };
+
+  // ─── Projects ───────────────────────────────────────────────────────────────
+  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[]) => {
     const initials = userProfile.name
       .split(" ")
       .map((n) => n[0])
       .join("")
       .toUpperCase()
-      .slice(0, 2);
+      .slice(0, 2) || "US";
 
-    const newProject: Project = {
-      id: name.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now(),
-      name,
-      role,
-      dataSources,
-      initials: initials || "US",
-      workspaceId: activeWorkspaceId,
-    };
-    setProjects((prev) => [newProject, ...prev]);
+    const wsId = activeWorkspaceId || "default";
+    try {
+      const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, role, dataSources: dsSources, initials }),
+      });
+      if (res.ok) {
+        const newProject = await res.json();
+        setProjects((prev) => [newProject, ...prev]);
+      } else {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to create project");
+      }
+    } catch (err: any) {
+      showAlert({ title: "Project Creation Failed", message: err.message, type: "error" });
+    }
   };
 
-  const deleteProject = (id: string) => {
-    setProjects((prev) => prev.filter((p) => p.id !== id));
+  const deleteProject = async (id: string) => {
+    const wsId = activeWorkspaceId || "default";
+    try {
+      const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        setProjects((prev) => prev.filter((p) => p.id !== id));
+      } else {
+        const err = await res.json();
+        throw new Error(err.message || "Failed to delete project");
+      }
+    } catch (err: any) {
+      showAlert({ title: "Delete Failed", message: err.message, type: "error" });
+    }
   };
 
-  // Real API calls for connectors
+  // ─── Connectors ─────────────────────────────────────────────────────────────
   const testConnection = async (type: DataSource["type"], config: ConnectionConfig) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/test`, {
+      const res = await fetch(`${BACKEND_URL}/connectors/test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type, config }),
@@ -251,17 +302,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const addDataSource = async (
-    name: string,
-    type: DataSource["type"],
-    subtext: string,
-    config: ConnectionConfig
-  ) => {
+  const addDataSource = async (name: string, type: DataSource["type"], subtext: string, config: ConnectionConfig) => {
+    const wsId = activeWorkspaceId || "default";
     try {
-      const res = await fetch(BACKEND_URL, {
+      const res = await fetch(`${BACKEND_URL}/connectors`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, type, subtext, config }),
+        body: JSON.stringify({ name, type, subtext, config, workspaceId: wsId }),
       });
       if (res.ok) {
         const newSource = await res.json();
@@ -277,199 +324,120 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err: any) {
       console.error(err);
-      showAlert({
-        title: "Connection Failed",
-        message: err.message || "Could not register connector config.",
-        type: "error",
-      });
+      showAlert({ title: "Connection Failed", message: err.message || "Could not register connector config.", type: "error" });
     }
   };
 
   const deleteDataSource = async (id: string) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/${id}`, {
-        method: "DELETE",
-      });
+      const res = await fetch(`${BACKEND_URL}/connectors/${id}`, { method: "DELETE" });
       if (res.ok) {
         setDataSources((prev) => prev.filter((ds) => ds.id !== id));
-        showAlert({
-          title: "Connection Deleted",
-          message: "Data source has been permanently deleted from storage.",
-          type: "success",
-        });
+        showAlert({ title: "Connection Deleted", message: "Data source has been permanently deleted from storage.", type: "success" });
       } else {
         const errorData = await res.json();
         throw new Error(errorData.message || "Failed to delete connector");
       }
     } catch (err: any) {
       console.error("Failed to delete source:", err);
-      showAlert({
-        title: "Deletion Failed",
-        message: err.message || "Could not remove database record.",
-        type: "error",
-      });
+      showAlert({ title: "Deletion Failed", message: err.message || "Could not remove database record.", type: "error" });
     }
   };
 
   const disconnectDataSource = async (id: string) => {
-    // Optimistic status update
-    setDataSources((prev) =>
-      prev.map((ds) => (ds.id === id ? { ...ds, status: "Disconnected" } : ds))
-    );
-
+    setDataSources((prev) => prev.map((ds) => (ds.id === id ? { ...ds, status: "Disconnected" } : ds)));
     try {
-      const res = await fetch(`${BACKEND_URL}/${id}/disconnect`, { method: "POST" });
+      const res = await fetch(`${BACKEND_URL}/connectors/${id}/disconnect`, { method: "POST" });
       if (res.ok) {
         const updated = await res.json();
-        setDataSources((prev) =>
-          prev.map((ds) => (ds.id === id ? updated : ds))
-        );
-        showAlert({
-          title: "Connection Disconnected",
-          message: "Data source has been disconnected. Live catalog monitoring paused.",
-          type: "info",
-        });
+        setDataSources((prev) => prev.map((ds) => (ds.id === id ? updated : ds)));
+        showAlert({ title: "Connection Disconnected", message: "Data source has been disconnected. Live catalog monitoring paused.", type: "info" });
       } else {
         const errorData = await res.json();
         throw new Error(errorData.message || "Failed to disconnect");
       }
     } catch (err: any) {
       console.error("Failed to disconnect source:", err);
-      setDataSources((prev) =>
-        prev.map((ds) => (ds.id === id ? { ...ds, status: "Connected" } : ds))
-      );
-      showAlert({
-        title: "Disconnection Failed",
-        message: err.message || "Could not change status.",
-        type: "error",
-      });
+      setDataSources((prev) => prev.map((ds) => (ds.id === id ? { ...ds, status: "Connected" } : ds)));
+      showAlert({ title: "Disconnection Failed", message: err.message || "Could not change status.", type: "error" });
     }
   };
 
   const reconnectDataSource = async (id: string) => {
-    // Optimistic status update
-    setDataSources((prev) =>
-      prev.map((ds) => (ds.id === id ? { ...ds, status: "Connected" } : ds))
-    );
-
+    setDataSources((prev) => prev.map((ds) => (ds.id === id ? { ...ds, status: "Connected" } : ds)));
     try {
-      const res = await fetch(`${BACKEND_URL}/${id}/connect`, { method: "POST" });
+      const res = await fetch(`${BACKEND_URL}/connectors/${id}/connect`, { method: "POST" });
       if (res.ok) {
         const updated = await res.json();
-        setDataSources((prev) =>
-          prev.map((ds) => (ds.id === id ? updated : ds))
-        );
-        showAlert({
-          title: "Connection Restored",
-          message: "Data source has been successfully reconnected.",
-          type: "success",
-        });
+        setDataSources((prev) => prev.map((ds) => (ds.id === id ? updated : ds)));
+        showAlert({ title: "Connection Restored", message: "Data source has been successfully reconnected.", type: "success" });
       } else {
         const errorData = await res.json();
         throw new Error(errorData.message || "Failed to connect");
       }
     } catch (err: any) {
       console.error("Failed to connect source:", err);
-      setDataSources((prev) =>
-        prev.map((ds) => (ds.id === id ? { ...ds, status: "Disconnected" } : ds))
-      );
-      showAlert({
-        title: "Reconnection Failed",
-        message: err.message || "Could not change status.",
-        type: "error",
-      });
+      setDataSources((prev) => prev.map((ds) => (ds.id === id ? { ...ds, status: "Disconnected" } : ds)));
+      showAlert({ title: "Reconnection Failed", message: err.message || "Could not change status.", type: "error" });
     }
   };
 
   const updateDataSource = async (id: string, name: string, config: ConnectionConfig) => {
     try {
-      const res = await fetch(`${BACKEND_URL}/${id}`, {
+      const res = await fetch(`${BACKEND_URL}/connectors/${id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name, config }),
       });
       if (res.ok) {
         const updated = await res.json();
-        setDataSources((prev) =>
-          prev.map((ds) => (ds.id === id ? updated : ds))
-        );
-        showAlert({
-          title: "Connection Updated",
-          message: `Data source configuration for "${name}" updated successfully.`,
-          type: "success",
-        });
+        setDataSources((prev) => prev.map((ds) => (ds.id === id ? updated : ds)));
+        showAlert({ title: "Connection Updated", message: `Data source configuration for "${name}" updated successfully.`, type: "success" });
       } else {
         const errorData = await res.json();
         throw new Error(errorData.message || "Failed to update connector");
       }
     } catch (err: any) {
       console.error("Failed to update source:", err);
-      showAlert({
-        title: "Update Failed",
-        message: err.message || "Could not save connection parameters.",
-        type: "error",
-      });
+      showAlert({ title: "Update Failed", message: err.message || "Could not save connection parameters.", type: "error" });
     }
   };
 
   const syncDataSource = async (id: string) => {
-    // Optimistic status update
-    setDataSources((prev) =>
-      prev.map((ds) => (ds.id === id ? { ...ds, status: "Syncing" } : ds))
-    );
-
+    setDataSources((prev) => prev.map((ds) => (ds.id === id ? { ...ds, status: "Syncing" } : ds)));
     try {
-      const res = await fetch(`${BACKEND_URL}/${id}/sync`, { method: "POST" });
+      const res = await fetch(`${BACKEND_URL}/connectors/${id}/sync`, { method: "POST" });
       if (res.ok) {
-        // Poll for completion or update locally after brief timeout
         setTimeout(async () => {
           try {
-            const statusRes = await fetch(`${BACKEND_URL}/${id}`);
+            const statusRes = await fetch(`${BACKEND_URL}/connectors/${id}`);
             if (statusRes.ok) {
               const updated = await statusRes.json();
-              setDataSources((prev) =>
-                prev.map((ds) => (ds.id === id ? updated : ds))
-              );
+              setDataSources((prev) => prev.map((ds) => (ds.id === id ? updated : ds)));
             }
-          } catch (err) {
-            console.error(err);
-          }
+          } catch (err) { console.error(err); }
         }, 1600);
       } else {
-        // Reset status if API fails
-        setDataSources((prev) =>
-          prev.map((ds) => (ds.id === id ? { ...ds, status: "Connected" } : ds))
-        );
+        setDataSources((prev) => prev.map((ds) => (ds.id === id ? { ...ds, status: "Connected" } : ds)));
       }
     } catch (err) {
       console.error(err);
-      setDataSources((prev) =>
-        prev.map((ds) => (ds.id === id ? { ...ds, status: "Connected" } : ds))
-      );
+      setDataSources((prev) => prev.map((ds) => (ds.id === id ? { ...ds, status: "Connected" } : ds)));
     }
   };
 
   const syncAllDataSources = async () => {
     setIsSyncingAll(true);
-    setDataSources((prev) =>
-      prev.map((ds) => ({ ...ds, status: "Syncing" }))
-    );
-
+    setDataSources((prev) => prev.map((ds) => ({ ...ds, status: "Syncing" })));
     try {
-      const res = await fetch(`${BACKEND_URL}/sync-all`, { method: "POST" });
+      const res = await fetch(`${BACKEND_URL}/connectors/sync-all`, { method: "POST" });
       if (res.ok) {
         setTimeout(async () => {
           try {
-            const fetchRes = await fetch(BACKEND_URL);
-            if (fetchRes.ok) {
-              const data = await fetchRes.json();
-              setDataSources(data);
-            }
-          } catch (err) {
-            console.error(err);
-          } finally {
-            setIsSyncingAll(false);
-          }
+            const fetchRes = await fetch(`${BACKEND_URL}/connectors?workspaceId=${activeWorkspaceId}`);
+            if (fetchRes.ok) setDataSources(await fetchRes.json());
+          } catch (err) { console.error(err); }
+          finally { setIsSyncingAll(false); }
         }, 2200);
       } else {
         setIsSyncingAll(false);
@@ -484,30 +452,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setUserProfile((prev) => ({ ...prev, ...profile }));
   };
 
-  const togglePermission = (
-    roleId: string,
-    permissionKey: "readSources" | "modifyConnectors" | "systemConfig"
-  ) => {
+  const togglePermission = (roleId: string, permissionKey: "readSources" | "modifyConnectors" | "systemConfig") => {
     setSystemRoles((prev) =>
       prev.map((role) => {
         if (role.id !== roleId) return role;
-        return {
-          ...role,
-          [permissionKey]: !role[permissionKey],
-        };
+        return { ...role, [permissionKey]: !role[permissionKey] };
       })
     );
   };
 
   const addSystemRole = (name: string) => {
     const id = name.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now();
-    const newRole: SystemRole = {
-      id,
-      name,
-      readSources: true,
-      modifyConnectors: false,
-      systemConfig: false,
-    };
+    const newRole: SystemRole = { id, name, readSources: true, modifyConnectors: false, systemConfig: false };
     setSystemRoles((prev) => [...prev, newRole]);
   };
 
@@ -518,6 +474,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         activeWorkspaceId,
         setActiveWorkspaceId,
         addWorkspace,
+        deleteWorkspace,
         projects,
         addProject,
         deleteProject,
@@ -538,6 +495,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         testConnection,
         showAlert,
         showConfirm,
+        openCreateWorkspace: () => setCreateWsOpen(true),
       }}
     >
       {children}
@@ -562,6 +520,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
           setConfirmOpen(false);
         }}
         onCancel={() => setConfirmOpen(false)}
+      />
+
+      <CreateWorkspaceModal
+        isOpen={createWsOpen}
+        onClose={() => setCreateWsOpen(false)}
+        onCreate={addWorkspace}
       />
     </AppContext.Provider>
   );
