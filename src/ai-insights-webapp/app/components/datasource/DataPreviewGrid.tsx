@@ -14,7 +14,7 @@ interface TableInfo {
   rows: number;
 }
 
-const BACKEND_BASE = "http://localhost:4000/api/connectors";
+const BACKEND_BASE = "http://127.0.0.1:4000/api/connectors";
 
 const API_PREVIEW_DATA = {
   status: "success",
