@@ -2,7 +2,7 @@ import { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq, desc } from "drizzle-orm";
 import { IConnectorRepository } from "./connector.repository.interface";
 import { Connector, ConnectorType, ConnectorStatus, ConnectorHealth, ConnectionConfig } from "../models/connector.types";
-import * as schema from "../db/schema";
+import * as schema from "../db/connectors";
 
 export class PostgresConnectorRepository implements IConnectorRepository {
   constructor(private db: NodePgDatabase<typeof schema>) {}

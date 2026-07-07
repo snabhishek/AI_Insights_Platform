@@ -19,6 +19,8 @@ export async function checkAndCreateDatabase() {
     user: dbUser,
     password: dbPass,
     database: "postgres",
+    connectionTimeoutMillis: 3000,
+    statement_timeout: 3000,
   });
 
   try {

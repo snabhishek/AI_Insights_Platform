@@ -139,7 +139,7 @@ const INITIAL_ROLES: SystemRole[] = [
   },
 ];
 
-const BACKEND_URL = "http://localhost:4000/api/connectors";
+const BACKEND_URL = "http://127.0.0.1:4000/api/connectors";
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([
