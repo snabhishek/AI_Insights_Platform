@@ -1,8 +1,16 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import connectorRouter from "./routes/connectors";
-import { initializeDatabase } from "./db";
+import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { LocalFileService } from "./services/file.service";
+import { ConnectionTesterService } from "./services/connectionTester.service";
+import { PostgresConnectorRepository } from "./repositories/connector.repository";
+import { ConnectorService } from "./services/connector.service";
+import { ConnectorController } from "./controllers/connector.controller";
+import createConnectorRouter from "./routes/connectors";
+import { checkAndCreateDatabase, runMigrations } from "./db";
+import * as schema from "./db/schema";
 
 dotenv.config();
 
@@ -21,15 +29,53 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Main routers
-app.use("/api/connectors", connectorRouter);
+let pool: Pool;
+let db: any;
+let fileService: LocalFileService;
+let connectionTester: ConnectionTesterService;
+let connectorRepository: PostgresConnectorRepository;
+let connectorService: ConnectorService;
+let connectorController: ConnectorController;
 
-// Health check endpoint
-app.get("/api/health", (req, res) => {
-  res.json({ status: "healthy", timestamp: new Date().toISOString() });
-});
+async function bootstrap() {
+  // 1. Run database exist check / auto-creation guard
+  await checkAndCreateDatabase();
 
-app.listen(PORT, async () => {
-  console.log(`[Server] AI Insights Backend listening at http://localhost:${PORT}`);
-  await initializeDatabase();
+  // 2. Initialize Postgres Pool
+  pool = new Pool({
+    host: process.env.DB_HOST || "localhost",
+    port: parseInt(process.env.DB_PORT || "5434", 10),
+    database: process.env.DB_NAME || "docspyre_app",
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASS || "",
+  });
+
+  // 3. Wrap PG Pool with Drizzle ORM
+  db = drizzle(pool, { schema });
+
+  // 4. Construct Dependencies (Dependency Injection)
+  fileService = new LocalFileService();
+  connectionTester = new ConnectionTesterService(fileService);
+  connectorRepository = new PostgresConnectorRepository(db);
+  connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
+  connectorController = new ConnectorController(connectorService, connectionTester);
+
+  // 5. Mount Main routers
+  app.use("/api/connectors", createConnectorRouter(connectorController));
+
+  // Health check endpoint
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "healthy", timestamp: new Date().toISOString() });
+  });
+
+  app.listen(PORT, async () => {
+    console.log(`[Server] AI Insights Backend listening at http://localhost:${PORT}`);
+    
+    // 6. Run programmatic Drizzle migrations
+    await runMigrations(db);
+  });
+}
+
+bootstrap().catch((err) => {
+  console.error("[Bootstrap] Critical server start error:", err.message || err);
 });
