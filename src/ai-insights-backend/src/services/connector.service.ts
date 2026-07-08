@@ -22,8 +22,8 @@ export class ConnectorService {
     });
   }
 
-  async getAll(): Promise<Connector[]> {
-    return this.repository.getAll();
+  async getAll(workspaceId?: string): Promise<Connector[]> {
+    return this.repository.getAll(workspaceId);
   }
 
   async getById(id: string): Promise<Connector | undefined> {
@@ -34,7 +34,8 @@ export class ConnectorService {
     name: string,
     type: ConnectorType,
     subtext: string,
-    connectionConfig: ConnectionConfig
+    connectionConfig: ConnectionConfig,
+    workspaceId?: string
   ): Promise<Connector> {
     const now = new Date();
 
@@ -122,6 +123,7 @@ export class ConnectorService {
       createdAt: now.toISOString(),
       connectionConfig: savedConfig,
       assets,
+      workspaceId: workspaceId || "default",
     };
 
     return this.repository.create(newConnector);

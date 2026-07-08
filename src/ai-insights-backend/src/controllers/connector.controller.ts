@@ -11,7 +11,8 @@ export class ConnectorController {
 
   getAll = async (req: Request, res: Response): Promise<void> => {
     try {
-      const list = await this.connectorService.getAll();
+      const workspaceId = (req.query.workspaceId as string) || undefined;
+      const list = await this.connectorService.getAll(workspaceId);
       res.json(list);
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message || "Failed to list connectors" });
@@ -35,7 +36,7 @@ export class ConnectorController {
   };
 
   add = async (req: Request, res: Response): Promise<void> => {
-    const { name, type, subtext, config } = req.body;
+    const { name, type, subtext, config, workspaceId } = req.body;
 
     if (!name || !type || !subtext) {
       res.status(400).json({ success: false, message: "Missing required fields (name, type, subtext)" });
@@ -50,7 +51,7 @@ export class ConnectorController {
         return;
       }
 
-      const newConnector = await this.connectorService.add(name, type, subtext, config || {});
+      const newConnector = await this.connectorService.add(name, type, subtext, config || {}, workspaceId);
       res.status(201).json(newConnector);
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message || "Failed to add connector" });
