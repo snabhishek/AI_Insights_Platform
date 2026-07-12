@@ -1,13 +1,22 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import connectorRouter from "./routes/connectors";
-import { initializeDatabase } from "./db";
+import { Pool } from "pg";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { LocalFileService } from "./services/file.service";
+import { ConnectionTesterService } from "./services/connectionTester.service";
+import { PostgresConnectorRepository } from "./repositories/connector.repository";
+import { ConnectorService } from "./services/connector.service";
+import { ConnectorController } from "./controllers/connector.controller";
+import createConnectorRouter from "./routes/connectors";
+import { checkAndCreateDatabase, runMigrations } from "./db";
+import * as schema from "./db/connectors";
 
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 4000;
+const PORT = Number(process.env.PORT || 4000);
+const HOST = process.env.HOST || "0.0.0.0";
 
 // Enable CORS for frontend workspace
 app.use(
@@ -21,15 +30,56 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-// Main routers
-app.use("/api/connectors", connectorRouter);
+let pool: Pool;
+let db: any;
+let fileService: LocalFileService;
+let connectionTester: ConnectionTesterService;
+let connectorRepository: PostgresConnectorRepository;
+let connectorService: ConnectorService;
+let connectorController: ConnectorController;
 
-// Health check endpoint
-app.get("/api/health", (req, res) => {
-  res.json({ status: "healthy", timestamp: new Date().toISOString() });
-});
+async function bootstrap() {
+  // 1. Initialize Postgres Pool early so the API can start even if the DB is temporarily unavailable
+  pool = new Pool({
+    host: process.env.DB_HOST || "localhost",
+    port: parseInt(process.env.DB_PORT || "5434", 10),
+    database: process.env.DB_NAME || "docspyre_app",
+    user: process.env.DB_USER || "postgres",
+    password: process.env.DB_PASS || "",
+  });
 
-app.listen(PORT, async () => {
-  console.log(`[Server] AI Insights Backend listening at http://localhost:${PORT}`);
-  await initializeDatabase();
+  // 2. Wrap PG Pool with Drizzle ORM
+  db = drizzle(pool, { schema });
+
+  // 3. Construct Dependencies (Dependency Injection)
+  fileService = new LocalFileService();
+  connectionTester = new ConnectionTesterService(fileService);
+  connectorRepository = new PostgresConnectorRepository(db);
+  connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
+  connectorController = new ConnectorController(connectorService, connectionTester);
+
+  // 4. Mount Main routers
+  app.use("/api/connectors", createConnectorRouter(connectorController));
+
+  // Health check endpoint
+  app.get("/api/health", (req, res) => {
+    res.json({ status: "healthy", timestamp: new Date().toISOString() });
+  });
+
+  app.listen(PORT, HOST, () => {
+    console.log(`[Server] AI Insights Backend listening at http://${HOST}:${PORT}`);
+    console.log(`[Server] Health check available at http://${HOST}:${PORT}/api/health`);
+  });
+
+  // 5. Run database initialization in the background so the API remains reachable
+  void checkAndCreateDatabase().catch((err) => {
+    console.error("[DB] Background database check failed:", err.message || err);
+  });
+
+  // 6. Run programmatic Drizzle migrations
+  await runMigrations(db);
+}
+
+bootstrap().catch((err) => {
+  console.error("[Bootstrap] Critical server start error:", err.message || err);
 });
