@@ -110,7 +110,7 @@ export default function ConnectorLibrary({ onSelectConnector }: ConnectorLibrary
           <div
             key={connector.id}
             style={{ width: 153, height: 216 }}
-            className="group flex flex-col items-center justify-between rounded-xl border border-border bg-surface p-4 text-center transition-all duration-300 hover:border-primary/30 shrink-0"
+            className="group flex flex-col items-center justify-between rounded-xl border border-border bg-surface p-4 text-center hover-lift duration-300 hover:border-primary/30 shrink-0"
           >
             {/* Connector Icon */}
             <div className="flex items-center justify-center p-2 rounded-lg bg-surface-muted transition-colors group-hover:bg-primary/5">
