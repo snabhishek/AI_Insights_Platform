@@ -42,4 +42,5 @@ export interface Connector {
     views: number | null;
     pipelines: number;
   };
+  workspaceId?: string;
 }

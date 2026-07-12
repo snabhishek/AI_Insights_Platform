@@ -31,7 +31,7 @@ export default function Header() {
     workspaces,
     activeWorkspaceId,
     setActiveWorkspaceId,
-    addWorkspace,
+    openCreateWorkspace,
   } = useApp();
 
   const handleLogout = () => {
@@ -61,12 +61,7 @@ export default function Header() {
           workspaces={workspaces}
           selectedId={activeWorkspaceId}
           onSelect={setActiveWorkspaceId}
-          onCreate={() => {
-            const name = prompt("Enter new workspace name:");
-            if (name?.trim()) {
-              addWorkspace(name.trim());
-            }
-          }}
+          onCreate={openCreateWorkspace}
         />
       </div>
 

@@ -6,11 +6,12 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { LocalFileService } from "./services/file.service";
 import { ConnectionTesterService } from "./services/connectionTester.service";
 import { PostgresConnectorRepository } from "./repositories/connector.repository";
+import workspaceRouter from "./routes/workspaces";
 import { ConnectorService } from "./services/connector.service";
 import { ConnectorController } from "./controllers/connector.controller";
 import createConnectorRouter from "./routes/connectors";
 import createAIRouter from "./routes/ai";
-import { checkAndCreateDatabase, runMigrations } from "./db";
+import { checkAndCreateDatabase, runMigrations, pool } from "./db";
 import * as schema from "./db/connectors";
 import { IngestionAgentService } from "./services/ai/ingestionAgent.service";
 import { AIController } from "./controllers/ai.controller";
@@ -33,7 +34,6 @@ app.use(
 app.use(express.json({ limit: "50mb" }));
 app.use(express.urlencoded({ limit: "50mb", extended: true }));
 
-let pool: Pool;
 let db: any;
 let fileService: LocalFileService;
 let connectionTester: ConnectionTesterService;
@@ -44,16 +44,7 @@ let ingestionAgentService: IngestionAgentService;
 let aiController: AIController;
 
 async function bootstrap() {
-  // 1. Initialize Postgres Pool early so the API can start even if the DB is temporarily unavailable
-  pool = new Pool({
-    host: process.env.DB_HOST || "localhost",
-    port: parseInt(process.env.DB_PORT || "5434", 10),
-    database: process.env.DB_NAME || "docspyre_app",
-    user: process.env.DB_USER || "postgres",
-    password: process.env.DB_PASS || "",
-  });
-
-  // 2. Wrap PG Pool with Drizzle ORM
+  // 1. Wrap PG Pool with Drizzle ORM
   db = drizzle(pool, { schema });
 
   // 3. Construct Dependencies (Dependency Injection)
@@ -68,6 +59,7 @@ async function bootstrap() {
   // 4. Mount Main routers
   app.use("/api/connectors", createConnectorRouter(connectorController));
   app.use("/api/ai", createAIRouter(aiController));
+  app.use("/api/workspaces", workspaceRouter);
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {

@@ -6,9 +6,6 @@ import {
   PostgresqlIcon,
   SnowflakeIcon,
   SqlServerIcon,
-  CsvIcon,
-  TsvIcon,
-  ExcelIcon,
   MysqlIcon,
   MongodbIcon,
   RestApiIcon,
@@ -29,7 +26,7 @@ const getSourceIcon = (type: DataSource["type"]) => {
     case "csv":
       return <Image src="/images/csv.png" alt="CSV" width={36} height={36} className="object-contain" />;
     case "tsv":
-      return <TsvIcon width={36} height={36} />;
+      return <Image src="/images/tsv.png" alt="TSV" width={36} height={36} className="object-contain" />;
     case "excel":
       return <Image src="/images/microsoft-excel.jpg" alt="Excel" width={36} height={36} className="object-contain" />;
     case "mysql":
