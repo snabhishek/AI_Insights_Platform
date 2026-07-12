@@ -9,8 +9,11 @@ import { PostgresConnectorRepository } from "./repositories/connector.repository
 import { ConnectorService } from "./services/connector.service";
 import { ConnectorController } from "./controllers/connector.controller";
 import createConnectorRouter from "./routes/connectors";
+import createAIRouter from "./routes/ai";
 import { checkAndCreateDatabase, runMigrations } from "./db";
 import * as schema from "./db/connectors";
+import { IngestionAgentService } from "./services/ai/ingestionAgent.service";
+import { AIController } from "./controllers/ai.controller";
 
 dotenv.config();
 
@@ -37,6 +40,8 @@ let connectionTester: ConnectionTesterService;
 let connectorRepository: PostgresConnectorRepository;
 let connectorService: ConnectorService;
 let connectorController: ConnectorController;
+let ingestionAgentService: IngestionAgentService;
+let aiController: AIController;
 
 async function bootstrap() {
   // 1. Initialize Postgres Pool early so the API can start even if the DB is temporarily unavailable
@@ -57,9 +62,12 @@ async function bootstrap() {
   connectorRepository = new PostgresConnectorRepository(db);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
   connectorController = new ConnectorController(connectorService, connectionTester);
+  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester);
+  aiController = new AIController(ingestionAgentService);
 
   // 4. Mount Main routers
   app.use("/api/connectors", createConnectorRouter(connectorController));
+  app.use("/api/ai", createAIRouter(aiController));
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {
