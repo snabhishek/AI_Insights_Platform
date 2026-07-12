@@ -14,9 +14,14 @@ export default function ConnectionModal({
   onClose,
   onConnect,
 }: ConnectionModalProps) {
-  const { testConnection } = useApp();
+  const { testConnection, dataSources } = useApp();
 
   const [name, setName] = useState("");
+  const isDuplicate = dataSources.some(
+    (ds) =>
+      ds.name.toLowerCase().trim() === name.toLowerCase().trim() &&
+      ds.type === type
+  );
   const [host, setHost] = useState("");
   const [port, setPort] = useState("");
   const [database, setDatabase] = useState("");
@@ -143,7 +148,7 @@ export default function ConnectionModal({
   };
 
   const isFormValid = () => {
-    if (!name.trim()) return false;
+    if (!name.trim() || isDuplicate) return false;
     if (type === "restapi") return !!url;
     if (["excel", "csv", "tsv"].includes(type)) return !!fileName;
     return !!host && !!database;
@@ -217,6 +222,11 @@ export default function ConnectionModal({
               onChange={(e) => setName(e.target.value)}
               className="w-full h-10 px-3.5 rounded-lg border border-border bg-surface text-sm text-foreground focus:outline-none focus:border-primary focus:ring-2 focus:ring-primary/20 transition-all"
             />
+            {isDuplicate && (
+              <p className="text-[11px] text-red-500 mt-1.5 font-bold animate-pulse">
+                A data source with this name and type already exists in this workspace.
+              </p>
+            )}
           </div>
 
           {/* Database Inputs */}
@@ -436,7 +446,7 @@ export default function ConnectionModal({
             <button
               type="button"
               onClick={handleTestConnection}
-              disabled={testing}
+              disabled={testing || isDuplicate}
               className="h-9 px-4 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-surface hover:border-foreground/30 transition-all cursor-pointer disabled:opacity-50"
             >
               Test Connection

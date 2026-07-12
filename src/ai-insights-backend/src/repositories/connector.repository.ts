@@ -20,11 +20,16 @@ export class PostgresConnectorRepository implements IConnectorRepository {
       createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt,
       connectionConfig: row.connectionConfig,
       assets: row.assets,
+      workspaceId: row.workspaceId || undefined,
     };
   }
 
-  async getAll(): Promise<Connector[]> {
-    const res = await this.db.select().from(schema.connectors).orderBy(desc(schema.connectors.createdAt));
+  async getAll(workspaceId?: string): Promise<Connector[]> {
+    let q = this.db.select().from(schema.connectors);
+    if (workspaceId) {
+      q = q.where(eq(schema.connectors.workspaceId, workspaceId)) as any;
+    }
+    const res = await q.orderBy(desc(schema.connectors.createdAt));
     return res.map((row) => this.mapRowToConnector(row));
   }
 
@@ -48,6 +53,7 @@ export class PostgresConnectorRepository implements IConnectorRepository {
       createdAt: now,
       connectionConfig: connector.connectionConfig,
       assets: connector.assets,
+      workspaceId: connector.workspaceId,
     });
     return connector;
   }

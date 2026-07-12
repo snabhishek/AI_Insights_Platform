@@ -1,8 +1,10 @@
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
+    --font-sans: 'Noto Sans', sans-serif;
     --app-primary: #111e57;
     --app-primary-foreground: #ffffff;
 
@@ -33,6 +35,7 @@
 }
 
 @theme inline {
+    --font-sans: var(--font-sans);
     --color-primary: var(--app-primary);
     --color-primary-foreground: var(--app-primary-foreground);
     --color-background: var(--app-background);
@@ -47,6 +50,49 @@
 }
 
 body {
+    font-family: var(--font-sans);
     background-color: var(--app-background);
     color: var(--app-foreground);
+}
+
+/* Typography weight overrides for bold titles & headers */
+h1, h2, h3, h4, h5, h6 {
+    font-weight: 700 !important;
+}
+
+th {
+    font-weight: 700 !important;
+}
+
+.font-medium {
+    font-weight: 600 !important;
+}
+
+.font-semibold {
+    font-weight: 700 !important;
+}
+
+/* Custom premium transitions & animations */
+@keyframes slideUp {
+    from {
+        opacity: 0;
+        transform: translateY(12px) scale(0.995);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+.animate-fade-in {
+    animation: slideUp 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.hover-lift {
+    transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
+}
+
+.hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--app-shadow-soft-hover);
 }
