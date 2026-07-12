@@ -1,4 +1,4 @@
-import { pgTable, varchar, timestamp, jsonb, boolean, text } from "drizzle-orm/pg-core";
+import { pgTable, varchar, timestamp, jsonb, boolean, text, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { ConnectionConfig } from "../models/connector.types";
 
@@ -18,7 +18,12 @@ export const projects = pgTable("projects", {
   workspaceId: varchar("workspace_id", { length: 50 })
     .notNull()
     .references(() => workspaces.id, { onDelete: "cascade" }),
+  useCase: text("use_case"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    workspaceIdIdx: index("projects_workspace_id_idx").on(table.workspaceId),
+  };
 });
 
 export const connectors = pgTable("connectors", {
@@ -39,5 +44,9 @@ export const connectors = pgTable("connectors", {
   }>().notNull(),
   workspaceId: varchar("workspace_id", { length: 50 })
     .references(() => workspaces.id, { onDelete: "cascade" }),
+}, (table) => {
+  return {
+    workspaceIdIdx: index("connectors_workspace_id_idx").on(table.workspaceId),
+  };
 });
 

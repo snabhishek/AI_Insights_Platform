@@ -45,6 +45,7 @@ export interface Project {
   initials: string;
   workspaceId: string;
   createdAt?: string;
+  useCase?: string;
 }
 
 export interface UserProfile {
@@ -78,7 +79,7 @@ interface AppContextType {
   addWorkspace: (name: string) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   projects: Project[];
-  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[]) => Promise<void>;
+  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   dataSources: DataSource[];
   addDataSource: (name: string, type: DataSource["type"], subtext: string, config: ConnectionConfig) => Promise<void>;
@@ -246,7 +247,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ─── Projects ───────────────────────────────────────────────────────────────
-  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[]) => {
+  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string) => {
     const initials = userProfile.name
       .split(" ")
       .map((n) => n[0])
@@ -259,7 +260,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, role, dataSources: dsSources, initials }),
+        body: JSON.stringify({ name, role, dataSources: dsSources, initials, useCase }),
       });
       if (res.ok) {
         const newProject = await res.json();

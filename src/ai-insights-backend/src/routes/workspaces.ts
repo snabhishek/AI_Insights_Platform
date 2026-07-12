@@ -21,6 +21,7 @@ interface Project {
   initials: string;
   workspaceId: string;
   createdAt: string;
+  useCase?: string;
 }
 
 function mapWorkspace(row: any): Workspace {
@@ -41,6 +42,7 @@ function mapProject(row: any): Project {
     initials: row.initials,
     workspaceId: row.workspace_id,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    useCase: row.use_case || "",
   };
 }
 
@@ -121,7 +123,7 @@ router.get("/:id/projects", async (req: Request, res: Response) => {
 // ─── POST /api/workspaces/:id/projects — Create a project ──────────────────────
 router.post("/:id/projects", async (req: Request, res: Response) => {
   const { id: workspaceId } = req.params;
-  const { name, role = "OWNER", dataSources = [], initials = "US" } = req.body;
+  const { name, role = "OWNER", dataSources = [], initials = "US", useCase = "" } = req.body;
 
   if (!name || !name.trim()) {
     res.status(400).json({ success: false, message: "Project name is required." });
@@ -135,13 +137,42 @@ router.post("/:id/projects", async (req: Request, res: Response) => {
     return;
   }
 
+  // Check for project name + selected sources duplicates in this workspace
+  try {
+    const existingProj = await query(
+      "SELECT name, data_sources FROM projects WHERE workspace_id = $1",
+      [workspaceId]
+    );
+    const areSourceArraysEqual = (arr1: string[], arr2: string[]) => {
+      if (arr1.length !== arr2.length) return false;
+      const sorted1 = [...arr1].sort();
+      const sorted2 = [...arr2].sort();
+      return sorted1.every((val, index) => val === sorted2[index]);
+    };
+    const isDuplicate = existingProj.rows.some(
+      (p: any) =>
+        p.name.toLowerCase() === name.trim().toLowerCase() &&
+        areSourceArraysEqual(p.data_sources || [], dataSources)
+    );
+    if (isDuplicate) {
+      res.status(409).json({
+        success: false,
+        message: `A project with name "${name}" and the same selected data sources already exists in this workspace.`
+      });
+      return;
+    }
+  } catch (dbErr: any) {
+    res.status(500).json({ success: false, message: dbErr.message });
+    return;
+  }
+
   const projectId = `proj-${uuidv4()}`;
   try {
     const result = await query(
-      `INSERT INTO projects (id, name, role, data_sources, initials, workspace_id, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, NOW())
+      `INSERT INTO projects (id, name, role, data_sources, initials, workspace_id, use_case, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        RETURNING *`,
-      [projectId, name.trim(), role, dataSources, initials, workspaceId]
+      [projectId, name.trim(), role, dataSources, initials, workspaceId, useCase]
     );
     res.status(201).json(mapProject(result.rows[0]));
   } catch (err: any) {

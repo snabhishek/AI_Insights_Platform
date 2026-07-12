@@ -44,6 +44,19 @@ export class ConnectorController {
     }
 
     try {
+      // Check for name & type duplicates in the same workspace
+      const existing = await this.connectorService.getAll(workspaceId);
+      const isDuplicate = existing.some(
+        (c) => c.name.toLowerCase() === name.trim().toLowerCase() && c.type === type
+      );
+      if (isDuplicate) {
+        res.status(409).json({
+          success: false,
+          message: `A data source with name "${name}" and type "${type}" already exists in this workspace.`
+        });
+        return;
+      }
+
       // Perform one final connection validation before saving
       const test = await this.connectionTester.testConnection(type, config || {});
       if (!test.success) {
