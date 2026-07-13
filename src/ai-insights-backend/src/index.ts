@@ -53,7 +53,7 @@ async function bootstrap() {
   connectorRepository = new PostgresConnectorRepository(db);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
   connectorController = new ConnectorController(connectorService, connectionTester);
-  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester);
+  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService);
   aiController = new AIController(ingestionAgentService);
 
   // 4. Mount Main routers
