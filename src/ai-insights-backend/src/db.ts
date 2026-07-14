@@ -9,7 +9,7 @@ const dbHost = process.env.DB_HOST || "localhost";
 const dbPort = parseInt(process.env.DB_PORT || "5434", 10);
 const dbUser = process.env.DB_USER || "postgres";
 const dbPass = process.env.DB_PASS || "";
-const dbName = process.env.DB_NAME || "docspyre_app";
+const dbName = process.env.DB_NAME || "AIInsightsApp";
 
 // Export single shared Pool instance and query function
 export const pool = new Pool({
