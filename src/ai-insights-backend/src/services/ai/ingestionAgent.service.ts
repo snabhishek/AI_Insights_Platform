@@ -1,9 +1,12 @@
 import { promises as fs } from "fs";
 import path from "path";
 import { Annotation, StateGraph } from "@langchain/langgraph";
+import { tool } from "@langchain/core/tools";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
-import { ChatOpenAI } from "@langchain/openai";
-import { BaseMessage, HumanMessage, SystemMessage, ToolMessage } from "@langchain/core/messages";
+import { AzureChatOpenAI, ChatOpenAI } from "@langchain/openai";
+import { HumanMessage } from "@langchain/core/messages";
+import { createAgent } from "langchain";
+import { z } from "zod";
 import { ConnectorService } from "../connector.service";
 import { ConnectionTesterService } from "../connectionTester.service";
 import { IIngestionAgentService, IngestionAgentRunResult } from "./ingestionAgent.service.interface";
@@ -17,6 +20,10 @@ const AgentState = Annotation.Root({
   connectorId: Annotation<string[]>,
   status: Annotation<string>,
   summary: Annotation<string>,
+  userPrompt: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" ? right : left),
+    default: () => "",
+  }),
   inspection: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   schemaResolution: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   dataProfile: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
@@ -26,6 +33,11 @@ const AgentState = Annotation.Root({
     default: () => [],
   }),
 });
+
+type SupportedChatModel = ChatOpenAI | AzureChatOpenAI | ChatGoogleGenerativeAI;
+type InspectionPayload = Record<string, unknown> & {
+  tables?: Array<Record<string, unknown>>;
+};
 
 export class IngestionAgentService implements IIngestionAgentService {
   private activeTraceSession?: { filePath: string; startedAt: string };
@@ -216,6 +228,28 @@ export class IngestionAgentService implements IIngestionAgentService {
     });
   }
 
+  private createAzureOpenAIModel() {
+    const apiKey = process.env.AZURE_OPENAI_API_KEY;
+    const endpoint = process.env.AZURE_OPENAI_ENDPOINT || process.env.AZURE_OPENAI_BASE_PATH || process.env.AZURE_OPENAI_INSTANCE_ENDPOINT;
+    const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || process.env.AZURE_OPENAI_DEPLOYMENT;
+    const instanceName = process.env.AZURE_OPENAI_INSTANCE_NAME;
+    const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-02-01";
+
+    if (!apiKey || !deploymentName || (!endpoint && !instanceName)) {
+      return null;
+    }
+
+    return new AzureChatOpenAI({
+      azureOpenAIApiKey: apiKey,
+      azureOpenAIApiVersion: apiVersion,
+      azureOpenAIApiDeploymentName: deploymentName,
+      azureOpenAIEndpoint: endpoint,
+      model: process.env.AZURE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini",
+      temperature: 0,
+      maxTokens: 32000,
+    });
+  }
+
   private createOpenAIModel() {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
@@ -230,74 +264,260 @@ export class IngestionAgentService implements IIngestionAgentService {
     });
   }
 
-  private async invokeGemini<T extends Record<string, unknown>>(stepName: string, prompt: string, fallback: T): Promise<T> {
-    const model = this.createGeminiModel();
+  private extractModelText(response: unknown): string {
+    const content = response && typeof response === "object" && "content" in response
+      ? (response as { content?: unknown }).content
+      : response;
+
+    if (typeof content === "string") {
+      return content;
+    }
+
+    if (Array.isArray(content)) {
+      return content.map((part: any) => typeof part === "string" ? part : part?.text || "").join("");
+    }
+
+    return JSON.stringify(content ?? response ?? {});
+  }
+
+  private parseJsonObject<T extends Record<string, unknown>>(rawText: string, fallback: T): T {
+    const normalizedText = rawText
+      .replace(/^```(?:json)?/i, "")
+      .replace(/```$/i, "")
+      .trim();
+
+    if (!normalizedText) {
+      return fallback;
+    }
+
+    const parsed = JSON.parse(normalizedText);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as T;
+    }
+
+    return fallback;
+  }
+
+  private getLatestAgentMessage(agentResult: unknown): unknown {
+    const messages = Array.isArray((agentResult as any)?.messages) ? (agentResult as any).messages : [];
+    return messages.length > 0 ? messages[messages.length - 1] : agentResult;
+  }
+
+  private getLastToolResult(agentResult: unknown): Record<string, unknown> | undefined {
+    const messages = Array.isArray((agentResult as any)?.messages) ? (agentResult as any).messages : [];
+
+    for (let index = messages.length - 1; index >= 0; index -= 1) {
+      const message = messages[index] as any;
+      const messageType = typeof message?.getType === "function" ? message.getType() : message?.type;
+      if (messageType !== "tool") {
+        continue;
+      }
+
+      const toolText = this.extractModelText(message);
+      try {
+        const parsed = JSON.parse(toolText);
+        if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>;
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return undefined;
+  }
+
+  private async invokeAgentJson<T extends Record<string, unknown>>(
+    stepName: string,
+    model: SupportedChatModel | null,
+    userMessage: string,
+    fallback: T,
+    options?: {
+      systemPrompt?: string;
+      tools?: unknown[];
+      traceLabel?: string;
+    }
+  ): Promise<T> {
     if (!model) {
       return fallback;
     }
 
-    try {
-      const response = await this.invokeWithTrace(`gemini:${stepName}`, prompt, async () => model.invoke(prompt));
-      const rawText = typeof response?.content === "string"
-        ? response.content
-        : Array.isArray(response?.content)
-          ? response.content.map((part: any) => typeof part === "string" ? part : part?.text || "").join("")
-          : JSON.stringify(response ?? {});
-      const normalizedText = rawText
-        .replace(/^```(?:json)?/i, "")
-        .replace(/```$/i, "")
-        .trim();
-      if (!normalizedText) {
-        return fallback;
-      }
+    const agent = createAgent({
+      model,
+      tools: (options?.tools ?? []) as any,
+      systemPrompt: options?.systemPrompt,
+    });
 
-      const parsed = JSON.parse(normalizedText);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as T;
-      }
+    const input = {
+      messages: [new HumanMessage(userMessage)],
+    };
+
+    try {
+      const result = await this.invokeWithTrace(
+        options?.traceLabel ?? `agent:${stepName}`,
+        {
+          systemPrompt: options?.systemPrompt,
+          userMessage,
+        },
+        async () => agent.invoke(input)
+      );
+      const rawText = this.extractModelText(this.getLatestAgentMessage(result));
+      return this.parseJsonObject(rawText, fallback);
     } catch (error) {
-      console.warn(`Gemini ${stepName} fallback triggered`, error);
+      console.warn(`Agent ${stepName} fallback triggered`, error);
+      return fallback;
+    }
+  }
+
+  private async getInspectionSystemPrompt(): Promise<string> {
+    try {
+      const promptPath = path.resolve(__dirname, "prompts", "injectioninspection.md");
+      return await fs.readFile(promptPath, "utf8");
+    } catch (error) {
+      console.warn("Unable to load inspection prompt from file, using fallback", error);
+      return [
+        "You are an AI ingestion inspector.",
+        "Process the provided tables in batches, use inspectDataSource for the current batch only, and carry previousAnalysis forward.",
+        "Return final output as valid JSON only.",
+      ].join("\n");
+    }
+  }
+
+  private chunkInspectionTableNames(tableNames: string[]): string[][] {
+    const normalizedTableNames = tableNames.filter((tableName) => typeof tableName === "string" && tableName.trim().length > 0);
+    if (normalizedTableNames.length === 0) {
+      return [];
     }
 
-    return fallback;
+    const batches: string[][] = [];
+    const initialBatchSize = 10;
+    const followUpBatchSize = 5;
+
+    batches.push(normalizedTableNames.slice(0, initialBatchSize));
+    for (let index = initialBatchSize; index < normalizedTableNames.length; index += followUpBatchSize) {
+      batches.push(normalizedTableNames.slice(index, index + followUpBatchSize));
+    }
+
+    return batches;
+  }
+
+  private normalizeInspectionTable(table: Record<string, unknown>): Record<string, unknown> {
+    const tableName = typeof table.tableName === "string" && table.tableName.trim().length > 0
+      ? table.tableName
+      : typeof table.name === "string" && table.name.trim().length > 0
+        ? table.name
+        : undefined;
+
+    if (!tableName) {
+      return table;
+    }
+
+    return {
+      ...table,
+      tableName,
+      name: typeof table.name === "string" && table.name.trim().length > 0 ? table.name : tableName,
+    };
+  }
+
+  private normalizeInspectionPayload(payload: InspectionPayload): InspectionPayload {
+    const tables = Array.isArray(payload.tables)
+      ? payload.tables
+        .filter((table): table is Record<string, unknown> => !!table && typeof table === "object" && !Array.isArray(table))
+        .map((table) => this.normalizeInspectionTable(table))
+      : [];
+
+    return {
+      ...payload,
+      tables,
+    };
+  }
+
+  private mergeInspectionPayload(
+    accumulated: InspectionPayload,
+    incoming: InspectionPayload,
+    connector: any,
+    schemaType: string,
+    tableCount: number
+  ): InspectionPayload {
+    const normalizedAccumulated = this.normalizeInspectionPayload(accumulated);
+    const normalizedIncoming = this.normalizeInspectionPayload(incoming);
+    const mergedTableMap = new Map<string, Record<string, unknown>>();
+
+    for (const table of normalizedAccumulated.tables || []) {
+      const tableName = typeof table.tableName === "string" ? table.tableName : typeof table.name === "string" ? table.name : undefined;
+      if (tableName) {
+        mergedTableMap.set(tableName, table);
+      }
+    }
+
+    for (const table of normalizedIncoming.tables || []) {
+      const tableName = typeof table.tableName === "string" ? table.tableName : typeof table.name === "string" ? table.name : undefined;
+      if (!tableName) {
+        continue;
+      }
+
+      const previousTable = mergedTableMap.get(tableName) || {};
+      mergedTableMap.set(tableName, this.normalizeInspectionTable({
+        ...previousTable,
+        ...table,
+      }));
+    }
+
+    return {
+      ...normalizedAccumulated,
+      ...normalizedIncoming,
+      connectorId: connector.id,
+      connectorName: connector.name,
+      schemaType: normalizedIncoming.schemaType || normalizedAccumulated.schemaType || schemaType,
+      tableCount,
+      tables: Array.from(mergedTableMap.values()),
+    };
+  }
+
+  private buildInspectionBatchUserMessage(params: {
+    safeConnector: Record<string, unknown>;
+    schemaSummary: Record<string, unknown>;
+    batchTableNames: string[];
+    batchIndex: number;
+    totalBatches: number;
+    previousAnalysis: InspectionPayload;
+  }): string {
+    const {
+      safeConnector,
+      schemaSummary,
+      batchTableNames,
+      batchIndex,
+      totalBatches,
+      previousAnalysis,
+    } = params;
+
+    return [
+      `Connector context: ${JSON.stringify(safeConnector, null, 2)}`,
+      `Schema summary: ${JSON.stringify(schemaSummary, null, 2)}`,
+      `Batch progress: ${JSON.stringify({ currentBatch: batchIndex + 1, totalBatches }, null, 2)}`,
+      `selectedTables: ${JSON.stringify(batchTableNames, null, 2)}`,
+      `previousAnalysis: ${JSON.stringify(previousAnalysis, null, 2)}`,
+      "Process only the selectedTables in this batch. Use previousAnalysis as context, do not reprocess unrelated tables, and return valid JSON only.",
+    ].join("\n\n");
+  }
+
+  private async invokeGemini<T extends Record<string, unknown>>(stepName: string, prompt: string, fallback: T): Promise<T> {
+    return this.invokeAgentJson(stepName, this.createGeminiModel(), prompt, fallback, {
+      traceLabel: `gemini:${stepName}`,
+    });
   }
 
   private async invokeOpenAI<T extends Record<string, unknown>>(stepName: string, prompt: string, fallback: T): Promise<T> {
     const model = this.createOpenAIModel() || this.createGeminiModel();
-    if (!model) {
-      return fallback;
-    }
-
-    try {
-      const response = await this.invokeWithTrace(`openai:${stepName}`, prompt, async () => model.invoke(prompt));
-      const rawText = typeof response?.content === "string"
-        ? response.content
-        : Array.isArray(response?.content)
-          ? response.content.map((part: any) => typeof part === "string" ? part : part?.text || "").join("")
-          : JSON.stringify(response ?? {});
-      const normalizedText = rawText
-        .replace(/^```(?:json)?/i, "")
-        .replace(/```$/i, "")
-        .trim();
-      if (!normalizedText) {
-        return fallback;
-      }
-
-      const parsed = JSON.parse(normalizedText);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as T;
-      }
-    } catch (error) {
-      console.warn(`OpenAI ${stepName} fallback triggered`, error);
-    }
-
-    return fallback;
+    return this.invokeAgentJson(stepName, model, prompt, fallback, {
+      traceLabel: `openai:${stepName}`,
+    });
   }
 
   private async runInspectorWithTools(connector: any) {
-    const inspectTool = createInspectTool(this.fileService);
-    const schemaTool = createGetSchemaTool(this.connectionTester);
-    const model = this.createOpenAIModel()
+    const inspectTool = createInspectTool(this.fileService, this.connectorService);
+    const schemaTool = createGetSchemaTool(this.connectionTester, this.connectorService);
+    const model = this.createAzureOpenAIModel()
     const connectionConfig = connector.connectionConfig || {};
     const safeConnector = {
       ...connector,
@@ -309,8 +529,8 @@ export class IngestionAgentService implements IIngestionAgentService {
 
     if (!model) {
       const inspectionPayload = await inspectTool.invoke({
+        connectorId: connector.id,
         connectorType: connector.type,
-        connectionConfig,
         maxTables: 50,
         maxColumns: 200,
       }) as Record<string, unknown>;
@@ -321,67 +541,161 @@ export class IngestionAgentService implements IIngestionAgentService {
       };
     }
 
-    const toolBoundModel = model.bindTools([inspectTool]);
-    const messages: BaseMessage[] = [
-      new SystemMessage([
-        "You are an AI ingestion inspector.",
-        "Use the inspectDataSource tool to list tables first, then request detailed columns/constraints/relations for relevant tables.",
-        "For large databases, avoid requesting every table at once; sample or prioritize key tables.",
-        "Return final output as valid JSON only using this shape:",
-        "{\"connectorId\":\"string\",\"connectorName\":\"string\",\"schemaType\":\"string\",\"tableCount\":0,\"tables\":[{\"name\":\"string\",\"type\":\"string\",\"columns\":[{\"name\":\"string\",\"dataType\":\"string\",\"nullable\":true}],\"constraints\":[],\"relations\":[]}]}",
-      ].join("\n")),
-      new HumanMessage(`Connector context: ${JSON.stringify(safeConnector, null, 2)}`),
-    ];
-
-    let response = await this.invokeWithTrace(`inspect:${connector.type}`, messages, async () => toolBoundModel.invoke(messages));
-    let lastToolResult: Record<string, unknown> | undefined;
-
-    for (let i = 0; i < 3; i += 1) {
-      const toolCalls = (response as any)?.tool_calls || [];
-      if (!Array.isArray(toolCalls) || toolCalls.length === 0) {
-        break;
+    const inspectionPrompt = await this.getInspectionSystemPrompt();
+    const inspectAgentTool = tool(
+      async ({
+        connectorId,
+        connectorType,
+        tableNames,
+        maxTables,
+        maxColumns,
+      }: {
+        connectorId?: string;
+        connectorType?: string;
+        tableNames?: string[];
+        maxTables?: number;
+        maxColumns?: number;
+      }) => inspectTool.invoke({
+        connectorId: connectorId || connector.id,
+        connectorType: connectorType || connector.type,
+        tableNames,
+        maxTables: typeof maxTables === "number" && maxTables > 0 ? maxTables : 50,
+        maxColumns: typeof maxColumns === "number" && maxColumns > 0 ? maxColumns : 200,
+      }),
+      {
+        name: "inspectDataSource",
+        description: "Inspect a connector source and return table fields, data types, constraints, and relationships.",
+        schema: z.object({
+          connectorId: z.string().optional().describe("Connector ID used to resolve the stored connection settings"),
+          connectorType: z.string().optional().describe("Connector type fallback when connectorId is unavailable"),
+          tableNames: z.array(z.string()).optional().describe("Specific tables to inspect for column/constraint details"),
+          maxTables: z.number().optional().describe("Maximum tables to list when tableNames is not provided"),
+          maxColumns: z.number().optional().describe("Maximum columns per table in detailed inspection"),
+        }),
       }
+    );
 
-      messages.push(response as BaseMessage);
-      for (const [index, call] of toolCalls.entries()) {
-        const args = call?.args || {};
-        if (!args.connectorType) {
-          args.connectorType = connector.type;
-        }
-        if (!args.connectionConfig) {
-          args.connectionConfig = connectionConfig;
-        }
-        if (!args.maxTables) {
-          args.maxTables = 50;
-        }
-        if (!args.maxColumns) {
-          args.maxColumns = 200;
-        }
-        const toolResult = await inspectTool.invoke(args);
-        lastToolResult = toolResult as Record<string, unknown>;
-        messages.push(new ToolMessage({
-          content: JSON.stringify(toolResult),
-          tool_call_id: call?.id || call?.tool_call_id || `inspect-${i}-${index}`,
-        }));
-      }
-
-      response = await this.invokeWithTrace(`inspect:${connector.type}`, messages, async () => toolBoundModel.invoke(messages));
+    let schemaDetails: { success?: boolean; type?: string; tables?: Array<Record<string, unknown>> } | undefined;
+    try {
+      schemaDetails = await schemaTool.invoke({
+        connectorId: connector.id,
+        connectorType: connector.type,
+      }) as { success?: boolean; type?: string; tables?: Array<Record<string, unknown>> };
+    } catch (error) {
+      console.warn("Schema tool inspection failed, continuing without table context", error);
     }
 
-    const rawText = typeof response?.content === "string"
-      ? response.content
-      : Array.isArray(response?.content)
-        ? response.content.map((part: any) => typeof part === "string" ? part : part?.text || "").join("")
-        : JSON.stringify(response ?? {});
-    const normalizedText = rawText.replace(/^```(?:json)?/i, "").replace(/```$/i, "").trim();
+    const tableList = Array.isArray(schemaDetails?.tables)
+      ? schemaDetails.tables.map((table: Record<string, unknown>) => ({
+          name: table.name || table.tableName || table.id || "unknown",
+          type: table.type || table.tableType || "unknown",
+        }))
+      : [];
+    const schemaType = schemaDetails?.type || "unknown";
+    const tableNames = tableList
+      .map((table) => typeof table.name === "string" ? table.name : "")
+      .filter((tableName) => tableName.trim().length > 0);
 
-    try {
-      const parsed = JSON.parse(normalizedText);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed;
+    if (tableNames.length === 0) {
+      const inspectionPayload = await inspectTool.invoke({
+        connectorId: connector.id,
+        connectorType: connector.type,
+        maxTables: 50,
+        maxColumns: 200,
+      }) as Record<string, unknown>;
+      return {
+        connectorId: connector.id,
+        connectorName: connector.name,
+        ...inspectionPayload,
+      };
+    }
+
+    const schemaSummary = {
+      type: schemaType,
+      tableCount: tableList.length,
+    };
+    const batches = this.chunkInspectionTableNames(tableNames);
+    const inspectionAgent = createAgent({
+      model,
+      tools: [inspectAgentTool],
+      systemPrompt: inspectionPrompt,
+    });
+    let accumulatedInspection: InspectionPayload = {
+      connectorId: connector.id,
+      connectorName: connector.name,
+      schemaType,
+      tableCount: tableNames.length,
+      tables: [],
+    };
+    let lastToolResult: Record<string, unknown> | undefined;
+
+    for (const [batchIndex, batchTableNames] of batches.entries()) {
+      const userMessage = this.buildInspectionBatchUserMessage({
+        safeConnector,
+        schemaSummary,
+        batchTableNames,
+        batchIndex,
+        totalBatches: batches.length,
+        previousAnalysis: accumulatedInspection,
+      });
+
+      let inspectionResult: unknown;
+      try {
+        inspectionResult = await this.invokeWithTrace(
+          `inspect:${connector.type}:batch-${batchIndex + 1}`,
+          {
+            systemPrompt: inspectionPrompt,
+            userMessage,
+          },
+          async () => inspectionAgent.invoke({
+            messages: [new HumanMessage(userMessage)],
+          })
+        );
+      } catch (error) {
+        console.warn("Inspector agent execution failed for batch, falling back to direct inspection", error);
+        inspectionResult = undefined;
       }
-    } catch (error) {
-      console.warn("Inspector tool-calling output parse failed, falling back", error);
+
+      let parsedBatchPayload: InspectionPayload | undefined;
+      try {
+        const rawText = this.extractModelText(this.getLatestAgentMessage(inspectionResult));
+        const parsed = this.parseJsonObject(rawText, { __parseFailed: true } as Record<string, unknown>);
+        if (!("__parseFailed" in parsed)) {
+          parsedBatchPayload = parsed;
+        }
+      } catch (error) {
+        console.warn("Inspector tool-calling output parse failed for batch, using fallback", error);
+      }
+
+      const batchToolResult = this.getLastToolResult(inspectionResult);
+      if (batchToolResult) {
+        lastToolResult = batchToolResult;
+      }
+
+      if (!parsedBatchPayload && batchToolResult) {
+        parsedBatchPayload = batchToolResult;
+      }
+
+      if (!parsedBatchPayload) {
+        parsedBatchPayload = await inspectTool.invoke({
+          connectorId: connector.id,
+          connectorType: connector.type,
+          tableNames: batchTableNames,
+          maxColumns: 200,
+        }) as InspectionPayload;
+      }
+
+      accumulatedInspection = this.mergeInspectionPayload(
+        accumulatedInspection,
+        parsedBatchPayload,
+        connector,
+        schemaType,
+        tableNames.length
+      );
+    }
+
+    if (Array.isArray(accumulatedInspection.tables) && accumulatedInspection.tables.length > 0) {
+      return accumulatedInspection;
     }
 
     if (lastToolResult) {
@@ -392,9 +706,9 @@ export class IngestionAgentService implements IIngestionAgentService {
       };
     }
 
-    const schema = await schemaTool.invoke({
+    const schema = schemaDetails || await schemaTool.invoke({
+      connectorId: connector.id,
       connectorType: connector.type,
-      connectionConfig,
     }) as { success?: boolean; type?: string; tables?: Array<Record<string, unknown>> };
 
     return {
@@ -411,8 +725,8 @@ export class IngestionAgentService implements IIngestionAgentService {
     return this.runInspectorWithTools(connector);
   }
 
-  private async resolveSchema(connector: any, inspection: Record<string, unknown>) {
-    const tables = Array.isArray(inspection.tables) ? inspection.tables : [];
+  private async resolveSchema(connector: any, inspection: Record<string, unknown>, userPrompt?: string) {
+    const tables = Array.isArray((inspection as any).tables) ? (inspection as any).tables : [];
     const fallback = {
       resolvedTables: tables.map((table: any) => table.name || table.id || "table"),
       strategy: tables.length > 0 ? "inspect-and-map" : "fallback",
@@ -422,13 +736,26 @@ export class IngestionAgentService implements IIngestionAgentService {
       "You are an AI schema resolver. Convert the discovered tables into a compact ingestion plan and return valid JSON only.",
       "Use this shape: {\"resolvedTables\": [\"string\"], \"strategy\": \"string\"}",
       `Inspection context: ${JSON.stringify({ connector, inspection }, null, 2)}`,
+      `User request: ${typeof userPrompt === "string" && userPrompt.trim().length > 0 ? userPrompt : "No additional request provided."}`,
     ].join("\n");
 
     return this.invokeOpenAI("resolveSchema", prompt, fallback);
   }
 
-  private async profileData(connector: any, schemaResolution: Record<string, unknown>) {
-    const tables = Array.isArray(schemaResolution.resolvedTables) ? schemaResolution.resolvedTables : [];
+  private async profileData(connector: any, inspection: Record<string, unknown>) {
+    const inspectionSources = Array.isArray((inspection as any)?.sources)
+      ? (inspection as any).sources
+      : [inspection];
+    const tables = inspectionSources.flatMap((source: any) => {
+      const sourceTables = Array.isArray(source?.tables) ? source.tables : [];
+      return sourceTables
+        .map((table: any) => typeof table?.name === "string"
+          ? table.name
+          : typeof table?.tableName === "string"
+            ? table.tableName
+            : "")
+        .filter((tableName: string) => tableName.trim().length > 0);
+    });
     const profileTool = createDataProfileTool(this.connectionTester);
     let profilePayload: Record<string, unknown> | undefined;
 
@@ -454,7 +781,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       "You are an AI data profiler. Use the profiling tool output to summarize data health and sample quality.",
       "Return valid JSON only using this shape: {\"selectedTables\": [\"string\"], \"profile\": {\"sampleSize\": 0, \"quality\": \"string\", \"tables\": []}}",
       `Profiling tool output: ${JSON.stringify(profilePayload ?? fallback, null, 2)}`,
-      `Schema context: ${JSON.stringify({ connector, schemaResolution }, null, 2)}`,
+      `Inspection context: ${JSON.stringify({ connector, inspection }, null, 2)}`,
     ].join("\n");
 
     return this.invokeOpenAI("profileData", prompt, fallback);
@@ -502,7 +829,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             steps: [{ name: "Inspector", status: "failed", summary: "Connector not found" }],
           };
         }
-        const inspections = await Promise.all(validConnectors.map((connector) => this.inspect(connector)));
+        const inspections = await Promise.all(validConnectors.map(async (connector) => await this.inspect(connector)));
         return {
           inspection: { sources: inspections },
           status: "running",
@@ -510,37 +837,15 @@ export class IngestionAgentService implements IIngestionAgentService {
           steps: [{ name: "Inspector", status: "completed", summary: "Source inspection finished" }],
         };
       })
-      .addNode("resolveSchema", async (state: typeof AgentState.State) => {
+      .addNode("profileData", async (state: typeof AgentState.State) => {
         const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await this.connectorService.getById(connectorId)));
         const validConnectors = connectors.filter((connector) => !!connector);
         const inspectionSources = Array.isArray((state.inspection as any)?.sources)
           ? (state.inspection as any).sources
           : [state.inspection];
-        const resolvedSources = await Promise.all(validConnectors.map(async (connector) => {
-          const inspection = inspectionSources.find((source: any) => source?.connectorId === connector.id) || state.inspection;
-          const resolved = await this.resolveSchema(connector, inspection);
-          return {
-            connectorId: connector.id,
-            connectorName: connector.name,
-            ...resolved,
-          };
-        }));
-        return {
-          schemaResolution: { sources: resolvedSources },
-          status: "running",
-          summary: "Schema resolution completed",
-          steps: [{ name: "Schema Resolver", status: "completed", summary: "Schema mapping prepared" }],
-        };
-      })
-      .addNode("profileData", async (state: typeof AgentState.State) => {
-        const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await this.connectorService.getById(connectorId)));
-        const validConnectors = connectors.filter((connector) => !!connector);
-        const schemaSources = Array.isArray((state.schemaResolution as any)?.sources)
-          ? (state.schemaResolution as any).sources
-          : [state.schemaResolution];
         const profileSources = await Promise.all(validConnectors.map(async (connector) => {
-          const schemaResolution = schemaSources.find((source: any) => source?.connectorId === connector.id) || state.schemaResolution;
-          const profile = await this.profileData(connector, schemaResolution);
+          const inspection = inspectionSources.find((source: any) => source?.connectorId === connector.id) || state.inspection;
+          const profile = await this.profileData(connector, inspection);
           return {
             connectorId: connector.id,
             connectorName: connector.name,
@@ -571,21 +876,43 @@ export class IngestionAgentService implements IIngestionAgentService {
         }));
         return {
           preprocessing: { sources: preprocessSources },
-          status: "completed",
+          status: "running",
           summary: "Preprocessing completed",
           steps: [{ name: "Data Preprocessor", status: "completed", summary: "Data staged for downstream use" }],
         };
       })
+      .addNode("resolveSchema", async (state: typeof AgentState.State) => {
+        const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await this.connectorService.getById(connectorId)));
+        const validConnectors = connectors.filter((connector) => !!connector);
+        const inspectionSources = Array.isArray((state.inspection as any)?.sources)
+          ? (state.inspection as any).sources
+          : [state.inspection];
+        const resolvedSources = await Promise.all(validConnectors.map(async (connector) => {
+          const inspection = inspectionSources.find((source: any) => source?.connectorId === connector.id) || state.inspection;
+          const resolved = await this.resolveSchema(connector, inspection, typeof state.userPrompt === "string" ? state.userPrompt : "");
+          return {
+            connectorId: connector.id,
+            connectorName: connector.name,
+            ...resolved,
+          };
+        }));
+        return {
+          schemaResolution: { sources: resolvedSources },
+          status: "completed",
+          summary: "Schema resolution completed",
+          steps: [{ name: "Schema Resolver", status: "completed", summary: "Schema mapping prepared" }],
+        };
+      })
       .addEdge("__start__", "inspect")
-      .addEdge("inspect", "resolveSchema")
-      .addEdge("resolveSchema", "profileData")
+      .addEdge("inspect", "profileData")
       .addEdge("profileData", "preprocess")
-      .addEdge("preprocess", "__end__");
+      .addEdge("preprocess", "resolveSchema")
+      .addEdge("resolveSchema", "__end__");
 
     return workflow.compile();
   }
 
-  async run(connectorId: string[]): Promise<IngestionAgentRunResult> {
+  async run(connectorId: string[], userPrompt?: string): Promise<IngestionAgentRunResult> {
     const workflow = this.createWorkflow();
     const traceSession = await this.createTraceSession();
     const runStartedAt = new Date().toISOString();
@@ -602,6 +929,7 @@ export class IngestionAgentService implements IIngestionAgentService {
     try {
       const result = await workflow.invoke({
         connectorId,
+        userPrompt: userPrompt ?? "",
         status: "queued",
         summary: "Ingestion workflow started",
         steps: [],

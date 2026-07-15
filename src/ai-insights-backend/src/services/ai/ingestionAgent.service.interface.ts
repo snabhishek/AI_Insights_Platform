@@ -16,5 +16,5 @@ export interface IngestionAgentRunResult {
 }
 
 export interface IIngestionAgentService {
-  run(connectorId: string[]): Promise<IngestionAgentRunResult>;
+  run(connectorId: string[], userPrompt?: string): Promise<IngestionAgentRunResult>;
 }

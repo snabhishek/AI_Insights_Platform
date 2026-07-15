@@ -3,6 +3,7 @@ import { z } from "zod";
 import { Pool } from "pg";
 import * as xlsx from "xlsx";
 import { IFileService } from "../../file.service.interface";
+import { ConnectorService } from "../../connector.service";
 import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
 
 type ColumnInfo = {
@@ -24,11 +25,44 @@ type RelationInfo = {
   constraintName?: string;
 };
 
-export const createInspectTool = (fileService: IFileService) =>
+export const createInspectTool = (fileService: IFileService, connectorService: ConnectorService) =>
   tool(
-    async ({ connectorType, connectionConfig, tableNames, maxTables, maxColumns }) => {
-      const type = connectorType as ConnectorType;
-      const config = connectionConfig as ConnectionConfig;
+    async ({ connectorId, connectorType, connectionConfig, tableNames, maxTables, maxColumns }) => {
+      let resolvedType = connectorType as ConnectorType | undefined;
+      let config: ConnectionConfig | undefined;
+
+      if (typeof connectorId === "string" && connectorId.trim().length > 0) {
+        const connector = await connectorService.getById(connectorId);
+        if (!connector) {
+          return {
+            connectorId,
+            connectorType: connectorType || "unknown",
+            schemaType: "unknown",
+            tableCount: 0,
+            tables: [],
+            notes: "Connector not found.",
+          };
+        }
+
+        resolvedType = connector.type;
+        config = connector.connectionConfig || {};
+      } else {
+        resolvedType = connectorType as ConnectorType | undefined;
+        config = connectionConfig as ConnectionConfig | undefined;
+      }
+
+      if (!resolvedType || !config) {
+        return {
+          connectorId: typeof connectorId === "string" ? connectorId : undefined,
+          connectorType: resolvedType || connectorType || "unknown",
+          schemaType: "unknown",
+          tableCount: 0,
+          tables: [],
+          notes: "Connector configuration could not be resolved.",
+        };
+      }
+
+      const type = resolvedType;
       const selectedTables = Array.isArray(tableNames) ? tableNames.filter((name) => typeof name === "string" && name.trim().length > 0) : [];
       const tableLimit = typeof maxTables === "number" && maxTables > 0 ? Math.floor(maxTables) : 50;
       const columnLimit = typeof maxColumns === "number" && maxColumns > 0 ? Math.floor(maxColumns) : 200;
@@ -430,8 +464,9 @@ export const createInspectTool = (fileService: IFileService) =>
       name: "inspectDataSource",
       description: "Inspect a connector source and return table fields, data types, constraints, and relationships.",
       schema: z.object({
-        connectorType: z.string().describe("Connector type"),
-        connectionConfig: z.object({}).passthrough().describe("Connection settings for the connector"),
+        connectorId: z.string().describe("Connector ID used to resolve the stored connection settings"),
+        connectorType: z.string().optional().describe("Connector type fallback when connectorId is unavailable"),
+        connectionConfig: z.object({}).passthrough().optional().describe("Fallback connection settings when connectorId is unavailable"),
         tableNames: z.array(z.string()).optional().describe("Specific tables to inspect for column/constraint details"),
         maxTables: z.number().optional().describe("Maximum tables to list when tableNames is not provided"),
         maxColumns: z.number().optional().describe("Maximum columns per table in detailed inspection"),
