@@ -1,7 +1,7 @@
 import { Connector, ConnectorStatus, ConnectorHealth, ConnectionConfig } from "../models/connector.types";
 
 export interface IConnectorRepository {
-  getAll(): Promise<Connector[]>;
+  getAll(workspaceId?: string): Promise<Connector[]>;
   getById(id: string): Promise<Connector | undefined>;
   create(connector: Connector): Promise<Connector>;
   delete(id: string): Promise<boolean>;
