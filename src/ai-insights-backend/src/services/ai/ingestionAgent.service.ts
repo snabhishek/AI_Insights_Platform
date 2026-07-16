@@ -739,11 +739,13 @@ export class IngestionAgentService implements IIngestionAgentService {
     const targetParquetTopics = await getTopicsFromParquetSchema(staticSchemaPath);
 
     const prompt = [
-      "You are an AI schema resolver. Your task is to map the fields from the user given dataset (found in the Inspection context) to the target static Parquet topics.",
-      "If the dataset has varied categories compared to the static Parquet topics, you must add those new categories as target topics in your mappings.",
+      "You are an AI schema resolver preparing data for a dynamic Parquet schema generator.",
+      "Your task is to map the fields from the user-given dataset (found in the Inspection context) to the target Parquet topics.",
+      "If the dataset contains fields that do not fit the existing topics, you must create new, appropriate category names and use them as target topics.",
       "The current static Parquet topics are:",
       JSON.stringify(targetParquetTopics, null, 2),
       "",
+      "The downstream system will use your mappings to generate a Snappy-compressed Parquet file where the topics act as columns, and the dataset fields are grouped into comma-separated strings inside a single row.",
       "Convert the discovered tables and fields into a compact ingestion plan mapping.",
       "Return valid JSON only using this exact shape:",
       "{\n  \"resolvedTables\": [\"string\"],\n  \"strategy\": \"string\",\n  \"mappings\": [{\"datasetField\": \"string\", \"targetTopic\": \"string\"}],\n  \"unmappedDatasetFields\": [\"string\"]\n}",
@@ -756,7 +758,7 @@ export class IngestionAgentService implements IIngestionAgentService {
     if (result && Array.isArray(result.mappings) && result.mappings.length > 0) {
       const outputParquetPath = path.resolve(__dirname, "../../packages/resolved_schema.parquet");
       await writeResolvedSchemaParquet(
-        outputParquetPath, 
+        outputParquetPath,
         result.mappings as Array<{ datasetField: string; targetTopic: string }>,
         targetParquetTopics
       );

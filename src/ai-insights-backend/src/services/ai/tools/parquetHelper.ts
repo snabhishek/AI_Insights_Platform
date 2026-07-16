@@ -44,7 +44,7 @@ export async function writeResolvedSchemaParquet(
 
     // 1. Group dataset fields by topic
     const groupedMappings: Record<string, string[]> = {};
-    
+
     // Initialize static topics to ensure they are always present as columns
     for (const topic of staticTopics) {
       groupedMappings[topic] = [];
