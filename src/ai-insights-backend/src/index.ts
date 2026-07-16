@@ -10,9 +10,12 @@ import workspaceRouter from "./routes/workspaces";
 import { ConnectorService } from "./services/connector.service";
 import { ConnectorController } from "./controllers/connector.controller";
 import createConnectorRouter from "./routes/connectors";
+import createAIRouter from "./routes/ai";
 import { checkAndCreateDatabase, runMigrations, pool } from "./db";
 import * as schema from "./db/connectors";
 import { AgentController } from "./controllers/agent.controller";
+import { IngestionAgentService } from "./services/ai/ingestionAgent.service";
+import { AIController } from "./controllers/ai.controller";
 
 dotenv.config();
 
@@ -38,7 +41,6 @@ let connectionTester: ConnectionTesterService;
 let connectorRepository: PostgresConnectorRepository;
 let connectorService: ConnectorService;
 let connectorController: ConnectorController;
-let agentController: AgentController;
 
 async function bootstrap() {
   // 1. Wrap PG Pool with Drizzle ORM
@@ -50,16 +52,9 @@ async function bootstrap() {
   connectorRepository = new PostgresConnectorRepository(db);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
   connectorController = new ConnectorController(connectorService, connectionTester);
-  agentController = new AgentController(connectorService);
 
   // 4. Mount Main routers
   app.use("/api/connectors", createConnectorRouter(connectorController));
-  
-  // Agent Router
-  const agentRouter = express.Router();
-  agentRouter.post("/inspect", agentController.runInspector);
-  app.use("/api/agents", agentRouter);
-
   app.use("/api/workspaces", workspaceRouter);
 
   // Health check endpoint
