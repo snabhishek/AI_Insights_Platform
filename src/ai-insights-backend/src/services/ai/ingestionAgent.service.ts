@@ -15,6 +15,7 @@ import { createInspectTool } from "./tools/inspect.tool";
 import { createDataProfileTool } from "./tools/dataProfile.tool";
 import { createPreprocessTool } from "./tools/preprocess.tool";
 import { IFileService } from "../file.service.interface";
+import { getTopicsFromParquetSchema, writeResolvedSchemaParquet } from "./tools/parquetHelper";
 
 const AgentState = Annotation.Root({
   connectorId: Annotation<string[]>,
@@ -727,19 +728,37 @@ export class IngestionAgentService implements IIngestionAgentService {
 
   private async resolveSchema(connector: any, inspection: Record<string, unknown>, userPrompt?: string) {
     const tables = Array.isArray((inspection as any).tables) ? (inspection as any).tables : [];
-    const fallback = {
+    const fallback: Record<string, any> = {
       resolvedTables: tables.map((table: any) => table.name || table.id || "table"),
       strategy: tables.length > 0 ? "inspect-and-map" : "fallback",
+      mappings: [],
+      unmappedDatasetFields: []
     };
 
+    const staticSchemaPath = path.resolve(__dirname, "../../packages/static_schema_updated.parquet");
+    const targetParquetTopics = await getTopicsFromParquetSchema(staticSchemaPath);
+
     const prompt = [
-      "You are an AI schema resolver. Convert the discovered tables into a compact ingestion plan and return valid JSON only.",
-      "Use this shape: {\"resolvedTables\": [\"string\"], \"strategy\": \"string\"}",
+      "You are an AI schema resolver. Your task is to map the fields from the user given dataset (found in the Inspection context) to the target static Parquet topics.",
+      "If the dataset has varied categories compared to the static Parquet topics, you must add those new categories as target topics in your mappings.",
+      "The current static Parquet topics are:",
+      JSON.stringify(targetParquetTopics, null, 2),
+      "",
+      "Convert the discovered tables and fields into a compact ingestion plan mapping.",
+      "Return valid JSON only using this exact shape:",
+      "{\n  \"resolvedTables\": [\"string\"],\n  \"strategy\": \"string\",\n  \"mappings\": [{\"datasetField\": \"string\", \"targetTopic\": \"string\"}],\n  \"unmappedDatasetFields\": [\"string\"]\n}",
       `Inspection context: ${JSON.stringify({ connector, inspection }, null, 2)}`,
       `User request: ${typeof userPrompt === "string" && userPrompt.trim().length > 0 ? userPrompt : "No additional request provided."}`,
     ].join("\n");
 
-    return this.invokeOpenAI("resolveSchema", prompt, fallback);
+    const result = await this.invokeOpenAI("resolveSchema", prompt, fallback);
+
+    if (result && Array.isArray(result.mappings) && result.mappings.length > 0) {
+      const outputParquetPath = path.resolve(__dirname, "../../packages/resolved_schema.parquet");
+      await writeResolvedSchemaParquet(outputParquetPath, result.mappings as Array<{ datasetField: string; targetTopic: string }>);
+    }
+
+    return result;
   }
 
   private async profileData(connector: any, inspection: Record<string, unknown>) {
