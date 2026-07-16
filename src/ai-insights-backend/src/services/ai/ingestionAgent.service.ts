@@ -588,9 +588,9 @@ export class IngestionAgentService implements IIngestionAgentService {
 
     const tableList = Array.isArray(schemaDetails?.tables)
       ? schemaDetails.tables.map((table: Record<string, unknown>) => ({
-          name: table.name || table.tableName || table.id || "unknown",
-          type: table.type || table.tableType || "unknown",
-        }))
+        name: table.name || table.tableName || table.id || "unknown",
+        type: table.type || table.tableType || "unknown",
+      }))
       : [];
     const schemaType = schemaDetails?.type || "unknown";
     const tableNames = tableList
@@ -755,7 +755,11 @@ export class IngestionAgentService implements IIngestionAgentService {
 
     if (result && Array.isArray(result.mappings) && result.mappings.length > 0) {
       const outputParquetPath = path.resolve(__dirname, "../../packages/resolved_schema.parquet");
-      await writeResolvedSchemaParquet(outputParquetPath, result.mappings as Array<{ datasetField: string; targetTopic: string }>);
+      await writeResolvedSchemaParquet(
+        outputParquetPath, 
+        result.mappings as Array<{ datasetField: string; targetTopic: string }>,
+        targetParquetTopics
+      );
     }
 
     return result;
