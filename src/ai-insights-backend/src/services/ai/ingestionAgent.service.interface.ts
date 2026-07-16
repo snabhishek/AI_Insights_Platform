@@ -13,6 +13,7 @@ export interface IngestionAgentRunResult {
   schemaResolution: Record<string, unknown>;
   dataProfile: Record<string, unknown>;
   preprocessing: Record<string, unknown>;
+  batchedTables?: Array<{ tableName: string; status: string; node: string; summary: string }>;
 }
 
 export interface IIngestionAgentService {

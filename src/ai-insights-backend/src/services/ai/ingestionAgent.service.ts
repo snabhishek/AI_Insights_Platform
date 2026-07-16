@@ -12,9 +12,19 @@ import { ConnectionTesterService } from "../connectionTester.service";
 import { IIngestionAgentService, IngestionAgentRunResult } from "./ingestionAgent.service.interface";
 import { createGetSchemaTool } from "./tools/getSchema.tool";
 import { createInspectTool } from "./tools/inspect.tool";
-import { createDataProfileTool } from "./tools/dataProfile.tool";
-import { createPreprocessTool } from "./tools/preprocess.tool";
+import { createDataProfileTool } from "./tools/profiling/dataProfile.tool";
+import { createPreprocessTool } from "./tools/preprocessing/preprocess.tool";
 import { IFileService } from "../file.service.interface";
+
+const INSPECTION_INITIAL_BATCH_SIZE = 10;
+const INSPECTION_FOLLOW_UP_BATCH_SIZE = 5;
+
+type BatchedTableState = {
+  tableName: string;
+  status: string;
+  node: string;
+  summary: string;
+};
 
 const AgentState = Annotation.Root({
   connectorId: Annotation<string[]>,
@@ -28,6 +38,25 @@ const AgentState = Annotation.Root({
   schemaResolution: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   dataProfile: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   preprocessing: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  batchedTables: Annotation<BatchedTableState[]>({
+    reducer: (left = [], right = []) => {
+      const mergedMap = new Map<string, BatchedTableState>();
+      for (const entry of left) {
+        if (entry.tableName) {
+          mergedMap.set(entry.tableName, entry);
+        }
+      }
+      for (const entry of right) {
+        if (!entry.tableName) {
+          continue;
+        }
+        const existingEntry = mergedMap.get(entry.tableName);
+        mergedMap.set(entry.tableName, existingEntry ? { ...existingEntry, ...entry } : entry);
+      }
+      return Array.from(mergedMap.values());
+    },
+    default: () => [],
+  }),
   steps: Annotation<Array<{ name: string; status: string; summary: string }>>({
     reducer: (left, right) => [...left, ...right],
     default: () => [],
@@ -46,7 +75,28 @@ export class IngestionAgentService implements IIngestionAgentService {
     private connectorService: ConnectorService,
     private connectionTester: ConnectionTesterService,
     private fileService: IFileService
-  ) {}
+  ) { }
+
+  private mergeBatchedTableStates(left: BatchedTableState[] = [], right: BatchedTableState[] = []): BatchedTableState[] {
+    const mergedMap = new Map<string, BatchedTableState>();
+
+    for (const entry of left) {
+      if (entry.tableName) {
+        mergedMap.set(entry.tableName, entry);
+      }
+    }
+
+    for (const entry of right) {
+      if (!entry.tableName) {
+        continue;
+      }
+
+      const existingEntry = mergedMap.get(entry.tableName);
+      mergedMap.set(entry.tableName, existingEntry ? { ...existingEntry, ...entry } : entry);
+    }
+
+    return Array.from(mergedMap.values());
+  }
 
   private getTraceConfig() {
     const enabled = process.env.AI_LLM_TRACE_ENABLED === "true"
@@ -383,6 +433,16 @@ export class IngestionAgentService implements IIngestionAgentService {
     }
   }
 
+  private async getPromptFromFile(fileName: string, fallback: string): Promise<string> {
+    try {
+      const promptPath = path.resolve(__dirname, "prompts", fileName);
+      return await fs.readFile(promptPath, "utf8");
+    } catch (error) {
+      console.warn(`Unable to load prompt file ${fileName}, using fallback`, error);
+      return fallback;
+    }
+  }
+
   private chunkInspectionTableNames(tableNames: string[]): string[][] {
     const normalizedTableNames = tableNames.filter((tableName) => typeof tableName === "string" && tableName.trim().length > 0);
     if (normalizedTableNames.length === 0) {
@@ -390,12 +450,10 @@ export class IngestionAgentService implements IIngestionAgentService {
     }
 
     const batches: string[][] = [];
-    const initialBatchSize = 10;
-    const followUpBatchSize = 5;
 
-    batches.push(normalizedTableNames.slice(0, initialBatchSize));
-    for (let index = initialBatchSize; index < normalizedTableNames.length; index += followUpBatchSize) {
-      batches.push(normalizedTableNames.slice(index, index + followUpBatchSize));
+    batches.push(normalizedTableNames.slice(0, INSPECTION_INITIAL_BATCH_SIZE));
+    for (let index = INSPECTION_INITIAL_BATCH_SIZE; index < normalizedTableNames.length; index += INSPECTION_FOLLOW_UP_BATCH_SIZE) {
+      batches.push(normalizedTableNames.slice(index, index + INSPECTION_FOLLOW_UP_BATCH_SIZE));
     }
 
     return batches;
@@ -474,6 +532,17 @@ export class IngestionAgentService implements IIngestionAgentService {
     };
   }
 
+  private buildBatchedTableState(tableNames: string[], node: string, status: string, summary: string): BatchedTableState[] {
+    return tableNames
+      .filter((tableName) => typeof tableName === "string" && tableName.trim().length > 0)
+      .map((tableName) => ({
+        tableName,
+        status,
+        node,
+        summary,
+      }));
+  }
+
   private buildInspectionBatchUserMessage(params: {
     safeConnector: Record<string, unknown>;
     schemaSummary: Record<string, unknown>;
@@ -537,6 +606,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       return {
         connectorId: connector.id,
         connectorName: connector.name,
+        batchedTables: [],
         ...inspectionPayload,
       };
     }
@@ -587,9 +657,9 @@ export class IngestionAgentService implements IIngestionAgentService {
 
     const tableList = Array.isArray(schemaDetails?.tables)
       ? schemaDetails.tables.map((table: Record<string, unknown>) => ({
-          name: table.name || table.tableName || table.id || "unknown",
-          type: table.type || table.tableType || "unknown",
-        }))
+        name: table.name || table.tableName || table.id || "unknown",
+        type: table.type || table.tableType || "unknown",
+      }))
       : [];
     const schemaType = schemaDetails?.type || "unknown";
     const tableNames = tableList
@@ -615,6 +685,12 @@ export class IngestionAgentService implements IIngestionAgentService {
       tableCount: tableList.length,
     };
     const batches = this.chunkInspectionTableNames(tableNames);
+    const inspectionTableStatuses = batches.flatMap((batchTableNames, batchIndex) => this.buildBatchedTableState(
+      batchTableNames,
+      "inspect",
+      "analysed",
+      `Analyzed in inspection batch ${batchIndex + 1}/${batches.length}`
+    ));
     const inspectionAgent = createAgent({
       model,
       tools: [inspectAgentTool],
@@ -695,13 +771,17 @@ export class IngestionAgentService implements IIngestionAgentService {
     }
 
     if (Array.isArray(accumulatedInspection.tables) && accumulatedInspection.tables.length > 0) {
-      return accumulatedInspection;
+      return {
+        ...accumulatedInspection,
+        batchedTables: inspectionTableStatuses,
+      };
     }
 
     if (lastToolResult) {
       return {
         connectorId: connector.id,
         connectorName: connector.name,
+        batchedTables: inspectionTableStatuses,
         ...lastToolResult,
       };
     }
@@ -714,6 +794,7 @@ export class IngestionAgentService implements IIngestionAgentService {
     return {
       connectorId: connector.id,
       connectorName: connector.name,
+      batchedTables: inspectionTableStatuses,
       schemaType: schema?.type || "unknown",
       tableCount: Array.isArray(schema?.tables) ? schema.tables.length : 0,
       tables: Array.isArray(schema?.tables) ? schema.tables : [],
@@ -764,37 +845,56 @@ export class IngestionAgentService implements IIngestionAgentService {
         connectorType: connector.type,
         connectionConfig: connector.connectionConfig || {},
         tables,
+        inspectionOutput: inspection,
+        seed: 42,
+        sampleSize: 8,
       }) as Record<string, unknown>;
     } catch (error) {
       console.warn("DataProfile tool invocation failed, using fallback", error);
     }
 
     const fallback = {
+      status: "OK",
+      profilingResults: {
+        sampling: { method: "Hybrid", sampleSize: 8, seed: 42 },
+        tables: tables.map((tableName: any) => ({ tableName, contentProfile: {}, completenessProfile: {}, statisticalProfile: {}, recommendations: [] })),
+      },
       selectedTables: tables,
       profile: {
-        sampleSize: 5,
+        sampleSize: 8,
         quality: tables.length > 0 ? "ready" : "needs-review",
       },
     };
 
-    const prompt = [
-      "You are an AI data profiler. Use the profiling tool output to summarize data health and sample quality.",
-      "Return valid JSON only using this shape: {\"selectedTables\": [\"string\"], \"profile\": {\"sampleSize\": 0, \"quality\": \"string\", \"tables\": []}}",
+    const prompt = await this.getPromptFromFile(
+      "dataprofile.md",
+      [
+        "You are an AI data profiler. Use the profiling tool output to summarize data health and sample quality.",
+        "Return valid JSON only using this shape: {\"status\": \"OK\", \"profilingResults\": {\"sampling\": {}, \"tables\": []}, \"selectedTables\": []}",
+      ].join("\n")
+    );
+
+    const summary = await this.invokeOpenAI("profileData", [
+      prompt,
       `Profiling tool output: ${JSON.stringify(profilePayload ?? fallback, null, 2)}`,
       `Inspection context: ${JSON.stringify({ connector, inspection }, null, 2)}`,
-    ].join("\n");
+    ].join("\n"), fallback);
 
-    return this.invokeOpenAI("profileData", prompt, fallback);
+    return {
+      ...(summary as Record<string, unknown>),
+      rawProfilePayload: profilePayload ?? fallback,
+    };
   }
 
   private async preprocess(connector: any, dataProfile: Record<string, unknown>) {
     const preprocessTool = createPreprocessTool();
     let preprocessPayload: Record<string, unknown> | undefined;
+    const profileInput = (dataProfile as any)?.rawProfilePayload ?? dataProfile ?? {};
 
     try {
       preprocessPayload = await preprocessTool.invoke({
         connectorType: connector.type,
-        dataProfile,
+        dataProfile: profileInput,
       }) as Record<string, unknown>;
     } catch (error) {
       console.warn("Preprocess tool invocation failed, using fallback", error);
@@ -802,19 +902,26 @@ export class IngestionAgentService implements IIngestionAgentService {
 
     const fallback = {
       normalized: true,
-      tableCount: Array.isArray((dataProfile as any).selectedTables) ? (dataProfile as any).selectedTables.length : 0,
-      notes: "Data has been staged for downstream ingestion.",
-      steps: ["normalize_nulls", "trim_strings", "standardize_dates"],
+      tableCount: Array.isArray((profileInput as any)?.selectedTables) ? (profileInput as any).selectedTables.length : 0,
+      preprocessingPlan: {
+        connectorType: connector.type,
+        actions: [{ issue: "No remediation needed from current profile", method: "noop", priority: "LOW", confidence: "LOW" }],
+      },
     };
 
-    const prompt = [
-      "You are an AI preprocessing assistant. Use the preprocessing tool output and data profile to decide preprocessing steps.",
-      "Return valid JSON only using this shape: {\"normalized\": true, \"tableCount\": 0, \"notes\": \"string\", \"steps\": [\"string\"]}",
-      `Preprocess tool output: ${JSON.stringify(preprocessPayload ?? fallback, null, 2)}`,
-      `Data profile context: ${JSON.stringify({ connector, dataProfile }, null, 2)}`,
-    ].join("\n");
+    const prompt = await this.getPromptFromFile(
+      "preprocess.md",
+      [
+        "You are an AI preprocessing assistant. Use the preprocessing tool output and data profile to decide preprocessing steps.",
+        "Return valid JSON only using this shape: {\"normalized\": true, \"tableCount\": 0, \"preprocessingPlan\": {\"connectorType\": \"string\", \"actions\": []}}",
+      ].join("\n")
+    );
 
-    return this.invokeOpenAI("preprocess", prompt, fallback);
+    return this.invokeOpenAI("preprocess", [
+      prompt,
+      `Preprocess tool output: ${JSON.stringify(preprocessPayload ?? fallback, null, 2)}`,
+      `Data profile context: ${JSON.stringify({ connector, dataProfile: profileInput }, null, 2)}`,
+    ].join("\n"), fallback);
   }
 
   private createWorkflow() {
@@ -830,8 +937,10 @@ export class IngestionAgentService implements IIngestionAgentService {
           };
         }
         const inspections = await Promise.all(validConnectors.map(async (connector) => await this.inspect(connector)));
+        const batchedTables = inspections.flatMap((inspection: any) => Array.isArray(inspection?.batchedTables) ? inspection.batchedTables : []);
         return {
           inspection: { sources: inspections },
+          batchedTables: this.mergeBatchedTableStates(state.batchedTables, batchedTables),
           status: "running",
           summary: "Inspection completed",
           steps: [{ name: "Inspector", status: "completed", summary: "Source inspection finished" }],
@@ -852,8 +961,18 @@ export class IngestionAgentService implements IIngestionAgentService {
             ...profile,
           };
         }));
+        const updatedBatchedTables = this.mergeBatchedTableStates(
+          state.batchedTables,
+          this.buildBatchedTableState(
+            (state.batchedTables || []).map((table) => table.tableName),
+            "profileData",
+            "profiled",
+            "Table data profile completed"
+          )
+        );
         return {
           dataProfile: { sources: profileSources },
+          batchedTables: updatedBatchedTables,
           status: "running",
           summary: "Data profiling completed",
           steps: [{ name: "Data Profiler", status: "completed", summary: "Profiling completed" }],
@@ -874,8 +993,18 @@ export class IngestionAgentService implements IIngestionAgentService {
             ...preprocessed,
           };
         }));
+        const updatedBatchedTables = this.mergeBatchedTableStates(
+          state.batchedTables,
+          this.buildBatchedTableState(
+            (state.batchedTables || []).map((table) => table.tableName),
+            "preprocess",
+            "preprocessed",
+            "Table preprocessing completed"
+          )
+        );
         return {
           preprocessing: { sources: preprocessSources },
+          batchedTables: updatedBatchedTables,
           status: "running",
           summary: "Preprocessing completed",
           steps: [{ name: "Data Preprocessor", status: "completed", summary: "Data staged for downstream use" }],
@@ -896,8 +1025,18 @@ export class IngestionAgentService implements IIngestionAgentService {
             ...resolved,
           };
         }));
+        const updatedBatchedTables = this.mergeBatchedTableStates(
+          state.batchedTables,
+          this.buildBatchedTableState(
+            (state.batchedTables || []).map((table) => table.tableName),
+            "resolveSchema",
+            "resolved",
+            "Table schema resolution completed"
+          )
+        );
         return {
           schemaResolution: { sources: resolvedSources },
+          batchedTables: updatedBatchedTables,
           status: "completed",
           summary: "Schema resolution completed",
           steps: [{ name: "Schema Resolver", status: "completed", summary: "Schema mapping prepared" }],
@@ -954,6 +1093,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         schemaResolution: (result.schemaResolution ?? {}) as Record<string, unknown>,
         dataProfile: (result.dataProfile ?? {}) as Record<string, unknown>,
         preprocessing: (result.preprocessing ?? {}) as Record<string, unknown>,
+        batchedTables: (result.batchedTables ?? []) as Array<{ tableName: string; status: string; node: string; summary: string }>,
       };
     } finally {
       this.activeTraceSession = undefined;
