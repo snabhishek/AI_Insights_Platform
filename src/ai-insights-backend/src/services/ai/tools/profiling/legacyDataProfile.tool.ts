@@ -99,6 +99,56 @@ const toNumber = (value: unknown): number | undefined => {
   return undefined;
 };
 
+const filterRowsByRelationships = (
+  rows: SampleRow[],
+  tableName: string,
+  inspectionTables: Array<Record<string, unknown>>,
+  sampledRowsByTable: Map<string, SampleRow[]>
+): SampleRow[] => {
+  const inspectionTable = inspectionTables.find((candidate) => {
+    const candidateName = typeof candidate?.name === "string"
+      ? candidate.name
+      : typeof candidate?.tableName === "string"
+        ? candidate.tableName
+        : "";
+    return candidateName === tableName;
+  });
+  const relationEntries = Array.isArray((inspectionTable as Record<string, unknown> | undefined)?.relations)
+    ? ((inspectionTable as Record<string, unknown>).relations as Array<Record<string, unknown>>)
+    : [];
+
+  let filteredRows = [...rows];
+  for (const relation of relationEntries) {
+    const foreignTableName = typeof relation.foreignTable === "string" ? relation.foreignTable : "";
+    const currentColumn = typeof relation.column === "string" ? relation.column : "";
+    const foreignColumn = typeof relation.foreignColumn === "string" ? relation.foreignColumn : "";
+    const relationshipRows = sampledRowsByTable.get(foreignTableName);
+
+    if (!foreignTableName || !currentColumn || !foreignColumn || !relationshipRows || relationshipRows.length === 0) {
+      continue;
+    }
+
+    const allowedValues = new Set<string>();
+    for (const relationshipRow of relationshipRows) {
+      const value = normalizeCellValue(relationshipRow?.[foreignColumn]);
+      if (value.length > 0) {
+        allowedValues.add(value);
+      }
+    }
+
+    if (allowedValues.size === 0) {
+      continue;
+    }
+
+    filteredRows = filteredRows.filter((row) => allowedValues.has(normalizeCellValue(row?.[currentColumn])));
+    if (filteredRows.length === 0) {
+      break;
+    }
+  }
+
+  return filteredRows;
+};
+
 const buildHybridSample = (rows: SampleRow[], targetSize: number, seed: number): SampleRow[] => {
   const shuffled = deterministicShuffle(rows, seed);
   const randomSample = shuffled.slice(0, Math.max(0, Math.min(targetSize, shuffled.length)));
@@ -215,6 +265,9 @@ export const createDataProfileTool = (connectionTester: ConnectionTesterService)
         ? ((inspectionOutput as { selectedTables?: unknown }).selectedTables as string[]).filter((table): table is string => typeof table === "string" && table.trim().length > 0)
         : [];
       const validTables = selectedTables.length > 0 ? selectedTables : stateTables;
+      const inspectionTables = Array.isArray((inspectionOutput as { tables?: unknown })?.tables)
+        ? ((inspectionOutput as { tables?: unknown }).tables as Array<Record<string, unknown>>)
+        : [];
       const profileTables: Array<{
         tableName: string;
         contentProfile: {
@@ -226,6 +279,7 @@ export const createDataProfileTool = (connectionTester: ConnectionTesterService)
         recommendations: RecommendationAction[];
       }> = [];
       const warnings: string[] = [];
+      const sampledRowsByTable = new Map<string, SampleRow[]>();
 
       if (validTables.length === 0) {
         return {
@@ -245,7 +299,9 @@ export const createDataProfileTool = (connectionTester: ConnectionTesterService)
           const preview = await connectionTester.getPreview(type, config, tableName);
           const rows = Array.isArray(preview.rows) ? preview.rows : [];
           const headers = Array.isArray(preview.headers) ? preview.headers : [];
-          const sampledRows = buildHybridSample(rows, Math.max(1, Math.floor(sampleSize)), seed + validTables.indexOf(tableName));
+          const rowsToSample = filterRowsByRelationships(rows, tableName, inspectionTables, sampledRowsByTable);
+          const sampledRows = buildHybridSample(rowsToSample, Math.max(1, Math.floor(sampleSize)), seed + validTables.indexOf(tableName));
+          sampledRowsByTable.set(tableName, sampledRows);
           const columnProfiles: ColumnProfile[] = headers.map((header) => {
             const values = sampledRows.map((row) => row?.[header]);
             const normalized = values.map((value) => normalizeCellValue(value));

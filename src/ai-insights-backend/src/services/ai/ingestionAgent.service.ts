@@ -12,8 +12,18 @@ import { ConnectionTesterService } from "../connectionTester.service";
 import { IIngestionAgentService, IngestionAgentRunResult } from "./ingestionAgent.service.interface";
 import { createGetSchemaTool } from "./tools/getSchema.tool";
 import { createInspectTool } from "./tools/inspect.tool";
-import { createDataProfileTool } from "./tools/profiling/dataProfile.tool";
-import { createPreprocessTool } from "./tools/preprocessing/preprocess.tool";
+import { createFetchSampleDataTool } from "./tools/profiling/fetchSampleData.tool";
+import { createContentValueProfileTool } from "./tools/profiling/contentValueProfile.tool";
+import { createCompletenessProfileTool } from "./tools/profiling/completenessProfile.tool";
+import { createStatisticalProfileTool } from "./tools/profiling/statisticalProfile.tool";
+import { createAnalyzeProfilingTool } from "./tools/preprocessing/analyzeProfiling.tool";
+import { createApplyDataCleaningTool } from "./tools/preprocessing/applyDataCleaning.tool";
+import { createDuplicateDetectionTool } from "./tools/preprocessing/duplicateDetection.tool";
+import { createMissingValueTool } from "./tools/preprocessing/missingValue.tool";
+import { createCategoricalTool } from "./tools/preprocessing/categorical.tool";
+import { createOutlierTool } from "./tools/preprocessing/outlier.tool";
+import { createNormalizationTool } from "./tools/preprocessing/normalization.tool";
+import { createStatisticsTool } from "./tools/preprocessing/statistics.tool";
 import { IFileService } from "../file.service.interface";
 
 const INSPECTION_INITIAL_BATCH_SIZE = 10;
@@ -260,6 +270,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         this.logLlmTrace(stepName, "error", error, traceConfig.maxChars);
         await this.appendTraceEntry(stepName, "error", error);
       }
+      console.error(error);
       throw error;
     }
   }
@@ -393,7 +404,7 @@ export class IngestionAgentService implements IIngestionAgentService {
     }
 
     const agent = createAgent({
-      model,
+      model: model,
       tools: (options?.tools ?? []) as any,
       systemPrompt: options?.systemPrompt,
     });
@@ -577,7 +588,7 @@ export class IngestionAgentService implements IIngestionAgentService {
   }
 
   private async invokeOpenAI<T extends Record<string, unknown>>(stepName: string, prompt: string, fallback: T): Promise<T> {
-    const model = this.createOpenAIModel() || this.createGeminiModel();
+    const model = this.createOpenAIModel();
     return this.invokeAgentJson(stepName, model, prompt, fallback, {
       traceLabel: `openai:${stepName}`,
     });
@@ -820,108 +831,186 @@ export class IngestionAgentService implements IIngestionAgentService {
       `User request: ${typeof userPrompt === "string" && userPrompt.trim().length > 0 ? userPrompt : "No additional request provided."}`,
     ].join("\n");
 
-    return this.invokeOpenAI("resolveSchema", prompt, fallback);
+    //return this.invokeOpenAI("resolveSchema", prompt, fallback);
+    return fallback
   }
 
   private async profileData(connector: any, inspection: Record<string, unknown>) {
+    const model = this.createAzureOpenAIModel();
+
+    // Build tools for the profiling agent
+    const fetchSampleTool = createFetchSampleDataTool(this.connectionTester, this.connectorService);
+    const contentProfileTool = createContentValueProfileTool();
+    const completenessProfileTool = createCompletenessProfileTool();
+    const statisticalProfileTool = createStatisticalProfileTool();
+
+    const profilingTools = [fetchSampleTool, contentProfileTool, completenessProfileTool, statisticalProfileTool];
+
+    // Extract table and relationship info from inspection
     const inspectionSources = Array.isArray((inspection as any)?.sources)
       ? (inspection as any).sources
       : [inspection];
-    const tables = inspectionSources.flatMap((source: any) => {
+    const allTables = inspectionSources.flatMap((source: any) => {
       const sourceTables = Array.isArray(source?.tables) ? source.tables : [];
-      return sourceTables
-        .map((table: any) => typeof table?.name === "string"
-          ? table.name
-          : typeof table?.tableName === "string"
-            ? table.tableName
-            : "")
-        .filter((tableName: string) => tableName.trim().length > 0);
+      return sourceTables.filter((t: any) => {
+        const name = typeof t?.name === "string" ? t.name : typeof t?.tableName === "string" ? t.tableName : "";
+        return name.trim().length > 0;
+      });
     });
-    const profileTool = createDataProfileTool(this.connectionTester);
-    let profilePayload: Record<string, unknown> | undefined;
-
-    try {
-      profilePayload = await profileTool.invoke({
-        connectorType: connector.type,
-        connectionConfig: connector.connectionConfig || {},
-        tables,
-        inspectionOutput: inspection,
-        seed: 42,
-        sampleSize: 8,
-      }) as Record<string, unknown>;
-    } catch (error) {
-      console.warn("DataProfile tool invocation failed, using fallback", error);
-    }
+    const tableNames = allTables.map((t: any) => t.name || t.tableName);
 
     const fallback = {
       status: "OK",
-      profilingResults: {
-        sampling: { method: "Hybrid", sampleSize: 8, seed: 42 },
-        tables: tables.map((tableName: any) => ({ tableName, contentProfile: {}, completenessProfile: {}, statisticalProfile: {}, recommendations: [] })),
-      },
-      selectedTables: tables,
-      profile: {
-        sampleSize: 8,
-        quality: tables.length > 0 ? "ready" : "needs-review",
-      },
+      tables: tableNames.map((tableName: string) => ({
+        tableName,
+        contentProfile: { columns: [] },
+        completenessProfile: { columns: [] },
+        statisticalProfile: { numericColumns: [], dateColumns: [] },
+      })),
+      tableOrder: tableNames,
+      warnings: ["Profiling agent fallback used"],
     };
+    console.info(`[agent:config]: ${model}`)
+    if (!model) {
+      return fallback;
+    }
 
-    const prompt = await this.getPromptFromFile(
+    const systemPrompt = await this.getPromptFromFile(
       "dataprofile.md",
-      [
-        "You are an AI data profiler. Use the profiling tool output to summarize data health and sample quality.",
-        "Return valid JSON only using this shape: {\"status\": \"OK\", \"profilingResults\": {\"sampling\": {}, \"tables\": []}, \"selectedTables\": []}",
-      ].join("\n")
+      "You are an AI data profiler. Use the provided tools to sample and profile data. Return valid JSON only."
     );
 
-    const summary = await this.invokeOpenAI("profileData", [
-      prompt,
-      `Profiling tool output: ${JSON.stringify(profilePayload ?? fallback, null, 2)}`,
-      `Inspection context: ${JSON.stringify({ connector, inspection }, null, 2)}`,
-    ].join("\n"), fallback);
+    // Build a compact inspection summary for the agent
+    const inspectionSummary = allTables.map((t: any) => ({
+      tableName: t.name || t.tableName,
+      columns: Array.isArray(t.columns) ? t.columns.map((c: any) => ({ name: c.name, dataType: c.dataType, nullable: c.nullable })) : [],
+      relationships: {
+        explicit: Array.isArray(t.relations) ? t.relations : [],
+        inferred: Array.isArray(t.relationships?.inferred) ? t.relationships.inferred : [],
+      },
+      businessDomain: t.businessDomain || t.domain || "unknown",
+    }));
 
-    return {
-      ...(summary as Record<string, unknown>),
-      rawProfilePayload: profilePayload ?? fallback,
+    const connectionConfig = connector.connectionConfig || {};
+    const safeConfig = {
+      ...connectionConfig,
+      password: connectionConfig.password ? "***" : undefined,
     };
+
+    const userMessage = [
+      `Connector: ${JSON.stringify({ id: connector.id, type: connector.type, name: connector.name, connectionConfig: safeConfig }, null, 2)}`,
+      `Inspector output (${allTables.length} tables): ${JSON.stringify(inspectionSummary, null, 2)}`,
+      `Use connectorId "${connector.id}" when calling fetchSampleData.`,
+      "Follow the 3-phase profiling process described in your system prompt.",
+      "Return the final profiling result as valid JSON.",
+    ].join("\n\n");
+
+    try {
+      const result = await this.invokeAgentJson(
+        "profileData",
+        model,
+        userMessage,
+        fallback,
+        {
+          systemPrompt,
+          tools: profilingTools,
+          traceLabel: "agent:profileData",
+        }
+      );
+      return result;
+    } catch (error) {
+      console.warn("DataProfile agent execution failed, using fallback", error);
+      return fallback;
+    }
   }
 
   private async preprocess(connector: any, dataProfile: Record<string, unknown>) {
-    const preprocessTool = createPreprocessTool();
-    let preprocessPayload: Record<string, unknown> | undefined;
-    const profileInput = (dataProfile as any)?.rawProfilePayload ?? dataProfile ?? {};
+    const model = this.createAzureOpenAIModel()
 
-    try {
-      preprocessPayload = await preprocessTool.invoke({
-        connectorType: connector.type,
-        dataProfile: profileInput,
-      }) as Record<string, unknown>;
-    } catch (error) {
-      console.warn("Preprocess tool invocation failed, using fallback", error);
-    }
+    // Build tools for the preprocessing agent
+    const analyzeProfilingTool = createAnalyzeProfilingTool();
+    const missingValueTool = createMissingValueTool();
+    const categoricalTool = createCategoricalTool();
+    const outlierTool = createOutlierTool();
+    const normalizationTool = createNormalizationTool();
+    const statisticsTool = createStatisticsTool();
+    const applyCleaningTool = createApplyDataCleaningTool(this.connectionTester, this.connectorService);
+    const duplicateDetectionTool = createDuplicateDetectionTool(this.connectionTester, this.connectorService);
+
+    const preprocessingTools = [
+      analyzeProfilingTool,
+      missingValueTool,
+      categoricalTool,
+      outlierTool,
+      normalizationTool,
+      statisticsTool,
+      applyCleaningTool,
+      duplicateDetectionTool,
+    ];
+
+    // Extract table count from profile
+    const profileTables = Array.isArray((dataProfile as any)?.tables)
+      ? (dataProfile as any).tables
+      : Array.isArray((dataProfile as any)?.sources)
+        ? (dataProfile as any).sources
+        : [];
+    const tableCount = profileTables.length;
 
     const fallback = {
-      normalized: true,
-      tableCount: Array.isArray((profileInput as any)?.selectedTables) ? (profileInput as any).selectedTables.length : 0,
+      status: "OK",
+      tableCount,
       preprocessingPlan: {
         connectorType: connector.type,
-        actions: [{ issue: "No remediation needed from current profile", method: "noop", priority: "LOW", confidence: "LOW" }],
+        tables: [],
+      },
+      summary: {
+        totalActions: 0,
+        applied: 0,
+        skipped: 0,
+        failed: 0,
       },
     };
 
-    const prompt = await this.getPromptFromFile(
+    if (!model) {
+      return fallback;
+    }
+
+    const systemPrompt = await this.getPromptFromFile(
       "preprocess.md",
-      [
-        "You are an AI preprocessing assistant. Use the preprocessing tool output and data profile to decide preprocessing steps.",
-        "Return valid JSON only using this shape: {\"normalized\": true, \"tableCount\": 0, \"preprocessingPlan\": {\"connectorType\": \"string\", \"actions\": []}}",
-      ].join("\n")
+      "You are an AI preprocessing assistant. Use the provided tools to analyze profiling results and apply data cleaning. Return valid JSON only."
     );
 
-    return this.invokeOpenAI("preprocess", [
-      prompt,
-      `Preprocess tool output: ${JSON.stringify(preprocessPayload ?? fallback, null, 2)}`,
-      `Data profile context: ${JSON.stringify({ connector, dataProfile: profileInput }, null, 2)}`,
-    ].join("\n"), fallback);
+    const connectionConfig = connector.connectionConfig || {};
+    const safeConfig = {
+      ...connectionConfig,
+      password: connectionConfig.password ? "***" : undefined,
+    };
+
+    const userMessage = [
+      `Connector: ${JSON.stringify({ id: connector.id, type: connector.type, name: connector.name, connectionConfig: safeConfig }, null, 2)}`,
+      `Data Profile output: ${JSON.stringify(dataProfile, null, 2)}`,
+      `Use connectorId "${connector.id}" when calling applyDataCleaning or detectDuplicates.`,
+      "Follow the 3-phase preprocessing process described in your system prompt.",
+      "Return the final preprocessing result as valid JSON.",
+    ].join("\n\n");
+
+    try {
+      const result = await this.invokeAgentJson(
+        "preprocess",
+        model,
+        userMessage,
+        fallback,
+        {
+          systemPrompt,
+          tools: preprocessingTools,
+          traceLabel: "agent:preprocess",
+        }
+      );
+      return result;
+    } catch (error) {
+      console.warn("Preprocess agent execution failed, using fallback", error);
+      return fallback;
+    }
   }
 
   private createWorkflow() {

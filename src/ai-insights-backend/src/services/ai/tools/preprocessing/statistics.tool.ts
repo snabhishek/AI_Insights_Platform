@@ -82,7 +82,7 @@ export const createStatisticsTool = () =>
       name: "computeStatistics",
       description: "Compute deterministic aggregate statistics such as mean, median, mode, variance, and percentile values for a column.",
       schema: z.object({
-        values: z.array(z.union([z.number(), z.string(), z.null(), z.undefined()])).describe("Values to summarize"),
+        values: z.array(z.any()).describe("Values to summarize. Accepts numeric, string, or null-like values."),
         columnName: z.string().optional().describe("Column name for traceability"),
       }),
     }
