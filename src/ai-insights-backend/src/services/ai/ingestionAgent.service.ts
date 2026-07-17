@@ -25,6 +25,7 @@ import { createOutlierTool } from "./tools/preprocessing/outlier.tool";
 import { createNormalizationTool } from "./tools/preprocessing/normalization.tool";
 import { createStatisticsTool } from "./tools/preprocessing/statistics.tool";
 import { IFileService } from "../file.service.interface";
+import { getTopicsFromParquetSchema, writeResolvedSchemaParquet } from "./tools/parquetHelper";
 
 const INSPECTION_INITIAL_BATCH_SIZE = 10;
 const INSPECTION_FOLLOW_UP_BATCH_SIZE = 5;
@@ -819,20 +820,43 @@ export class IngestionAgentService implements IIngestionAgentService {
 
   private async resolveSchema(connector: any, inspection: Record<string, unknown>, userPrompt?: string) {
     const tables = Array.isArray((inspection as any).tables) ? (inspection as any).tables : [];
-    const fallback = {
+    const fallback: Record<string, any> = {
       resolvedTables: tables.map((table: any) => table.name || table.id || "table"),
       strategy: tables.length > 0 ? "inspect-and-map" : "fallback",
+      mappings: [],
+      unmappedDatasetFields: []
     };
 
+    const staticSchemaPath = path.resolve(__dirname, "../../packages/static_schema_updated.parquet");
+    const targetParquetTopics = await getTopicsFromParquetSchema(staticSchemaPath);
+
     const prompt = [
-      "You are an AI schema resolver. Convert the discovered tables into a compact ingestion plan and return valid JSON only.",
-      "Use this shape: {\"resolvedTables\": [\"string\"], \"strategy\": \"string\"}",
+      "You are an AI schema resolver preparing data for a dynamic Parquet schema generator.",
+      "Your task is to map the fields from the user-given dataset (found in the Inspection context) to the target Parquet topics.",
+      "If the dataset contains fields that do not fit the existing topics, you must create new, appropriate category names and use them as target topics.",
+      "The current static Parquet topics are:",
+      JSON.stringify(targetParquetTopics, null, 2),
+      "",
+      "The downstream system will use your mappings to generate a Snappy-compressed Parquet file where the topics act as columns, and the dataset fields are grouped into comma-separated strings inside a single row.",
+      "Convert the discovered tables and fields into a compact ingestion plan mapping.",
+      "Return valid JSON only using this exact shape:",
+      "{\n  \"resolvedTables\": [\"string\"],\n  \"strategy\": \"string\",\n  \"mappings\": [{\"datasetField\": \"string\", \"targetTopic\": \"string\"}],\n  \"unmappedDatasetFields\": [\"string\"]\n}",
       `Inspection context: ${JSON.stringify({ connector, inspection }, null, 2)}`,
       `User request: ${typeof userPrompt === "string" && userPrompt.trim().length > 0 ? userPrompt : "No additional request provided."}`,
     ].join("\n");
 
-    //return this.invokeOpenAI("resolveSchema", prompt, fallback);
-    return fallback
+    const result = await this.invokeOpenAI("resolveSchema", prompt, fallback);
+
+    if (result && Array.isArray(result.mappings) && result.mappings.length > 0) {
+      const outputParquetPath = path.resolve(__dirname, "../../packages/resolved_schema.parquet");
+      await writeResolvedSchemaParquet(
+        outputParquetPath,
+        result.mappings as Array<{ datasetField: string; targetTopic: string }>,
+        targetParquetTopics
+      );
+    }
+
+    return result;
   }
 
   private async profileData(connector: any, inspection: Record<string, unknown>) {

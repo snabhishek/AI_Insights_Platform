@@ -1,0 +1,82 @@
+import * as parquet from '@dsnp/parquetjs';
+import * as path from 'path';
+import { promises as fs } from 'fs';
+
+/**
+ * Extracts topic names from the columns (schema fields) of a Parquet file.
+ * @param filePath Path to the static parquet file
+ * @returns Array of topic names
+ */
+export async function getTopicsFromParquetSchema(filePath: string): Promise<string[]> {
+  try {
+    const reader = await parquet.ParquetReader.openFile(filePath);
+    const schema = reader.schema;
+    const topics = Object.keys(schema.fields);
+    await reader.close();
+    return topics;
+  } catch (error) {
+    console.error(`Failed to read topics from parquet file ${filePath}:`, error);
+    // Fallback topics if file is missing or unreadable
+    return [
+      "Identity Fields", "Temporal Fields", "Target / Prediction Fields", "Forecast Fields",
+      "Operational Fields", "Measurement Fields", "External Factors", "Financial Fields",
+      "Location Fields", "Categorical Fields", "Event Fields", "Risk Fields",
+      "Quality Fields", "Maintenance Fields", "Resource Fields", "Customer Fields",
+      "Inventory Fields", "Feature Engineering Fields", "Label Fields", "Metadata Fields"
+    ];
+  }
+}
+
+/**
+ * Writes the resolved dataset-to-topic mappings to a new Parquet file.
+ * @param filePath Path for the output resolved parquet file
+ * @param mappings Array of mappings containing datasetField and targetTopic
+ * @param staticTopics Array of static topics to ensure they exist as columns
+ */
+export async function writeResolvedSchemaParquet(
+  filePath: string,
+  mappings: Array<{ datasetField: string; targetTopic: string }>,
+  staticTopics: string[] = []
+): Promise<void> {
+  try {
+    const dir = path.dirname(filePath);
+    await fs.mkdir(dir, { recursive: true });
+
+    // 1. Group dataset fields by topic
+    const groupedMappings: Record<string, string[]> = {};
+
+    // Initialize static topics to ensure they are always present as columns
+    for (const topic of staticTopics) {
+      groupedMappings[topic] = [];
+    }
+
+    // Add mapped fields (including any new topics recommended by the LLM)
+    for (const mapping of mappings) {
+      const topic = mapping.targetTopic;
+      if (!groupedMappings[topic]) {
+        groupedMappings[topic] = [];
+      }
+      groupedMappings[topic].push(mapping.datasetField);
+    }
+
+    // 2. Build dynamic Parquet schema with SNAPPY compression
+    const schemaFields: Record<string, any> = {};
+    const rowData: Record<string, string> = {};
+
+    for (const [topic, fields] of Object.entries(groupedMappings)) {
+      schemaFields[topic] = { type: 'UTF8', compression: 'SNAPPY', optional: true };
+      // Join fields with commas, or leave null if empty
+      rowData[topic] = fields.length > 0 ? fields.join(',') : '';
+    }
+
+    const schema = new parquet.ParquetSchema(schemaFields);
+
+    // 3. Write a single row with the grouped, comma-separated data
+    const writer = await parquet.ParquetWriter.openFile(schema, filePath);
+    await writer.appendRow(rowData);
+    await writer.close();
+  } catch (error) {
+    console.error(`Failed to write resolved schema to parquet file ${filePath}:`, error);
+  }
+}
+
