@@ -1,29 +1,25 @@
 import * as parquet from '@dsnp/parquetjs';
+import * as fs from 'fs/promises';
 import * as path from 'path';
-import { promises as fs } from 'fs';
 
 /**
- * Extracts topic names from the columns (schema fields) of a Parquet file.
+ * Extracts the top-level column names (topics) from a Parquet file schema.
  * @param filePath Path to the static parquet file
- * @returns Array of topic names
+ * @returns Array of column names (topics)
  */
 export async function getTopicsFromParquetSchema(filePath: string): Promise<string[]> {
   try {
     const reader = await parquet.ParquetReader.openFile(filePath);
-    const schema = reader.schema;
-    const topics = Object.keys(schema.fields);
+    const schema = reader.getSchema();
+    const fields = schema.fields;
+    
+    const topics = Object.keys(fields);
     await reader.close();
+    
     return topics;
   } catch (error) {
     console.error(`Failed to read topics from parquet file ${filePath}:`, error);
-    // Fallback topics if file is missing or unreadable
-    return [
-      "Identity Fields", "Temporal Fields", "Target / Prediction Fields", "Forecast Fields",
-      "Operational Fields", "Measurement Fields", "External Factors", "Financial Fields",
-      "Location Fields", "Categorical Fields", "Event Fields", "Risk Fields",
-      "Quality Fields", "Maintenance Fields", "Resource Fields", "Customer Fields",
-      "Inventory Fields", "Feature Engineering Fields", "Label Fields", "Metadata Fields"
-    ];
+    return [];
   }
 }
 
@@ -44,7 +40,7 @@ export async function writeResolvedSchemaParquet(
 
     // 1. Group dataset fields by topic
     const groupedMappings: Record<string, string[]> = {};
-
+    
     // Initialize static topics to ensure they are always present as columns
     for (const topic of staticTopics) {
       groupedMappings[topic] = [];
@@ -79,4 +75,3 @@ export async function writeResolvedSchemaParquet(
     console.error(`Failed to write resolved schema to parquet file ${filePath}:`, error);
   }
 }
-

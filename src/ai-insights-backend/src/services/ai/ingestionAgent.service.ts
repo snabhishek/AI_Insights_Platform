@@ -25,6 +25,7 @@ import { createOutlierTool } from "./tools/preprocessing/outlier.tool";
 import { createNormalizationTool } from "./tools/preprocessing/normalization.tool";
 import { createStatisticsTool } from "./tools/preprocessing/statistics.tool";
 import { IFileService } from "../file.service.interface";
+import { buildResolveSchemaPrompt } from "./prompts/resolveSchema.prompt";
 import { getTopicsFromParquetSchema, writeResolvedSchemaParquet } from "./tools/parquetHelper";
 
 const INSPECTION_INITIAL_BATCH_SIZE = 10;
@@ -848,23 +849,10 @@ export class IngestionAgentService implements IIngestionAgentService {
       unmappedDatasetFields: []
     };
 
-    const staticSchemaPath = path.resolve(__dirname, "../../../../packages/static_schema_updated.parquet");
+    const staticSchemaPath = path.resolve(__dirname, "../../packages/static_schema_updated.parquet");
     const targetParquetTopics = await getTopicsFromParquetSchema(staticSchemaPath);
 
-    const prompt = [
-      "You are an AI schema resolver preparing data for a dynamic Parquet schema generator.",
-      "Your task is to map the fields from the user-given dataset (found in the Inspection context) to the target Parquet topics.",
-      "If the dataset contains fields that do not fit the existing topics, you must create new, appropriate category names and use them as target topics.",
-      "The current static Parquet topics are:",
-      JSON.stringify(targetParquetTopics, null, 2),
-      "",
-      "The downstream system will use your mappings to generate a Snappy-compressed Parquet file where the topics act as columns, and the dataset fields are grouped into comma-separated strings inside a single row.",
-      "Convert the discovered tables and fields into a compact ingestion plan mapping.",
-      "Return valid JSON only using this exact shape:",
-      "{\n  \"resolvedTables\": [\"string\"],\n  \"strategy\": \"string\",\n  \"mappings\": [{\"datasetField\": \"string\", \"targetTopic\": \"string\"}],\n  \"unmappedDatasetFields\": [\"string\"]\n}",
-      `Inspection context: ${JSON.stringify({ connector, inspection }, null, 2)}`,
-      `User request: ${typeof userPrompt === "string" && userPrompt.trim().length > 0 ? userPrompt : "No additional request provided."}`,
-    ].join("\n");
+    const prompt = buildResolveSchemaPrompt(connector, inspection, targetParquetTopics, userPrompt);
 
     const result = await this.invokeOpenAI("resolveSchema", prompt, fallback);
 
