@@ -15,6 +15,8 @@ import { createInspectTool } from "./tools/inspect.tool";
 import { createDataProfileTool } from "./tools/profiling/dataProfile.tool";
 import { createPreprocessTool } from "./tools/preprocessing/preprocess.tool";
 import { IFileService } from "../file.service.interface";
+import { buildResolveSchemaPrompt } from "./prompts/resolveSchema.prompt";
+import { getTopicsFromParquetSchema, writeResolvedSchemaParquet } from "./tools/parquetHelper";
 
 const INSPECTION_INITIAL_BATCH_SIZE = 10;
 const INSPECTION_FOLLOW_UP_BATCH_SIZE = 5;
@@ -808,19 +810,30 @@ export class IngestionAgentService implements IIngestionAgentService {
 
   private async resolveSchema(connector: any, inspection: Record<string, unknown>, userPrompt?: string) {
     const tables = Array.isArray((inspection as any).tables) ? (inspection as any).tables : [];
-    const fallback = {
+    const fallback: Record<string, any> = {
       resolvedTables: tables.map((table: any) => table.name || table.id || "table"),
       strategy: tables.length > 0 ? "inspect-and-map" : "fallback",
+      mappings: [],
+      unmappedDatasetFields: []
     };
 
-    const prompt = [
-      "You are an AI schema resolver. Convert the discovered tables into a compact ingestion plan and return valid JSON only.",
-      "Use this shape: {\"resolvedTables\": [\"string\"], \"strategy\": \"string\"}",
-      `Inspection context: ${JSON.stringify({ connector, inspection }, null, 2)}`,
-      `User request: ${typeof userPrompt === "string" && userPrompt.trim().length > 0 ? userPrompt : "No additional request provided."}`,
-    ].join("\n");
+    const staticSchemaPath = path.resolve(__dirname, "../../packages/static_schema_updated.parquet");
+    const targetParquetTopics = await getTopicsFromParquetSchema(staticSchemaPath);
 
-    return this.invokeOpenAI("resolveSchema", prompt, fallback);
+    const prompt = buildResolveSchemaPrompt(connector, inspection, targetParquetTopics, userPrompt);
+
+    const result = await this.invokeOpenAI("resolveSchema", prompt, fallback);
+
+    if (result && Array.isArray(result.mappings) && result.mappings.length > 0) {
+      const outputParquetPath = path.resolve(__dirname, "../../packages/resolved_schema.parquet");
+      await writeResolvedSchemaParquet(
+        outputParquetPath,
+        result.mappings as Array<{ datasetField: string; targetTopic: string }>,
+        targetParquetTopics
+      );
+    }
+
+    return result;
   }
 
   private async profileData(connector: any, inspection: Record<string, unknown>) {
