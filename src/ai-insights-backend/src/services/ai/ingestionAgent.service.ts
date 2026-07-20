@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
 import path from "path";
-import { Annotation, StateGraph } from "@langchain/langgraph";
+import { Annotation, StateGraph, MemorySaver } from "@langchain/langgraph";
 import { tool } from "@langchain/core/tools";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { AzureChatOpenAI, ChatOpenAI } from "@langchain/openai";
@@ -35,6 +35,12 @@ type BatchedTableState = {
   status: string;
   node: string;
   summary: string;
+};
+
+type WorkflowSessionMeta = {
+  threadId: string;
+  connectorId: string[];
+  userPrompt: string;
 };
 
 const AgentState = Annotation.Root({
@@ -72,6 +78,19 @@ const AgentState = Annotation.Root({
     reducer: (left, right) => [...left, ...right],
     default: () => [],
   }),
+  stageOutputs: Annotation<Record<string, unknown>>({
+    reducer: (left, right) => ({ ...left, ...right }),
+    default: () => ({}),
+  }),
+  stageStatuses: Annotation<Record<string, string>>({
+    reducer: (left, right) => ({ ...left, ...right }),
+    default: () => ({
+      inspect: "Pending",
+      profileData: "Pending",
+      preprocess: "Pending",
+      resolveSchema: "Pending",
+    }),
+  }),
 });
 
 type SupportedChatModel = ChatOpenAI | AzureChatOpenAI | ChatGoogleGenerativeAI;
@@ -81,6 +100,8 @@ type InspectionPayload = Record<string, unknown> & {
 
 export class IngestionAgentService implements IIngestionAgentService {
   private activeTraceSession?: { filePath: string; startedAt: string };
+  private checkpointer = new MemorySaver();
+  private sessionMeta = new Map<string, WorkflowSessionMeta>();
 
   constructor(
     private connectorService: ConnectorService,
@@ -827,7 +848,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       unmappedDatasetFields: []
     };
 
-    const staticSchemaPath = path.resolve(__dirname, "../../packages/static_schema_updated.parquet");
+    const staticSchemaPath = path.resolve(__dirname, "../../../../packages/static_schema_updated.parquet");
     const targetParquetTopics = await getTopicsFromParquetSchema(staticSchemaPath);
 
     const prompt = [
@@ -1047,6 +1068,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             status: "failed",
             summary: "Connector not found",
             steps: [{ name: "Inspector", status: "failed", summary: "Connector not found" }],
+            stageStatuses: { inspect: "Failed" },
           };
         }
         const inspections = await Promise.all(validConnectors.map(async (connector) => await this.inspect(connector)));
@@ -1057,6 +1079,8 @@ export class IngestionAgentService implements IIngestionAgentService {
           status: "running",
           summary: "Inspection completed",
           steps: [{ name: "Inspector", status: "completed", summary: "Source inspection finished" }],
+          stageOutputs: { inspect: { sources: inspections } },
+          stageStatuses: { inspect: "Completed" },
         };
       })
       .addNode("profileData", async (state: typeof AgentState.State) => {
@@ -1089,6 +1113,8 @@ export class IngestionAgentService implements IIngestionAgentService {
           status: "running",
           summary: "Data profiling completed",
           steps: [{ name: "Data Profiler", status: "completed", summary: "Profiling completed" }],
+          stageOutputs: { profileData: { sources: profileSources } },
+          stageStatuses: { profileData: "Completed" },
         };
       })
       .addNode("preprocess", async (state: typeof AgentState.State) => {
@@ -1121,6 +1147,8 @@ export class IngestionAgentService implements IIngestionAgentService {
           status: "running",
           summary: "Preprocessing completed",
           steps: [{ name: "Data Preprocessor", status: "completed", summary: "Data staged for downstream use" }],
+          stageOutputs: { preprocess: { sources: preprocessSources } },
+          stageStatuses: { preprocess: "Completed" },
         };
       })
       .addNode("resolveSchema", async (state: typeof AgentState.State) => {
@@ -1153,6 +1181,8 @@ export class IngestionAgentService implements IIngestionAgentService {
           status: "completed",
           summary: "Schema resolution completed",
           steps: [{ name: "Schema Resolver", status: "completed", summary: "Schema mapping prepared" }],
+          stageOutputs: { resolveSchema: { sources: resolvedSources } },
+          stageStatuses: { resolveSchema: "Completed" },
         };
       })
       .addEdge("__start__", "inspect")
@@ -1161,11 +1191,93 @@ export class IngestionAgentService implements IIngestionAgentService {
       .addEdge("preprocess", "resolveSchema")
       .addEdge("resolveSchema", "__end__");
 
-    return workflow.compile();
+    // interruptBefore pauses BEFORE these nodes, creating 3 approval gates:
+    //   Stage 1 (Data Ingestion):  start → inspect → pause before profileData
+    //   Stage 2 (Data Profiling):  resume → profileData → preprocess → pause before resolveSchema
+    //   Stage 3 (Schema Resolver): resume → resolveSchema → end
+    return workflow.compile({
+      checkpointer: this.checkpointer,
+      interruptBefore: ["profileData", "resolveSchema"],
+    });
   }
 
-  async run(connectorId: string[], userPrompt?: string): Promise<IngestionAgentRunResult> {
-    const workflow = this.createWorkflow();
+  private determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
+    // If graph is interrupted before a node, the last completed node is the current stage
+    if (nextNodes.includes("profileData")) return "inspect";
+    if (nextNodes.includes("resolveSchema")) return "preprocess";
+    // Graph completed or not yet started — check what's completed
+    if (stageStatuses.resolveSchema === "Completed") return "resolveSchema";
+    if (stageStatuses.preprocess === "Completed") return "preprocess";
+    if (stageStatuses.profileData === "Completed") return "profileData";
+    if (stageStatuses.inspect === "Completed") return "inspect";
+    return "inspect";
+  }
+
+  private buildMessage(nextNodes: string[], status: string): string {
+    if (status === "completed" || status === "failed") {
+      return status === "completed" ? "Workflow completed successfully." : "Workflow failed.";
+    }
+    if (nextNodes.includes("profileData")) {
+      return "Inspect stage completed. Approve to continue to data profiling.";
+    }
+    if (nextNodes.includes("resolveSchema")) {
+      return "Data profiling and preprocessing completed. Approve to continue to schema resolution.";
+    }
+    return "Workflow is running.";
+  }
+
+  private buildResultFromGraphState(
+    graphState: any,
+    threadId: string,
+    connectorId: string[]
+  ): IngestionAgentRunResult {
+    const values = graphState?.values ?? {};
+    const nextNodes: string[] = Array.isArray(graphState?.next) ? graphState.next : [];
+    const defaultStatuses = { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" };
+    const stageStatuses = (values.stageStatuses && typeof values.stageStatuses === "object")
+      ? values.stageStatuses as Record<string, string>
+      : defaultStatuses;
+    const status = (typeof values.status === "string" && values.status) ? values.status : "running";
+    const isCompleted = status === "completed" || status === "failed";
+    const requiresApproval = !isCompleted && nextNodes.length > 0;
+    const currentStage = this.determineCurrentStage(nextNodes, stageStatuses);
+
+    return {
+      connectorId,
+      status,
+      summary: (typeof values.summary === "string" && values.summary) ? values.summary : "Workflow updated",
+      steps: Array.isArray(values.steps) ? values.steps : [],
+      inspection: (values.inspection && typeof values.inspection === "object") ? values.inspection : {},
+      schemaResolution: (values.schemaResolution && typeof values.schemaResolution === "object") ? values.schemaResolution : {},
+      dataProfile: (values.dataProfile && typeof values.dataProfile === "object") ? values.dataProfile : {},
+      preprocessing: (values.preprocessing && typeof values.preprocessing === "object") ? values.preprocessing : {},
+      batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
+      sessionId: threadId,
+      requiresApproval,
+      nextStep: nextNodes[0],
+      currentNode: currentStage,
+      currentStage,
+      stageOutputs: (values.stageOutputs && typeof values.stageOutputs === "object") ? values.stageOutputs : {},
+      stageStatuses,
+      message: this.buildMessage(nextNodes, status),
+    };
+  }
+
+  private mapRetryStepToInterruptNode(step?: string): string | undefined {
+    // Map frontend step names to the graph interrupt node to resume from
+    const mapping: Record<string, string> = {
+      inspect: "inspect",
+      profileData: "profileData",
+      preprocess: "profileData",   // retry "Data Profiling" re-runs from profileData
+      resolveSchema: "resolveSchema",
+      "Data Ingestion": "inspect",
+      "Data Profiling": "profileData",
+      "Schema Resolver": "resolveSchema",
+    };
+    return step ? mapping[step] : undefined;
+  }
+
+  async run(connectorId: string[], userPrompt?: string, options?: { sessionId?: string; action?: "approve" | "retry"; step?: string }): Promise<IngestionAgentRunResult> {
     const traceSession = await this.createTraceSession();
     const runStartedAt = new Date().toISOString();
 
@@ -1173,19 +1285,86 @@ export class IngestionAgentService implements IIngestionAgentService {
       await this.appendTraceEntry("workflow:start", "input", {
         connectorId,
         startedAt: runStartedAt,
-        status: "queued",
-        summary: "Ingestion workflow started",
+        action: options?.action,
+        step: options?.step,
+        sessionId: options?.sessionId,
       });
     }
 
     try {
-      const result = await workflow.invoke({
-        connectorId,
-        userPrompt: userPrompt ?? "",
-        status: "queued",
-        summary: "Ingestion workflow started",
-        steps: [],
-      });
+      const workflow = this.createWorkflow();
+
+      // Resolve or create the thread ID
+      let threadId: string = options?.sessionId ?? "";
+      let meta = threadId ? this.sessionMeta.get(threadId) : undefined;
+
+      if (!meta) {
+        threadId = `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        meta = { threadId, connectorId, userPrompt: userPrompt ?? "" };
+        this.sessionMeta.set(threadId, meta);
+      }
+
+      const config = { configurable: { thread_id: threadId } };
+
+      if (options?.action === "retry" && options.step) {
+        const targetNode = this.mapRetryStepToInterruptNode(options.step);
+        console.info(`[Workflow] Retry requested for step "${options.step}" → target node "${targetNode}", thread ${threadId}`);
+
+        if (targetNode === "inspect") {
+          // Retry inspect = start fresh with a new thread
+          threadId = `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+          meta = { threadId, connectorId, userPrompt: userPrompt ?? meta.userPrompt ?? "" };
+          this.sessionMeta.set(threadId, meta);
+          const freshConfig = { configurable: { thread_id: threadId } };
+          await workflow.invoke(
+            { connectorId, userPrompt: meta.userPrompt, status: "queued", summary: "Retrying from inspect" },
+            freshConfig
+          );
+          const graphState = await workflow.getState(freshConfig);
+          return this.buildResultFromGraphState(graphState, threadId, connectorId);
+        }
+
+        // For profileData or resolveSchema retry: find the checkpoint where that node is next
+        let retryCheckpointId: string | undefined;
+        try {
+          for await (const snapshot of workflow.getStateHistory(config)) {
+            const snapshotNext = Array.isArray(snapshot.next) ? snapshot.next : [];
+            if (snapshotNext.includes(targetNode!)) {
+              retryCheckpointId = (snapshot.config as any)?.configurable?.checkpoint_id;
+              break;
+            }
+          }
+        } catch (historyError: any) {
+          console.warn(`[Workflow] Failed to read state history for retry:`, historyError?.message);
+        }
+
+        if (retryCheckpointId) {
+          console.info(`[Workflow] Retrying from checkpoint ${retryCheckpointId}`);
+          const retryConfig = { configurable: { thread_id: threadId, checkpoint_id: retryCheckpointId } };
+          await workflow.invoke(null, retryConfig);
+          const graphState = await workflow.getState(config);
+          return this.buildResultFromGraphState(graphState, threadId, connectorId);
+        }
+
+        // Fallback: resume from current position
+        console.warn(`[Workflow] No checkpoint found for retry target "${targetNode}", resuming from current position`);
+        await workflow.invoke(null, config);
+      } else if (options?.action === "approve") {
+        // Approve: resume from the current interrupt
+        console.info(`[Workflow] Approve — resuming thread ${threadId}`);
+        await workflow.invoke(null, config);
+      } else {
+        // New workflow: first invocation
+        console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);
+        await workflow.invoke(
+          { connectorId, userPrompt: userPrompt ?? "", status: "queued", summary: "Ingestion workflow started" },
+          config
+        );
+      }
+
+      const graphState = await workflow.getState(config);
+      console.info(`[Workflow] State after invoke — next: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}], status: ${graphState?.values?.status || "unknown"}`);
+      const result = this.buildResultFromGraphState(graphState, threadId, connectorId);
 
       if (traceSession) {
         await this.appendTraceEntry("workflow:end", "output", {
@@ -1194,20 +1373,20 @@ export class IngestionAgentService implements IIngestionAgentService {
           completedAt: new Date().toISOString(),
           status: result.status,
           summary: result.summary,
+          nextStep: result.nextStep,
         });
       }
 
-      return {
-        connectorId,
-        status: result.status as string,
-        summary: result.summary as string,
-        steps: result.steps as Array<{ name: string; status: string; summary: string }>,
-        inspection: (result.inspection ?? {}) as Record<string, unknown>,
-        schemaResolution: (result.schemaResolution ?? {}) as Record<string, unknown>,
-        dataProfile: (result.dataProfile ?? {}) as Record<string, unknown>,
-        preprocessing: (result.preprocessing ?? {}) as Record<string, unknown>,
-        batchedTables: (result.batchedTables ?? []) as Array<{ tableName: string; status: string; node: string; summary: string }>,
-      };
+      return result;
+    } catch (error: any) {
+      console.error(`[Workflow] Run failed:`, error?.message || error);
+      if (traceSession) {
+        await this.appendTraceEntry("workflow:error", "error", {
+          connectorId,
+          error: error?.message || String(error),
+        }).catch(() => {});
+      }
+      throw error;
     } finally {
       this.activeTraceSession = undefined;
     }

@@ -71,6 +71,13 @@ interface ProjectDetailPageProps {
   onViewHistory: () => void;
   onManageSources: () => void;
   onAddTag: () => void;
+  activeStage: string | null;
+  stageOutputs: Record<string, unknown>;
+  requiresApproval: boolean;
+  workflowMessage: string;
+  onSelectStage: (stepId: string) => void;
+  onApprove: () => void;
+  onRetry: (stepId: string) => void;
   showAlert: (opts: { title: string; message: string; type: AlertType; logs?: string }) => void;
 }
 
@@ -91,6 +98,13 @@ export default function ProjectDetailPage({
   onViewHistory,
   onManageSources,
   onAddTag,
+  activeStage,
+  stageOutputs,
+  requiresApproval,
+  workflowMessage,
+  onSelectStage,
+  onApprove,
+  onRetry,
   showAlert,
 }: ProjectDetailPageProps) {
   const projectSources = allDataSources.filter((ds) =>
@@ -257,8 +271,15 @@ export default function ProjectDetailPage({
           completionPercentage={completionPercentage}
           runStatus={runStatus}
           lastRunTime={lastRunTime}
+          activeStage={activeStage}
+          stageOutputs={stageOutputs}
+          requiresApproval={requiresApproval}
+          workflowMessage={workflowMessage}
           onRunWorkflow={onRunWorkflow}
           onViewHistory={onViewHistory}
+          onSelectStage={onSelectStage}
+          onApprove={onApprove}
+          onRetry={onRetry}
         />
       </div>
     </div>

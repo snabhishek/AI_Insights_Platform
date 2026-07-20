@@ -92,9 +92,11 @@ interface WorkflowCardProps {
   step: WorkflowStep;
   status: PipelineStatus;
   index: number;
+  isActive?: boolean;
+  onSelect?: (stepId: string) => void;
 }
 
-export default function WorkflowCard({ step, status, index }: WorkflowCardProps) {
+export default function WorkflowCard({ step, status, index, isActive = false, onSelect }: WorkflowCardProps) {
   const colors = COLOR_MAP[step.color];
 
   // Hover tooltip with modernized pill design
@@ -107,9 +109,11 @@ export default function WorkflowCard({ step, status, index }: WorkflowCardProps)
       </div>
 
       {/* Card body container - Opaque background with fixed width of 140px and original height of 230px */}
-      <div
+      <button
+        type="button"
+        onClick={() => onSelect?.(step.id)}
         style={{ width: 155, height: 230 }}
-        className={`relative rounded-[28px] border-2 bg-surface dark:bg-slate-900 p-4.5 flex flex-col items-center justify-between transition-all duration-300 hover:-translate-y-1 ${colors.border} ${colors.shadow}`}
+        className={`relative rounded-[28px] border-2 bg-surface dark:bg-slate-900 p-4.5 flex flex-col items-center justify-between transition-all duration-300 hover:-translate-y-1 cursor-pointer text-left ${colors.border} ${colors.shadow} ${isActive ? "ring-2 ring-primary/60 shadow-lg" : ""}`}
       >
         {/* Monospaced card index in background */}
         <div className={`absolute right-5 bottom-4 text-7xl font-black font-mono pointer-events-none select-none leading-none ${colors.glow}`}>
@@ -142,7 +146,7 @@ export default function WorkflowCard({ step, status, index }: WorkflowCardProps)
             {step.title}
           </span>
         </div>
-      </div>
+      </button>
     </div>
   );
 }

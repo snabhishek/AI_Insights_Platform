@@ -311,6 +311,49 @@ export class ConnectionTesterService implements IConnectionTesterService {
       return { success: true, type: "database", tables: tablesList };
     }
 
+    if (type === "sqlserver") {
+      const sql = require("mssql");
+      const pool = await sql.connect({
+        server: config.host,
+        port: config.port ? parseInt(config.port, 10) : 1433,
+        database: config.database,
+        user: config.username,
+        password: config.password || "",
+        options: { encrypt: true, trustServerCertificate: true },
+      });
+
+      try {
+        const schemaRes = await pool.request().query(`
+          SELECT TABLE_NAME as name, TABLE_TYPE as type
+          FROM INFORMATION_SCHEMA.TABLES
+          WHERE TABLE_CATALOG = DB_NAME()
+            AND TABLE_TYPE IN ('BASE TABLE', 'VIEW')
+          ORDER BY TABLE_NAME
+        `);
+
+        const tablesList = [];
+        for (const row of schemaRes.recordset) {
+          let rowCount = 0;
+          try {
+            const countRes = await pool.request().query(`SELECT COUNT(*) as count FROM [${row.name}]`);
+            rowCount = countRes.recordset[0]?.count ?? 0;
+          } catch (e) {
+            rowCount = 0;
+          }
+          tablesList.push({
+            id: row.name,
+            name: row.name,
+            type: row.type === "VIEW" ? "View" : "Table",
+            rows: rowCount,
+          });
+        }
+
+        return { success: true, type: "database", tables: tablesList };
+      } finally {
+        await pool.close();
+      }
+    }
+
     if (type === "excel") {
       const fileName = config.fileName;
       if (fileName && this.fileService.fileExists(fileName)) {

@@ -3,7 +3,7 @@ const path = require('path');
 
 async function test() {
   try {
-    const filePath = path.resolve(__dirname, '../../packages/static_schema_updated.parquet');
+    const filePath = path.resolve(__dirname, '../../../packages/static_schema_updated.parquet');
     console.log("Reading from:", filePath);
     let reader = await parquet.ParquetReader.openFile(filePath);
     let cursor = reader.getCursor();

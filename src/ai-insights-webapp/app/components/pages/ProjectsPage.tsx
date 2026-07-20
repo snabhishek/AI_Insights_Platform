@@ -17,6 +17,26 @@ import ProjectsListPage   from "../projects/ProjectsListPage";
 import ProjectDetailPage  from "../projects/ProjectDetailPage";
 import ProjectCreatePage  from "../projects/ProjectCreatePage";
 
+interface WorkflowResponse {
+  success: boolean;
+  data: {
+    sessionId?: string;
+    status: string;
+    summary: string;
+    message?: string;
+    requiresApproval?: boolean;
+    nextStep?: string;
+    currentNode?: string;
+    currentStage?: string;
+    stageOutputs?: Record<string, unknown>;
+    stageStatuses?: Record<string, string>;
+    inspection?: Record<string, unknown>;
+    schemaResolution?: Record<string, unknown>;
+    dataProfile?: Record<string, unknown>;
+    preprocessing?: Record<string, unknown>;
+  };
+}
+
 // ─── Data-source icon renderer (shared utility) ───────────────────────────────
 
 function renderDataSourceIcon(type: string): React.ReactNode {
@@ -69,60 +89,173 @@ export default function ProjectsPage() {
   const [pipelineStatuses, setPipelineStatuses] = useState<PipelineStatuses>(
     INITIAL_PIPELINE_STATUSES
   );
-  const [runStatus, setRunStatus]   = useState<RunStatus>("Idle");
-  const [lastRunTime, setLastRunTime] = useState("Jun 25, 2026 04:28 PM");
+  const [runStatus, setRunStatus] = useState<RunStatus>("Idle");
+  const [lastRunTime, setLastRunTime] = useState("Not run yet");
+  const [workflowSessionId, setWorkflowSessionId] = useState<string | null>(null);
+  const [activeStage, setActiveStage] = useState<string | null>(null);
+  const [stageOutputs, setStageOutputs] = useState<Record<string, unknown>>({});
+  const [workflowMessage, setWorkflowMessage] = useState<string>("Idle");
+  const [requiresApproval, setRequiresApproval] = useState(false);
 
   const resetPipeline = () => {
     setPipelineStatuses(INITIAL_PIPELINE_STATUSES);
     setRunStatus("Idle");
+    setWorkflowSessionId(null);
+    setActiveStage(null);
+    setStageOutputs({});
+    setWorkflowMessage("Idle");
+    setRequiresApproval(false);
   };
 
-  const completedCount    = Object.values(pipelineStatuses).filter((s) => s === "Completed").length;
-  const inProgressCount   = Object.values(pipelineStatuses).filter((s) => s === "In Progress").length;
-  const activeProgressIdx = completedCount + (inProgressCount > 0 ? 0.5 : 0);
-  const completionPct     = (activeProgressIdx / 7) * 100;
+  const completedCount = Object.values(pipelineStatuses).filter((s) => s === "Completed").length;
+  const inProgressCount = Object.values(pipelineStatuses).filter((s) => s === "In Progress").length;
+  const totalSteps = Object.keys(pipelineStatuses).length || 1;
+  const completionPct = ((completedCount + (inProgressCount > 0 ? 0.5 : 0)) / totalSteps) * 100;
+  const workflowConnectorIds = Array.isArray(selectedProject?.dataSources)
+    ? selectedProject.dataSources.filter((sourceId): sourceId is string => typeof sourceId === "string" && sourceId.trim().length > 0)
+    : [];
+
+  const mapStageToPipelineStatus = (stageStatuses?: Record<string, string>): PipelineStatuses => {
+    const next = { ...INITIAL_PIPELINE_STATUSES } as PipelineStatuses;
+    if (!stageStatuses) return next;
+
+    // Single-node stages
+    const mapSingle = (node: string, label: string) => {
+      const v = stageStatuses[node] || "Pending";
+      if (v === "Completed") next[label] = "Completed";
+      else if (v === "Retrying" || v === "In Progress") next[label] = "In Progress";
+      else if (v === "Failed") next[label] = "Pending";
+    };
+    mapSingle("inspect", "Data Ingestion");
+    mapSingle("resolveSchema", "Schema Resolver");
+
+    // Merged stage: Data Profiling = profileData + preprocess
+    const profileVal = stageStatuses.profileData || "Pending";
+    const preprocessVal = stageStatuses.preprocess || "Pending";
+    const isAnyRunning = [profileVal, preprocessVal].some((v) => v === "In Progress" || v === "Retrying");
+    const allCompleted = profileVal === "Completed" && preprocessVal === "Completed";
+    const anyCompleted = profileVal === "Completed" || preprocessVal === "Completed";
+
+    if (allCompleted) {
+      next["Data Profiling"] = "Completed";
+    } else if (isAnyRunning || anyCompleted) {
+      next["Data Profiling"] = "In Progress";
+    }
+    // else stays "Not Started" from INITIAL_PIPELINE_STATUSES
+
+    return next;
+  };
+
+  const updateWorkflowState = (payload: WorkflowResponse["data"]) => {
+    const nextStatuses = mapStageToPipelineStatus(payload.stageStatuses);
+    setPipelineStatuses(nextStatuses);
+
+    if (payload.status === "completed") {
+      setRunStatus("Success");
+    } else if (payload.status === "failed") {
+      setRunStatus("Idle");
+    } else if (payload.requiresApproval) {
+      setRunStatus("Paused");
+    } else {
+      setRunStatus("Running");
+    }
+
+    setWorkflowMessage(payload.message || payload.summary || "Workflow updated");
+    if (payload.stageOutputs) {
+      setStageOutputs(payload.stageOutputs);
+    }
+    if (payload.sessionId) {
+      setWorkflowSessionId(payload.sessionId);
+    }
+    if (payload.currentStage || payload.currentNode) {
+      setActiveStage(payload.currentStage || payload.currentNode || null);
+    }
+    setRequiresApproval(Boolean(payload.requiresApproval));
+    if (payload.status === "completed") {
+      setLastRunTime(new Date().toLocaleString("en-US", {
+        month: "short",
+        day: "2-digit",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: true,
+      }));
+    }
+  };
+
+  const runWorkflow = async (action?: "approve" | "retry", step?: string) => {
+    if ((runStatus === "Running" || runStatus === "Paused") && !action) return;
+    setRunStatus("Running");
+    setWorkflowMessage("Starting workflow...");
+
+    try {
+      const body: Record<string, unknown> = {
+        connectorId: workflowConnectorIds,
+        userPrompt: selectedProject?.useCase || "",
+      };
+      if (workflowSessionId) {
+        body.sessionId = workflowSessionId;
+      }
+      if (action) {
+        body.action = action;
+      }
+      if (step) {
+        const stepMap: Record<string, string> = {
+          "Data Ingestion": "inspect",
+          "Data Profiling": "profileData",
+          "Schema Resolver": "resolveSchema",
+        };
+        body.step = stepMap[step] || step;
+      }
+      const res = await fetch("http://127.0.0.1:4000/api/ai/ingestion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const json = (await res.json()) as WorkflowResponse;
+      if (!json.success) {
+        throw new Error("Workflow request failed");
+      }
+      updateWorkflowState(json.data);
+      if (json.data.status === "completed") {
+        showAlert({ title: "Run Success", message: json.data.summary || "The workflow completed successfully.", type: "success" });
+      }
+    } catch (error) {
+      console.error("Workflow execution failed", error);
+      setRunStatus("Idle");
+      showAlert({ title: "Workflow Error", message: "The workflow could not be started or resumed.", type: "error" });
+    }
+  };
 
   const runSimulation = () => {
-    if (runStatus === "Running") return;
-    setRunStatus("Running");
+    void runWorkflow();
+  };
 
-    const steps = [
-      "Data Ingestion",
-      "Data Profiling",
-      "Schema resolver",
-      "Feature Engineering",
-      "Model Training",
-      "Model Validation",
-      "Forecast",
-    ];
+  const handleApprove = () => {
+    void runWorkflow("approve");
+  };
 
-    const initial: PipelineStatuses = {};
-    steps.forEach((s, i) => { initial[s] = i === 0 ? "In Progress" : "Pending"; });
-    setPipelineStatuses(initial);
+  const handleRetry = (step?: string) => {
+    const stepMap: Record<string, string> = {
+      inspect: "inspect",
+      profileData: "profileData",
+      preprocess: "preprocess",
+      resolveSchema: "resolveSchema",
+      "Data Ingestion": "inspect",
+      "Data Profiling": "profileData",
+      "Schema Resolver": "resolveSchema",
+    };
+    const normalizedStep = typeof step === "string" ? stepMap[step] || step : undefined;
+    void runWorkflow("retry", normalizedStep);
+  };
 
-    let idx = 0;
-    const interval = setInterval(() => {
-      if (idx >= steps.length) {
-        clearInterval(interval);
-        setRunStatus("Success");
-        setLastRunTime(
-          new Date().toLocaleString("en-US", {
-            month: "short", day: "2-digit", year: "numeric",
-            hour: "2-digit", minute: "2-digit", hour12: true,
-          })
-        );
-        showAlert({ title: "Run Success", message: "The data insights pipeline executed successfully!", type: "success" });
-        return;
-      }
-      const current = steps[idx];
-      setPipelineStatuses((prev) => {
-        const next = { ...prev };
-        next[current] = "Completed";
-        if (idx + 1 < steps.length) next[steps[idx + 1]] = "In Progress";
-        return next;
-      });
-      idx++;
-    }, 1500);
+  const handleStageSelect = (stepId: string) => {
+    const stageMap: Record<string, string> = {
+      "Data Ingestion": "inspect",
+      "Data Profiling": "profileData",
+      "Schema Resolver": "resolveSchema",
+    };
+    setActiveStage(stageMap[stepId] || stepId);
   };
 
   // ── Navigation helpers ────────────────────────────────────────────────────
@@ -195,6 +328,13 @@ export default function ProjectsPage() {
         onAddTag={() =>
           showAlert({ title: "Add Tag", message: "Tag management is being worked separately in the backend.", type: "info" })
         }
+        activeStage={activeStage}
+        stageOutputs={stageOutputs}
+        requiresApproval={requiresApproval}
+        workflowMessage={workflowMessage}
+        onSelectStage={handleStageSelect}
+        onApprove={handleApprove}
+        onRetry={(stepId) => handleRetry(stepId)}
         showAlert={showAlert}
       />
     );
