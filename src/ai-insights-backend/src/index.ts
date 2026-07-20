@@ -13,7 +13,7 @@ import createConnectorRouter from "./routes/connectors";
 import createAIRouter from "./routes/ai";
 import { checkAndCreateDatabase, runMigrations, pool } from "./db";
 import * as schema from "./db/connectors";
-import { AgentController } from "./controllers/agent.controller";
+// import { AgentController } from "./controllers/agent.controller";
 import { IngestionAgentService } from "./services/ai/ingestionAgent.service";
 import { AIController } from "./controllers/ai.controller";
 
@@ -41,7 +41,7 @@ let connectionTester: ConnectionTesterService;
 let connectorRepository: PostgresConnectorRepository;
 let connectorService: ConnectorService;
 let connectorController: ConnectorController;
-let agentController: AgentController;
+// let agentController: AgentController;
 let ingestionAgentService: IngestionAgentService;
 let aiController: AIController;
 
@@ -55,7 +55,7 @@ async function bootstrap() {
   connectorRepository = new PostgresConnectorRepository(db);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
   connectorController = new ConnectorController(connectorService, connectionTester);
-  agentController = new AgentController(connectorService);
+  // agentController = new AgentController(connectorService);
   ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService);
   aiController = new AIController(ingestionAgentService);
 
@@ -64,8 +64,8 @@ async function bootstrap() {
   
   // Agent Router
   const agentRouter = express.Router();
-  agentRouter.post("/inspect", agentController.runInspector);
-  app.use("/api/agents", agentRouter);
+  // agentRouter.post("/inspect", agentController.runInspector);
+  // app.use("/api/agents", agentRouter);
 
   app.use("/api/ai", createAIRouter(aiController));
   app.use("/api/workspaces", workspaceRouter);
