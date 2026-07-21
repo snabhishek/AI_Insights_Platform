@@ -625,8 +625,8 @@ export class IngestionAgentService implements IIngestionAgentService {
   }
 
   private async runInspectorWithTools(connector: any) {
-    const inspectTool = createInspectTool(this.fileService, this.connectorService);
-    const schemaTool = createGetSchemaTool(this.connectionTester, this.connectorService);
+    const inspectTool = createInspectTool(this.fileService, this.connectorService, connector);
+    const schemaTool = createGetSchemaTool(this.connectionTester, this.connectorService, connector);
     const model = this.getModel();
     const connectionConfig = connector.connectionConfig || {};
     const safeConnector = {
@@ -961,7 +961,7 @@ export class IngestionAgentService implements IIngestionAgentService {
   private async profileData(connector: any, inspection: Record<string, unknown>) {
     const model = this.getModel();
 
-    const fetchSampleTool = createFetchSampleDataTool(this.connectionTester, this.connectorService);
+    const fetchSampleTool = createFetchSampleDataTool(this.connectionTester, this.connectorService, connector);
     const contentProfileTool = createContentValueProfileTool();
     const completenessProfileTool = createCompletenessProfileTool();
     const statisticalProfileTool = createStatisticalProfileTool();
@@ -1017,7 +1017,11 @@ export class IngestionAgentService implements IIngestionAgentService {
     }));
 
     const userMessage = [
-      `Connector: ${connector.name} (${connector.type})`,
+      `Connector Context:`,
+      `- connectorId: "${connector.id}"`,
+      `- connectorType: "${connector.type}"`,
+      `- connectorName: "${connector.name}"`,
+      `- connectionConfig: ${JSON.stringify(connector.connectionConfig || {})}`,
       `Tables to profile (${allTables.length}): ${JSON.stringify(inspectionSummary, null, 2)}`,
       "Generate complete profiling analysis JSON containing 'status', 'tables' array (with contentProfile, completenessProfile, statisticalProfile for each table), and 'tableOrder'.",
       "Return valid JSON only."
@@ -1054,8 +1058,8 @@ export class IngestionAgentService implements IIngestionAgentService {
     const outlierTool = createOutlierTool();
     const normalizationTool = createNormalizationTool();
     const statisticsTool = createStatisticsTool();
-    const applyCleaningTool = createApplyDataCleaningTool(this.connectionTester, this.connectorService);
-    const duplicateDetectionTool = createDuplicateDetectionTool(this.connectionTester, this.connectorService);
+    const applyCleaningTool = createApplyDataCleaningTool(this.connectionTester, this.connectorService, connector);
+    const duplicateDetectionTool = createDuplicateDetectionTool(this.connectionTester, this.connectorService, connector);
 
     const preprocessingTools = [
       analyzeProfilingTool,
@@ -1103,7 +1107,11 @@ export class IngestionAgentService implements IIngestionAgentService {
     );
 
     const userMessage = [
-      `Connector: ${connector.name} (${connector.type})`,
+      `Connector Context:`,
+      `- connectorId: "${connector.id}"`,
+      `- connectorType: "${connector.type}"`,
+      `- connectorName: "${connector.name}"`,
+      `- connectionConfig: ${JSON.stringify(connector.connectionConfig || {})}`,
       `Data Profile summary: ${JSON.stringify(dataProfile, null, 2)}`,
       "Generate preprocessing plan JSON containing 'status', 'tableCount', 'preprocessingPlan', and 'summary' with action metrics.",
       "Return valid JSON only."
