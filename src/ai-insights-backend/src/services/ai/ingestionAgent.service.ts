@@ -862,11 +862,21 @@ export class IngestionAgentService implements IIngestionAgentService {
     return candidatePaths[0];
   }
 
-  private async resolveSchema(connector: any, inspection: Record<string, unknown>, userPrompt?: string) {
+  private async resolveSchema(
+    connector: any, 
+    inspection: Record<string, unknown>, 
+    userPrompt?: string, 
+    dataProfile?: Record<string, unknown>
+  ) {
     const inspectionSources = Array.isArray((inspection as any)?.sources)
       ? (inspection as any).sources
       : [inspection];
     const tables = inspectionSources.flatMap((source: any) => Array.isArray(source?.tables) ? source.tables : []);
+
+
+    // Infer business domain fallback from tables or connector name
+    const tableDomain = tables.find((t: any) => t.businessDomain || t.domain)?.businessDomain || tables.find((t: any) => t.businessDomain || t.domain)?.domain;
+    const inferredDomain = tableDomain || (connector?.name ? `${connector.name} Data Domain` : "General Business Domain");
 
     const allFields: Array<{ datasetField: string; targetTopic: string }> = [];
     tables.forEach((table: any) => {
@@ -893,28 +903,42 @@ export class IngestionAgentService implements IIngestionAgentService {
     const targetParquetTopics = await getTopicsFromParquetSchema(staticSchemaPath);
 
     const defaultTopic = targetParquetTopics[0] || "General";
-    const fallbackMappings = allFields.map((f) => ({
-      datasetField: f.datasetField,
-      targetTopic: defaultTopic,
-    }));
+    const fallbackMappings = [
+      { datasetField: inferredDomain, targetTopic: "Domain" },
+      ...allFields.map((f) => ({
+        datasetField: f.datasetField,
+        targetTopic: defaultTopic,
+      }))
+    ];
 
     const fallback: Record<string, any> = {
+      domain: inferredDomain,
       resolvedTables: tables.map((table: any) => table.name || table.tableName || table.id || "table"),
       strategy: tables.length > 0 ? "inspect-and-map" : "fallback",
       mappings: fallbackMappings,
       unmappedDatasetFields: []
     };
 
-    const prompt = buildResolveSchemaPrompt(connector, inspection, targetParquetTopics, userPrompt);
+    const prompt = buildResolveSchemaPrompt(connector, inspection, targetParquetTopics, userPrompt, dataProfile);
     const model = this.getModel();
 
     const result = await this.invokeAgentJson("resolveSchema", model, prompt, fallback, {
       traceLabel: "agent:resolveSchema",
     });
 
-    const mappingsToWrite = (result && Array.isArray(result.mappings) && result.mappings.length > 0)
+    const rawMappings = (result && Array.isArray(result.mappings) && result.mappings.length > 0)
       ? result.mappings
       : fallbackMappings;
+
+    const resolvedDomain = (typeof result?.domain === "string" && result.domain.trim().length > 0)
+      ? result.domain.trim()
+      : inferredDomain;
+
+    // Ensure a Domain topic mapping exists in mappingsToWrite so writeResolvedSchemaParquet populates the Domain column
+    const hasDomainMapping = rawMappings.some((m: any) => m.targetTopic === "Domain");
+    const mappingsToWrite = hasDomainMapping
+      ? rawMappings
+      : [{ datasetField: resolvedDomain, targetTopic: "Domain" }, ...rawMappings];
 
     if (mappingsToWrite.length > 0) {
       const outputParquetPath = path.resolve(path.dirname(staticSchemaPath), "resolved_schema.parquet");
@@ -929,12 +953,20 @@ export class IngestionAgentService implements IIngestionAgentService {
     return {
       ...fallback,
       ...result,
+      domain: resolvedDomain,
       mappings: mappingsToWrite,
     };
   }
 
   private async profileData(connector: any, inspection: Record<string, unknown>) {
     const model = this.getModel();
+
+    const fetchSampleTool = createFetchSampleDataTool(this.connectionTester, this.connectorService);
+    const contentProfileTool = createContentValueProfileTool();
+    const completenessProfileTool = createCompletenessProfileTool();
+    const statisticalProfileTool = createStatisticalProfileTool();
+
+    const profilingTools = [fetchSampleTool, contentProfileTool, completenessProfileTool, statisticalProfileTool];
 
     // Extract table and relationship info from inspection
     const inspectionSources = Array.isArray((inspection as any)?.sources)
@@ -1000,6 +1032,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         {
           systemPrompt,
           traceLabel: "agent:profileData",
+          tools: profilingTools
         }
       );
       return {
@@ -1014,6 +1047,26 @@ export class IngestionAgentService implements IIngestionAgentService {
 
   private async preprocess(connector: any, dataProfile: Record<string, unknown>) {
     const model = this.getModel();
+
+    const analyzeProfilingTool = createAnalyzeProfilingTool();
+    const missingValueTool = createMissingValueTool();
+    const categoricalTool = createCategoricalTool();
+    const outlierTool = createOutlierTool();
+    const normalizationTool = createNormalizationTool();
+    const statisticsTool = createStatisticsTool();
+    const applyCleaningTool = createApplyDataCleaningTool(this.connectionTester, this.connectorService);
+    const duplicateDetectionTool = createDuplicateDetectionTool(this.connectionTester, this.connectorService);
+
+    const preprocessingTools = [
+      analyzeProfilingTool,
+      missingValueTool,
+      categoricalTool,
+      outlierTool,
+      normalizationTool,
+      statisticsTool,
+      applyCleaningTool,
+      duplicateDetectionTool,
+    ];
 
     const profileTables = Array.isArray((dataProfile as any)?.tables)
       ? (dataProfile as any).tables
@@ -1064,6 +1117,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         fallback,
         {
           systemPrompt,
+          tools: preprocessingTools,
           traceLabel: "agent:preprocess",
         }
       );
@@ -1178,7 +1232,12 @@ export class IngestionAgentService implements IIngestionAgentService {
           : [state.inspection];
         const resolvedSources = await Promise.all(validConnectors.map(async (connector) => {
           const inspection = inspectionSources.find((source: any) => source?.connectorId === connector.id) || state.inspection;
-          const resolved = await this.resolveSchema(connector, inspection, typeof state.userPrompt === "string" ? state.userPrompt : "");
+          const resolved = await this.resolveSchema(
+            connector, 
+            inspection, 
+            typeof state.userPrompt === "string" ? state.userPrompt : "",
+            state.dataProfile
+          );
           return {
             connectorId: connector.id,
             connectorName: connector.name,
