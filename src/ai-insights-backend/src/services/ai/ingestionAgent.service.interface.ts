@@ -28,6 +28,6 @@ export interface IIngestionAgentService {
   run(
     connectorId: string[],
     userPrompt?: string,
-    options?: { sessionId?: string; action?: "approve" | "retry"; step?: string }
+    options?: { sessionId?: string; action?: "approve" | "retry"; step?: string; projectId?: string }
   ): Promise<IngestionAgentRunResult>;
 }

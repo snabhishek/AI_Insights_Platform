@@ -53,13 +53,17 @@ export async function initializeDatabaseSchemas() {
         initials VARCHAR(10) NOT NULL DEFAULT 'US',
         workspace_id VARCHAR(50) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
         use_case TEXT,
+        agent_state JSONB NOT NULL DEFAULT '{}',
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `);
 
-    // Add use_case column to existing projects table if it doesn't exist (migration)
+    // Add use_case and agent_state columns to existing projects table if they don't exist (migration)
     await query(`
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS use_case TEXT;
+    `);
+    await query(`
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS agent_state JSONB NOT NULL DEFAULT '{}';
     `);
 
     // 4. Connectors table (with workspace scoping)

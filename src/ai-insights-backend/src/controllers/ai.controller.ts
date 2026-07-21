@@ -12,6 +12,7 @@ export class AIController {
       sessionId,
       action,
       step,
+      projectId,
     } = req.body as {
       connectorId?: string[];
       userPrompt?: string;
@@ -19,6 +20,7 @@ export class AIController {
       sessionId?: string;
       action?: "approve" | "retry";
       step?: string;
+      projectId?: string;
     };
     // AI model calls with batched inspection can take several minutes
     req.setTimeout(300000);
@@ -33,6 +35,7 @@ export class AIController {
         sessionId,
         action,
         step,
+        projectId,
       });
       res.json({ success: true, data: result });
     } catch (error: any) {

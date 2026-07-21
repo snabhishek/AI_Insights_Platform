@@ -192,6 +192,7 @@ export default function ProjectsPage() {
       const body: Record<string, unknown> = {
         connectorId: workflowConnectorIds,
         userPrompt: selectedProject?.useCase || "",
+        projectId: selectedProject?.id,
       };
       if (workflowSessionId) {
         body.sessionId = workflowSessionId;

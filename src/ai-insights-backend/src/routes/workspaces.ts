@@ -22,6 +22,7 @@ interface Project {
   workspaceId: string;
   createdAt: string;
   useCase?: string;
+  agentState?: Record<string, unknown>;
 }
 
 function mapWorkspace(row: any): Workspace {
@@ -43,6 +44,7 @@ function mapProject(row: any): Project {
     workspaceId: row.workspace_id,
     createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
     useCase: row.use_case || "",
+    agentState: row.agent_state ?? {},
   };
 }
 
@@ -169,10 +171,10 @@ router.post("/:id/projects", async (req: Request, res: Response) => {
   const projectId = `proj-${uuidv4()}`;
   try {
     const result = await query(
-      `INSERT INTO projects (id, name, role, data_sources, initials, workspace_id, use_case, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+      `INSERT INTO projects (id, name, role, data_sources, initials, workspace_id, use_case, agent_state, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
        RETURNING *`,
-      [projectId, name.trim(), role, dataSources, initials, workspaceId, useCase]
+      [projectId, name.trim(), role, dataSources, initials, workspaceId, useCase, JSON.stringify({})]
     );
     res.status(201).json(mapProject(result.rows[0]));
   } catch (err: any) {

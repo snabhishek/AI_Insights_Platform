@@ -25,6 +25,7 @@ import { createOutlierTool } from "./tools/preprocessing/outlier.tool";
 import { createNormalizationTool } from "./tools/preprocessing/normalization.tool";
 import { createStatisticsTool } from "./tools/preprocessing/statistics.tool";
 import { IFileService } from "../file.service.interface";
+import { ProjectService } from "../project.service";
 import { buildResolveSchemaPrompt } from "./prompts/resolveSchema.prompt";
 import { getTopicsFromParquetSchema, writeResolvedSchemaParquet } from "./tools/parquetHelper";
 
@@ -107,7 +108,8 @@ export class IngestionAgentService implements IIngestionAgentService {
   constructor(
     private connectorService: ConnectorService,
     private connectionTester: ConnectionTesterService,
-    private fileService: IFileService
+    private fileService: IFileService,
+    private projectService: ProjectService
   ) { }
 
   private mergeBatchedTableStates(left: BatchedTableState[] = [], right: BatchedTableState[] = []): BatchedTableState[] {
@@ -1265,7 +1267,7 @@ export class IngestionAgentService implements IIngestionAgentService {
     return step ? mapping[step] : undefined;
   }
 
-  async run(connectorId: string[], userPrompt?: string, options?: { sessionId?: string; action?: "approve" | "retry"; step?: string }): Promise<IngestionAgentRunResult> {
+  async run(connectorId: string[], userPrompt?: string, options?: { sessionId?: string; action?: "approve" | "retry"; step?: string; projectId?: string }): Promise<IngestionAgentRunResult> {
     const traceSession = await this.createTraceSession();
     const runStartedAt = new Date().toISOString();
 
@@ -1351,8 +1353,17 @@ export class IngestionAgentService implements IIngestionAgentService {
       }
 
       const graphState = await workflow.getState(config);
+      
       console.info(`[Workflow] State after invoke — next: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}], status: ${graphState?.values?.status || "unknown"}`);
       const result = this.buildResultFromGraphState(graphState, threadId, connectorId);
+
+      if (options?.projectId) {
+        try {
+          await this.projectService.updateAgentState(options.projectId, graphState?.values ?? {});
+        } catch (persistError: any) {
+          console.warn(`[Workflow] Failed to persist agent state for project ${options.projectId}:`, persistError?.message || persistError);
+        }
+      }
 
       if (traceSession) {
         await this.appendTraceEntry("workflow:end", "output", {

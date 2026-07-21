@@ -19,6 +19,7 @@ export const projects = pgTable("projects", {
     .notNull()
     .references(() => workspaces.id, { onDelete: "cascade" }),
   useCase: text("use_case"),
+  agentState: jsonb("agent_state").$type<Record<string, unknown>>().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => {
   return {

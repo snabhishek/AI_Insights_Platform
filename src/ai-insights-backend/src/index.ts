@@ -6,6 +6,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { LocalFileService } from "./services/file.service";
 import { ConnectionTesterService } from "./services/connectionTester.service";
 import { PostgresConnectorRepository } from "./repositories/connector.repository";
+import { PostgresProjectRepository } from "./repositories/project.repository";
+import { ProjectService } from "./services/project.service";
 import workspaceRouter from "./routes/workspaces";
 import { ConnectorService } from "./services/connector.service";
 import { ConnectorController } from "./controllers/connector.controller";
@@ -53,10 +55,12 @@ async function bootstrap() {
   fileService = new LocalFileService();
   connectionTester = new ConnectionTesterService(fileService);
   connectorRepository = new PostgresConnectorRepository(db);
+  const projectRepository = new PostgresProjectRepository(db);
+  const projectService = new ProjectService(projectRepository);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
   connectorController = new ConnectorController(connectorService, connectionTester);
   // agentController = new AgentController(connectorService);
-  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService);
+  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService);
   aiController = new AIController(ingestionAgentService);
 
   // 4. Mount Main routers
