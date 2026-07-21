@@ -146,6 +146,26 @@ export default function ProjectsPage() {
     return next;
   };
 
+  const determineActiveStage = (payload: WorkflowResponse["data"]): string => {
+    if (payload.status === "completed") {
+      return "resolveSchema";
+    }
+    if (payload.requiresApproval) {
+      if (payload.nextStep === "profileData") {
+        return "inspect";
+      }
+      if (payload.nextStep === "resolveSchema") {
+        return "profileData";
+      }
+    }
+    if (payload.currentStage || payload.currentNode) {
+      const node = payload.currentStage || payload.currentNode;
+      if (node === "preprocess") return "profileData";
+      return node!;
+    }
+    return "inspect";
+  };
+
   const updateWorkflowState = (payload: WorkflowResponse["data"]) => {
     const nextStatuses = mapStageToPipelineStatus(payload.stageStatuses);
     setPipelineStatuses(nextStatuses);
@@ -167,10 +187,10 @@ export default function ProjectsPage() {
     if (payload.sessionId) {
       setWorkflowSessionId(payload.sessionId);
     }
-    if (payload.currentStage || payload.currentNode) {
-      setActiveStage(payload.currentStage || payload.currentNode || null);
-    }
+    
+    setActiveStage(determineActiveStage(payload));
     setRequiresApproval(Boolean(payload.requiresApproval));
+    
     if (payload.status === "completed") {
       setLastRunTime(new Date().toLocaleString("en-US", {
         month: "short",
@@ -186,7 +206,10 @@ export default function ProjectsPage() {
   const runWorkflow = async (action?: "approve" | "retry", step?: string) => {
     if ((runStatus === "Running" || runStatus === "Paused") && !action) return;
     setRunStatus("Running");
-    setWorkflowMessage("Starting workflow...");
+    if (action === "approve") {
+      setRequiresApproval(false);
+    }
+    setWorkflowMessage(action === "approve" ? "Resuming workflow..." : "Starting workflow...");
 
     try {
       const body: Record<string, unknown> = {
@@ -233,6 +256,15 @@ export default function ProjectsPage() {
   };
 
   const handleApprove = () => {
+    setRequiresApproval(false);
+    setRunStatus("Running");
+    if (activeStage === "inspect" || activeStage === null) {
+      setActiveStage("profileData");
+      setWorkflowMessage("Running Data Profiling & Preprocessing...");
+    } else if (activeStage === "profileData" || activeStage === "preprocess") {
+      setActiveStage("resolveSchema");
+      setWorkflowMessage("Running Schema Resolution...");
+    }
     void runWorkflow("approve");
   };
 

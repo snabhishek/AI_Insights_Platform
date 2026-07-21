@@ -123,13 +123,12 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
         {/* Top bar with Info icon left & Status circle right */}
         <div className="w-full flex items-center justify-between relative z-10">
           {/* Info icon (ℹ) */}
-          <button 
-            type="button"
+          <span 
             className="w-5 h-5 rounded-full flex items-center justify-center text-muted-foreground/60 hover:text-primary hover:bg-surface-muted/80 transition-colors cursor-help text-[11px] font-bold border border-border/80 dark:border-white/10"
             title="Hover to view details"
           >
             i
-          </button>
+          </span>
 
           {/* Status Badge */}
           <StatusBadge status={status} />

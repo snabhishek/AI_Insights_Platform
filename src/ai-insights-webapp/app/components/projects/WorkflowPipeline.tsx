@@ -183,7 +183,8 @@ export default function WorkflowPipeline({
           {requiresApproval && (
             <button
               onClick={onApprove}
-              className="inline-flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-bold uppercase tracking-wide transition-all shadow-md cursor-pointer"
+              disabled={runStatus === "Running"}
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-[11px] font-bold uppercase tracking-wide transition-all shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
             >
               Approve
             </button>
@@ -270,8 +271,8 @@ export default function WorkflowPipeline({
             </div>
           </div>
           <div className="grid gap-3 md:grid-cols-2">
-            {detailItems.length > 0 ? detailItems.map((item) => (
-              <div key={item.title} className="rounded-xl border border-border bg-background/70 p-3">
+            {detailItems.length > 0 ? detailItems.map((item, index) => (
+              <div key={`${item.title}-${index}`} className="rounded-xl border border-border bg-background/70 p-3">
                 <p className="text-[10px] uppercase tracking-[0.2em] font-semibold text-muted-foreground">{item.title}</p>
                 <p className="text-sm text-foreground mt-1">{item.body}</p>
               </div>

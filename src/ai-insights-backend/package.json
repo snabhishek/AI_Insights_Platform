@@ -9,6 +9,7 @@
     "db:generate": "npx drizzle-kit generate"
   },
   "dependencies": {
+    "@dsnp/parquetjs": "^1.8.8",
     "@langchain/google-genai": "^2.2.0",
     "@langchain/langgraph": "^1.4.7",
     "@langchain/openai": "^1.5.5",

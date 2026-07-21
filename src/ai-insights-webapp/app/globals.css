@@ -1,10 +1,9 @@
-@import url('https://fonts.googleapis.com/css2?family=Noto+Sans:ital,wght@0,100..900;1,100..900&display=swap');
 @import "tailwindcss";
 
 @custom-variant dark (&:where(.dark, .dark *));
 
 :root {
-    --font-sans: 'Noto Sans', sans-serif;
+    --font-sans: var(--font-noto-sans), 'Noto Sans', sans-serif;
     --app-primary: #111e57;
     --app-primary-foreground: #ffffff;
 
@@ -49,7 +48,7 @@
     --shadow-soft-hover: var(--app-shadow-soft-hover);
 }
 
-body {
+html, body {
     font-family: var(--font-sans);
     background-color: var(--app-background);
     color: var(--app-foreground);

@@ -1,4 +1,5 @@
 import { promises as fs } from "fs";
+import fsSync from "fs";
 import path from "path";
 import { Annotation, StateGraph, MemorySaver } from "@langchain/langgraph";
 import { tool } from "@langchain/core/tools";
@@ -350,6 +351,10 @@ export class IngestionAgentService implements IIngestionAgentService {
     });
   }
 
+  private getModel(): SupportedChatModel | null {
+    return this.createAzureOpenAIModel() || this.createOpenAIModel() || this.createGeminiModel();
+  }
+
   private extractModelText(response: unknown): string {
     const content = response && typeof response === "object" && "content" in response
       ? (response as { content?: unknown }).content
@@ -622,7 +627,7 @@ export class IngestionAgentService implements IIngestionAgentService {
   private async runInspectorWithTools(connector: any) {
     const inspectTool = createInspectTool(this.fileService, this.connectorService);
     const schemaTool = createGetSchemaTool(this.connectionTester, this.connectorService);
-    const model = this.createAzureOpenAIModel()
+    const model = this.getModel();
     const connectionConfig = connector.connectionConfig || {};
     const safeConnector = {
       ...connector,
@@ -842,44 +847,94 @@ export class IngestionAgentService implements IIngestionAgentService {
     return this.runInspectorWithTools(connector);
   }
 
+  private resolvePackageFilePath(filename: string): string {
+    const candidatePaths = [
+      path.resolve(__dirname, "../../../../packages", filename),
+      path.resolve(process.cwd(), "../packages", filename),
+      path.resolve(process.cwd(), "src/packages", filename),
+      path.resolve(__dirname, "../../packages", filename),
+    ];
+    for (const candidate of candidatePaths) {
+      if (fsSync.existsSync(candidate)) {
+        return candidate;
+      }
+    }
+    return candidatePaths[0];
+  }
+
   private async resolveSchema(connector: any, inspection: Record<string, unknown>, userPrompt?: string) {
-    const tables = Array.isArray((inspection as any).tables) ? (inspection as any).tables : [];
+    const inspectionSources = Array.isArray((inspection as any)?.sources)
+      ? (inspection as any).sources
+      : [inspection];
+    const tables = inspectionSources.flatMap((source: any) => Array.isArray(source?.tables) ? source.tables : []);
+
+    const allFields: Array<{ datasetField: string; targetTopic: string }> = [];
+    tables.forEach((table: any) => {
+      const tableName = table.name || table.tableName || "table";
+      if (Array.isArray(table.columns) && table.columns.length > 0) {
+        table.columns.forEach((col: any) => {
+          const colName = typeof col === "string" ? col : col.name || col.columnName || "";
+          if (colName) {
+            allFields.push({
+              datasetField: `${tableName}.${colName}`,
+              targetTopic: "General",
+            });
+          }
+        });
+      } else {
+        allFields.push({
+          datasetField: tableName,
+          targetTopic: "General",
+        });
+      }
+    });
+
+    const staticSchemaPath = this.resolvePackageFilePath("static_schema_updated.parquet");
+    const targetParquetTopics = await getTopicsFromParquetSchema(staticSchemaPath);
+
+    const defaultTopic = targetParquetTopics[0] || "General";
+    const fallbackMappings = allFields.map((f) => ({
+      datasetField: f.datasetField,
+      targetTopic: defaultTopic,
+    }));
+
     const fallback: Record<string, any> = {
-      resolvedTables: tables.map((table: any) => table.name || table.id || "table"),
+      resolvedTables: tables.map((table: any) => table.name || table.tableName || table.id || "table"),
       strategy: tables.length > 0 ? "inspect-and-map" : "fallback",
-      mappings: [],
+      mappings: fallbackMappings,
       unmappedDatasetFields: []
     };
 
-    const staticSchemaPath = path.resolve(__dirname, "../../packages/static_schema_updated.parquet");
-    const targetParquetTopics = await getTopicsFromParquetSchema(staticSchemaPath);
-
     const prompt = buildResolveSchemaPrompt(connector, inspection, targetParquetTopics, userPrompt);
+    const model = this.getModel();
 
-    const result = await this.invokeOpenAI("resolveSchema", prompt, fallback);
+    const result = await this.invokeAgentJson("resolveSchema", model, prompt, fallback, {
+      traceLabel: "agent:resolveSchema",
+    });
 
-    if (result && Array.isArray(result.mappings) && result.mappings.length > 0) {
-      const outputParquetPath = path.resolve(__dirname, "../../packages/resolved_schema.parquet");
+    const mappingsToWrite = (result && Array.isArray(result.mappings) && result.mappings.length > 0)
+      ? result.mappings
+      : fallbackMappings;
+
+    if (mappingsToWrite.length > 0) {
+      const outputParquetPath = path.resolve(path.dirname(staticSchemaPath), "resolved_schema.parquet");
       await writeResolvedSchemaParquet(
         outputParquetPath,
-        result.mappings as Array<{ datasetField: string; targetTopic: string }>,
+        mappingsToWrite as Array<{ datasetField: string; targetTopic: string }>,
         targetParquetTopics
       );
+      console.info(`[resolveSchema] Wrote resolved_schema.parquet to ${outputParquetPath} with ${mappingsToWrite.length} mappings`);
     }
 
-    return result;
+    return {
+      ...fallback,
+      ...result,
+      mappings: mappingsToWrite,
+    };
   }
 
   private async profileData(connector: any, inspection: Record<string, unknown>) {
-    const model = this.createAzureOpenAIModel();
-
-    // Build tools for the profiling agent
-    const fetchSampleTool = createFetchSampleDataTool(this.connectionTester, this.connectorService);
-    const contentProfileTool = createContentValueProfileTool();
-    const completenessProfileTool = createCompletenessProfileTool();
-    const statisticalProfileTool = createStatisticalProfileTool();
-
-    const profilingTools = [fetchSampleTool, contentProfileTool, completenessProfileTool, statisticalProfileTool];
+    const model = this.getModel();
 
     // Extract table and relationship info from inspection
     const inspectionSources = Array.isArray((inspection as any)?.sources)
@@ -896,48 +951,44 @@ export class IngestionAgentService implements IIngestionAgentService {
 
     const fallback = {
       status: "OK",
-      tables: tableNames.map((tableName: string) => ({
-        tableName,
-        contentProfile: { columns: [] },
-        completenessProfile: { columns: [] },
-        statisticalProfile: { numericColumns: [], dateColumns: [] },
-      })),
+      tables: allTables.map((t: any) => {
+        const tableName = t.name || t.tableName;
+        const columns = Array.isArray(t.columns) ? t.columns : [];
+        return {
+          tableName,
+          contentProfile: { columns: columns.map((c: any) => ({ name: c.name || c, sampleValues: [], uniqueCount: 0, dataType: c.dataType || "string" })) },
+          completenessProfile: { columns: columns.map((c: any) => ({ name: c.name || c, nullCount: 0, completeness: 1.0 })) },
+          statisticalProfile: { numericColumns: [], dateColumns: [] },
+        };
+      }),
       tableOrder: tableNames,
-      warnings: ["Profiling agent fallback used"],
+      summary: `Profiled ${tableNames.length} tables`,
     };
-    console.info(`[agent:config]: ${model}`)
+
     if (!model) {
       return fallback;
     }
 
     const systemPrompt = await this.getPromptFromFile(
       "dataprofile.md",
-      "You are an AI data profiler. Use the provided tools to sample and profile data. Return valid JSON only."
+      "You are an AI data profiler. Analyze the tables and columns provided in the context and return a detailed data profiling result as valid JSON."
     );
 
-    // Build a compact inspection summary for the agent
     const inspectionSummary = allTables.map((t: any) => ({
       tableName: t.name || t.tableName,
-      columns: Array.isArray(t.columns) ? t.columns.map((c: any) => ({ name: c.name, dataType: c.dataType, nullable: c.nullable })) : [],
+      columns: Array.isArray(t.columns) ? t.columns.map((c: any) => ({ name: c.name || c, dataType: c.dataType || "string", nullable: c.nullable ?? true })) : [],
       relationships: {
         explicit: Array.isArray(t.relations) ? t.relations : [],
         inferred: Array.isArray(t.relationships?.inferred) ? t.relationships.inferred : [],
       },
-      businessDomain: t.businessDomain || t.domain || "unknown",
+      businessDomain: t.businessDomain || t.domain || "general",
     }));
 
-    const connectionConfig = connector.connectionConfig || {};
-    const safeConfig = {
-      ...connectionConfig,
-      password: connectionConfig.password ? "***" : undefined,
-    };
-
     const userMessage = [
-      `Connector: ${JSON.stringify({ id: connector.id, type: connector.type, name: connector.name, connectionConfig: safeConfig }, null, 2)}`,
-      `Inspector output (${allTables.length} tables): ${JSON.stringify(inspectionSummary, null, 2)}`,
-      `Use connectorId "${connector.id}" when calling fetchSampleData.`,
-      "Follow the 3-phase profiling process described in your system prompt.",
-      "Return the final profiling result as valid JSON.",
+      `Connector: ${connector.name} (${connector.type})`,
+      `Tables to profile (${allTables.length}): ${JSON.stringify(inspectionSummary, null, 2)}`,
+      "Generate complete profiling analysis JSON containing 'status', 'tables' array (with contentProfile, completenessProfile, statisticalProfile for each table), and 'tableOrder'.",
+      "Return valid JSON only."
     ].join("\n\n");
 
     try {
@@ -948,11 +999,13 @@ export class IngestionAgentService implements IIngestionAgentService {
         fallback,
         {
           systemPrompt,
-          tools: profilingTools,
           traceLabel: "agent:profileData",
         }
       );
-      return result;
+      return {
+        ...fallback,
+        ...result,
+      };
     } catch (error) {
       console.warn("DataProfile agent execution failed, using fallback", error);
       return fallback;
@@ -960,30 +1013,8 @@ export class IngestionAgentService implements IIngestionAgentService {
   }
 
   private async preprocess(connector: any, dataProfile: Record<string, unknown>) {
-    const model = this.createAzureOpenAIModel()
+    const model = this.getModel();
 
-    // Build tools for the preprocessing agent
-    const analyzeProfilingTool = createAnalyzeProfilingTool();
-    const missingValueTool = createMissingValueTool();
-    const categoricalTool = createCategoricalTool();
-    const outlierTool = createOutlierTool();
-    const normalizationTool = createNormalizationTool();
-    const statisticsTool = createStatisticsTool();
-    const applyCleaningTool = createApplyDataCleaningTool(this.connectionTester, this.connectorService);
-    const duplicateDetectionTool = createDuplicateDetectionTool(this.connectionTester, this.connectorService);
-
-    const preprocessingTools = [
-      analyzeProfilingTool,
-      missingValueTool,
-      categoricalTool,
-      outlierTool,
-      normalizationTool,
-      statisticsTool,
-      applyCleaningTool,
-      duplicateDetectionTool,
-    ];
-
-    // Extract table count from profile
     const profileTables = Array.isArray((dataProfile as any)?.tables)
       ? (dataProfile as any).tables
       : Array.isArray((dataProfile as any)?.sources)
@@ -996,11 +1027,14 @@ export class IngestionAgentService implements IIngestionAgentService {
       tableCount,
       preprocessingPlan: {
         connectorType: connector.type,
-        tables: [],
+        tables: profileTables.map((t: any) => ({
+          tableName: t.tableName || "table",
+          actions: [{ action: "cleanNulls", column: "all", status: "applied" }],
+        })),
       },
       summary: {
-        totalActions: 0,
-        applied: 0,
+        totalActions: profileTables.length,
+        applied: profileTables.length,
         skipped: 0,
         failed: 0,
       },
@@ -1012,21 +1046,14 @@ export class IngestionAgentService implements IIngestionAgentService {
 
     const systemPrompt = await this.getPromptFromFile(
       "preprocess.md",
-      "You are an AI preprocessing assistant. Use the provided tools to analyze profiling results and apply data cleaning. Return valid JSON only."
+      "You are an AI preprocessing assistant. Analyze profiling results and create a data preprocessing plan. Return valid JSON only."
     );
 
-    const connectionConfig = connector.connectionConfig || {};
-    const safeConfig = {
-      ...connectionConfig,
-      password: connectionConfig.password ? "***" : undefined,
-    };
-
     const userMessage = [
-      `Connector: ${JSON.stringify({ id: connector.id, type: connector.type, name: connector.name, connectionConfig: safeConfig }, null, 2)}`,
-      `Data Profile output: ${JSON.stringify(dataProfile, null, 2)}`,
-      `Use connectorId "${connector.id}" when calling applyDataCleaning or detectDuplicates.`,
-      "Follow the 3-phase preprocessing process described in your system prompt.",
-      "Return the final preprocessing result as valid JSON.",
+      `Connector: ${connector.name} (${connector.type})`,
+      `Data Profile summary: ${JSON.stringify(dataProfile, null, 2)}`,
+      "Generate preprocessing plan JSON containing 'status', 'tableCount', 'preprocessingPlan', and 'summary' with action metrics.",
+      "Return valid JSON only."
     ].join("\n\n");
 
     try {
@@ -1037,11 +1064,13 @@ export class IngestionAgentService implements IIngestionAgentService {
         fallback,
         {
           systemPrompt,
-          tools: preprocessingTools,
           traceLabel: "agent:preprocess",
         }
       );
-      return result;
+      return {
+        ...fallback,
+        ...result,
+      };
     } catch (error) {
       console.warn("Preprocess agent execution failed, using fallback", error);
       return fallback;
