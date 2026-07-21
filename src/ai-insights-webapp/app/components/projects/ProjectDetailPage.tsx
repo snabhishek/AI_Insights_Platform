@@ -65,6 +65,7 @@ interface ProjectDetailPageProps {
   runStatus: RunStatus;
   lastRunTime: string;
   onRunWorkflow: () => void;
+  onStopWorkflow?: () => void;
   onGoBack: () => void;
   onDelete: () => void;
   onEdit: () => void;
@@ -92,6 +93,7 @@ export default function ProjectDetailPage({
   runStatus,
   lastRunTime,
   onRunWorkflow,
+  onStopWorkflow,
   onGoBack,
   onDelete,
   onEdit,
@@ -276,6 +278,7 @@ export default function ProjectDetailPage({
           requiresApproval={requiresApproval}
           workflowMessage={workflowMessage}
           onRunWorkflow={onRunWorkflow}
+          onStopWorkflow={onStopWorkflow}
           onViewHistory={onViewHistory}
           onSelectStage={onSelectStage}
           onApprove={onApprove}

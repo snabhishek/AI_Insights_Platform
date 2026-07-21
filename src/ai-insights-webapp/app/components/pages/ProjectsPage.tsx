@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import Image from "next/image";
 import {
   PostgresqlIcon,
@@ -16,6 +16,7 @@ import { INITIAL_PIPELINE_STATUSES } from "../projects/constants";
 import ProjectsListPage   from "../projects/ProjectsListPage";
 import ProjectDetailPage  from "../projects/ProjectDetailPage";
 import ProjectCreatePage  from "../projects/ProjectCreatePage";
+import { executeWorkflowApi, stopWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
 
 interface WorkflowResponse {
   success: boolean;
@@ -96,8 +97,13 @@ export default function ProjectsPage() {
   const [stageOutputs, setStageOutputs] = useState<Record<string, unknown>>({});
   const [workflowMessage, setWorkflowMessage] = useState<string>("Idle");
   const [requiresApproval, setRequiresApproval] = useState(false);
+  const abortControllerRef = useRef<AbortController | null>(null);
 
   const resetPipeline = () => {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
     setPipelineStatuses(INITIAL_PIPELINE_STATUSES);
     setRunStatus("Idle");
     setWorkflowSessionId(null);
@@ -205,6 +211,13 @@ export default function ProjectsPage() {
 
   const runWorkflow = async (action?: "approve" | "retry", step?: string) => {
     if ((runStatus === "Running" || runStatus === "Paused") && !action) return;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setRunStatus("Running");
     if (action === "approve") {
       setRequiresApproval(false);
@@ -212,16 +225,16 @@ export default function ProjectsPage() {
     setWorkflowMessage(action === "approve" ? "Resuming workflow..." : "Starting workflow...");
 
     try {
-      const body: Record<string, unknown> = {
+      const payload: WorkflowRequestPayload = {
         connectorId: workflowConnectorIds,
         userPrompt: selectedProject?.useCase || "",
         projectId: selectedProject?.id,
       };
       if (workflowSessionId) {
-        body.sessionId = workflowSessionId;
+        payload.sessionId = workflowSessionId;
       }
       if (action) {
-        body.action = action;
+        payload.action = action;
       }
       if (step) {
         const stepMap: Record<string, string> = {
@@ -229,14 +242,9 @@ export default function ProjectsPage() {
           "Data Profiling": "profileData",
           "Schema Resolver": "resolveSchema",
         };
-        body.step = stepMap[step] || step;
+        payload.step = stepMap[step] || step;
       }
-      const res = await fetch("http://127.0.0.1:4000/api/ai/ingestion", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      const json = (await res.json()) as WorkflowResponse;
+      const json = await executeWorkflowApi(payload, controller.signal);
       if (!json.success) {
         throw new Error("Workflow request failed");
       }
@@ -244,11 +252,32 @@ export default function ProjectsPage() {
       if (json.data.status === "completed") {
         showAlert({ title: "Run Success", message: json.data.summary || "The workflow completed successfully.", type: "success" });
       }
-    } catch (error) {
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        console.info("Workflow execution request aborted by user.");
+        return;
+      }
       console.error("Workflow execution failed", error);
       setRunStatus("Idle");
       showAlert({ title: "Workflow Error", message: "The workflow could not be started or resumed.", type: "error" });
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
     }
+  };
+
+  const handleStopWorkflow = () => {
+    const currentSession = workflowSessionId;
+    resetPipeline();
+    if (currentSession) {
+      void stopWorkflowApi(currentSession);
+    }
+    showAlert({
+      title: "Workflow Stopped",
+      message: "The agentic workflow execution has been stopped and pipeline stages have been reset.",
+      type: "info",
+    });
   };
 
   const runSimulation = () => {
@@ -347,6 +376,7 @@ export default function ProjectsPage() {
         runStatus={runStatus}
         lastRunTime={lastRunTime}
         onRunWorkflow={runSimulation}
+        onStopWorkflow={handleStopWorkflow}
         onGoBack={goToList}
         onDelete={() => confirmDeleteProject(selectedProject)}
         onEdit={() =>

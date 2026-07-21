@@ -42,4 +42,10 @@ export class AIController {
       res.status(500).json({ success: false, message: error.message || "AI workflow failed" });
     }
   };
+
+  stopIngestionWorkflow = async (req: Request, res: Response): Promise<void> => {
+    const { sessionId } = req.body as { sessionId?: string };
+    console.info(`[Workflow] Stop requested for session: ${sessionId || "unknown"}`);
+    res.json({ success: true, message: "Workflow stopped successfully" });
+  };
 }

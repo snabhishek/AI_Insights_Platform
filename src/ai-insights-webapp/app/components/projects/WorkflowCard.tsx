@@ -98,14 +98,36 @@ interface WorkflowCardProps {
 
 export default function WorkflowCard({ step, status, index, isActive = false, onSelect }: WorkflowCardProps) {
   const colors = COLOR_MAP[step.color];
+  const [showInfo, setShowInfo] = React.useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
 
-  // Hover tooltip with modernized pill design
+  React.useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setShowInfo(false);
+      }
+    }
+    if (showInfo) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [showInfo]);
+
   return (
-    <div className="relative group select-none flex justify-center w-full">
-      {/* Modernized Pill Tooltip */}
-      <div className="absolute bottom-[calc(100%+12px)] left-1/2 -translate-x-1/2 bg-slate-900/95 dark:bg-slate-950/95 text-white text-[10px] px-3.5 py-1.5 rounded-full font-bold shadow-xl border border-white/10 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 pointer-events-none whitespace-nowrap z-50 flex items-center gap-1.5 tracking-wide">
-        <span className="text-emerald-400 font-black uppercase text-[8px] bg-white/10 px-1.5 py-0.5 rounded-full">{step.metric}</span>
-        <span className="text-white/80">{step.description}</span>
+    <div ref={containerRef} className="relative select-none flex justify-center w-full">
+      {/* Modern Info Popover Card - Displayed on info icon click */}
+      <div
+        className={`absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 min-w-[160px] max-w-[210px] p-3 rounded-xl bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border border-border/80 dark:border-white/15 shadow-xl transition-all duration-200 ease-out z-50 text-left ${
+          showInfo ? "opacity-100 visible translate-y-0 scale-100" : "opacity-0 invisible translate-y-1 scale-95 pointer-events-none"
+        }`}
+      >
+        <p className="text-[11px] font-medium leading-normal text-foreground/90 dark:text-slate-200">
+          {step.description}
+        </p>
+        {/* Subtle arrow indicator */}
+        <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-surface/95 dark:bg-slate-900/95 border-r border-b border-border/80 dark:border-white/15 rotate-45" />
       </div>
 
       {/* Card body container - Opaque background with fixed width of 140px and original height of 230px */}
@@ -124,8 +146,24 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
         <div className="w-full flex items-center justify-between relative z-10">
           {/* Info icon (ℹ) */}
           <span 
-            className="w-5 h-5 rounded-full flex items-center justify-center text-muted-foreground/60 hover:text-primary hover:bg-surface-muted/80 transition-colors cursor-help text-[11px] font-bold border border-border/80 dark:border-white/10"
-            title="Hover to view details"
+            role="button"
+            tabIndex={0}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowInfo((prev) => !prev);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.stopPropagation();
+                setShowInfo((prev) => !prev);
+              }
+            }}
+            className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors cursor-pointer text-[11px] font-bold border ${
+              showInfo
+                ? "text-primary border-primary/50 bg-primary/10 shadow-sm"
+                : "text-muted-foreground/60 hover:text-primary hover:bg-surface-muted/80 border-border/80 dark:border-white/10"
+            }`}
+            title={showInfo ? "Click to hide details" : "Click to view details"}
           >
             i
           </span>
