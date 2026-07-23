@@ -942,6 +942,281 @@ export class ConnectionTesterService implements IConnectionTesterService {
     return { success: false, rowsAffected: 0 };
   }
 
+  async applyCleaningOperations(
+    type: ConnectorType,
+    config: ConnectionConfig,
+    tableName: string,
+    operations: any[]
+  ): Promise<{ results: any[] }> {
+    const results: any[] = [];
+    if (["postgres", "mysql", "sqlserver"].includes(type)) {
+      return this.applyDbCleaningOperations(type, config, tableName, operations);
+    } else if (["excel", "csv", "tsv"].includes(type)) {
+      return this.applyFileCleaningOperations(type, config, tableName, operations);
+    }
+    return { results };
+  }
+
+  private async applyDbCleaningOperations(type: string, config: ConnectionConfig, tableName: string, operations: any[]): Promise<{ results: any[] }> {
+    const results: any[] = [];
+    
+    let getPoolOrConn: any;
+    let runQuery: any;
+    let closeConn: any;
+
+    if (type === "postgres") {
+      const pool = new Pool({
+        host: config.host,
+        port: config.port ? parseInt(config.port, 10) : 5432,
+        database: config.database,
+        user: config.username || "postgres",
+        password: config.password || "",
+      });
+      getPoolOrConn = async () => pool;
+      runQuery = async (p: any, sql: string, params: any[]) => { const r = await p.query(sql, params); return r.rowCount ?? 0; };
+      closeConn = async (p: any) => await p.end();
+    } else if (type === "mysql") {
+      const mysql = require("mysql2/promise");
+      const connection = await mysql.createConnection({
+        host: config.host,
+        port: config.port ? parseInt(config.port, 10) : 3306,
+        database: config.database,
+        user: config.username || "root",
+        password: config.password || "",
+      });
+      getPoolOrConn = async () => connection;
+      runQuery = async (c: any, sql: string, params: any[]) => { const [r] = await c.query(sql, params); return (r as any).affectedRows ?? 0; };
+      closeConn = async (c: any) => await c.end();
+    } else if (type === "sqlserver") {
+      const sql = require("mssql");
+      const pool = await sql.connect({
+        server: config.host,
+        port: config.port ? parseInt(config.port, 10) : 1433,
+        database: config.database,
+        user: config.username,
+        password: config.password || "",
+        options: { encrypt: false, trustServerCertificate: true },
+      });
+      getPoolOrConn = async () => pool;
+      runQuery = async (p: any, querySql: string, params: any[]) => { 
+        const req = p.request();
+        params.forEach((pVal: any, i: number) => req.input(`p${i}`, pVal));
+        let i = 0;
+        const msSql = querySql.replace(/\?/g, () => `@p${i++}`);
+        const r = await req.query(msSql);
+        return r.rowsAffected[0] ?? 0; 
+      };
+      closeConn = async (p: any) => await p.close();
+    }
+
+    const conn = await getPoolOrConn();
+    try {
+      for (const op of operations) {
+        const col = op.columnName;
+        const method = op.method;
+        const params = op.params || {};
+        let sql = "";
+        let sqlParams: any[] = [];
+        let rowsAffected = 0;
+        let success = true;
+        let details = "";
+
+        const quote = type === "mysql" ? "\`" : '"';
+        const qTableName = type === "sqlserver" ? `[${tableName}]` : `${quote}${tableName}${quote}`;
+        const qCol = type === "sqlserver" ? `[${col}]` : `${quote}${col}${quote}`;
+
+        try {
+          if (["impute_constant", "impute_median", "impute_mean", "impute_mode"].includes(method)) {
+            const fillValue = params.fillValue ?? params.value ?? "";
+            if (type === "postgres") {
+              sql = `UPDATE ${qTableName} SET ${qCol} = $1 WHERE ${qCol} IS NULL`;
+              sqlParams = [fillValue];
+            } else {
+              sql = `UPDATE ${qTableName} SET ${qCol} = ? WHERE ${qCol} IS NULL`;
+              sqlParams = [fillValue];
+            }
+            rowsAffected = await runQuery(conn, sql, sqlParams);
+            details = `Imputed null values with ${JSON.stringify(fillValue)}`;
+          } else if (method === "drop_column") {
+            sql = `ALTER TABLE ${qTableName} DROP COLUMN ${qCol}`;
+            await runQuery(conn, sql, []);
+            details = `Dropped column ${col}`;
+          } else if (method === "normalize_categories") {
+            if (type === "postgres") {
+              sql = `UPDATE ${qTableName} SET ${qCol} = LOWER(TRIM(${qCol}::text))`;
+            } else {
+              sql = `UPDATE ${qTableName} SET ${qCol} = LOWER(TRIM(${qCol}))`;
+            }
+            rowsAffected = await runQuery(conn, sql, []);
+            details = `Normalized categories for ${col}`;
+          } else if (method === "coerce_type") {
+            const targetType = params.targetType || "VARCHAR(255)";
+            if (type === "postgres") {
+              sql = `ALTER TABLE ${qTableName} ALTER COLUMN ${qCol} TYPE ${targetType} USING ${qCol}::${targetType}`;
+            } else if (type === "mysql") {
+              sql = `ALTER TABLE ${qTableName} MODIFY COLUMN ${qCol} ${targetType}`;
+            } else if (type === "sqlserver") {
+              sql = `ALTER TABLE ${qTableName} ALTER COLUMN ${qCol} ${targetType}`;
+            }
+            await runQuery(conn, sql, []);
+            details = `Coerced type of ${col} to ${targetType}`;
+          } else if (method === "standardize_headers") {
+            const newColName = col.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+            const qNewCol = type === "sqlserver" ? `[${newColName}]` : `${quote}${newColName}${quote}`;
+            if (type === "postgres") {
+              sql = `ALTER TABLE ${qTableName} RENAME COLUMN ${qCol} TO ${qNewCol}`;
+            } else if (type === "mysql") {
+              sql = `ALTER TABLE ${qTableName} RENAME COLUMN ${qCol} TO ${qNewCol}`;
+            } else if (type === "sqlserver") {
+              sql = `EXEC sp_rename '${tableName}.${col}', '${newColName}', 'COLUMN'`;
+            }
+            await runQuery(conn, sql, []);
+            details = `Renamed column ${col} to ${newColName}`;
+          } else if (method === "clip_iqr" || method === "cap_percentile") {
+            const lower = params.lowerBound;
+            const upper = params.upperBound;
+            if (lower !== undefined && upper !== undefined) {
+              if (type === "postgres") {
+                await runQuery(conn, `UPDATE ${qTableName} SET ${qCol} = $1 WHERE ${qCol} < $1`, [lower]);
+                await runQuery(conn, `UPDATE ${qTableName} SET ${qCol} = $2 WHERE ${qCol} > $2`, [lower, upper]); // Wait, $2 is upper.
+              } else {
+                await runQuery(conn, `UPDATE ${qTableName} SET ${qCol} = ? WHERE ${qCol} < ?`, [lower, lower]);
+                await runQuery(conn, `UPDATE ${qTableName} SET ${qCol} = ? WHERE ${qCol} > ?`, [upper, upper]);
+              }
+              details = `Clipped outliers to [${lower}, ${upper}]`;
+            } else {
+              details = `No bounds provided for clipping`;
+            }
+          } else {
+            details = `Operation ${method} not implemented for DB directly`;
+          }
+        } catch (error: any) {
+          success = false;
+          details = error.message;
+        }
+
+        results.push({ columnName: col, method, success, rowsAffected, details });
+      }
+    } finally {
+      await closeConn(conn);
+    }
+    return { results };
+  }
+
+  private async applyFileCleaningOperations(type: string, config: ConnectionConfig, tableName: string, operations: any[]): Promise<{ results: any[] }> {
+    const fileName = config.fileName;
+    if (!fileName || !this.fileService.fileExists(fileName)) {
+       return { results: operations.map(op => ({ columnName: op.columnName, method: op.method, success: false, rowsAffected: 0, details: "File not found" })) };
+    }
+    
+    const filePath = this.fileService.getFilePath(fileName);
+    const results: any[] = [];
+    
+    try {
+      const workbook = xlsx.readFile(filePath);
+      const sheetName = tableName && workbook.SheetNames.includes(tableName) ? tableName : workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      let rows = xlsx.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: "" });
+      
+      for (const op of operations) {
+        const col = op.columnName;
+        const method = op.method;
+        const params = op.params || {};
+        let rowsAffected = 0;
+        let success = true;
+        let details = "";
+        
+        try {
+          if (["impute_constant", "impute_median", "impute_mean", "impute_mode"].includes(method)) {
+            const fillValue = params.fillValue ?? params.value ?? "";
+            rows.forEach(r => {
+              if (r[col] === "" || r[col] === null || r[col] === undefined) {
+                r[col] = fillValue;
+                rowsAffected++;
+              }
+            });
+            details = `Imputed null values with ${JSON.stringify(fillValue)}`;
+          } else if (method === "drop_column") {
+            rows.forEach(r => {
+              delete r[col];
+              rowsAffected++;
+            });
+            details = `Dropped column ${col}`;
+          } else if (method === "normalize_categories") {
+            rows.forEach(r => {
+              if (typeof r[col] === "string") {
+                r[col] = r[col].trim().toLowerCase();
+                rowsAffected++;
+              }
+            });
+            details = `Normalized categories for ${col}`;
+          } else if (method === "standardize_headers") {
+            const newColName = col.toLowerCase().replace(/[^a-z0-9]+/g, "_");
+            rows.forEach(r => {
+              if (col in r) {
+                r[newColName] = r[col];
+                delete r[col];
+                rowsAffected++;
+              }
+            });
+            details = `Renamed column ${col} to ${newColName}`;
+          } else if (method === "clip_iqr" || method === "cap_percentile") {
+            const lower = params.lowerBound;
+            const upper = params.upperBound;
+            if (lower !== undefined && upper !== undefined) {
+              rows.forEach(r => {
+                const val = parseFloat(r[col]);
+                if (!isNaN(val)) {
+                  if (val < lower) { r[col] = lower; rowsAffected++; }
+                  if (val > upper) { r[col] = upper; rowsAffected++; }
+                }
+              });
+              details = `Clipped outliers to [${lower}, ${upper}]`;
+            } else {
+                details = `No bounds provided for clipping`;
+            }
+          } else if (method === "coerce_type") {
+            const targetType = params.targetType || "string";
+            rows.forEach(r => {
+              if (targetType.includes("INT") || targetType.includes("FLOAT") || targetType === "number") {
+                r[col] = Number(r[col]);
+              } else {
+                r[col] = String(r[col]);
+              }
+              rowsAffected++;
+            });
+            details = `Coerced type to ${targetType}`;
+          } else {
+            details = `Operation ${method} not implemented for files directly`;
+          }
+        } catch (e: any) {
+          success = false;
+          details = e.message;
+        }
+
+        results.push({ columnName: col, method, success, rowsAffected, details });
+      }
+      
+      const newWorksheet = xlsx.utils.json_to_sheet(rows);
+      workbook.Sheets[sheetName] = newWorksheet;
+      
+      if (type === "csv") {
+        const csvContent = xlsx.utils.sheet_to_csv(newWorksheet);
+        await this.fileService.saveFile(fileName, csvContent);
+      } else if (type === "tsv") {
+        const tsvContent = xlsx.utils.sheet_to_csv(newWorksheet, { FS: "\t" });
+        await this.fileService.saveFile(fileName, tsvContent);
+      } else {
+        xlsx.writeFile(workbook, filePath);
+      }
+
+    } catch (error: any) {
+      return { results: operations.map(op => ({ columnName: op.columnName, method: op.method, success: false, rowsAffected: 0, details: error.message })) };
+    }
+    
+    return { results };
+  }
+
   private getFileSlice(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, limit: number, offset: number): SampleResult {
     const allRows = this.getAllFileRows(type, config, tableName);
     const sliced = allRows.rows.slice(offset, offset + limit);
