@@ -1,8 +1,8 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { ConnectionTesterService } from "../../connectionTester.service";
-import { ConnectorService } from "../../connector.service";
-import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
+import { ConnectionTesterService } from "../../services/connectionTester.service";
+import { ConnectorService } from "../../services/connector.service";
+import { ConnectionConfig, ConnectorType } from "../../models/connector.types";
 
 export const createGetSchemaTool = (
   connectionTester: ConnectionTesterService,

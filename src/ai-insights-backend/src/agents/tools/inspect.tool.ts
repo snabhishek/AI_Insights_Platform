@@ -2,9 +2,9 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { Pool } from "pg";
 import * as xlsx from "xlsx";
-import { IFileService } from "../../file.service.interface";
-import { ConnectorService } from "../../connector.service";
-import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
+import { IFileService } from "../../services/file.service.interface";
+import { ConnectorService } from "../../services/connector.service";
+import { ConnectionConfig, ConnectorType } from "../../models/connector.types";
 
 type ColumnInfo = {
   name: string;

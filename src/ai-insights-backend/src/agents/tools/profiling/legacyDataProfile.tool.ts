@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { ConnectionTesterService } from "../../../connectionTester.service";
-import { ConnectionConfig, ConnectorType } from "../../../../models/connector.types";
+import { ConnectionTesterService } from "../../../services/connectionTester.service";
+import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
 
 type ScalarValue = string | number | boolean | null | undefined;
 

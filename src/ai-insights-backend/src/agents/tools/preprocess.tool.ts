@@ -1,6 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { ConnectorType } from "../../../models/connector.types";
+import { ConnectorType } from "../../models/connector.types";
 
 export const createPreprocessTool = () =>
   tool(
