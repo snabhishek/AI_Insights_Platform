@@ -9,3 +9,17 @@ export interface Project {
   agentState: Record<string, unknown>;
   createdAt: string;
 }
+
+export interface ProjectRun {
+  id: string;
+  projectId: string;
+  useCase?: string;
+  agentState: Record<string, unknown>;
+  createdAt: string;
+}
+
+export interface ProjectWithWorkspace {
+  project: Project;
+  workspaceName: string;
+}
+

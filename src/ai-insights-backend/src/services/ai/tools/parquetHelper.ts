@@ -75,3 +75,27 @@ export async function writeResolvedSchemaParquet(
     console.error(`Failed to write resolved schema to parquet file ${filePath}:`, error);
   }
 }
+
+/**
+ * Sanitizes a string for use in folder and file names.
+ */
+export function sanitizeName(name: string): string {
+  if (!name || typeof name !== "string") return "Default";
+  const clean = name.trim().replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ");
+  return clean || "Default";
+}
+
+/**
+ * Generates a DateTimeStamp formatted as YYYYMMDD-HHmmss
+ */
+export function generateDateTimeStamp(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hours = String(now.getHours()).padStart(2, '0');
+  const minutes = String(now.getMinutes()).padStart(2, '0');
+  const seconds = String(now.getSeconds()).padStart(2, '0');
+  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
+}
+

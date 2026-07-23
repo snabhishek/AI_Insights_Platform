@@ -45,18 +45,18 @@ const agentStateSchema = {
 };
 
 export function createAgentGraph() {
-  const workflow = new StateGraph<AgentState>({ channels: agentStateSchema });
+  const workflow = new StateGraph<AgentState>({ channels: agentStateSchema as any });
 
   // Add Nodes
-  workflow.addNode("inspector", inspectorNode);
-  workflow.addNode("profiler", profilerNode);
-  workflow.addNode("resolver", schemaResolverNode);
+  workflow.addNode("inspector", inspectorNode as any);
+  workflow.addNode("profiler", profilerNode as any);
+  workflow.addNode("resolver", schemaResolverNode as any);
 
   // Add Edges
-  workflow.addEdge(START, "inspector");
-  workflow.addEdge("inspector", "profiler");
-  workflow.addEdge("profiler", "resolver");
-  workflow.addEdge("resolver", END);
+  workflow.addEdge(START, "inspector" as any);
+  workflow.addEdge("inspector" as any, "profiler" as any);
+  workflow.addEdge("profiler" as any, "resolver" as any);
+  workflow.addEdge("resolver" as any, END);
 
   // Compile
   return workflow.compile();

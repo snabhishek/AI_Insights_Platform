@@ -1,4 +1,4 @@
-import { Connector } from "../../models/connector.types";
+import { Connector } from "../models/connector.types";
 
 export interface AgentState {
   connectorIds: string[];

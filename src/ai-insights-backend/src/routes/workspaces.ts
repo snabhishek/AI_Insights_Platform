@@ -113,7 +113,17 @@ router.get("/:id/projects", async (req: Request, res: Response) => {
   const { id } = req.params;
   try {
     const result = await query(
-      "SELECT * FROM projects WHERE workspace_id = $1 ORDER BY created_at DESC",
+      `SELECT p.*, r.agent_state
+       FROM projects p
+       LEFT JOIN LATERAL (
+         SELECT agent_state
+         FROM project_runs
+         WHERE project_id = p.id
+         ORDER BY created_at DESC
+         LIMIT 1
+       ) r ON true
+       WHERE p.workspace_id = $1
+       ORDER BY p.created_at DESC`,
       [id]
     );
     res.json(result.rows.map(mapProject));
@@ -171,12 +181,76 @@ router.post("/:id/projects", async (req: Request, res: Response) => {
   const projectId = `proj-${uuidv4()}`;
   try {
     const result = await query(
-      `INSERT INTO projects (id, name, role, data_sources, initials, workspace_id, use_case, agent_state, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+      `INSERT INTO projects (id, name, role, data_sources, initials, workspace_id, use_case, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
        RETURNING *`,
-      [projectId, name.trim(), role, dataSources, initials, workspaceId, useCase, JSON.stringify({})]
+      [projectId, name.trim(), role, dataSources, initials, workspaceId, useCase]
     );
     res.status(201).json(mapProject(result.rows[0]));
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── PUT /api/workspaces/:id/projects/:pid — Update a project ─────────────────
+router.put("/:id/projects/:pid", async (req: Request, res: Response) => {
+  const { pid } = req.params;
+  const { name, useCase, dataSources, agentState } = req.body;
+
+  try {
+    const existing = await query("SELECT * FROM projects WHERE id = $1", [pid]);
+    if (existing.rows.length === 0) {
+      res.status(404).json({ success: false, message: "Project not found." });
+      return;
+    }
+
+    const updatedName = typeof name === "string" && name.trim() ? name.trim() : existing.rows[0].name;
+    const updatedUseCase = useCase !== undefined ? useCase : existing.rows[0].use_case;
+    const updatedSources = Array.isArray(dataSources) ? dataSources : existing.rows[0].data_sources;
+
+    const result = await query(
+      `UPDATE projects
+       SET name = $1, use_case = $2, data_sources = $3
+       WHERE id = $4
+       RETURNING *`,
+      [updatedName, updatedUseCase, updatedSources, pid]
+    );
+
+    const projectObj = mapProject(result.rows[0]);
+    if (agentState !== undefined) {
+      projectObj.agentState = agentState;
+    } else {
+      const latestRun = await query(
+        "SELECT agent_state FROM project_runs WHERE project_id = $1 ORDER BY created_at DESC LIMIT 1",
+        [pid]
+      );
+      if (latestRun.rows.length > 0) {
+        projectObj.agentState = latestRun.rows[0].agent_state;
+      }
+    }
+
+    res.json(projectObj);
+  } catch (err: any) {
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── GET /api/workspaces/:id/projects/:pid/runs — Get project run history ────
+router.get("/:id/projects/:pid/runs", async (req: Request, res: Response) => {
+  const { pid } = req.params;
+  try {
+    const result = await query(
+      "SELECT * FROM project_runs WHERE project_id = $1 ORDER BY created_at DESC",
+      [pid]
+    );
+    const runs = result.rows.map((row) => ({
+      id: row.id,
+      projectId: row.project_id,
+      useCase: row.use_case || "",
+      agentState: row.agent_state ?? {},
+      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : row.created_at,
+    }));
+    res.json(runs);
   } catch (err: any) {
     res.status(500).json({ success: false, message: err.message });
   }
@@ -198,3 +272,4 @@ router.delete("/:id/projects/:pid", async (req: Request, res: Response) => {
 });
 
 export default router;
+

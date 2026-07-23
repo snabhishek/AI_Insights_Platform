@@ -28,7 +28,7 @@ import { createStatisticsTool } from "./tools/preprocessing/statistics.tool";
 import { IFileService } from "../file.service.interface";
 import { ProjectService } from "../project.service";
 import { buildResolveSchemaPrompt } from "./prompts/resolveSchema.prompt";
-import { getTopicsFromParquetSchema, writeResolvedSchemaParquet } from "./tools/parquetHelper";
+import { getTopicsFromParquetSchema, writeResolvedSchemaParquet, sanitizeName, generateDateTimeStamp } from "./tools/parquetHelper";
 
 const INSPECTION_INITIAL_BATCH_SIZE = 10;
 const INSPECTION_FOLLOW_UP_BATCH_SIZE = 5;
@@ -48,6 +48,10 @@ type WorkflowSessionMeta = {
 
 const AgentState = Annotation.Root({
   connectorId: Annotation<string[]>,
+  projectId: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" ? right : left),
+    default: () => "",
+  }),
   status: Annotation<string>,
   summary: Annotation<string>,
   userPrompt: Annotation<string>({
@@ -866,7 +870,8 @@ export class IngestionAgentService implements IIngestionAgentService {
     connector: any, 
     inspection: Record<string, unknown>, 
     userPrompt?: string, 
-    dataProfile?: Record<string, unknown>
+    dataProfile?: Record<string, unknown>,
+    projectId?: string
   ) {
     const inspectionSources = Array.isArray((inspection as any)?.sources)
       ? (inspection as any).sources
@@ -940,14 +945,32 @@ export class IngestionAgentService implements IIngestionAgentService {
       ? rawMappings
       : [{ datasetField: resolvedDomain, targetTopic: "Domain" }, ...rawMappings];
 
+    let outputParquetPath = path.resolve(path.dirname(staticSchemaPath), "resolved_schema.parquet");
+    if (projectId) {
+      try {
+        const projectWithWs = await this.projectService.getProjectWithWorkspace(projectId);
+        if (projectWithWs) {
+          const workspaceName = sanitizeName(projectWithWs.workspaceName);
+          const projectTitle = sanitizeName(projectWithWs.project.name);
+          const folderName = `${workspaceName}-${projectTitle}`;
+          const timestamp = generateDateTimeStamp();
+          const fileName = `${workspaceName}-${projectTitle}-${timestamp}.parquet`;
+
+          const packagesDir = path.dirname(staticSchemaPath);
+          outputParquetPath = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas", fileName);
+        }
+      } catch (lookupErr: any) {
+        console.warn(`[resolveSchema] Failed to lookup project/workspace for ${projectId}, fallback path used:`, lookupErr?.message || lookupErr);
+      }
+    }
+
     if (mappingsToWrite.length > 0) {
-      const outputParquetPath = path.resolve(path.dirname(staticSchemaPath), "resolved_schema.parquet");
       await writeResolvedSchemaParquet(
         outputParquetPath,
         mappingsToWrite as Array<{ datasetField: string; targetTopic: string }>,
         targetParquetTopics
       );
-      console.info(`[resolveSchema] Wrote resolved_schema.parquet to ${outputParquetPath} with ${mappingsToWrite.length} mappings`);
+      console.info(`[resolveSchema] Wrote resolved schema parquet file to ${outputParquetPath} with ${mappingsToWrite.length} mappings`);
     }
 
     return {
@@ -955,6 +978,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       ...result,
       domain: resolvedDomain,
       mappings: mappingsToWrite,
+      parquetPath: outputParquetPath,
     };
   }
 
@@ -1244,7 +1268,8 @@ export class IngestionAgentService implements IIngestionAgentService {
             connector, 
             inspection, 
             typeof state.userPrompt === "string" ? state.userPrompt : "",
-            state.dataProfile
+            state.dataProfile,
+            (state as any).projectId
           );
           return {
             connectorId: connector.id,
@@ -1392,6 +1417,8 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       const config = { configurable: { thread_id: threadId } };
 
+      this.stoppedSessions.delete(threadId);
+
       if (options?.action === "retry" && options.step) {
         const targetNode = this.mapRetryStepToInterruptNode(options.step);
         console.info(`[Workflow] Retry requested for step "${options.step}" → target node "${targetNode}", thread ${threadId}`);
@@ -1403,38 +1430,33 @@ export class IngestionAgentService implements IIngestionAgentService {
           this.sessionMeta.set(threadId, meta);
           const freshConfig = { configurable: { thread_id: threadId } };
           await workflow.invoke(
-            { connectorId, userPrompt: meta.userPrompt, status: "queued", summary: "Retrying from inspect" },
+            { connectorId, projectId: options?.projectId ?? "", userPrompt: meta.userPrompt, status: "queued", summary: "Retrying from inspect" },
             freshConfig
           );
-          const graphState = await workflow.getState(freshConfig);
-          return this.buildResultFromGraphState(graphState, threadId, connectorId);
-        }
-
-        // For profileData or resolveSchema retry: find the checkpoint where that node is next
-        let retryCheckpointId: string | undefined;
-        try {
-          for await (const snapshot of workflow.getStateHistory(config)) {
-            const snapshotNext = Array.isArray(snapshot.next) ? snapshot.next : [];
-            if (snapshotNext.includes(targetNode!)) {
-              retryCheckpointId = (snapshot.config as any)?.configurable?.checkpoint_id;
-              break;
+        } else {
+          // For profileData or resolveSchema retry: find the checkpoint where that node is next
+          let retryCheckpointId: string | undefined;
+          try {
+            for await (const snapshot of workflow.getStateHistory(config)) {
+              const snapshotNext = Array.isArray(snapshot.next) ? snapshot.next : [];
+              if (snapshotNext.includes(targetNode!)) {
+                retryCheckpointId = (snapshot.config as any)?.configurable?.checkpoint_id;
+                break;
+              }
             }
+          } catch (historyError: any) {
+            console.warn(`[Workflow] Failed to read state history for retry:`, historyError?.message);
           }
-        } catch (historyError: any) {
-          console.warn(`[Workflow] Failed to read state history for retry:`, historyError?.message);
-        }
 
-        if (retryCheckpointId) {
-          console.info(`[Workflow] Retrying from checkpoint ${retryCheckpointId}`);
-          const retryConfig = { configurable: { thread_id: threadId, checkpoint_id: retryCheckpointId } };
-          await workflow.invoke(null, retryConfig);
-          const graphState = await workflow.getState(config);
-          return this.buildResultFromGraphState(graphState, threadId, connectorId);
+          if (retryCheckpointId) {
+            console.info(`[Workflow] Retrying from checkpoint ${retryCheckpointId}`);
+            const retryConfig = { configurable: { thread_id: threadId, checkpoint_id: retryCheckpointId } };
+            await workflow.invoke(null, retryConfig);
+          } else {
+            console.warn(`[Workflow] No checkpoint found for retry target "${targetNode}", resuming from current position`);
+            await workflow.invoke(null, config);
+          }
         }
-
-        // Fallback: resume from current position
-        console.warn(`[Workflow] No checkpoint found for retry target "${targetNode}", resuming from current position`);
-        await workflow.invoke(null, config);
       } else if (options?.action === "approve") {
         // Approve: resume from the current interrupt
         console.info(`[Workflow] Approve — resuming thread ${threadId}`);
@@ -1443,19 +1465,52 @@ export class IngestionAgentService implements IIngestionAgentService {
         // New workflow: first invocation
         console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);
         await workflow.invoke(
-          { connectorId, userPrompt: userPrompt ?? "", status: "queued", summary: "Ingestion workflow started" },
+          { connectorId, projectId: options?.projectId ?? "", userPrompt: userPrompt ?? "", status: "queued", summary: "Ingestion workflow started" },
           config
         );
       }
 
-      const graphState = await workflow.getState(config);
+      // Auto-advance through interrupt gates to run all nodes through to schema resolution unless stopped
+      let graphState = await workflow.getState(config);
+      while (
+        Array.isArray(graphState?.next) &&
+        graphState.next.length > 0 &&
+        graphState?.values?.status !== "completed" &&
+        graphState?.values?.status !== "failed" &&
+        !this.stoppedSessions.has(threadId)
+      ) {
+        console.info(`[Workflow] Auto-advancing node [${graphState.next.join(", ")}], thread ${threadId}`);
+        await workflow.invoke(null, config);
+        graphState = await workflow.getState(config);
+      }
       
       console.info(`[Workflow] State after invoke — next: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}], status: ${graphState?.values?.status || "unknown"}`);
+      
+      if (this.stoppedSessions.has(threadId)) {
+        const stoppedValues = {
+          ...(graphState?.values || {}),
+          status: "failed",
+          summary: "Workflow stopped by user",
+        };
+        const stoppedResult = this.buildResultFromGraphState({ ...graphState, values: stoppedValues }, threadId, connectorId);
+        stoppedResult.status = "failed";
+        stoppedResult.summary = "Workflow stopped by user";
+        stoppedResult.requiresApproval = false;
+        if (options?.projectId) {
+          await this.projectService.updateAgentState(options.projectId, stoppedValues);
+        }
+        return stoppedResult;
+      }
+
       const result = this.buildResultFromGraphState(graphState, threadId, connectorId);
 
       if (options?.projectId) {
         try {
-          await this.projectService.updateAgentState(options.projectId, graphState?.values ?? {});
+          await this.projectService.updateAgentState(
+            options.projectId, 
+            graphState?.values ?? {}, 
+            userPrompt ?? meta.userPrompt
+          );
         } catch (persistError: any) {
           console.warn(`[Workflow] Failed to persist agent state for project ${options.projectId}:`, persistError?.message || persistError);
         }
@@ -1484,6 +1539,39 @@ export class IngestionAgentService implements IIngestionAgentService {
       throw error;
     } finally {
       this.activeTraceSession = undefined;
+    }
+  }
+
+  private stoppedSessions = new Set<string>();
+
+  async stop(sessionId: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }> {
+    this.stoppedSessions.add(sessionId);
+    console.info(`[Workflow] Session ${sessionId} marked as stopped.`);
+
+    try {
+      const workflow = this.createWorkflow();
+      const config = { configurable: { thread_id: sessionId } };
+      const graphState = await workflow.getState(config);
+
+      const updatedValues = {
+        ...(graphState?.values || {}),
+        status: "failed",
+        summary: "Workflow stopped by user",
+      };
+
+      const result = this.buildResultFromGraphState({ ...graphState, values: updatedValues }, sessionId, graphState?.values?.connectorId || []);
+      result.status = "failed";
+      result.summary = "Workflow stopped by user";
+      result.message = "Workflow stopped by user.";
+      result.requiresApproval = false;
+
+      if (projectId) {
+        await this.projectService.updateAgentState(projectId, updatedValues);
+      }
+      return result;
+    } catch (err: any) {
+      console.warn(`[Workflow] Failed to update stopped state for session ${sessionId}:`, err?.message || err);
+      return { success: true, message: "Workflow stopped" };
     }
   }
 }

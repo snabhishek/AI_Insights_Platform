@@ -30,4 +30,5 @@ export interface IIngestionAgentService {
     userPrompt?: string,
     options?: { sessionId?: string; action?: "approve" | "retry"; step?: string; projectId?: string }
   ): Promise<IngestionAgentRunResult>;
+  stop(sessionId: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
 }

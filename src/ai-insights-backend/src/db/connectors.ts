@@ -19,7 +19,6 @@ export const projects = pgTable("projects", {
     .notNull()
     .references(() => workspaces.id, { onDelete: "cascade" }),
   useCase: text("use_case"),
-  agentState: jsonb("agent_state").$type<Record<string, unknown>>().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => {
   return {
@@ -50,4 +49,19 @@ export const connectors = pgTable("connectors", {
     workspaceIdIdx: index("connectors_workspace_id_idx").on(table.workspaceId),
   };
 });
+
+export const projectRuns = pgTable("project_runs", {
+  id: varchar("id", { length: 50 }).primaryKey(),
+  projectId: varchar("project_id", { length: 50 })
+    .notNull()
+    .references(() => projects.id, { onDelete: "cascade" }),
+  useCase: text("use_case"),
+  agentState: jsonb("agent_state").$type<Record<string, unknown>>().notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+}, (table) => {
+  return {
+    projectIdIdx: index("project_runs_project_id_idx").on(table.projectId),
+  };
+});
+
 

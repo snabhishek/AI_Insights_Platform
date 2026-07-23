@@ -44,8 +44,13 @@ export class AIController {
   };
 
   stopIngestionWorkflow = async (req: Request, res: Response): Promise<void> => {
-    const { sessionId } = req.body as { sessionId?: string };
+    const { sessionId, projectId } = req.body as { sessionId?: string; projectId?: string };
     console.info(`[Workflow] Stop requested for session: ${sessionId || "unknown"}`);
+    if (sessionId) {
+      const data = await this.ingestionAgentService.stop(sessionId, projectId);
+      res.json({ success: true, message: "Workflow stopped successfully", data });
+      return;
+    }
     res.json({ success: true, message: "Workflow stopped successfully" });
   };
 }

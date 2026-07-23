@@ -15,6 +15,7 @@ interface WorkflowPipelineProps {
   requiresApproval: boolean;
   workflowMessage: string;
   onRunWorkflow: () => void;
+  onReRunWorkflow?: () => void;
   onStopWorkflow?: () => void;
   onViewHistory: () => void;
   onSelectStage: (stepId: string) => void;
@@ -163,6 +164,7 @@ export default function WorkflowPipeline({
   requiresApproval,
   workflowMessage,
   onRunWorkflow,
+  onReRunWorkflow,
   onStopWorkflow,
   onViewHistory,
   onSelectStage,
@@ -172,6 +174,14 @@ export default function WorkflowPipeline({
   const currentStage = activeStage || "inspect";
   const currentStepDisplay = currentStage === "inspect" ? "Data Ingestion" : currentStage === "profileData" || currentStage === "preprocess" ? "Data Profiling" : "Schema Resolver";
   const detailItems = formatStageOutput(currentStage, stageOutputs);
+
+  const hasExistingRun =
+    lastRunTime !== "Not run yet" ||
+    runStatus === "Success" ||
+    Object.values(pipelineStatuses).some((s) => s === "Completed" || s === "In Progress");
+
+  const runButtonText = hasExistingRun ? "Re-Run Workflow" : "Run Workflow";
+  const handleRunClick = hasExistingRun && onReRunWorkflow ? onReRunWorkflow : onRunWorkflow;
 
   return (
     <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-surface border border-border rounded-2xl p-6 shadow-soft">
@@ -219,13 +229,13 @@ export default function WorkflowPipeline({
           ) : (
             <button
               type="button"
-              onClick={onRunWorkflow}
+              onClick={handleRunClick}
               className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/95 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-primary/25 hover:scale-105 active:scale-95 cursor-pointer shrink-0"
             >
               <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
                 <polygon points="5 3 19 12 5 21 5 3" />
               </svg>
-              Run Workflow
+              {runButtonText}
             </button>
           )}
         </div>

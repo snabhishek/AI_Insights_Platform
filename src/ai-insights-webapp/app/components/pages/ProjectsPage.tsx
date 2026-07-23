@@ -65,6 +65,7 @@ export default function ProjectsPage() {
   const {
     projects,
     addProject,
+    updateProject,
     deleteProject,
     dataSources,
     addDataSource,
@@ -152,7 +153,7 @@ export default function ProjectsPage() {
     return next;
   };
 
-  const determineActiveStage = (payload: WorkflowResponse["data"]): string => {
+  const determineActiveStage = (payload: Partial<WorkflowResponse["data"]>): string => {
     if (payload.status === "completed") {
       return "resolveSchema";
     }
@@ -171,6 +172,51 @@ export default function ProjectsPage() {
     }
     return "inspect";
   };
+
+  // Hydrate pipeline state whenever selectedProject changes
+  useEffect(() => {
+    if (!selectedProject) return;
+
+    const state = selectedProject.agentState as Record<string, any> | undefined;
+    if (state && typeof state === "object" && (state.stageStatuses || state.status || state.stageOutputs)) {
+      const nextStatuses = mapStageToPipelineStatus(state.stageStatuses);
+      setPipelineStatuses(nextStatuses);
+
+      if (state.status === "completed") {
+        setRunStatus("Success");
+      } else if (state.status === "failed") {
+        setRunStatus("Idle");
+      } else if (state.requiresApproval) {
+        setRunStatus("Paused");
+      } else if (state.status === "running") {
+        setRunStatus("Running");
+      } else {
+        setRunStatus("Idle");
+      }
+
+      setWorkflowMessage(state.message || state.summary || "Workflow loaded from DB");
+      if (state.stageOutputs) {
+        setStageOutputs(state.stageOutputs);
+      }
+      setActiveStage(determineActiveStage(state));
+      setRequiresApproval(Boolean(state.requiresApproval));
+      if (state.sessionId) {
+        setWorkflowSessionId(state.sessionId);
+      }
+
+      if (state.status === "completed" || selectedProject.createdAt) {
+        const dateObj = new Date(state.updatedAt || selectedProject.createdAt || Date.now());
+        setLastRunTime(dateObj.toLocaleString("en-US", {
+          month: "short",
+          day: "2-digit",
+          year: "numeric",
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: true,
+        }));
+      }
+    }
+  }, [selectedProjectId, selectedProject?.agentState]);
 
   const updateWorkflowState = (payload: WorkflowResponse["data"]) => {
     const nextStatuses = mapStageToPipelineStatus(payload.stageStatuses);
@@ -207,9 +253,13 @@ export default function ProjectsPage() {
         hour12: true,
       }));
     }
+
+    if (selectedProject?.id) {
+      updateProject(selectedProject.id, { agentState: payload });
+    }
   };
 
-  const runWorkflow = async (action?: "approve" | "retry", step?: string) => {
+  const runWorkflow = async (action?: "approve" | "retry", step?: string, overrideUserPrompt?: string) => {
     if ((runStatus === "Running" || runStatus === "Paused") && !action) return;
 
     if (abortControllerRef.current) {
@@ -227,7 +277,7 @@ export default function ProjectsPage() {
     try {
       const payload: WorkflowRequestPayload = {
         connectorId: workflowConnectorIds,
-        userPrompt: selectedProject?.useCase || "",
+        userPrompt: overrideUserPrompt !== undefined ? overrideUserPrompt : (selectedProject?.useCase || ""),
         projectId: selectedProject?.id,
       };
       if (workflowSessionId) {
@@ -320,11 +370,22 @@ export default function ProjectsPage() {
     setActiveStage(stageMap[stepId] || stepId);
   };
 
+  const handleReRunWorkflow = async (newUseCase?: string) => {
+    if (!selectedProject) return;
+    if (newUseCase !== undefined && newUseCase !== selectedProject.useCase) {
+      await updateProject(selectedProject.id, { useCase: newUseCase });
+    }
+    // Clear workflow session ID to start a fresh execution run
+    setWorkflowSessionId(null);
+    setRunStatus("Idle");
+    setRequiresApproval(false);
+    void runWorkflow(undefined, undefined, newUseCase ?? selectedProject.useCase);
+  };
+
   // ── Navigation helpers ────────────────────────────────────────────────────
 
   const openProject = (id: string) => {
     setSelectedProjectId(id);
-    resetPipeline();
     setView("detail");
   };
 
@@ -376,6 +437,8 @@ export default function ProjectsPage() {
         runStatus={runStatus}
         lastRunTime={lastRunTime}
         onRunWorkflow={runSimulation}
+        onReRunWorkflow={handleReRunWorkflow}
+        onSaveUseCase={(newUseCase) => updateProject(selectedProject.id, { useCase: newUseCase })}
         onStopWorkflow={handleStopWorkflow}
         onGoBack={goToList}
         onDelete={() => confirmDeleteProject(selectedProject)}
