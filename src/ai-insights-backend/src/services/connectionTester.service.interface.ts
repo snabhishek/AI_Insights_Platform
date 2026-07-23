@@ -24,4 +24,5 @@ export interface IConnectionTesterService {
   getRandomSample(type: ConnectorType, config: ConnectionConfig, tableName: string, limit: number, seed?: number): Promise<SampleResult>;
   getStratifiedSample(type: ConnectorType, config: ConnectionConfig, tableName: string, stratifyColumn: string, limitPerGroup: number, seed?: number): Promise<SampleResult>;
   executeUpdate(type: ConnectorType, config: ConnectionConfig, tableName: string, updates: Array<{ column: string; value: unknown; whereColumn: string; whereValue: unknown }>): Promise<{ success: boolean; rowsAffected: number }>;
+  applyCleaningOperations(type: ConnectorType, config: ConnectionConfig, tableName: string, operations: any[]): Promise<{ results: any[] }>;
 }
