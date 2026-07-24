@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { DataSource } from "../providers/AppContext";
+import { DataSource, BACKEND_URL } from "../providers/AppContext";
 
 interface DataPreviewGridProps {
   source: DataSource;
@@ -14,7 +14,7 @@ interface TableInfo {
   rows: number;
 }
 
-const BACKEND_BASE = "http://127.0.0.1:4000/api/connectors";
+const BACKEND_BASE = `${BACKEND_URL}/connectors`;
 
 const API_PREVIEW_DATA = {
   status: "success",

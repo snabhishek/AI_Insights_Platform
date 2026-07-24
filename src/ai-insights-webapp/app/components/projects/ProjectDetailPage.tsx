@@ -65,12 +65,22 @@ interface ProjectDetailPageProps {
   runStatus: RunStatus;
   lastRunTime: string;
   onRunWorkflow: () => void;
+  onReRunWorkflow?: (newUseCase?: string) => void;
+  onSaveUseCase?: (newUseCase: string) => Promise<void> | void;
+  onStopWorkflow?: () => void;
   onGoBack: () => void;
   onDelete: () => void;
   onEdit: () => void;
   onViewHistory: () => void;
   onManageSources: () => void;
   onAddTag: () => void;
+  activeStage: string | null;
+  stageOutputs: Record<string, unknown>;
+  requiresApproval: boolean;
+  workflowMessage: string;
+  onSelectStage: (stepId: string) => void;
+  onApprove: () => void;
+  onRetry: (stepId: string) => void;
   showAlert: (opts: { title: string; message: string; type: AlertType; logs?: string }) => void;
 }
 
@@ -85,18 +95,38 @@ export default function ProjectDetailPage({
   runStatus,
   lastRunTime,
   onRunWorkflow,
+  onReRunWorkflow,
+  onSaveUseCase,
+  onStopWorkflow,
   onGoBack,
   onDelete,
   onEdit,
   onViewHistory,
   onManageSources,
   onAddTag,
+  activeStage,
+  stageOutputs,
+  requiresApproval,
+  workflowMessage,
+  onSelectStage,
+  onApprove,
+  onRetry,
   showAlert,
 }: ProjectDetailPageProps) {
+  const [isEditingUseCase, setIsEditingUseCase] = React.useState(false);
+  const [editedUseCaseText, setEditedUseCaseText] = React.useState(project.useCase || "");
+
+  React.useEffect(() => {
+    setEditedUseCaseText(project.useCase || "");
+  }, [project.useCase]);
+
   const projectSources = allDataSources.filter((ds) =>
     project.dataSources.includes(ds.id)
   );
   const displaySources =
+    projectSources.length > 0
+      ? projectSources
+      : buildMockSources(project.workspaceId);
     projectSources.length > 0
       ? projectSources
       : buildMockSources(project.workspaceId);
@@ -235,19 +265,78 @@ export default function ProjectDetailPage({
 
           {/* Project Use Case Description Panel */}
           <div className="flex flex-col bg-surface border border-border rounded-2xl p-5 shadow-soft select-none">
-            <div className="mb-3 pb-2 border-b border-border">
-              <h2 className="text-sm font-bold text-foreground">
-                Project Use Case
-              </h2>
-              <p className="text-[9px] text-muted-foreground mt-0.5">
-                Detailed description of project objectives.
-              </p>
+            <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
+              <div>
+                <h2 className="text-sm font-bold text-foreground">
+                  Project Use Case
+                </h2>
+                <p className="text-[9px] text-muted-foreground mt-0.5">
+                  Detailed description of project objectives.
+                </p>
+              </div>
+              {!isEditingUseCase && (
+                <button
+                  onClick={() => {
+                    setEditedUseCaseText(project.useCase || "");
+                    setIsEditingUseCase(true);
+                  }}
+                  className="px-2.5 py-1 text-xs font-bold rounded-lg border border-border bg-surface hover:bg-surface-muted text-primary cursor-pointer transition-colors"
+                >
+                  Edit Use Case
+                </button>
+              )}
             </div>
-            <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
-              {project.useCase
-                ? project.useCase.replace(/[#*`_[\]]/g, "")
-                : "Analyze sales trends, top-performing regions, and product effectiveness across all channels."}
-            </div>
+
+            {isEditingUseCase ? (
+              <div className="flex flex-col gap-3">
+                <textarea
+                  value={editedUseCaseText}
+                  onChange={(e) => setEditedUseCaseText(e.target.value)}
+                  rows={4}
+                  className="w-full text-xs p-3 rounded-xl border border-border bg-surface-muted text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-y"
+                  placeholder="Describe your use case goals..."
+                />
+                <div className="flex items-center justify-end gap-2 flex-wrap">
+                  <button
+                    onClick={() => setIsEditingUseCase(false)}
+                    className="px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (onSaveUseCase) await onSaveUseCase(editedUseCaseText);
+                      setIsEditingUseCase(false);
+                    }}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground cursor-pointer"
+                  >
+                    Save Only
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (onSaveUseCase) await onSaveUseCase(editedUseCaseText);
+                      setIsEditingUseCase(false);
+                      if (onReRunWorkflow) {
+                        onReRunWorkflow(editedUseCaseText);
+                      } else {
+                        onRunWorkflow();
+                      }
+                    }}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-sm"
+                  >
+                    Save & Re-Run Workflow
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-3">
+                <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                  {project.useCase
+                    ? project.useCase.replace(/[#*`_[\]]/g, "")
+                    : "Analyze sales trends, top-performing regions, and product effectiveness across all channels."}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -257,8 +346,17 @@ export default function ProjectDetailPage({
           completionPercentage={completionPercentage}
           runStatus={runStatus}
           lastRunTime={lastRunTime}
+          activeStage={activeStage}
+          stageOutputs={stageOutputs}
+          requiresApproval={requiresApproval}
+          workflowMessage={workflowMessage}
           onRunWorkflow={onRunWorkflow}
+          onReRunWorkflow={onReRunWorkflow ? () => onReRunWorkflow() : undefined}
+          onStopWorkflow={onStopWorkflow}
           onViewHistory={onViewHistory}
+          onSelectStage={onSelectStage}
+          onApprove={onApprove}
+          onRetry={onRetry}
         />
       </div>
     </div>

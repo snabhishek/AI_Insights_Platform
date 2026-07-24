@@ -6,12 +6,18 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { LocalFileService } from "./services/file.service";
 import { ConnectionTesterService } from "./services/connectionTester.service";
 import { PostgresConnectorRepository } from "./repositories/connector.repository";
+import { PostgresProjectRepository } from "./repositories/project.repository";
+import { ProjectService } from "./services/project.service";
 import workspaceRouter from "./routes/workspaces";
 import { ConnectorService } from "./services/connector.service";
 import { ConnectorController } from "./controllers/connector.controller";
 import createConnectorRouter from "./routes/connectors";
+import createAIRouter from "./routes/ai";
 import { checkAndCreateDatabase, runMigrations, pool } from "./db";
 import * as schema from "./db/connectors";
+// import { AgentController } from "./controllers/agent.controller";
+import { IngestionAgentService } from "./services/ai/ingestionAgent.service";
+import { AIController } from "./controllers/ai.controller";
 
 dotenv.config();
 
@@ -28,8 +34,8 @@ app.use(
   })
 );
 
-app.use(express.json({ limit: "50mb" }));
-app.use(express.urlencoded({ limit: "50mb", extended: true }));
+app.use(express.json({ limit: "500mb" }));
+app.use(express.urlencoded({ limit: "500mb", extended: true }));
 
 let db: any;
 let fileService: LocalFileService;
@@ -37,6 +43,9 @@ let connectionTester: ConnectionTesterService;
 let connectorRepository: PostgresConnectorRepository;
 let connectorService: ConnectorService;
 let connectorController: ConnectorController;
+// let agentController: AgentController;
+let ingestionAgentService: IngestionAgentService;
+let aiController: AIController;
 
 async function bootstrap() {
   // 1. Wrap PG Pool with Drizzle ORM
@@ -46,11 +55,23 @@ async function bootstrap() {
   fileService = new LocalFileService();
   connectionTester = new ConnectionTesterService(fileService);
   connectorRepository = new PostgresConnectorRepository(db);
+  const projectRepository = new PostgresProjectRepository(db);
+  const projectService = new ProjectService(projectRepository);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
   connectorController = new ConnectorController(connectorService, connectionTester);
+  // agentController = new AgentController(connectorService);
+  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService);
+  aiController = new AIController(ingestionAgentService);
 
   // 4. Mount Main routers
   app.use("/api/connectors", createConnectorRouter(connectorController));
+  
+  // Agent Router
+  const agentRouter = express.Router();
+  // agentRouter.post("/inspect", agentController.runInspector);
+  // app.use("/api/agents", agentRouter);
+
+  app.use("/api/ai", createAIRouter(aiController));
   app.use("/api/workspaces", workspaceRouter);
 
   // Health check endpoint

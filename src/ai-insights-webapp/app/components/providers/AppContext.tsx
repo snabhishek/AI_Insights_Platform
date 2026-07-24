@@ -46,6 +46,7 @@ export interface Project {
   workspaceId: string;
   createdAt?: string;
   useCase?: string;
+  agentState?: Record<string, unknown>;
 }
 
 export interface UserProfile {
@@ -80,6 +81,7 @@ interface AppContextType {
   deleteWorkspace: (id: string) => Promise<void>;
   projects: Project[];
   addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string) => Promise<void>;
+  updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   dataSources: DataSource[];
   addDataSource: (name: string, type: DataSource["type"], subtext: string, config: ConnectionConfig) => Promise<void>;
@@ -120,7 +122,28 @@ const INITIAL_ROLES: SystemRole[] = [
   },
 ];
 
-const BACKEND_URL = "http://127.0.0.1:4000/api";
+export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:4000/api";
+
+// Helper function to fetch resources with retry logic to handle initial dev server spin-up delays
+async function fetchWithRetry(url: string, options?: RequestInit, retries = 5, delay = 1000): Promise<Response> {
+  try {
+    const res = await fetch(url, options);
+    // If we get a server-side error that might be temporary (e.g. while database is migrating/seeding)
+    if (!res.ok && retries > 0 && [500, 502, 503, 504].includes(res.status)) {
+      console.warn(`Fetch to ${url} failed with status ${res.status}. Retrying in ${delay}ms... (${retries} retries left)`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retries - 1, delay * 1.5);
+    }
+    return res;
+  } catch (err) {
+    if (retries > 0) {
+      console.warn(`Fetch to ${url} encountered network error: ${err}. Retrying in ${delay}ms... (${retries} retries left)`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+      return fetchWithRetry(url, options, retries - 1, delay * 1.5);
+    }
+    throw err;
+  }
+}
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
@@ -176,7 +199,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     async function fetchWorkspaces() {
       try {
-        const res = await fetch(`${BACKEND_URL}/workspaces`);
+        const res = await fetchWithRetry(`${BACKEND_URL}/workspaces`);
         if (res.ok) {
           const data: Workspace[] = await res.json();
           setWorkspaces(data);
@@ -200,8 +223,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const fetchWorkspaceData = useCallback(async (wsId: string) => {
     try {
       const [projRes, srcRes] = await Promise.all([
-        fetch(`${BACKEND_URL}/workspaces/${wsId}/projects`),
-        fetch(`${BACKEND_URL}/connectors?workspaceId=${wsId}`),
+        fetchWithRetry(`${BACKEND_URL}/workspaces/${wsId}/projects`),
+        fetchWithRetry(`${BACKEND_URL}/connectors?workspaceId=${wsId}`),
       ]);
       if (projRes.ok) setProjects(await projRes.json());
       if (srcRes.ok) setDataSources(await srcRes.json());
@@ -271,6 +294,31 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err: any) {
       showAlert({ title: "Project Creation Failed", message: err.message, type: "error" });
+    }
+  };
+
+  const updateProject = async (id: string, updates: Partial<Project>) => {
+    const wsId = activeWorkspaceId || "default";
+    try {
+      const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updates),
+      });
+      const contentType = res.headers.get("content-type") || "";
+      if (res.ok && contentType.includes("application/json")) {
+        const updatedProject = await res.json();
+        setProjects((prev) => prev.map((p) => (p.id === id ? updatedProject : p)));
+      } else {
+        const text = await res.text();
+        if (!res.ok) {
+          console.warn(`Update project failed (${res.status}):`, text.slice(0, 100));
+        }
+        setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
+      }
+    } catch (err: any) {
+      console.warn("Update project backend request failed, syncing locally:", err?.message || err);
+      setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, ...updates } : p)));
     }
   };
 
@@ -478,6 +526,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         deleteWorkspace,
         projects,
         addProject,
+        updateProject,
         deleteProject,
         dataSources,
         addDataSource,
