@@ -7,8 +7,8 @@ export const PIPELINE_STEPS: WorkflowStep[] = [
   {
     id: "Data Ingestion",
     title: "Data Ingestion",
-    description: "Collect data from connected sources",
-    metric: "3 Sources",
+    description: "Inspect connector sources and discover structure",
+    metric: "Inspect",
     color: "green",
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
@@ -19,8 +19,8 @@ export const PIPELINE_STEPS: WorkflowStep[] = [
   {
     id: "Data Profiling",
     title: "Data Profiling",
-    description: "Profile and analyze data quality",
-    metric: "12 Profiling Rules",
+    description: "Profile and preprocess data quality findings",
+    metric: "Profile + Prep",
     color: "blue",
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
@@ -33,10 +33,10 @@ export const PIPELINE_STEPS: WorkflowStep[] = [
     ),
   },
   {
-    id: "Schema resolver",
+    id: "Schema Resolver",
     title: "Schema Resolver",
-    description: "Resolve and map data schema",
-    metric: "8 Schemas Resolved",
+    description: "Resolve and map the schema for downstream use",
+    metric: "Resolve",
     color: "purple",
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
@@ -50,50 +50,62 @@ export const PIPELINE_STEPS: WorkflowStep[] = [
   {
     id: "Feature Engineering",
     title: "Feature Engineering",
-    description: "Generate features for training",
-    metric: "15 Features",
+    description: "Shape the data into features for downstream analytics",
+    metric: "Features",
     color: "yellow",
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+        <path d="M4 6h16" />
+        <path d="M4 12h10" />
+        <path d="M4 18h6" />
+        <circle cx="17" cy="12" r="3" />
       </svg>
     ),
   },
   {
     id: "Model Training",
     title: "Model Training",
-    description: "Train machine learning models",
-    metric: "5 Models",
-    color: "red",
+    description: "Train predictive models from prepared data",
+    metric: "Train",
+    color: "pink",
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M9.59 4.59A2 2 0 1 1 11 8H2m10.59 11.41A2 2 0 1 0 14 16H2m15.59-5.59A2 2 0 1 1 19 14H2" />
+        <path d="M4 19V5" />
+        <path d="M20 19V9" />
+        <path d="M12 19V13" />
+        <circle cx="4" cy="19" r="2" />
+        <circle cx="12" cy="19" r="2" />
+        <circle cx="20" cy="19" r="2" />
       </svg>
     ),
   },
   {
     id: "Model Validation",
     title: "Model Validation",
-    description: "Validate model performance",
-    metric: "2 Validations",
-    color: "pink",
+    description: "Validate model quality and confidence",
+    metric: "Validate",
+    color: "teal",
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
-        <polyline points="22 4 12 14.01 9 11.01" />
+        <rect x="4" y="4" width="16" height="16" rx="2" />
+        <path d="M8 12h8" />
+        <path d="M8 8h8" />
+        <path d="M8 16h5" />
       </svg>
     ),
   },
   {
     id: "Forecast",
     title: "Forecast",
-    description: "Generate forecasts and predictions",
-    metric: "Business Impact",
-    color: "teal",
+    description: "Publish the final forecast for business action",
+    metric: "Forecast",
+    color: "red",
     icon: (
       <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M3 3v18h18" />
-        <polyline points="18.7 8l-5.1 5.2-2.8-2.7L7 14.3" />
+        <path d="M5 19V9" />
+        <path d="M12 19V5" />
+        <path d="M19 19v-7" />
+        <path d="M2 19h20" />
       </svg>
     ),
   },
@@ -102,7 +114,7 @@ export const PIPELINE_STEPS: WorkflowStep[] = [
 export const INITIAL_PIPELINE_STATUSES: Record<string, "Not Started"> = {
   "Data Ingestion": "Not Started",
   "Data Profiling": "Not Started",
-  "Schema resolver": "Not Started",
+  "Schema Resolver": "Not Started",
   "Feature Engineering": "Not Started",
   "Model Training": "Not Started",
   "Model Validation": "Not Started",

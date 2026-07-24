@@ -4,3 +4,6 @@ uploads/
 .env
 AGENTS.md
 drizzle/
+logs/
+specs/
+docs/
