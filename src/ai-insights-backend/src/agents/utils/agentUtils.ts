@@ -188,7 +188,7 @@ export class AgentTraceHelper {
 }
 
 export function createGeminiModel() {
-  const apiKey = process.env.GOOGLE_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     return null;
   }
@@ -238,7 +238,19 @@ export function createOpenAIModel() {
 }
 
 export function getModel(): SupportedChatModel | null {
-  return createAzureOpenAIModel() || createOpenAIModel() || createGeminiModel();
+  const provider = (process.env.AI_PROVIDER || "").toLowerCase().trim();
+  if (provider === "gemini" || provider === "google") {
+    const gemini = createGeminiModel();
+    if (gemini) return gemini;
+  } else if (provider === "azure" || provider === "azure_openai") {
+    const azure = createAzureOpenAIModel();
+    if (azure) return azure;
+  } else if (provider === "openai") {
+    const openai = createOpenAIModel();
+    if (openai) return openai;
+  }
+
+  return createGeminiModel() || createAzureOpenAIModel() || createOpenAIModel();
 }
 
 export function extractModelText(response: unknown): string {

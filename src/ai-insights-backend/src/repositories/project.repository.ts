@@ -121,5 +121,49 @@ export class PostgresProjectRepository implements IProjectRepository {
 
     return res.map((row) => this.mapRowToProjectRun(row));
   }
+
+  async getByWorkspaceId(workspaceId: string): Promise<Project[]> {
+    const res = await this.db
+      .select()
+      .from(schema.projects)
+      .where(eq(schema.projects.workspaceId, workspaceId))
+      .orderBy(desc(schema.projects.createdAt));
+
+    const projects: Project[] = [];
+    for (const row of res) {
+      const proj = this.mapRowToProject(row);
+      const latestRuns = await this.db
+        .select()
+        .from(schema.projectRuns)
+        .where(eq(schema.projectRuns.projectId, proj.id))
+        .orderBy(desc(schema.projectRuns.createdAt))
+        .limit(1);
+      if (latestRuns.length > 0) {
+        proj.agentState = latestRuns[0].agentState;
+      }
+      projects.push(proj);
+    }
+    return projects;
+  }
+
+  async createProject(project: Project): Promise<Project> {
+    const now = new Date(project.createdAt);
+    await this.db.insert(schema.projects).values({
+      id: project.id,
+      name: project.name,
+      role: project.role,
+      dataSources: project.dataSources,
+      initials: project.initials,
+      workspaceId: project.workspaceId,
+      useCase: project.useCase || null,
+      createdAt: now,
+    });
+    return project;
+  }
+
+  async deleteProject(id: string): Promise<boolean> {
+    const res = await this.db.delete(schema.projects).where(eq(schema.projects.id, id));
+    return (res.rowCount ?? 0) > 0;
+  }
 }
 
