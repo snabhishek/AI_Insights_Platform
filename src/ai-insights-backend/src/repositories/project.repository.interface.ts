@@ -6,5 +6,8 @@ export interface IProjectRepository {
   updateAgentState(id: string, agentState: Record<string, unknown>, useCase?: string): Promise<Project | undefined>;
   updateProject(id: string, updates: Partial<Project>): Promise<Project | undefined>;
   getProjectRuns(projectId: string): Promise<ProjectRun[]>;
+  getByWorkspaceId(workspaceId: string): Promise<Project[]>;
+  createProject(project: Project): Promise<Project>;
+  deleteProject(id: string): Promise<boolean>;
 }
 

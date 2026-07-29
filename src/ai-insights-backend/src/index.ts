@@ -8,7 +8,10 @@ import { ConnectionTesterService } from "./services/connectionTester.service";
 import { PostgresConnectorRepository } from "./repositories/connector.repository";
 import { PostgresProjectRepository } from "./repositories/project.repository";
 import { ProjectService } from "./services/project.service";
-import workspaceRouter from "./routes/workspaces";
+import { PostgresWorkspaceRepository } from "./repositories/workspace.repository";
+import { WorkspaceService } from "./services/workspace.service";
+import { WorkspaceController } from "./controllers/workspace.controller";
+import createWorkspaceRouter from "./routes/workspaces";
 import { ConnectorService } from "./services/connector.service";
 import { ConnectorController } from "./controllers/connector.controller";
 import createConnectorRouter from "./routes/connectors";
@@ -55,8 +58,11 @@ async function bootstrap() {
   fileService = new LocalFileService();
   connectionTester = new ConnectionTesterService(fileService);
   connectorRepository = new PostgresConnectorRepository(db);
+  const workspaceRepository = new PostgresWorkspaceRepository(db);
   const projectRepository = new PostgresProjectRepository(db);
   const projectService = new ProjectService(projectRepository);
+  const workspaceService = new WorkspaceService(workspaceRepository, projectRepository);
+  const workspaceController = new WorkspaceController(workspaceService);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
   connectorController = new ConnectorController(connectorService, connectionTester);
   // agentController = new AgentController(connectorService);
@@ -72,7 +78,7 @@ async function bootstrap() {
   // app.use("/api/agents", agentRouter);
 
   app.use("/api/ai", createAIRouter(aiController));
-  app.use("/api/workspaces", workspaceRouter);
+  app.use("/api/workspaces", createWorkspaceRouter(workspaceController));
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {

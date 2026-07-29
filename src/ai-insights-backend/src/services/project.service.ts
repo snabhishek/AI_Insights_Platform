@@ -23,5 +23,17 @@ export class ProjectService {
   async getProjectRuns(projectId: string): Promise<ProjectRun[]> {
     return this.repository.getProjectRuns(projectId);
   }
+
+  async getByWorkspaceId(workspaceId: string): Promise<Project[]> {
+    return this.repository.getByWorkspaceId(workspaceId);
+  }
+
+  async createProject(project: Project): Promise<Project> {
+    return this.repository.createProject(project);
+  }
+
+  async deleteProject(id: string): Promise<boolean> {
+    return this.repository.deleteProject(id);
+  }
 }
 
