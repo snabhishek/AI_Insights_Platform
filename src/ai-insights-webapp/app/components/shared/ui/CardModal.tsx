@@ -56,59 +56,6 @@ const CIRCLE_COLOR_MAP: Record<string, { border: string; bg: string; text: strin
   },
 };
 
-// Generates mock thinking logs based on step ID and status
-function getThinkingLogs(stepId: string, status: PipelineStatus): Array<{ time: string; text: string; done: boolean }> {
-  const now = new Date();
-  const formatTime = (offsetSec: number) => {
-    const d = new Date(now.getTime() - offsetSec * 1000);
-    return d.toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-  };
-
-  if (stepId === "Data Ingestion") {
-    if (status === "Not Started") {
-      return [{ time: "--:--:--", text: "Awaiting execution...", done: false }];
-    }
-    return [
-      { time: formatTime(15), text: "Resolving connector properties and verifying credentials...", done: true },
-      { time: formatTime(12), text: "Connecting to database data sources...", done: true },
-      { time: formatTime(8), text: "Running metadata table inspection schemas...", done: true },
-      { time: formatTime(4), text: "Extracting tables list, column structures, and relationships...", done: status === "Completed" },
-    ];
-  }
-
-  if (stepId === "Data Profiling") {
-    if (status === "Not Started") {
-      return [{ time: "--:--:--", text: "Awaiting execution...", done: false }];
-    }
-    if (status === "Pending") {
-      return [{ time: "--:--:--", text: "Staged in queue, waiting for ingestion to finish...", done: false }];
-    }
-    return [
-      { time: formatTime(18), text: "Reading data samples from target sources...", done: true },
-      { time: formatTime(14), text: "Computing column completeness profiles...", done: true },
-      { time: formatTime(10), text: "Running anomaly detection (outliers, formatting errors)...", done: true },
-      { time: formatTime(5), text: "Deriving rule-based preprocessing and transformation steps...", done: status === "Completed" },
-    ];
-  }
-
-  if (stepId === "Schema Resolver") {
-    if (status === "Not Started") {
-      return [{ time: "--:--:--", text: "Awaiting execution...", done: false }];
-    }
-    if (status === "Pending") {
-      return [{ time: "--:--:--", text: "Staged in queue, waiting for data profiling...", done: false }];
-    }
-    return [
-      { time: formatTime(8), text: "Analyzing target schemas and downstream constraints...", done: true },
-      { time: formatTime(4), text: "Generating mapping recommendations using LLM semantic alignment...", done: status === "Completed" },
-    ];
-  }
-
-  return [
-    { time: "--:--:--", text: `Ready to run step ${stepId}...`, done: status === "Completed" }
-  ];
-}
-
 export default function CardModal({
   isOpen,
   onClose,
@@ -210,7 +157,7 @@ export default function CardModal({
       <div className="relative w-[98vw] h-[96vh] max-w-none overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col sm:flex-row animate-scale-up">
         
         {/* Left Panel: Steps Sidebar */}
-        <div className="w-full sm:w-[350px] lg:w-[380px] border-b sm:border-b-0 sm:border-r border-border p-6 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
+        <div className="w-full sm:w-[350px] lg:w-[300px] border-b sm:border-b-0 sm:border-r border-border p-6 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
 
           <div className="mb-5 shrink-0">
             <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Execution Steps</span>
@@ -228,6 +175,7 @@ export default function CardModal({
               return (
                 <button
                   key={stepItem.id}
+                  title={stepItem.description}
                   onClick={() => setActiveStepIndex(idx)}
                   className={`flex items-start gap-4 text-left w-full relative z-10 py-1.5 focus:outline-none transition-all cursor-pointer group`}
                 >
@@ -277,9 +225,6 @@ export default function CardModal({
                         <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping shrink-0" />
                       )}
                     </div>
-                    <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2 leading-snug">
-                      {stepItem.description}
-                    </p>
                   </div>
                 </button>
               );
@@ -329,7 +274,7 @@ export default function CardModal({
                 <div className="flex-1 flex flex-col min-h-0">
                   {hasOutput ? (
                     <div className="border border-border bg-surface p-5 shadow-soft flex-1 flex flex-col min-h-0 select-none">
-                      <div className="flex items-center gap-2 mb-4 border-b border-border pb-3 shrink-0">
+                      {/* <div className="flex items-center gap-2 mb-4 border-b border-border pb-3 shrink-0">
                         <span className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-500 dark:text-emerald-400 flex items-center justify-center shrink-0">
                           ✓
                         </span>
@@ -337,7 +282,7 @@ export default function CardModal({
                           <h3 className="text-sm font-bold text-foreground">Final Output</h3>
                           <p className="text-[10px] text-muted-foreground">Execution result details for this step</p>
                         </div>
-                      </div>
+                      </div> */}
 
                       <div className="flex-1 overflow-y-auto pr-1 select-text">
                         {stepOutputContent}
