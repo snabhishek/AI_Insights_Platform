@@ -1,4 +1,4 @@
-import { ConnectorType, ConnectionConfig } from "../models/connector.types";
+import { ConnectorType, ConnectionConfig } from "../../models/connector.types";
 
 export interface TestResult {
   success: boolean;

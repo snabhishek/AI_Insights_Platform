@@ -1,14 +1,14 @@
-const parquet = require('@dsnp/parquetjs');
-const path = require('path');
+import { ParquetReader } from '@dsnp/parquetjs';
+import { resolve } from 'path';
 
 async function test() {
   try {
-    const filePath = path.resolve(__dirname, '../../../packages/static_schema_updated.parquet');
+    const filePath = resolve(__dirname, '../../../packages/static_schema_updated.parquet');
     console.log("Reading from:", filePath);
-    let reader = await parquet.ParquetReader.openFile(filePath);
+    let reader = await ParquetReader.openFile(filePath);
     let cursor = reader.getCursor();
     let record = null;
-    console.log('Schema:', reader.schema);
+    console.log('Schema:', reader.schema);  
     
     let count = 0;
     while (record = await cursor.next()) {
