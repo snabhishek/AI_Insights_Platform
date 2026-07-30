@@ -1,9 +1,9 @@
 import { MemorySaver } from "@langchain/langgraph";
-import { ConnectorService } from "../connector.service";
-import { ConnectionTesterService } from "../connectionTester.service";
+import { ConnectorService } from "../connector/connector.service";
+import { ConnectionTesterService } from "../connector/connectionTester.service";
 import { IIngestionAgentService, IngestionAgentRunResult } from "./ingestionAgent.service.interface";
-import { IFileService } from "../file.service.interface";
-import { ProjectService } from "../project.service";
+import { IFileService } from "../file/file.service.interface";
+import { ProjectService } from "../project/project.service";
 import { createAgentGraph } from "../../agents/graph";
 import { 
   AgentTraceHelper, 

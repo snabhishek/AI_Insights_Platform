@@ -1,5 +1,5 @@
 import { Request, Response } from "express";
-import { WorkspaceService } from "../services/workspace.service";
+import { WorkspaceService } from "../services/project/workspace.service";
 
 export class WorkspaceController {
   constructor(private workspaceService: WorkspaceService) {}

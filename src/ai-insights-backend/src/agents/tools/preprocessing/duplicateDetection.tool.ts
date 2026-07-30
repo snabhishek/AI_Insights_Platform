@@ -1,7 +1,7 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { ConnectionTesterService } from "../../../services/connectionTester.service";
-import { ConnectorService } from "../../../services/connector.service";
+import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
+import { ConnectorService } from "../../../services/connector/connector.service";
 import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
 
 type SampleRow = Record<string, unknown>;
