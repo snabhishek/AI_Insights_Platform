@@ -4,8 +4,8 @@ import https from "https";
 import { Pool } from "pg";
 import * as xlsx from "xlsx";
 import { IConnectionTesterService, TestResult, SampleResult } from "./connectionTester.service.interface";
-import { ConnectorType, ConnectionConfig } from "../models/connector.types";
-import { IFileService } from "./file.service.interface";
+import { ConnectorType, ConnectionConfig } from "../../models/connector.types";
+import { IFileService } from "../file/file.service.interface";
 
 const DEFAULT_PORTS: Record<string, number> = {
   postgres: 5432,

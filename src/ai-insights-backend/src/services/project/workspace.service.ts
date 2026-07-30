@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
-import { IWorkspaceRepository } from "../repositories/workspace.repository.interface";
-import { IProjectRepository } from "../repositories/project.repository.interface";
-import { Workspace, CreateProjectDto, UpdateProjectDto } from "../models/workspace.types";
-import { Project, ProjectRun } from "../models/project.types";
+import { IWorkspaceRepository } from "../../repositories/workspace.repository.interface";
+import { IProjectRepository } from "../../repositories/project.repository.interface";
+import { Workspace, CreateProjectDto, UpdateProjectDto } from "../../models/workspace.types";
+import { Project, ProjectRun } from "../../models/project.types";
 
 export type ServiceResult<T> =
   | { success: true; data: T }

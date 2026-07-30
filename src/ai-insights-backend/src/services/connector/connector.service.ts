@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from "uuid";
-import { IConnectorRepository } from "../repositories/connector.repository.interface";
-import { IFileService } from "./file.service.interface";
+import { IConnectorRepository } from "../../repositories/connector.repository.interface";
+import { IFileService } from "../file/file.service.interface";
 import { IConnectionTesterService } from "./connectionTester.service.interface";
-import { Connector, ConnectorType, ConnectorStatus, ConnectorHealth, ConnectionConfig } from "../models/connector.types";
+import { Connector, ConnectorType, ConnectorStatus, ConnectorHealth, ConnectionConfig } from "../../models/connector.types";
 
 export class ConnectorService {
   constructor(
