@@ -1,3 +1,43 @@
-# Personalized runtime project files
+# Dependencies
+node_modules/
+.pnp
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# Build and distribution outputs
+dist/
+.next/
+out/
+build/
+coverage/
+
+# Environment files
+.env*
+!.env.example
+
+# Runtime & personalized project files
 ProjectFiles/
 **/ProjectFiles/
+uploads/
+drizzle/
+specs/
+docs/
+
+# Logs and debug
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Miscellaneous
+.DS_Store
+*.pem
+.vercel
+*.tsbuildinfo
+next-env.d.ts
+AGENTS.md
