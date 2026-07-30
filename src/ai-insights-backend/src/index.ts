@@ -17,7 +17,11 @@ import { ConnectorController } from "./controllers/connector.controller";
 import createConnectorRouter from "./routes/connectors";
 import createAIRouter from "./routes/ai";
 import { checkAndCreateDatabase, runMigrations, pool } from "./db";
-import * as schema from "./db/connectors";
+import * as connectorsSchema from "./db/connectors";
+import * as agentThinkingSchema from "./db/agentThinking";
+const schema = { ...connectorsSchema, ...agentThinkingSchema };
+import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
+import { AgentThinkingService } from "./services/ai/agentThinking.service";
 // import { AgentController } from "./controllers/agent.controller";
 import { IngestionAgentService } from "./services/ai/ingestionAgent.service";
 import { AIController } from "./controllers/ai.controller";
@@ -63,11 +67,13 @@ async function bootstrap() {
   const projectService = new ProjectService(projectRepository);
   const workspaceService = new WorkspaceService(workspaceRepository, projectRepository);
   const workspaceController = new WorkspaceController(workspaceService);
+  const agentThinkingRepository = new PostgresAgentThinkingRepository(db);
+  const agentThinkingService = new AgentThinkingService(agentThinkingRepository);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
   connectorController = new ConnectorController(connectorService, connectionTester);
   // agentController = new AgentController(connectorService);
-  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService);
-  aiController = new AIController(ingestionAgentService);
+  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService, agentThinkingService);
+  aiController = new AIController(ingestionAgentService, agentThinkingService);
 
   // 4. Mount Main routers
   app.use("/api/connectors", createConnectorRouter(connectorController));

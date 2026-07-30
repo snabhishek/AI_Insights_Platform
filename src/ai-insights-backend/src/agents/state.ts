@@ -24,6 +24,9 @@ export interface IngestionServices {
   fileService: IFileService;
   projectService: ProjectService;
   traceHelper: AgentTraceHelper;
+  agentThinkingService?: any;
+  projectId?: string;
+  pipeline?: string;
 }
 
 export const AgentState = Annotation.Root({

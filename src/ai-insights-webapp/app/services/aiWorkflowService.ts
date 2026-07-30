@@ -33,7 +33,7 @@ export interface WorkflowApiResponse {
 export async function executeWorkflowApi(
   payload: WorkflowRequestPayload,
   signal?: AbortSignal
-): Promise<WorkflowApiResponse> {
+): Promise<Response> {
   const res = await fetch(`${BACKEND_URL}/ai/ingestion`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -45,7 +45,7 @@ export async function executeWorkflowApi(
     throw new Error(`Workflow request failed with status ${res.status}`);
   }
 
-  return (await res.json()) as WorkflowApiResponse;
+  return res;
 }
 
 /**
@@ -61,4 +61,24 @@ export async function stopWorkflowApi(sessionId?: string): Promise<void> {
   }).catch((err) => {
     console.warn("Failed to notify backend of workflow stop:", err);
   });
+}
+
+/**
+  Fetches saved agent thinking logs from the backend.
+ */
+export async function fetchAgentThinkingApi(
+  projectId: string,
+  pipeline: string,
+  substep: string
+): Promise<{ success: boolean; data?: { thinking: Array<{ time: string; text: string; done: boolean }> } }> {
+  const url = `${BACKEND_URL}/ai/thinking?projectId=${encodeURIComponent(projectId)}&pipeline=${encodeURIComponent(pipeline)}&substep=${encodeURIComponent(substep)}`;
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    if (res.status === 404) return { success: true };
+    throw new Error(`Failed to fetch agent thinking: ${res.statusText}`);
+  }
+  return res.json();
 }
