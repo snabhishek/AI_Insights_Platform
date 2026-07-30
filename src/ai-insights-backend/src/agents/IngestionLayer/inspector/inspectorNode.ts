@@ -16,7 +16,9 @@ import {
   parseJsonObject,
   getLatestAgentMessage,
   getLastToolResult,
-  InspectionPayload
+  InspectionPayload,
+  logMilestoneThinking,
+  logAgentMessagesAsThinking
 } from "../../utils/agentUtils";
 import { createAgent } from "langchain";
 import { HumanMessage } from "@langchain/core/messages";
@@ -88,10 +90,14 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
 
   let schemaDetails: { success?: boolean; type?: string; tables?: Array<Record<string, unknown>> } | undefined;
   try {
+    await logMilestoneThinking(services, "Data Ingestion", `Querying schema tables list for connector "${connector.name}"...`);
     schemaDetails = await schemaTool.invoke({
       connectorId: connector.id,
       connectorType: connector.type,
     }) as { success?: boolean; type?: string; tables?: Array<Record<string, unknown>> };
+    if (schemaDetails?.tables) {
+      await logMilestoneThinking(services, "Data Ingestion", `Discovered ${schemaDetails.tables.length} tables in data source.`);
+    }
   } catch (error) {
     console.warn("Schema tool inspection failed, continuing without table context", error);
   }
@@ -158,6 +164,7 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
 
     let inspectionResult: unknown;
     try {
+      await logMilestoneThinking(services, "Data Ingestion", `Analyzing schema details for tables batch ${batchIndex + 1}/${batches.length}: [${batchTableNames.join(", ")}]...`);
       inspectionResult = await services.traceHelper.invokeWithTrace(
         `inspect:${connector.type}:batch-${batchIndex + 1}`,
         {
@@ -168,6 +175,7 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
           messages: [new HumanMessage(userMessage)],
         })
       );
+      await logAgentMessagesAsThinking(services, "Data Ingestion", inspectionResult);
     } catch (error) {
       console.warn("Inspector agent execution failed for batch, falling back to direct inspection", error);
       inspectionResult = undefined;

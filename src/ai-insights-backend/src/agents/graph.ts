@@ -7,10 +7,10 @@ import { schemaResolverNode } from "./IngestionLayer/resolver/schemaResolverNode
 
 export function createAgentGraph(checkpointer: any) {
   const workflow = new StateGraph(AgentState)
-    .addNode("inspect", inspectorNode as any)
-    .addNode("profileData", profilerNode as any)
-    .addNode("preprocess", preprocessorNode as any)
-    .addNode("resolveSchema", schemaResolverNode as any)
+    .addNode("inspect", inspectorNode)
+    .addNode("profileData", profilerNode)
+    .addNode("preprocess", preprocessorNode)
+    .addNode("resolveSchema", schemaResolverNode)
     .addEdge("__start__", "inspect")
     .addEdge("inspect", "profileData")
     .addEdge("profileData", "preprocess")

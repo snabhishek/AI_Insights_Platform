@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { PipelineStatus, WorkflowStep } from "./types";
+import { PipelineStatus, Workflow } from "./types";
 
 // ─── Color Maps (Active at all times) ────────────────────────────────────────
 
@@ -89,7 +89,7 @@ function StatusBadge({ status }: { status: PipelineStatus }) {
 // ─── WorkflowCard ────────────────────────────────────────────────────────────
 
 interface WorkflowCardProps {
-  step: WorkflowStep;
+  step: Workflow;
   status: PipelineStatus;
   index: number;
   isActive?: boolean;

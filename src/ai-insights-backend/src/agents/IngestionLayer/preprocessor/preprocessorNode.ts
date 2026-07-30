@@ -13,7 +13,8 @@ import {
   getPromptFromFile, 
   invokeAgentJson,
   mergeBatchedTableStates,
-  buildBatchedTableState
+  buildBatchedTableState,
+  logMilestoneThinking
 } from "../../utils/agentUtils";
 
 export async function preprocess(connector: any, dataProfile: Record<string, unknown>, services: IngestionServices): Promise<any> {
@@ -85,6 +86,7 @@ export async function preprocess(connector: any, dataProfile: Record<string, unk
   ].join("\n\n");
 
   try {
+    await logMilestoneThinking(services, "Data Profiling", "Running rule-based anomaly detection and data cleaning check...");
     const result = await invokeAgentJson(
       "preprocess",
       model,
@@ -97,6 +99,7 @@ export async function preprocess(connector: any, dataProfile: Record<string, unk
         traceLabel: "agent:preprocess",
       }
     );
+    await logMilestoneThinking(services, "Data Profiling", "Generating recommended data preprocessing rules...");
     return {
       ...fallback,
       ...result,

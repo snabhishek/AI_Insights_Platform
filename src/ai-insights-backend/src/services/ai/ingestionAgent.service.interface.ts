@@ -22,6 +22,7 @@ export interface IngestionAgentRunResult {
   stageOutputs?: Record<string, unknown>;
   stageStatuses?: Record<string, string>;
   message?: string;
+  agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
 }
 
 export interface IIngestionAgentService {
@@ -29,6 +30,6 @@ export interface IIngestionAgentService {
     connectorId: string[],
     userPrompt?: string,
     options?: { sessionId?: string; action?: "approve" | "retry"; step?: string; projectId?: string }
-  ): Promise<IngestionAgentRunResult>;
+  ): AsyncGenerator<IngestionAgentRunResult, void, unknown>;
   stop(sessionId: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
 }

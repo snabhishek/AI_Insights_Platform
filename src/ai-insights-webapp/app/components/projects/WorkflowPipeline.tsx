@@ -249,7 +249,8 @@ export default function WorkflowPipeline({
           />
         </div>
 
-        <div className="flex-1 w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2 xl:gap-3 relative z-10 py-5">
+        {/* <div className="flex-1 w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2 xl:gap-3 relative z-10 py-5"> */}
+        <div className="flex-1 flex justify-between w-full gap-2 xl:gap-3 relative z-10 py-5">
           {PIPELINE_STEPS.map((step, idx) => (
             <WorkflowCard
               key={step.id}
@@ -270,36 +271,28 @@ export default function WorkflowPipeline({
             <h3 className="text-sm font-semibold text-foreground">{currentStepDisplay}</h3>
             <p className="text-xs text-muted-foreground mt-1">{workflowMessage || "Select a workflow stage to inspect the live output."}</p>
           </div>
-          <button
-            onClick={() => onRetry(currentStage || currentStepDisplay)}
-            className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors cursor-pointer"
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 12a9 9 0 1 1-3-6.7" />
-              <path d="M21 3v6h-6" />
-            </svg>
-            Retry Stage
-          </button>
-        </div>
-
-        <div className="rounded-2xl border border-border bg-surface-muted/70 p-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] font-bold text-muted-foreground">{getStageTitle(currentStepDisplay)}</p>
-              <p className="text-xs text-muted-foreground">Readable execution output for the active step.</p>
-            </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {detailItems.length > 0 ? detailItems.map((item, index) => (
-              <div key={`${item.title}-${index}`} className="rounded-xl border border-border bg-background/70 p-3">
-                <p className="text-[10px] uppercase tracking-[0.2em] font-semibold text-muted-foreground">{item.title}</p>
-                <p className="text-sm text-foreground mt-1">{item.body}</p>
-              </div>
-            )) : (
-              <div className="md:col-span-2 rounded-xl border border-dashed border-border bg-background/70 p-3 text-sm text-muted-foreground">
-                No output available yet for this stage. Start the workflow to populate it.
-              </div>
-            )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onSelectStage(currentStepDisplay)}
+              className="inline-flex items-center gap-2 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 3h6v6" />
+                <path d="M10 14 21 3" />
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              </svg>
+              View Details
+            </button>
+            <button
+              onClick={() => onRetry(currentStage || currentStepDisplay)}
+              className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 12a9 9 0 1 1-3-6.7" />
+                <path d="M21 3v6h-6" />
+              </svg>
+              Retry Stage
+            </button>
           </div>
         </div>
       </div>

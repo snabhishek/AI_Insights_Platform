@@ -9,7 +9,8 @@ import {
   getPromptFromFile, 
   invokeAgentJson,
   mergeBatchedTableStates,
-  buildBatchedTableState
+  buildBatchedTableState,
+  logMilestoneThinking
 } from "../../utils/agentUtils";
 
 export async function profileData(connector: any, inspection: Record<string, unknown>, services: IngestionServices): Promise<any> {
@@ -81,6 +82,7 @@ export async function profileData(connector: any, inspection: Record<string, unk
   ].join("\n\n");
 
   try {
+    await logMilestoneThinking(services, "Data Profiling", `Running sample data ingestion and completeness analysis on tables: [${tableNames.join(", ")}]...`);
     const result = await invokeAgentJson(
       "profileData",
       model,
@@ -93,6 +95,7 @@ export async function profileData(connector: any, inspection: Record<string, unk
         tools: profilingTools
       }
     );
+    await logMilestoneThinking(services, "Data Profiling", `Data profiling successfully completed for ${tableNames.length} tables.`);
     return {
       ...fallback,
       ...result,

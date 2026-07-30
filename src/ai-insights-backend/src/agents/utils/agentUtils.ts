@@ -195,7 +195,7 @@ export function createGeminiModel() {
 
   return new ChatGoogleGenerativeAI({
     apiKey,
-    model: process.env.GEMINI_MODEL || "gemini-2.5-pro",
+    model: process.env.GEMINI_MODEL || "gemini-3.1-pro-preview",
     temperature: 0,
     maxOutputTokens: 32000,
   });
@@ -351,6 +351,16 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
       },
       async () => agent.invoke(input)
     );
+    
+    // Dynamically log thinking messages based on the running step name
+    const substepMap: Record<string, string> = {
+      profileData: "Data Profiling",
+      preprocess: "Data Profiling",
+      resolveSchema: "Schema Resolver"
+    };
+    const substep = substepMap[stepName] || "Data Ingestion";
+    await logAgentMessagesAsThinking(services, substep, result);
+
     const rawText = extractModelText(getLatestAgentMessage(result));
     return parseJsonObject(rawText, fallback);
   } catch (error) {
@@ -616,4 +626,102 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     "Schema Resolver": "resolveSchema",
   };
   return step ? mapping[step] : undefined;
+}
+
+export async function logMilestoneThinking(
+  services: any,
+  substep: string,
+  text: string
+): Promise<void> {
+  const { agentThinkingService, projectId, pipeline } = services || {};
+  if (!agentThinkingService || !projectId || !pipeline) {
+    return;
+  }
+  try {
+    const existing = await agentThinkingService.getThinking(projectId, pipeline, substep);
+    const thinkingLogs = existing ? [...existing.thinking] : [];
+    
+    // Check for duplicates
+    if (thinkingLogs.some((l: any) => l.text === text)) {
+      return;
+    }
+
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+
+    thinkingLogs.push({
+      time: timeStr,
+      text,
+      done: true,
+    });
+
+    await agentThinkingService.saveThinking(projectId, pipeline, substep, thinkingLogs);
+  } catch (err) {
+    console.warn("[AgentUtils] Failed to log milestone thinking:", err);
+  }
+}
+
+export async function logAgentMessagesAsThinking(
+  services: any,
+  substep: string,
+  agentResult: any
+): Promise<void> {
+  const { agentThinkingService, projectId, pipeline } = services || {};
+  if (!agentThinkingService || !projectId || !pipeline || !agentResult) {
+    return;
+  }
+  try {
+    const messages = Array.isArray(agentResult?.messages) ? agentResult.messages : [];
+    if (messages.length === 0) return;
+
+    const thinkingLogs: Array<{ time: string; text: string; done: boolean }> = [];
+
+    for (const msg of messages) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      const type = typeof msg?.getType === "function" ? msg.getType() : msg?.type;
+
+      if (type === "ai") {
+        const content = extractModelText(msg);
+        if (content && content.trim() && content.trim().length > 10) {
+          thinkingLogs.push({
+            time: timeStr,
+            text: `Agent reasoning: ${content.trim()}`,
+            done: true,
+          });
+        }
+        if (msg?.tool_calls && msg.tool_calls.length > 0) {
+          for (const tc of msg.tool_calls) {
+            thinkingLogs.push({
+              time: timeStr,
+              text: `Invoking tool '${tc.name}' with arguments: ${JSON.stringify(tc.args)}`,
+              done: true,
+            });
+          }
+        }
+      } else if (type === "tool") {
+        const content = extractModelText(msg);
+        thinkingLogs.push({
+          time: timeStr,
+          text: `Tool output: ${content.length > 200 ? content.slice(0, 200) + "..." : content}`,
+          done: true,
+        });
+      }
+    }
+
+    if (thinkingLogs.length > 0) {
+      const existing = await agentThinkingService.getThinking(projectId, pipeline, substep);
+      const allLogs = existing ? [...existing.thinking] : [];
+
+      for (const log of thinkingLogs) {
+        if (!allLogs.some((l: any) => l.text === log.text)) {
+          allLogs.push(log);
+        }
+      }
+
+      await agentThinkingService.saveThinking(projectId, pipeline, substep, allLogs);
+    }
+  } catch (err) {
+    console.warn("[AgentUtils] Failed to log agent messages as thinking:", err);
+  }
 }

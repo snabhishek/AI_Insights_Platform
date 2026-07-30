@@ -1,8 +1,38 @@
 import { Request, Response } from "express";
 import { IIngestionAgentService } from "../services/ai/ingestionAgent.service.interface";
+import { IAgentThinkingService } from "../services/ai/agentThinking.service.interface";
 
 export class AIController {
-  constructor(private ingestionAgentService: IIngestionAgentService) {}
+  constructor(
+    private ingestionAgentService: IIngestionAgentService,
+    private agentThinkingService: IAgentThinkingService
+  ) {}
+
+  getThinking = async (req: Request, res: Response): Promise<void> => {
+    const { projectId, pipeline, substep } = req.query as {
+      projectId?: string;
+      pipeline?: string;
+      substep?: string;
+    };
+
+    if (!projectId || !pipeline || !substep) {
+      res.status(400).json({ success: false, message: "projectId, pipeline, and substep query parameters are required" });
+      return;
+    }
+
+    try {
+      const thinkingRecord = await this.agentThinkingService.getThinking(projectId, pipeline, substep);
+      res.json({
+        success: true,
+        data: thinkingRecord ? { thinking: thinkingRecord.thinking } : null,
+      });
+    } catch (error: any) {
+      res.status(500).json({
+        success: false,
+        message: error.message || "Failed to fetch agent thinking logs",
+      });
+    }
+  };
 
   runIngestionWorkflow = async (req: Request, res: Response): Promise<void> => {
     const {
@@ -30,16 +60,30 @@ export class AIController {
       return;
     }
 
+    // Set Server-Sent Events headers
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no"); // Prevents Nginx buffering streams
+    res.flushHeaders();
+
     try {
-      const result = await this.ingestionAgentService.run(connectorId, userPrompt ?? prompt ?? "", {
+      const stream = this.ingestionAgentService.run(connectorId, userPrompt ?? prompt ?? "", {
         sessionId,
         action,
         step,
         projectId,
       });
-      res.json({ success: true, data: result });
+
+      for await (const update of stream) {
+        res.write(`data: ${JSON.stringify({ success: true, data: update })}\n\n`);
+      }
+
+      res.write("data: [DONE]\n\n");
+      res.end();
     } catch (error: any) {
-      res.status(500).json({ success: false, message: error.message || "AI workflow failed" });
+      res.write(`data: ${JSON.stringify({ success: false, message: error.message || "AI workflow failed" })}\n\n`);
+      res.end();
     }
   };
 
