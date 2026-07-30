@@ -1,5 +1,5 @@
-import { IProjectRepository } from "../repositories/project.repository.interface";
-import { Project, ProjectRun, ProjectWithWorkspace } from "../models/project.types";
+import { IProjectRepository } from "../../repositories/project.repository.interface";
+import { Project, ProjectRun, ProjectWithWorkspace } from "../../models/project.types";
 
 export class ProjectService {
   constructor(private repository: IProjectRepository) {}

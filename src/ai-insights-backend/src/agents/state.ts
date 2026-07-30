@@ -1,8 +1,8 @@
 import { Annotation } from "@langchain/langgraph";
-import { ConnectorService } from "../services/connector.service";
-import { ConnectionTesterService } from "../services/connectionTester.service";
-import { IFileService } from "../services/file.service.interface";
-import { ProjectService } from "../services/project.service";
+import { ConnectorService } from "../services/connector/connector.service";
+import { ConnectionTesterService } from "../services/connector/connectionTester.service";
+import { IFileService } from "../services/file/file.service.interface";
+import { ProjectService } from "../services/project/project.service";
 import { AgentTraceHelper } from "./utils/agentUtils";
 
 export interface BatchedTableState {

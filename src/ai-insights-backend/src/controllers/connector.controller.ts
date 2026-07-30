@@ -1,6 +1,6 @@
 import { Request, Response } from "express";
-import { ConnectorService } from "../services/connector.service";
-import { IConnectionTesterService } from "../services/connectionTester.service.interface";
+import { ConnectorService } from "../services/connector/connector.service";
+import { IConnectionTesterService } from "../services/connector/connectionTester.service.interface";
 import { ConnectorStatus, ConnectorHealth } from "../models/connector.types";
 
 export class ConnectorController {
