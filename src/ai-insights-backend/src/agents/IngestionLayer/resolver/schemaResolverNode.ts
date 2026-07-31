@@ -6,30 +6,15 @@ import {
   getModel, 
   invokeAgentJson,
   mergeBatchedTableStates,
-  buildBatchedTableState
+  buildBatchedTableState,
+  getPromptFromFile
 } from "../../utils/agentUtils";
-import { buildResolveSchemaPrompt } from "../../prompts/resolveSchema.prompt";
 import { 
-  getTopicsFromParquetSchema, 
-  writeResolvedSchemaParquet, 
+  writeResolvedSchemaYaml, 
+  loadFieldSchemaYaml,
   sanitizeName, 
   generateDateTimeStamp 
-} from "../../tools/parquetHelper";
-
-function resolvePackageFilePath(filename: string): string {
-  const candidatePaths = [
-    path.resolve(__dirname, "../../../../../packages", filename),
-    path.resolve(process.cwd(), "../packages", filename),
-    path.resolve(process.cwd(), "src/packages", filename),
-    path.resolve(__dirname, "../../../packages", filename),
-  ];
-  for (const candidate of candidatePaths) {
-    if (fsSync.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-  return candidatePaths[0];
-}
+} from "../../tools/schemaHelper";
 
 export async function resolveSchema(
   connector: any, 
@@ -69,19 +54,21 @@ export async function resolveSchema(
     }
   });
 
-  const staticSchemaPath = resolvePackageFilePath("static_schema_updated.parquet");
-  const targetParquetTopics = await getTopicsFromParquetSchema(staticSchemaPath);
-
-  const defaultTopic = targetParquetTopics[0] || "General";
   const fallbackMappings = [
     { datasetField: inferredDomain, targetTopic: "Domain" },
     ...allFields.map((f) => ({
       datasetField: f.datasetField,
-      targetTopic: defaultTopic,
+      targetTopic: "General",
     }))
   ];
 
   const fallback: Record<string, any> = {
+    domainKnowledge: {
+      tier1: "General Industry",
+      tier2: inferredDomain,
+      useCase: "Data Ingestion & Schema Resolution",
+      useCaseDescription: "General automated schema taxonomy mapping"
+    },
     domain: inferredDomain,
     resolvedTables: tables.map((table: any) => table.name || table.tableName || table.id || "table"),
     strategy: tables.length > 0 ? "inspect-and-map" : "fallback",
@@ -89,7 +76,30 @@ export async function resolveSchema(
     unmappedDatasetFields: []
   };
 
-  const prompt = buildResolveSchemaPrompt(connector, inspection, targetParquetTopics, userPrompt, dataProfile);
+  const systemPrompt = await getPromptFromFile(
+    "resolveSchema.md",
+    "You are an expert AI Data Architect specialized in schema resolution and data ingestion planning."
+  );
+
+  const rawFieldSchemaYaml = await loadFieldSchemaYaml();
+
+  const safeUserRequest = typeof userPrompt === "string" && userPrompt.trim().length > 0 
+    ? userPrompt 
+    : "No additional request provided.";
+
+  const prompt = `${systemPrompt}
+
+${rawFieldSchemaYaml ? `## Live Field Schema Taxonomy (field_schema.yaml)\n\`\`\`yaml\n${rawFieldSchemaYaml}\n\`\`\`\n` : ""}
+
+## Context
+### Inspection Context
+${JSON.stringify({ connector, inspection }, null, 2)}
+
+${dataProfile ? `### Data Profile Context\n${JSON.stringify(dataProfile, null, 2)}\n` : ""}
+### User Request
+${safeUserRequest}
+`;
+
   const model = getModel();
 
   const result = await invokeAgentJson("resolveSchema", model, prompt, fallback, services, {
@@ -104,13 +114,7 @@ export async function resolveSchema(
     ? result.domain.trim()
     : inferredDomain;
 
-  // Ensure a Domain topic mapping exists in mappingsToWrite so writeResolvedSchemaParquet populates the Domain column
-  const hasDomainMapping = rawMappings.some((m: any) => m.targetTopic === "Domain");
-  const mappingsToWrite = hasDomainMapping
-    ? rawMappings
-    : [{ datasetField: resolvedDomain, targetTopic: "Domain" }, ...rawMappings];
-
-  let outputParquetPath = path.resolve(path.dirname(staticSchemaPath), "resolved_schema.parquet");
+  let outputYamlPath = path.resolve(process.cwd(), "resolved_schema.yaml");
   if (projectId) {
     try {
       const projectWithWs = await services.projectService.getProjectWithWorkspace(projectId);
@@ -119,31 +123,39 @@ export async function resolveSchema(
         const projectTitle = sanitizeName(projectWithWs.project.name);
         const folderName = `${workspaceName}-${projectTitle}`;
         const timestamp = generateDateTimeStamp();
-        const fileName = `${workspaceName}-${projectTitle}-${timestamp}.parquet`;
+        const fileName = `${workspaceName}-${projectTitle}-${timestamp}.yaml`;
 
-        const packagesDir = path.dirname(staticSchemaPath);
-        outputParquetPath = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas", fileName);
+        const packagesDir = path.resolve(process.cwd(), "src/packages");
+        outputYamlPath = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas", fileName);
       }
     } catch (lookupErr: any) {
       console.warn(`[resolveSchema] Failed to lookup project/workspace for ${projectId}, fallback path used:`, lookupErr?.message || lookupErr);
     }
   }
 
-  if (mappingsToWrite.length > 0) {
-    await writeResolvedSchemaParquet(
-      outputParquetPath,
-      mappingsToWrite as Array<{ datasetField: string; targetTopic: string }>,
-      targetParquetTopics
+  const payloadToWrite = {
+    domainKnowledge: result?.domainKnowledge || fallback.domainKnowledge,
+    domain: resolvedDomain,
+    resolvedTables: result?.resolvedTables || fallback.resolvedTables,
+    strategy: result?.strategy || fallback.strategy,
+    mappings: rawMappings,
+    unmappedDatasetFields: result?.unmappedDatasetFields || []
+  };
+
+  if (rawMappings.length > 0) {
+    await writeResolvedSchemaYaml(
+      outputYamlPath,
+      payloadToWrite
     );
-    console.info(`[resolveSchema] Wrote resolved schema parquet file to ${outputParquetPath} with ${mappingsToWrite.length} mappings`);
+    console.info(`[resolveSchema] Wrote resolved schema YAML file to ${outputYamlPath} with ${rawMappings.length} mappings`);
   }
 
   return {
     ...fallback,
     ...result,
     domain: resolvedDomain,
-    mappings: mappingsToWrite,
-    parquetPath: outputParquetPath,
+    mappings: rawMappings,
+    yamlPath: outputYamlPath,
   };
 }
 

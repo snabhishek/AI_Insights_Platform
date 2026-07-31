@@ -9,7 +9,6 @@
     "db:generate": "npx drizzle-kit generate"
   },
   "dependencies": {
-    "@dsnp/parquetjs": "^1.8.8",
     "@langchain/google-genai": "^2.2.0",
     "@langchain/langgraph": "^1.4.7",
     "@langchain/openai": "^1.5.5",
@@ -17,11 +16,11 @@
     "dotenv": "^16.5.0",
     "drizzle-orm": "^0.45.2",
     "express": "^5.1.0",
+    "js-yaml": "^4.1.0",
     "langchain": "^1.5.3",
     "mssql": "^12.7.0",
     "mysql2": "^3.22.5",
     "pg": "^8.11.0",
-    "snappyjs": "^0.7.0",
     "tedious": "^19.2.2",
     "uuid": "^11.1.0",
     "xlsx": "^0.18.5"
@@ -29,6 +28,7 @@
   "devDependencies": {
     "@types/cors": "^2.8.18",
     "@types/express": "^5.0.0",
+    "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.15.0",
     "@types/pg": "^8.11.0",
     "@types/uuid": "^10.0.0",
