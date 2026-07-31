@@ -126,19 +126,15 @@ export default function CardModal({
 
     if (stepIdChanged) {
       if (currentStatus === "In Progress") {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setActiveTab("thinking");
+        Promise.resolve().then(() => setActiveTab("thinking"));
       } else {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setActiveTab("output");
+        Promise.resolve().then(() => setActiveTab("output"));
       }
     } else if (statusChanged) {
       if (currentStatus === "Completed") {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setActiveTab("output");
+        Promise.resolve().then(() => setActiveTab("output"));
       } else if (currentStatus === "In Progress") {
-        // eslint-disable-next-line react-hooks/set-state-in-effect
-        setActiveTab("thinking");
+        Promise.resolve().then(() => setActiveTab("thinking"));
       }
     }
     lastStepStatusRef.current = currentStatus;
