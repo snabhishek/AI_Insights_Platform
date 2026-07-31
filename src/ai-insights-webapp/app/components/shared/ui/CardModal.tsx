@@ -70,8 +70,9 @@ export default function CardModal({
 }: CardModalProps) {
   const [activeStepIndex, setActiveStepIndex] = useState<number>(0);
   const [thinkingLogs, setThinkingLogs] = useState<Array<{ time: string; text: string; done: boolean }>>([]);
-  const [isCollapsed, setIsCollapsed] = useState<boolean>(true);
+  const [activeTab, setActiveTab] = useState<"output" | "thinking">("output");
   const lastStepIdRef = useRef<string>("");
+  const lastStepStatusRef = useRef<string>("");
 
   const stepsList: WorkflowStep[] = workflowCard?.step || [];
   const activeStep = stepsList[activeStepIndex] || null;
@@ -104,7 +105,6 @@ export default function CardModal({
         });
       
       if (stepIdChanged) {
-        setIsCollapsed(true);
         lastStepIdRef.current = activeStep.id;
       }
     } else {
@@ -112,18 +112,38 @@ export default function CardModal({
       setThinkingLogs(streamed);
 
       if (stepIdChanged) {
-        if (activeStepStatus === "In Progress" && streamed.length > 0) {
-          setIsCollapsed(false);
-        } else {
-          setIsCollapsed(true);
-        }
         lastStepIdRef.current = activeStep.id;
-      } else if (activeStepStatus === "In Progress" && thinkingLogs.length === 0 && streamed.length > 0) {
-        // Auto-expand when the first streamed log arrives for this step
-        setIsCollapsed(false);
       }
     }
   }, [activeStep?.id, activeStepStatus, isOpen, projectId, agentState?.agentThinking]);
+
+  // Synchronize activeTab based on step status and selection
+  useEffect(() => {
+    if (!activeStep) return;
+    const currentStatus = pipelineStatuses[activeStep.id] ?? "Not Started";
+    const statusChanged = lastStepStatusRef.current !== currentStatus;
+    const stepIdChanged = lastStepIdRef.current !== activeStep.id;
+
+    if (stepIdChanged) {
+      if (currentStatus === "In Progress") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setActiveTab("thinking");
+      } else {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setActiveTab("output");
+      }
+    } else if (statusChanged) {
+      if (currentStatus === "Completed") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setActiveTab("output");
+      } else if (currentStatus === "In Progress") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setActiveTab("thinking");
+      }
+    }
+    lastStepStatusRef.current = currentStatus;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeStep?.id, activeStepStatus, pipelineStatuses]);
 
   if (!isOpen) return null;
 
@@ -177,7 +197,7 @@ export default function CardModal({
                   key={stepItem.id}
                   title={stepItem.description}
                   onClick={() => setActiveStepIndex(idx)}
-                  className={`flex items-start gap-4 text-left w-full relative z-10 py-1.5 focus:outline-none transition-all cursor-pointer group`}
+                  className={`flex items-center gap-4 text-left w-full relative z-10 py-1.5 focus:outline-none transition-all cursor-pointer group`}
                 >
                   {/* Progress segment line: Stops at the final step circle */}
                   {idx < stepsList.length - 1 && (
@@ -267,87 +287,95 @@ export default function CardModal({
             </button>
           </div>
 
-          <div className="flex-1 flex flex-col select-text">
+          {/* Tab Selection Bar */}
+          {activeStep && (
+            <div className="flex border-b border-border bg-surface-muted/30 px-6 shrink-0 select-none">
+              <button
+                onClick={() => setActiveTab("output")}
+                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+                  activeTab === "output"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>📥</span>
+                <span>Step Output</span>
+              </button>
+              <button
+                onClick={() => setActiveTab("thinking")}
+                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
+                  activeTab === "thinking"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-muted-foreground hover:text-foreground"
+                }`}
+              >
+                <span>🧠</span>
+                <span>Agent Reasoning</span>
+                {activeStepStatus === "In Progress" && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping shrink-0" />
+                )}
+              </button>
+            </div>
+          )}
+
+          <div className="flex-1 flex flex-col min-h-0 select-text">
             {activeStep ? (
-              <>
-                {/* Output Area (Only shown when output is received) - Rendered on top */}
+              activeTab === "output" ? (
+                /* Tab Content: Output Area */
                 <div className="flex-1 flex flex-col min-h-0">
                   {hasOutput ? (
-                    <div className="border border-border bg-surface p-5 shadow-soft flex-1 flex flex-col min-h-0 select-none">
-                      {/* <div className="flex items-center gap-2 mb-4 border-b border-border pb-3 shrink-0">
-                        <span className="w-6 h-6 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-500 dark:text-emerald-400 flex items-center justify-center shrink-0">
-                          ✓
-                        </span>
-                        <div>
-                          <h3 className="text-sm font-bold text-foreground">Final Output</h3>
-                          <p className="text-[10px] text-muted-foreground">Execution result details for this step</p>
-                        </div>
-                      </div> */}
-
-                      <div className="flex-1 overflow-y-auto pr-1 select-text">
-                        {stepOutputContent}
-                      </div>
+                    <div className="flex-1 overflow-y-auto p-6 select-text">
+                      {stepOutputContent}
                     </div>
                   ) : (
-                    <div className="rounded-2xl border border-dashed border-border p-8 text-center text-sm text-muted-foreground flex-1 flex flex-col justify-center items-center bg-surface-muted/20 select-none">
+                    <div className="flex-1 flex flex-col justify-center items-center p-8 text-center text-sm text-muted-foreground bg-surface-muted/10 select-none">
                       <span className="text-3xl mb-2">📥</span>
-                      <strong>Output is not received yet.</strong>
+                      <strong className="text-foreground">Output is not received yet.</strong>
                       <span className="text-xs max-w-sm mt-1 leading-normal">
                         The execution results will be displayed here as soon as this pipeline step completes and provides output.
                       </span>
                     </div>
                   )}
                 </div>
-
-                {/* Agent Thinking logs - Rendered at bottom and collapsible */}
-                <div className="border border-border bg-surface p-5 shadow-soft shrink-0 select-none">
-                  {/* Collapsible Header */}
-                  <button 
-                    onClick={() => setIsCollapsed(!isCollapsed)}
-                    className="w-full flex items-center justify-between border-b border-border pb-3 focus:outline-none cursor-pointer group"
-                  >
+              ) : (
+                /* Tab Content: Agent Reasoning Logs */
+                <div className="flex-1 flex flex-col min-h-0 p-6 select-text">
+                  <div className="flex items-center justify-between mb-4 pb-2 border-b border-border shrink-0 select-none">
                     <div className="flex items-center gap-2">
                       <span className="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 dark:text-indigo-400 flex items-center justify-center shrink-0">
                         🧠
                       </span>
-                      <div className="text-left">
-                        <h3 className="text-sm font-bold text-foreground group-hover:text-primary transition-colors">Agent Reasoning Logs</h3>
+                      <div>
+                        <h3 className="text-sm font-bold text-foreground">Agent Reasoning Logs</h3>
                         <p className="text-[10px] text-muted-foreground">Detailed logic trace executed by the agent</p>
                       </div>
-                      {activeStepStatus === "In Progress" && (
-                        <span className="ml-2 text-[10px] font-bold uppercase tracking-wider text-indigo-500 animate-pulse bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md">
-                          Processing...
-                        </span>
-                      )}
                     </div>
-                    
-                    <span className="text-muted-foreground text-xs font-bold transition-transform duration-200">
-                      {isCollapsed ? "Expand ▲" : "Collapse ▼"}
-                    </span>
-                  </button>
+                    {activeStepStatus === "In Progress" && (
+                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 animate-pulse bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md">
+                        Processing...
+                      </span>
+                    )}
+                  </div>
 
-                  {/* Collapsible Content */}
-                  {!isCollapsed && (
-                    <div className="mt-4 font-mono text-xs text-foreground/85 dark:text-slate-300 space-y-2 max-h-[160px] overflow-y-auto bg-surface-muted/50 dark:bg-slate-900/50 p-4 rounded-xl border border-border/40 select-text">
-                      {thinkingLogs.length > 0 ? (
-                        thinkingLogs.map((log, lIdx) => (
-                          <div key={lIdx} className="flex gap-3 items-start hover:bg-surface-muted/20 py-0.5">
-                            <span className="text-muted-foreground select-none shrink-0">{log.time}</span>
-                            <span className="text-muted-foreground select-none shrink-0">›</span>
-                            <span className={log.done ? "text-foreground" : "text-muted-foreground animate-pulse"}>
-                              {log.text}
-                            </span>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="text-muted-foreground py-2 text-center select-none font-sans italic text-xs">
-                          No agent thinking logs available for this step.
+                  <div className="flex-1 overflow-y-auto font-mono text-xs text-foreground/85 dark:text-slate-300 space-y-2 bg-surface-muted/30 dark:bg-slate-900/30 p-5 rounded-xl border border-border/40 select-text">
+                    {thinkingLogs.length > 0 ? (
+                      thinkingLogs.map((log, lIdx) => (
+                        <div key={lIdx} className="flex gap-3 items-start hover:bg-surface-muted/20 py-0.5">
+                          <span className="text-muted-foreground select-none shrink-0">{log.time}</span>
+                          <span className="text-muted-foreground select-none shrink-0">›</span>
+                          <span className={log.done ? "text-foreground" : "text-muted-foreground animate-pulse"}>
+                            {log.text}
+                          </span>
                         </div>
-                      )}
-                    </div>
-                  )}
+                      ))
+                    ) : (
+                      <div className="text-muted-foreground py-8 text-center select-none font-sans italic text-xs">
+                        No agent thinking logs available for this step.
+                      </div>
+                    )}
+                  </div>
                 </div>
-              </>
+              )
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center text-muted-foreground p-8 select-none">
                 <p className="text-sm">Please select a step from the left side panel.</p>
