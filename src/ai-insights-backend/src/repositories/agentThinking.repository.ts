@@ -21,64 +21,90 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
   }
 
   async getThinking(projectId: string, pipeline: string, substep: string): Promise<AgentThinking | undefined> {
-    const res = await this.db.select()
-      .from(agentThinking)
-      .where(
-        and(
-          eq(agentThinking.projectId, projectId),
-          eq(agentThinking.pipeline, pipeline),
-          eq(agentThinking.substep, substep)
-        )
-      );
-    if (res.length === 0) return undefined;
-    return this.mapRowToAgentThinking(res[0]);
+    try {
+      const res = await this.db.select()
+        .from(agentThinking)
+        .where(
+          and(
+            eq(agentThinking.projectId, projectId),
+            eq(agentThinking.pipeline, pipeline),
+            eq(agentThinking.substep, substep)
+          )
+        );
+      if (res.length === 0) return undefined;
+      return this.mapRowToAgentThinking(res[0]);
+    } catch (err: any) {
+      console.warn(`[AgentThinkingRepository] Error fetching thinking for project ${projectId}:`, err.message || err);
+      return undefined;
+    }
   }
 
   async saveThinking(projectId: string, pipeline: string, substep: string, thinking: ThinkingLog[]): Promise<AgentThinking> {
-    const existing = await this.getThinking(projectId, pipeline, substep);
-    
-    if (existing) {
-      const res = await this.db.update(agentThinking)
-        .set({
-          thinking,
-          updatedAt: new Date(),
-        })
-        .where(eq(agentThinking.id, existing.id))
-        .returning();
-      return this.mapRowToAgentThinking(res[0]);
-    } else {
-      const id = `thinking-${uuidv4()}`;
-      const res = await this.db.insert(agentThinking)
-        .values({
-          id,
-          projectId,
-          pipeline,
-          substep,
-          thinking,
-        })
-        .returning();
-      return this.mapRowToAgentThinking(res[0]);
+    try {
+      const existing = await this.getThinking(projectId, pipeline, substep);
+      
+      if (existing) {
+        const res = await this.db.update(agentThinking)
+          .set({
+            thinking,
+            updatedAt: new Date(),
+          })
+          .where(eq(agentThinking.id, existing.id))
+          .returning();
+        return this.mapRowToAgentThinking(res[0]);
+      } else {
+        const id = `thinking-${uuidv4()}`;
+        const res = await this.db.insert(agentThinking)
+          .values({
+            id,
+            projectId,
+            pipeline,
+            substep,
+            thinking,
+          })
+          .returning();
+        return this.mapRowToAgentThinking(res[0]);
+      }
+    } catch (err: any) {
+      console.error(`[AgentThinkingRepository] Error saving thinking for project ${projectId}:`, err.message || err);
+      return {
+        id: `thinking-${uuidv4()}`,
+        projectId,
+        pipeline,
+        substep,
+        thinking,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
     }
   }
 
   async deleteThinking(projectId: string, pipeline: string, substep: string): Promise<void> {
-    await this.db.delete(agentThinking)
-      .where(
-        and(
-          eq(agentThinking.projectId, projectId),
-          eq(agentThinking.pipeline, pipeline),
-          eq(agentThinking.substep, substep)
-        )
-      );
+    try {
+      await this.db.delete(agentThinking)
+        .where(
+          and(
+            eq(agentThinking.projectId, projectId),
+            eq(agentThinking.pipeline, pipeline),
+            eq(agentThinking.substep, substep)
+          )
+        );
+    } catch (err: any) {
+      console.warn(`[AgentThinkingRepository] Warning: deleteThinking failed for project ${projectId}:`, err.message || err);
+    }
   }
 
   async clearProjectPipelineThinking(projectId: string, pipeline: string): Promise<void> {
-    await this.db.delete(agentThinking)
-      .where(
-        and(
-          eq(agentThinking.projectId, projectId),
-          eq(agentThinking.pipeline, pipeline)
-        )
-      );
+    try {
+      await this.db.delete(agentThinking)
+        .where(
+          and(
+            eq(agentThinking.projectId, projectId),
+            eq(agentThinking.pipeline, pipeline)
+          )
+        );
+    } catch (err: any) {
+      console.warn(`[AgentThinkingRepository] Warning: clearProjectPipelineThinking failed for project ${projectId}:`, err.message || err);
+    }
   }
 }

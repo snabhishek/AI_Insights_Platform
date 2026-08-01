@@ -35,50 +35,6 @@ export default function ProjectsListPage({
 
   return (
     <div className="p-8 w-full flex flex-col min-h-full">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
-        <div className="flex flex-col gap-1.5">
-          <h1 className="text-3xl font-bold tracking-tight text-foreground">My Projects</h1>
-          <p className="text-sm text-muted-foreground">
-            Group your work, link database catalogs, and invite collaborators.
-          </p>
-        </div>
-
-        {/* Search + Role filter */}
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative w-full sm:w-60">
-            <input
-              type="text"
-              placeholder="Search projects..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full h-9 pl-9 pr-4 rounded-lg border border-border bg-surface text-sm text-foreground focus:outline-none focus:border-primary transition-colors"
-            />
-            <span className="absolute left-3 top-[10px] text-muted-foreground pointer-events-none">
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-            </span>
-          </div>
-
-          <div className="flex gap-1 bg-surface-muted p-0.5 rounded-lg border border-border text-xs font-semibold">
-            {(["all", "OWNER", "MEMBER"] as const).map((role) => (
-              <button
-                key={role}
-                onClick={() => setRoleFilter(role)}
-                className={`px-3 py-1.5 rounded-md cursor-pointer transition-all ${
-                  roleFilter === role
-                    ? "bg-surface text-foreground shadow-sm"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {role === "all" ? "All Roles" : role}
-              </button>
-            ))}
-          </div>
-        </div>
-      </div>
-
       {/* Cards Grid */}
       <div className="flex flex-wrap gap-5">
         {/* Create New card */}

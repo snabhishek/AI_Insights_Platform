@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Project, DataSource, UserProfile } from "../providers/AppContext";
 import { PipelineStatuses, RunStatus, Workflow } from "./types";
 import ProjectDataSources from "./ProjectDataSources";
-import WorkflowPipeline from "./WorkflowPipeline";
+import WorkflowPipeline, { getMainStepId } from "./WorkflowPipeline";
 import CardModal from "../shared/ui/CardModal";
 import { PIPELINE_STEPS } from "./constants";
 import IngestionStepOutput from "./pipeline-outputs/IngestionStepOutput";
@@ -128,8 +128,9 @@ export default function ProjectDetailPage({
   }, [project.useCase]);
 
   const handleSelectStage = (stepId: string) => {
-    onSelectStage(stepId);
-    const match = PIPELINE_STEPS.find((item) => item.id === stepId);
+    const mainId = getMainStepId(stepId);
+    onSelectStage(mainId);
+    const match = PIPELINE_STEPS.find((item) => item.id === mainId);
     if (match) {
       setSelectedWorkflow(match);
       setIsExecutionModalOpen(true);

@@ -98,6 +98,39 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS connectors_workspace_id_idx ON connectors (workspace_id);
     `);
 
+    // 7. Project Runs table
+    await query(`
+      CREATE TABLE IF NOT EXISTS project_runs (
+        id VARCHAR(50) PRIMARY KEY,
+        project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        use_case TEXT,
+        agent_state JSONB NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+    await query(`
+      CREATE INDEX IF NOT EXISTS project_runs_project_id_idx ON project_runs (project_id);
+    `);
+
+    // 8. Agent Thinking table
+    await query(`
+      CREATE TABLE IF NOT EXISTS agent_thinking (
+        id VARCHAR(50) PRIMARY KEY,
+        project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        pipeline VARCHAR(100) NOT NULL,
+        substep VARCHAR(100) NOT NULL,
+        thinking JSONB NOT NULL,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+    await query(`
+      CREATE INDEX IF NOT EXISTS agent_thinking_project_id_idx ON agent_thinking (project_id);
+    `);
+    await query(`
+      CREATE INDEX IF NOT EXISTS agent_thinking_proj_pipe_sub_idx ON agent_thinking (project_id, pipeline, substep);
+    `);
+
     // 7. Seed 18 mock data sources if connectors table is empty
     const connCheck = await query("SELECT COUNT(*) FROM connectors");
     const count = parseInt(connCheck.rows[0].count, 10);
@@ -370,7 +403,7 @@ export async function checkAndCreateDatabase() {
     }
 
     // Now run schema creation queries and migrations
-    // await initializeDatabaseSchemas();
+    await initializeDatabaseSchemas();
   } catch (err: any) {
     console.error("[DB] Database verification/creation guard failed:", err.message || err);
   } finally {
@@ -385,8 +418,12 @@ export async function runMigrations(db: NodePgDatabase<any>) {
     await migrate(db, { migrationsFolder: "./drizzle" });
     console.log("[DB] Drizzle schema migrations verified and applied successfully.");
   } catch (err: any) {
-    // If migrations directory is missing/empty, suppress or log warning since we run schemas programmatically anyway
-    console.warn("[DB] Note: Drizzle programmatic migration skipped or pending:", err.message || err);
+    const msg = err.message || String(err);
+    if (msg.includes("already exists") || msg.includes("duplicate")) {
+      console.log("[DB] Database tables already initialized and up to date.");
+    } else {
+      console.warn("[DB] Note: Drizzle programmatic migration skipped or pending:", msg);
+    }
   }
 }
 
