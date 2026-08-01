@@ -17,9 +17,9 @@ export async function profileData(connector: any, inspection: Record<string, unk
   const model = getModel();
 
   const fetchSampleTool = createFetchSampleDataTool(services.connectionTester, services.connectorService, connector);
-  const contentProfileTool = createContentValueProfileTool();
-  const completenessProfileTool = createCompletenessProfileTool();
-  const statisticalProfileTool = createStatisticalProfileTool();
+  const contentProfileTool = createContentValueProfileTool(services.connectionTester, services.connectorService, connector);
+  const completenessProfileTool = createCompletenessProfileTool(services.connectionTester, services.connectorService, connector);
+  const statisticalProfileTool = createStatisticalProfileTool(services.connectionTester, services.connectorService, connector);
 
   const profilingTools = [fetchSampleTool, contentProfileTool, completenessProfileTool, statisticalProfileTool];
 

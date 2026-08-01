@@ -21,11 +21,11 @@ export async function preprocess(connector: any, dataProfile: Record<string, unk
   const model = getModel();
 
   const analyzeProfilingTool = createAnalyzeProfilingTool();
-  const missingValueTool = createMissingValueTool();
-  const categoricalTool = createCategoricalTool();
-  const outlierTool = createOutlierTool();
-  const normalizationTool = createNormalizationTool();
-  const statisticsTool = createStatisticsTool();
+  const missingValueTool = createMissingValueTool(services.connectionTester, services.connectorService, connector);
+  const categoricalTool = createCategoricalTool(services.connectionTester, services.connectorService, connector);
+  const outlierTool = createOutlierTool(services.connectionTester, services.connectorService, connector);
+  const normalizationTool = createNormalizationTool(services.connectionTester, services.connectorService, connector);
+  const statisticsTool = createStatisticsTool(services.connectionTester, services.connectorService, connector);
   const applyCleaningTool = createApplyDataCleaningTool(services.connectionTester, services.connectorService, connector);
   const duplicateDetectionTool = createDuplicateDetectionTool(services.connectionTester, services.connectorService, connector);
 

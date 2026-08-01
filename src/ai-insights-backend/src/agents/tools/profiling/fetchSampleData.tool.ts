@@ -18,7 +18,7 @@ export const createFetchSampleDataTool = (
       connectionConfig,
       tableName,
       sampleMethod,
-      sampleSize = 100,
+      sampleSize = 100000,
       seed = 42,
       intervals,
       stratifyColumn,
@@ -161,12 +161,12 @@ export const createFetchSampleDataTool = (
       schema: z.object({
         connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback"),
-        connectionConfig: z.object({}).passthrough().optional().describe("Fallback connection settings"),
+        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
         tableName: z.string().describe("Table name to sample from"),
         sampleMethod: z.enum(["random", "stratified", "interval"]).describe(
           "Sampling method: 'interval' fetches from different record positions, 'stratified' groups by a column, 'random' is simple random"
         ),
-        sampleSize: z.number().optional().describe("Total number of sample records to fetch (default 100)"),
+        sampleSize: z.number().optional().describe("Total number of sample records to fetch (default 100000)"),
         seed: z.number().optional().describe("Deterministic seed for reproducible sampling"),
         intervals: z.array(z.number()).optional().describe("Percentile offsets for interval sampling, e.g. [0, 25, 50, 75, 100]"),
         stratifyColumn: z.string().optional().describe("Column to group by for stratified sampling"),
@@ -175,7 +175,7 @@ export const createFetchSampleDataTool = (
           foreignTable: z.string().describe("Referenced table"),
           foreignColumn: z.string().describe("Referenced column"),
         })).optional().describe("Table relationships from inspector output for referential integrity filtering"),
-        foreignKeyValues: z.record(z.string(), z.array(z.string())).optional().describe(
+        foreignKeyValues: z.object({}).catchall(z.array(z.string())).optional().describe(
           "Map of foreignTable → array of allowed FK values collected from parent table samples"
         ),
       }),

@@ -46,10 +46,12 @@ Do not exit this loop early. If you find yourself about to write the final JSON 
 
 ### Phase 2 — Planning (per action, before executing it)
 For **each** action in the checklist, briefly decide how to execute it. Do this thinking inline, immediately before calling the tool for that action — do not do all the planning up front and then stop:
-- **Numeric columns, missing values**: call `computeStatistics` to get median/mean, then choose `impute_median` or `impute_mean`.
-- **Categorical columns, missing values**: use `impute_mode` or `impute_constant`.
+- **Do NOT apply any values or statistics directly from the profiling result as parameters for preprocessing.** The profiling result should only be used to decide the strategy (e.g., whether to use median vs mean imputation, or clip outliers vs cap percentiles).
+- The preprocessing validation tools themselves will fetch all records and compute fresh, accurate statistics over the entire table on demand.
+- **Numeric columns, missing values**: decide to impute (e.g., strategy: `"median"` or `"mean"`). The tool will return the freshly calculated value.
+- **Categorical columns, missing values**: decide strategy (e.g., `"mode"` or `"constant"`).
 - **Inconsistent categories**: call `normalizeCategoricalValues` first to preview the result.
-- **Outliers**: check the distribution shape from the statistical profile — `clip_iqr` for normal distributions, `cap_percentile` for skewed.
+- **Outliers**: decide method (e.g., `"iqr"` or `"zscore"`) and strategy (e.g., `"clip"` or `"flag"`). The tool will calculate fresh bounds.
 - **Mixed types**: plan `coerce_type` with the dominant type as target.
 - **Potential duplicates**: call `detectDuplicates` with the business key columns identified in the inspector output.
 
@@ -57,13 +59,14 @@ Order actions HIGH → MEDIUM → LOW. Within the same priority tier, process ac
 
 ### Phase 3 — Execution (mandatory for every action)
 For each planned action, in order, call the appropriate tool pair **in the same turn, without stopping in between**:
-- Missing values → `imputeMissingValues` on sample rows to validate → then `applyDataCleaning` to persist.
-- Categories → `normalizeCategoricalValues` to validate → then `applyDataCleaning` to persist.
-- Outliers → `detectOutliers` to validate bounds → then `applyDataCleaning` to persist.
-- Headers → `normalizeSchema` for file-based sources.
-- Duplicates → `detectDuplicates` to identify → then decide on action (dedupe via `applyDataCleaning`, or flag if confidence is low).
+- Do NOT pass raw rows or values (like specific mean, median, mode, or outlier bounds) in arguments for any validation tool.
+- **Missing values** → Call `imputeMissingValues` specifying the strategy (e.g. `"median"`). The tool calculates the fresh imputation value on all records, applies it to a sample preview, and returns `computedValue`. Then call `applyDataCleaning` passing that `computedValue` as the fill value.
+- **Categories** → Call `normalizeCategoricalValues` (calculates and validates on demand) → then call `applyDataCleaning` to persist.
+- **Outliers** → Call `detectOutliers` specifying the method/strategy (e.g. method: `"iqr"`, strategy: `"clip"`). The tool calculates the fresh bounds on all records, applies them to a sample preview, and returns `bounds`. Then call `applyDataCleaning` passing the returned lower and upper bounds.
+- **Headers** → `normalizeSchema` for file-based sources.
+- **Duplicates** → `detectDuplicates` (identifies on demand) → then decide on action (dedupe via `applyDataCleaning` or flag).
 
-After each cleaning step, check the before/after sample returned by `applyDataCleaning` to confirm the result makes sense, then immediately proceed to the next action. Do not pause for confirmation between actions — only stop calling tools once every action from Phase 1's checklist has been addressed.
+After each cleaning step, check the before/after sample returned by `applyDataCleaning` to confirm the result makes sense, then immediately proceed to the next action. Preprocessing operations executed via `applyDataCleaning` will be applied on all the rows in the table. Do not pause for confirmation between actions — only stop calling tools once every action from Phase 1's checklist has been addressed.
 
 ## Decision Guidelines
 - **Do NOT clean blindly**. If a column has 98%+ completeness, skip imputation unless specifically needed — but still record it as an explicit "skipped" action with a reason, don't just omit it.

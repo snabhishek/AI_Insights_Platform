@@ -1,38 +1,11 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import pl from "nodejs-polars";
+import { fetchRowsOnDemand } from "../samplingHelper";
+import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
+import { ConnectorService } from "../../../services/connector/connector.service";
 
 type SampleRow = Record<string, unknown>;
-
-const toNumber = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) return undefined;
-    const result = Number(trimmed);
-    return Number.isFinite(result) ? result : undefined;
-  }
-  return undefined;
-};
-
-const toDate = (value: unknown): Date | undefined => {
-  if (value instanceof Date && !isNaN(value.getTime())) return value;
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.length === 0 || !/\d{4}/.test(trimmed)) return undefined;
-    const d = new Date(trimmed);
-    return isNaN(d.getTime()) ? undefined : d;
-  }
-  return undefined;
-};
-
-const percentile = (sorted: number[], p: number): number => {
-  if (sorted.length === 0) return 0;
-  const idx = (p / 100) * (sorted.length - 1);
-  const lower = Math.floor(idx);
-  const upper = Math.ceil(idx);
-  if (lower === upper) return sorted[lower];
-  return sorted[lower] + (idx - lower) * (sorted[upper] - sorted[lower]);
-};
 
 const classifyDistribution = (skewness: number, kurtosis: number, distinctRatio: number): string => {
   if (distinctRatio <= 0.02) return "constant";
@@ -45,8 +18,14 @@ const classifyDistribution = (skewness: number, kurtosis: number, distinctRatio:
   return "skewed";
 };
 
-const profileNumericColumn = (colName: string, values: number[]) => {
-  if (values.length === 0) {
+const profileNumericColumnPl = (colName: string, s: pl.Series) => {
+  const nonNullS = s.filter(s.isNotNull());
+  
+  let numericS: pl.Series;
+  try {
+    numericS = nonNullS.cast(pl.Float64).filter(nonNullS.isNotNull());
+  } catch {
+    // If casting fails, filter elements manually or return empty stats
     return {
       name: colName,
       dataCategory: "numeric" as const,
@@ -60,46 +39,50 @@ const profileNumericColumn = (colName: string, values: number[]) => {
     };
   }
 
-  const sorted = [...values].sort((a, b) => a - b);
-  const n = values.length;
-  const mean = values.reduce((s, v) => s + v, 0) / n;
-  const variance = values.reduce((s, v) => s + (v - mean) ** 2, 0) / n;
-  const stddev = Math.sqrt(variance);
+  const n = numericS.length;
+  if (n === 0) {
+    return {
+      name: colName,
+      dataCategory: "numeric" as const,
+      count: 0,
+      mean: 0, median: 0, mode: null as number | null, min: 0, max: 0,
+      variance: 0, stddev: 0, skewness: 0, kurtosis: 0,
+      percentiles: { p5: 0, p25: 0, p50: 0, p75: 0, p95: 0 },
+      iqr: 0,
+      outliers: { count: 0, lowerBound: 0, upperBound: 0, outlierValues: [] as number[] },
+      distributionShape: "unknown",
+    };
+  }
 
-  const median = n % 2 === 0
-    ? (sorted[n / 2 - 1] + sorted[n / 2]) / 2
-    : sorted[Math.floor(n / 2)];
+  const statsDf = pl.DataFrame({ v: numericS });
+  const mean = statsDf.select(pl.col("v").mean()).toRecords()[0]["v"] as number ?? 0;
+  const variance = statsDf.select(pl.col("v").var()).toRecords()[0]["v"] as number ?? 0;
+  const stddev = statsDf.select(pl.col("v").std()).toRecords()[0]["v"] as number ?? 0;
+  const median = statsDf.select(pl.col("v").median()).toRecords()[0]["v"] as number ?? 0;
+  const skewness = statsDf.select(pl.col("v").skew()).toRecords()[0]["v"] as number ?? 0;
+  const kurtosis = statsDf.select(pl.col("v").kurtosis()).toRecords()[0]["v"] as number ?? 0;
+  const minVal = statsDf.select(pl.col("v").min()).toRecords()[0]["v"] as number ?? 0;
+  const maxVal = statsDf.select(pl.col("v").max()).toRecords()[0]["v"] as number ?? 0;
 
-  // Mode
-  const freq = new Map<number, number>();
-  values.forEach((v) => freq.set(v, (freq.get(v) || 0) + 1));
-  const maxFreq = Math.max(...freq.values());
-  const mode = maxFreq > 1
-    ? [...freq.entries()].filter(([, c]) => c === maxFreq).sort((a, b) => a[0] - b[0])[0][0]
-    : null;
+  const modeSeries = numericS.mode();
+  const mode = modeSeries.length > 0 ? Number(modeSeries.get(0)) : null;
 
-  // Skewness & kurtosis
-  const skewness = stddev > 0
-    ? values.reduce((s, v) => s + ((v - mean) / stddev) ** 3, 0) / n
-    : 0;
-  const kurtosis = stddev > 0
-    ? values.reduce((s, v) => s + ((v - mean) / stddev) ** 4, 0) / n
-    : 0;
-
-  // Percentiles
-  const p5 = percentile(sorted, 5);
-  const p25 = percentile(sorted, 25);
-  const p50 = percentile(sorted, 50);
-  const p75 = percentile(sorted, 75);
-  const p95 = percentile(sorted, 95);
+  const p5 = statsDf.select(pl.col("v").quantile(0.05)).toRecords()[0]["v"] as number ?? 0;
+  const p25 = statsDf.select(pl.col("v").quantile(0.25)).toRecords()[0]["v"] as number ?? 0;
+  const p50 = statsDf.select(pl.col("v").quantile(0.50)).toRecords()[0]["v"] as number ?? 0;
+  const p75 = statsDf.select(pl.col("v").quantile(0.75)).toRecords()[0]["v"] as number ?? 0;
+  const p95 = statsDf.select(pl.col("v").quantile(0.95)).toRecords()[0]["v"] as number ?? 0;
   const iqr = p75 - p25;
 
-  // Outliers
   const lowerBound = p25 - 1.5 * iqr;
   const upperBound = p75 + 1.5 * iqr;
-  const outlierValues = values.filter((v) => v < lowerBound || v > upperBound);
+  
+  const isOutlierArr = numericS.toArray().map((val: any) => val < lowerBound || val > upperBound);
+  const isOutlier = pl.Series("is_outlier", isOutlierArr);
+  const outlierS = numericS.filter(isOutlier);
+  const outlierValues = outlierS.slice(0, 20).toArray().map(Number);
 
-  const distinctRatio = new Set(values).size / n;
+  const distinctRatio = numericS.nUnique() / n;
   const distributionShape = classifyDistribution(skewness, kurtosis, distinctRatio);
 
   return {
@@ -109,8 +92,8 @@ const profileNumericColumn = (colName: string, values: number[]) => {
     mean: Number(mean.toFixed(4)),
     median: Number(median.toFixed(4)),
     mode,
-    min: sorted[0],
-    max: sorted[n - 1],
+    min: Number(minVal.toFixed(4)),
+    max: Number(maxVal.toFixed(4)),
     variance: Number(variance.toFixed(4)),
     stddev: Number(stddev.toFixed(4)),
     skewness: Number(skewness.toFixed(4)),
@@ -124,16 +107,17 @@ const profileNumericColumn = (colName: string, values: number[]) => {
     },
     iqr: Number(iqr.toFixed(4)),
     outliers: {
-      count: outlierValues.length,
+      count: outlierS.length,
       lowerBound: Number(lowerBound.toFixed(4)),
       upperBound: Number(upperBound.toFixed(4)),
-      outlierValues: outlierValues.slice(0, 20),
+      outlierValues,
     },
     distributionShape,
   };
 };
 
-const profileDateColumn = (colName: string, dates: Date[]) => {
+const profileDateColumnPl = (colName: string, s: pl.Series) => {
+  const dates = s.filter(s.isNotNull()).toArray().map((v) => new Date(String(v))).filter((d) => !isNaN(d.getTime()));
   if (dates.length === 0) {
     return {
       name: colName,
@@ -208,26 +192,75 @@ const profileDateColumn = (colName: string, dates: Date[]) => {
   };
 };
 
-export const createStatisticalProfileTool = () =>
+export const createStatisticalProfileTool = (
+  connectionTester: ConnectionTesterService,
+  connectorService: ConnectorService,
+  defaultConnector?: any
+) =>
   tool(
-    async ({ rows, columns, tableName, columnTypes }) => {
-      const sampleRows = Array.isArray(rows) ? (rows as SampleRow[]) : [];
-      const allColumns = sampleRows.length > 0 ? Object.keys(sampleRows[0]) : [];
+    async ({
+      connectorId,
+      connectorType,
+      connectionConfig,
+      tableName,
+      sampleMethod,
+      sampleSize,
+      seed,
+      stratifyColumn,
+      relationships,
+      foreignKeyValues,
+      columns,
+      columnTypes,
+    }) => {
+      const { rows: sampleRows, totalRowCount, error } = await fetchRowsOnDemand(
+        connectionTester,
+        connectorService,
+        defaultConnector,
+        {
+          connectorId,
+          connectorType,
+          connectionConfig,
+          tableName,
+          sampleMethod,
+          sampleSize,
+          seed,
+          stratifyColumn,
+          relationships,
+          foreignKeyValues,
+        }
+      );
+
+      if (error || sampleRows.length === 0) {
+        return {
+          tableName: tableName || "unknown",
+          profileType: "statistical",
+          totalRows: 0,
+          numericColumns: [],
+          dateColumns: [],
+          skippedColumns: [],
+          rows: [],
+          error,
+        };
+      }
+
+      const df = pl.DataFrame(sampleRows);
+      const allColumns = df.columns;
       const targetColumns = Array.isArray(columns) && columns.length > 0 ? columns : allColumns;
       const typeMap = (columnTypes || {}) as Record<string, string>;
 
-      const numericProfiles: ReturnType<typeof profileNumericColumn>[] = [];
-      const dateProfiles: ReturnType<typeof profileDateColumn>[] = [];
+      const numericProfiles: ReturnType<typeof profileNumericColumnPl>[] = [];
+      const dateProfiles: ReturnType<typeof profileDateColumnPl>[] = [];
       const skippedColumns: string[] = [];
 
       for (const colName of targetColumns) {
         const colType = typeMap[colName] || "auto";
-        const rawValues = sampleRows.map((row) => row[colName]);
+        const s = df.getColumn(colName);
+        const nonNullCount = s.filter(s.isNotNull()).length;
 
         if (colType === "date" || colType === "timestamp") {
-          const dates = rawValues.map(toDate).filter((d): d is Date => d !== undefined);
+          const dates = s.filter(s.isNotNull()).toArray().map((v: any) => new Date(String(v))).filter((d: any) => !isNaN(d.getTime()));
           if (dates.length > 0) {
-            dateProfiles.push(profileDateColumn(colName, dates));
+            dateProfiles.push(profileDateColumnPl(colName, s));
           } else {
             skippedColumns.push(colName);
           }
@@ -240,15 +273,23 @@ export const createStatisticalProfileTool = () =>
         }
 
         // Auto-detect: try numeric first, then date
-        const numericValues = rawValues.map(toNumber).filter((n): n is number => n !== undefined);
-        if (numericValues.length >= rawValues.filter((v) => v !== null && v !== undefined).length * 0.5) {
-          numericProfiles.push(profileNumericColumn(colName, numericValues));
-          continue;
+        let isNumeric = false;
+        try {
+          const numS = s.filter(s.isNotNull()).cast(pl.Float64);
+          const validNumCount = numS.filter(numS.isNotNull()).length;
+          if (validNumCount >= nonNullCount * 0.5) {
+            numericProfiles.push(profileNumericColumnPl(colName, s));
+            isNumeric = true;
+          }
+        } catch {
+          // Ignore casting failure
         }
 
-        const dateValues = rawValues.map(toDate).filter((d): d is Date => d !== undefined);
-        if (dateValues.length >= rawValues.filter((v) => v !== null && v !== undefined).length * 0.5) {
-          dateProfiles.push(profileDateColumn(colName, dateValues));
+        if (isNumeric) continue;
+
+        const dateValues = s.filter(s.isNotNull()).toArray().map((v: any) => new Date(String(v))).filter((d: any) => !isNaN(d.getTime()));
+        if (dateValues.length >= nonNullCount * 0.5) {
+          dateProfiles.push(profileDateColumnPl(colName, s));
           continue;
         }
 
@@ -262,22 +303,33 @@ export const createStatisticalProfileTool = () =>
         numericColumns: numericProfiles,
         dateColumns: dateProfiles,
         skippedColumns,
+        // rows: sampleRows, // Retain fetched rows so the agent can extract PKs to sync child tables
       };
     },
     {
       name: "statisticalProfile",
       description:
         "Compute statistical profiles for numeric and date columns in sample data. " +
-        "For numeric columns: mean, median, mode, min, max, variance, stddev, skewness, kurtosis, " +
-        "percentiles (p5/p25/p50/p75/p95), IQR, outlier detection, and distribution shape classification. " +
-        "For date columns: min/max date, range, gap detection, and temporal patterns. " +
-        "Use columnTypes from contentValueProfile output to target the right columns. " +
-        "Non-numeric/non-date columns are automatically skipped.",
+        "Fetches the required sample records on demand.",
       schema: z.object({
-        rows: z.array(z.record(z.string(), z.any())).describe("Sample rows to analyze"),
+        connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
+        connectorType: z.string().optional().describe("Connector type fallback"),
+        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        tableName: z.string().describe("Table name for context"),
+        sampleMethod: z.enum(["random", "stratified", "interval"]).optional().describe("Sampling method"),
+        sampleSize: z.number().optional().describe("Number of sample records to fetch (stratified defaults to 40% of table row count)"),
+        seed: z.number().optional().describe("Deterministic seed for reproducible sampling"),
+        stratifyColumn: z.string().optional().describe("Column to group by for stratified sampling"),
+        relationships: z.array(z.object({
+          column: z.string().describe("Local FK column"),
+          foreignTable: z.string().describe("Referenced table"),
+          foreignColumn: z.string().describe("Referenced column"),
+        })).optional().describe("Table relationships from inspector output for referential integrity filtering"),
+        foreignKeyValues: z.object({}).catchall(z.array(z.string())).optional().describe(
+          "Map of foreignTable → array of allowed FK values collected from parent table samples"
+        ),
         columns: z.array(z.string()).optional().describe("Columns to profile; omit to auto-detect all numeric/date columns"),
-        tableName: z.string().optional().describe("Table name for context"),
-        columnTypes: z.record(z.string(), z.string()).optional().describe(
+        columnTypes: z.object({}).catchall(z.string()).optional().describe(
           "Map of column name → inferred type from contentValueProfile (e.g. 'numeric', 'date', 'string'). Helps skip non-applicable columns."
         ),
       }),

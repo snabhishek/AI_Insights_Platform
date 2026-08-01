@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
 import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
+import pl from "nodejs-polars";
 
 type SampleRow = Record<string, unknown>;
 
@@ -66,31 +67,63 @@ export const createDuplicateDetectionTool = (
       }
 
       try {
-        // For databases, use SQL-based duplicate detection
+        // Fetch a sample to scan for duplicates
+        const sample = await connectionTester.getRandomSample(type, config, tableName, limit, 42);
+        const rows = sample.rows as SampleRow[];
+
+        if (rows.length === 0) {
+          return {
+            success: true,
+            tableName,
+            keyColumns: keys,
+            strategy: dedupeStrategy,
+            sampleSize: 0,
+            totalRowCount: sample.totalRowCount,
+            duplicateCount: 0,
+            estimatedTotalDuplicates: 0,
+            duplicateGroupCount: 0,
+            duplicateGroups: [],
+            action: "No rows fetched to analyze for duplicates",
+          };
+        }
+
+        const df = pl.DataFrame(rows);
+        const dfCounts = df.groupBy(keys).agg(pl.col(keys[0]).count().alias("count"));
+        const dfDuplicates = dfCounts.filter(dfCounts.getColumn("count").gt(1));
+
+        const duplicateGroups: Array<{ key: string; count: number; sampleRows: SampleRow[] }> = [];
+        if (dfDuplicates.shape.height > 0) {
+          const duplicateRecords = dfDuplicates.toRecords();
+          for (const dup of duplicateRecords) {
+            const keyParts = keys.map((k) => String(dup[k] ?? "").trim().toLowerCase());
+            const key = keyParts.join("|");
+            const count = Number(dup["count"]);
+
+            let filterExpr = pl.lit(true);
+            for (const k of keys) {
+              const val = dup[k];
+              if (val === null || val === undefined) {
+                filterExpr = filterExpr.and(pl.col(k).isNull());
+              } else {
+                filterExpr = filterExpr.and(
+                  pl.col(k).cast(pl.Utf8).str.strip().str.toLowerCase().eq(String(val).trim().toLowerCase())
+                );
+              }
+            }
+            const sampleRows = df.filter(filterExpr).head(3).toRecords() as SampleRow[];
+
+            duplicateGroups.push({
+              key,
+              count,
+              sampleRows,
+            });
+          }
+        }
+
+        const duplicateCount = duplicateGroups.reduce((sum, g) => sum + g.count - 1, 0);
+
         if (type === "postgres" || type === "mysql" || type === "sqlserver") {
           const totalRowCount = await connectionTester.getRowCount(type, config, tableName);
-
-          // Fetch a sample to scan for duplicates
-          const sample = await connectionTester.getRandomSample(type, config, tableName, limit, 42);
-          const rows = sample.rows as SampleRow[];
-
-          const keyMap = new Map<string, SampleRow[]>();
-          for (const row of rows) {
-            const key = buildRowKey(row, keys);
-            const existing = keyMap.get(key) || [];
-            existing.push(row);
-            keyMap.set(key, existing);
-          }
-
-          const duplicateGroups = Array.from(keyMap.entries())
-            .filter(([, group]) => group.length > 1)
-            .map(([key, group]) => ({
-              key,
-              count: group.length,
-              sampleRows: group.slice(0, 3),
-            }));
-
-          const duplicateCount = duplicateGroups.reduce((sum, g) => sum + g.count - 1, 0);
           const estimatedTotalDuplicates = totalRowCount > 0
             ? Math.round((duplicateCount / rows.length) * totalRowCount)
             : duplicateCount;
@@ -113,27 +146,6 @@ export const createDuplicateDetectionTool = (
         }
 
         // File-based duplicate detection
-        const sample = await connectionTester.getRandomSample(type, config, tableName, limit, 42);
-        const rows = sample.rows as SampleRow[];
-
-        const keyMap = new Map<string, SampleRow[]>();
-        for (const row of rows) {
-          const key = buildRowKey(row, keys);
-          const existing = keyMap.get(key) || [];
-          existing.push(row);
-          keyMap.set(key, existing);
-        }
-
-        const duplicateGroups = Array.from(keyMap.entries())
-          .filter(([, group]) => group.length > 1)
-          .map(([key, group]) => ({
-            key,
-            count: group.length,
-            sampleRows: group.slice(0, 3),
-          }));
-
-        const duplicateCount = duplicateGroups.reduce((sum, g) => sum + g.count - 1, 0);
-
         return {
           success: true,
           tableName,
@@ -167,7 +179,7 @@ export const createDuplicateDetectionTool = (
       schema: z.object({
         connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback"),
-        connectionConfig: z.object({}).passthrough().optional().describe("Fallback connection settings"),
+        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
         tableName: z.string().describe("Table to check for duplicates"),
         keyColumns: z.array(z.string()).describe("Columns to use as the composite key for duplicate detection"),
         strategy: z.enum(["flag", "remove_exact", "remove_fuzzy"]).optional().describe(
