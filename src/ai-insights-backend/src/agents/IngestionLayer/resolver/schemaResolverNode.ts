@@ -12,6 +12,7 @@ import {
 import { 
   writeResolvedSchemaYaml, 
   loadFieldSchemaYaml,
+  getPackagesDir,
   sanitizeName, 
   generateDateTimeStamp 
 } from "../../tools/schemaHelper";
@@ -114,7 +115,8 @@ ${safeUserRequest}
     ? result.domain.trim()
     : inferredDomain;
 
-  let outputYamlPath = path.resolve(process.cwd(), "resolved_schema.yaml");
+  const packagesDir = getPackagesDir();
+  let outputYamlPath = path.resolve(packagesDir, "resolved_schema.yaml");
   if (projectId) {
     try {
       const projectWithWs = await services.projectService.getProjectWithWorkspace(projectId);
@@ -125,7 +127,6 @@ ${safeUserRequest}
         const timestamp = generateDateTimeStamp();
         const fileName = `${workspaceName}-${projectTitle}-${timestamp}.yaml`;
 
-        const packagesDir = path.resolve(process.cwd(), "src/packages");
         outputYamlPath = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas", fileName);
       }
     } catch (lookupErr: any) {
@@ -156,6 +157,7 @@ ${safeUserRequest}
     domain: resolvedDomain,
     mappings: rawMappings,
     yamlPath: outputYamlPath,
+    schemaPath: outputYamlPath,
   };
 }
 

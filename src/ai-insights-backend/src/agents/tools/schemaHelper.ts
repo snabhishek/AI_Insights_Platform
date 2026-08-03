@@ -36,14 +36,32 @@ export interface ResolvedSchemaPayload {
 }
 
 /**
+ * Resolves the root packages directory across various execution contexts (root, src/backend, dist).
+ */
+export function getPackagesDir(): string {
+  const candidateDirs = [
+    path.resolve(__dirname, "../../../../../packages"),
+    path.resolve(process.cwd(), "../packages"),
+    path.resolve(process.cwd(), "src/packages"),
+    path.resolve(__dirname, "../../../packages"),
+  ];
+  for (const dir of candidateDirs) {
+    if (fsSync.existsSync(dir)) {
+      return dir;
+    }
+  }
+  return candidateDirs[0];
+}
+
+/**
  * Resolves the location of candidate package files in the workspace.
  */
 export function resolvePackageFilePath(filename: string): string {
   const candidatePaths = [
+    path.join(getPackagesDir(), filename),
     path.resolve(__dirname, "../../../../../packages", filename),
     path.resolve(process.cwd(), "../packages", filename),
     path.resolve(process.cwd(), "src/packages", filename),
-    path.resolve(__dirname, "../../../packages", filename),
   ];
   for (const candidate of candidatePaths) {
     if (fsSync.existsSync(candidate)) {
