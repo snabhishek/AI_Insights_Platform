@@ -187,6 +187,24 @@ export class AgentTraceHelper {
   }
 }
 
+export function createLiteLLMModel() {
+  if (!process.env.LITELLM_PROXY_URL) {
+    throw new Error("No LiteLLM")
+  }
+
+  const liteLLMModel = process.env.LITELLM_MODEL || process.env.LITELLM_MODEL_NAME || "gemini/gemini-3.1-pro-preview";
+
+  return new ChatOpenAI({
+    model: liteLLMModel,
+    temperature: 0.4,
+    maxTokens: 32000,
+    configuration:{
+      apiKey: process.env.LITELLM_VIRTUAL_KEY,
+      baseURL: process.env.LITELLM_PROXY_URL
+    }
+  });
+}
+
 export function createGeminiModel() {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {
@@ -248,6 +266,9 @@ export function getModel(): SupportedChatModel | null {
   } else if (provider === "openai") {
     const openai = createOpenAIModel();
     if (openai) return openai;
+  } else if (provider === "litellm") {
+    const litellm = createLiteLLMModel();
+    if (litellm) return litellm;
   }
 
   return createGeminiModel() || createAzureOpenAIModel() || createOpenAIModel();
