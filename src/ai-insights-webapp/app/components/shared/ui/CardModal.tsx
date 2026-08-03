@@ -173,7 +173,7 @@ export default function CardModal({
       <div className="relative w-[98vw] h-[96vh] max-w-none overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col sm:flex-row animate-scale-up">
         
         {/* Left Panel: Steps Sidebar */}
-        <div className="w-full sm:w-[350px] lg:w-[300px] border-b sm:border-b-0 sm:border-r border-border p-6 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
+        <div className="w-full sm:w-[250px] border-b sm:border-b-0 sm:border-r border-border p-6 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
 
           <div className="mb-5 shrink-0">
             <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Execution Steps</span>

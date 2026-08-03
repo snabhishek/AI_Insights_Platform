@@ -98,7 +98,7 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[280px_1px_minmax(0,1fr)]">
+      <div className="grid gap-3 lg:grid-cols-[200px_1px_minmax(0,1fr)]">
         <aside className="space-y-4 bg-surface/60">
           <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tables</div>
           {tables.length === 0 ? (

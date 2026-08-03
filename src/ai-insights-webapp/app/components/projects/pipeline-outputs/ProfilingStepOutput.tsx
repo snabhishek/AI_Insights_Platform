@@ -131,7 +131,7 @@ export default function ProfilingStepOutput({ profileData, preprocess }: Profili
         </div>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-[280px_1px_minmax(0,1fr)]">
+      <div className="grid gap-3 lg:grid-cols-[200px_1px_minmax(0,1fr)]">
         <aside className="space-y-4 bg-surface/60">
           <div className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Tables</div>
           {tables.length === 0 ? (
@@ -150,9 +150,9 @@ export default function ProfilingStepOutput({ profileData, preprocess }: Profili
                     key={tableKey}
                     type="button"
                     onClick={() => setSelectedTableKey(tableKey)}
-                    className={`w-full rounded-lg border px-4 py-3 text-left transition ${isSelected ? "border-indigo-500 bg-indigo-500/10" : "border-border bg-surface/50 hover:border-indigo-300 hover:bg-surface-muted/60"}`}
+                    className={`w-full rounded-sm border px-4 py-3 text-left transition ${isSelected ? "border-indigo-500 bg-indigo-500/10" : "border-border bg-surface/50 hover:border-indigo-300 hover:bg-surface-muted/60"}`}
                   >
-                    <div className="text-xs font-semibold text-foreground">{tableName}</div>
+                    <div className="text-xs font-semibold text-foreground" title={tableName}>{tableName}</div>
                     <div className="mt-1 text-[10px] text-muted-foreground">
                       {Array.isArray(table.contentProfile?.columns || table.columns) ? (table.contentProfile?.columns || table.columns).length : 0} columns
                     </div>
@@ -176,7 +176,7 @@ export default function ProfilingStepOutput({ profileData, preprocess }: Profili
                 </span>
               </div> */}
 
-              <div className="p-5 select-text">
+              <div className="select-text">
                 {/* reuse tabs logic for selected table */}
                 {(() => {
                   const table = selectedTable;
@@ -249,98 +249,102 @@ export default function ProfilingStepOutput({ profileData, preprocess }: Profili
                       )}
 
                       {activeTab === "statistics" && (
-                        <div className="space-y-6">
-                          <SectionHeader title="Numerical Field Statistics" subtitle="In-depth analysis of numeric column distributions and bounds" />
+                        // <div className="space-y-6">
+                        //   <SectionHeader title="Numerical Field Statistics" subtitle="In-depth analysis of numeric column distributions and bounds" />
 
-                          {numericColumns.length === 0 ? (
-                            <div className="p-6 text-center bg-surface-muted/20 border border-dashed border-border">
-                              <p className="text-xs text-muted-foreground">No numeric column statistics computed for this table.</p>
-                            </div>
-                          ) : (
-                            <div className="space-y-6">
-                              {numericColumns.map((col: any, ncIdx: number) => {
-                                const outliers = col.outliers || { count: 0, outlierValues: [] };
-                                const hasOutliers = outliers.count > 0;
-                                const p = col.percentiles || {};
-                                const columnNameStr = typeof col.name === "object" && col.name !== null
-                                  ? (col.name.technicalName || col.name.name || "unknown")
-                                  : String(col.name || "");
+                        //   {numericColumns.length === 0 ? (
+                        //     <div className="p-6 text-center bg-surface-muted/20 border border-dashed border-border">
+                        //       <p className="text-xs text-muted-foreground">No numeric column statistics computed for this table.</p>
+                        //     </div>
+                        //   ) : (
+                        //     <div className="space-y-6">
+                        //       {numericColumns.map((col: any, ncIdx: number) => {
+                        //         const outliers = col.outliers || { count: 0, outlierValues: [] };
+                        //         const hasOutliers = outliers.count > 0;
+                        //         const p = col.percentiles || {};
+                        //         const columnNameStr = typeof col.name === "object" && col.name !== null
+                        //           ? (col.name.technicalName || col.name.name || "unknown")
+                        //           : String(col.name || "");
 
-                                return (
-                                  <div key={ncIdx} className="border border-border/80 bg-surface/30 p-4 space-y-4">
-                                    <div className="flex items-center justify-between border-b border-border/40 pb-2 select-none">
-                                      <span className="font-mono font-bold text-foreground text-xs flex items-center gap-1.5 select-all font-sans">
-                                        🔢 {columnNameStr}
-                                      </span>
-                                      {col.distributionShape && (
-                                        <Badge variant="primary" className="capitalize text-[9px]">{col.distributionShape.replace(/_/g, " ")} Distribution</Badge>
-                                      )}
-                                    </div>
+                        //         return (
+                        //           <div key={ncIdx} className="border border-border/80 bg-surface/30 p-4 space-y-4">
+                        //             <div className="flex items-center justify-between border-b border-border/40 pb-2 select-none">
+                        //               <span className="font-mono font-bold text-foreground text-xs flex items-center gap-1.5 select-all font-sans">
+                        //                 🔢 {columnNameStr}
+                        //               </span>
+                        //               {col.distributionShape && (
+                        //                 <Badge variant="primary" className="capitalize text-[9px]">{col.distributionShape.replace(/_/g, " ")} Distribution</Badge>
+                        //               )}
+                        //             </div>
 
-                                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 select-none">
-                                      <StatCard label="Min Value" value={col.min} variant="slate" />
-                                      <StatCard label="Median" value={col.median} variant="indigo" />
-                                      <StatCard label="Mean" value={col.mean ? Number(col.mean).toFixed(2) : "n/a"} variant="indigo" />
-                                      <StatCard label="Max Value" value={col.max} variant="slate" />
-                                      <StatCard label="Std Deviation" value={col.stddev ? Number(col.stddev).toFixed(2) : "n/a"} variant="slate" />
-                                    </div>
+                        //             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3 select-none">
+                        //               <StatCard label="Min Value" value={col.min} variant="slate" />
+                        //               <StatCard label="Median" value={col.median} variant="indigo" />
+                        //               <StatCard label="Mean" value={col.mean ? Number(col.mean).toFixed(2) : "n/a"} variant="indigo" />
+                        //               <StatCard label="Max Value" value={col.max} variant="slate" />
+                        //               <StatCard label="Std Deviation" value={col.stddev ? Number(col.stddev).toFixed(2) : "n/a"} variant="slate" />
+                        //             </div>
 
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                                      <div className="p-3.5 bg-surface-muted/30 border border-border/60 space-y-3">
-                                        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground block select-none">Percentiles Distribution</span>
-                                        <div className="space-y-2 select-text text-xs">
-                                          {[
-                                            { name: "5th (p5)", val: p.p5 },
-                                            { name: "25th (p25)", val: p.p25 },
-                                            { name: "50th (p50 / Median)", val: p.p50 },
-                                            { name: "75th (p75)", val: p.p75 },
-                                            { name: "95th (p95)", val: p.p95 },
-                                          ].map((item, idx) => (
-                                            <div key={idx} className="flex justify-between items-center py-0.5 border-b border-border/40 last:border-b-0 font-medium">
-                                              <span className="text-muted-foreground">{item.name}</span>
-                                              <span className="font-mono font-bold text-foreground select-all">{item.val !== undefined ? Number(item.val).toLocaleString() : "n/a"}</span>
-                                            </div>
-                                          ))}
-                                        </div>
-                                      </div>
+                        //             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
+                        //               <div className="p-3.5 bg-surface-muted/30 border border-border/60 space-y-3">
+                        //                 <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground block select-none">Percentiles Distribution</span>
+                        //                 <div className="space-y-2 select-text text-xs">
+                        //                   {[
+                        //                     { name: "5th (p5)", val: p.p5 },
+                        //                     { name: "25th (p25)", val: p.p25 },
+                        //                     { name: "50th (p50 / Median)", val: p.p50 },
+                        //                     { name: "75th (p75)", val: p.p75 },
+                        //                     { name: "95th (p95)", val: p.p95 },
+                        //                   ].map((item, idx) => (
+                        //                     <div key={idx} className="flex justify-between items-center py-0.5 border-b border-border/40 last:border-b-0 font-medium">
+                        //                       <span className="text-muted-foreground">{item.name}</span>
+                        //                       <span className="font-mono font-bold text-foreground select-all">{item.val !== undefined ? Number(item.val).toLocaleString() : "n/a"}</span>
+                        //                     </div>
+                        //                   ))}
+                        //                 </div>
+                        //               </div>
 
-                                      <div className={`p-3.5 border space-y-3 ${hasOutliers ? "border-rose-500/10 bg-rose-500/[0.01]" : "border-border/60 bg-surface-muted/30"}`}>
-                                        <div className="flex items-center justify-between select-none">
-                                          <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Outlier Analysis</span>
-                                          <Badge variant={hasOutliers ? "error" : "success"}>{hasOutliers ? `${outliers.count} Outliers` : "No Outliers"}</Badge>
-                                        </div>
+                        //               <div className={`p-3.5 border space-y-3 ${hasOutliers ? "border-rose-500/10 bg-rose-500/[0.01]" : "border-border/60 bg-surface-muted/30"}`}>
+                        //                 <div className="flex items-center justify-between select-none">
+                        //                   <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground">Outlier Analysis</span>
+                        //                   <Badge variant={hasOutliers ? "error" : "success"}>{hasOutliers ? `${outliers.count} Outliers` : "No Outliers"}</Badge>
+                        //                 </div>
 
-                                        <div className="space-y-2 text-xs">
-                                          <div className="flex justify-between items-center font-medium">
-                                            <span className="text-muted-foreground">Lower Bound Threshold</span>
-                                            <span className="font-mono text-foreground font-semibold select-all">{outliers.lowerBound !== undefined ? Number(outliers.lowerBound).toLocaleString() : "n/a"}</span>
-                                          </div>
-                                          <div className="flex justify-between items-center font-medium">
-                                            <span className="text-muted-foreground">Upper Bound Threshold</span>
-                                            <span className="font-mono text-foreground font-semibold select-all">{outliers.upperBound !== undefined ? Number(outliers.upperBound).toLocaleString() : "n/a"}</span>
-                                          </div>
+                        //                 <div className="space-y-2 text-xs">
+                        //                   <div className="flex justify-between items-center font-medium">
+                        //                     <span className="text-muted-foreground">Lower Bound Threshold</span>
+                        //                     <span className="font-mono text-foreground font-semibold select-all">{outliers.lowerBound !== undefined ? Number(outliers.lowerBound).toLocaleString() : "n/a"}</span>
+                        //                   </div>
+                        //                   <div className="flex justify-between items-center font-medium">
+                        //                     <span className="text-muted-foreground">Upper Bound Threshold</span>
+                        //                     <span className="font-mono text-foreground font-semibold select-all">{outliers.upperBound !== undefined ? Number(outliers.upperBound).toLocaleString() : "n/a"}</span>
+                        //                   </div>
 
-                                          {hasOutliers && outliers.outlierValues && outliers.outlierValues.length > 0 && (
-                                            <div className="pt-2 border-t border-border/40 select-none">
-                                              <span className="text-[9px] font-bold uppercase tracking-wider text-rose-500 block mb-1">Detected Outlier Samples</span>
-                                              <div className="flex flex-wrap gap-1.5 select-text">
-                                                {outliers.outlierValues.slice(0, 10).map((ov: any, ovIdx: number) => (
-                                                  <span key={ovIdx} className="px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 font-mono text-[10px]rder border-rose-100 dark:border-rose-900/60 font-semibold select-all">{ov}</span>
-                                                ))}
-                                                {outliers.outlierValues.length > 10 && (
-                                                  <span className="text-[9px] text-muted-foreground font-bold self-center">+ {outliers.outlierValues.length - 10} more</span>
-                                                )}
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                      </div>
-                                    </div>
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          )}
+                        //                   {hasOutliers && outliers.outlierValues && outliers.outlierValues.length > 0 && (
+                        //                     <div className="pt-2 border-t border-border/40 select-none">
+                        //                       <span className="text-[9px] font-bold uppercase tracking-wider text-rose-500 block mb-1">Detected Outlier Samples</span>
+                        //                       <div className="flex flex-wrap gap-1.5 select-text">
+                        //                         {outliers.outlierValues.slice(0, 10).map((ov: any, ovIdx: number) => (
+                        //                           <span key={ovIdx} className="px-1.5 py-0.5 bg-rose-50 dark:bg-rose-950/20 text-rose-700 dark:text-rose-400 font-mono text-[10px]rder border-rose-100 dark:border-rose-900/60 font-semibold select-all">{ov}</span>
+                        //                         ))}
+                        //                         {outliers.outlierValues.length > 10 && (
+                        //                           <span className="text-[9px] text-muted-foreground font-bold self-center">+ {outliers.outlierValues.length - 10} more</span>
+                        //                         )}
+                        //                       </div>
+                        //                     </div>
+                        //                   )}
+                        //                 </div>
+                        //               </div>
+                        //             </div>
+                        //           </div>
+                        //         );
+                        //       })}
+                        //     </div>
+                        //   )}
+                        // </div>
+                        <div className="space-y-4">
+                          {/* <SectionHeader title="Column Profiles & Frequency" subtitle="Detailed overview of uniqueness, types, and values distribution" /> */}
+                          <DynamicTable data={numericColumns} />
                         </div>
                       )}
 

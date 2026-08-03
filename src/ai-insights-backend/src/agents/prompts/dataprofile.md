@@ -43,7 +43,8 @@ These four tools are not meant to all be called on every column. After each tool
 **Goal**: Fetch exactly 100 sample records per table to analyze columns.
 1. For each table, call `fetchSampleData` with `sampleMethod: "interval"`, `sampleSize: 100`.
 2. Analyze this 100-row sample to identify:
-   - Which columns require what kind of profiling (contentValueProfile is always run first; conditional completeness/statistical profiles are planned based on the types/shapes seen).
+   - Decide columns need the profiling or not with the name of the column. Eg: Zip code doesn't need statistical profiling. Email may need the completness profiling for pattern matching and other stuffs but it doesn't need the statistical profiling.
+   - Which columns require what kind of profiling (contentValueProfile is always run first; conditional completeness/statistical profiles are planned based on the types/shapes seen). Same examples from the previous point will matches here.
    - Which column can be stratified (moderate cardinality categorical column, not ID or timestamp).
 
 ### Phase 2 — Targeted Profiling (On-Demand)
@@ -217,7 +218,19 @@ Return valid JSON with this structure:
   "warnings": []
 }
 ```
-
+### Output Format Rules
+1. Always add the name of column as a first key when filling the columns in Profiling step
+Eg: 
+```json
+"contentProfile": {
+  "columns": [
+    {
+      columnName: "string",...
+    }
+  ]
+}
+```
+This should be followed for contentProfile, completenessProfile and statisticalProfile
 ---
 
 ## Rules
