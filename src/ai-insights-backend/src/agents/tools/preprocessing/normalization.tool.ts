@@ -1,34 +1,104 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import pl from "nodejs-polars";
+import { fetchRowsOnDemand } from "../samplingHelper";
+import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
+import { ConnectorService } from "../../../services/connector/connector.service";
 
 type SampleRow = Record<string, unknown>;
 
-const normalizeHeader = (value: string): string => value.trim().replace(/\s+/g, "_").toLowerCase();
+export const normalizeRowsAndHeadersPl = (rows: SampleRow[]) => {
+  if (rows.length === 0) {
+    return {
+      headers: [],
+      rows: [],
+    };
+  }
 
-export const normalizeRowsAndHeaders = (rows: SampleRow[]) => {
-  const normalizedRows = rows.map((row) => {
-    const normalized: Record<string, unknown> = {};
-    Object.entries(row).forEach(([key, value]) => {
-      normalized[normalizeHeader(key)] = value;
-    });
-    return normalized;
+  const df = pl.DataFrame(rows);
+  const originalHeaders = df.columns;
+  const normalizedHeaders = originalHeaders.map((h) => h.trim().replace(/\s+/g, "_").toLowerCase());
+
+  let dfTransformed = df;
+  originalHeaders.forEach((h, idx) => {
+    const norm = normalizedHeaders[idx];
+    if (h !== norm) {
+      dfTransformed = dfTransformed.rename({ [h]: norm });
+    }
   });
 
-  const headers = Array.from(new Set(normalizedRows.flatMap((row) => Object.keys(row))));
   return {
-    headers,
-    rows: normalizedRows,
+    headers: dfTransformed.columns,
+    rows: dfTransformed.toRecords(),
   };
 };
 
-export const createNormalizationTool = () =>
+export const createNormalizationTool = (
+  connectionTester: ConnectionTesterService,
+  connectorService: ConnectorService,
+  defaultConnector?: any
+) =>
   tool(
-    async ({ rows }) => normalizeRowsAndHeaders(Array.isArray(rows) ? (rows as SampleRow[]) : []),
+    async ({
+      connectorId,
+      connectorType,
+      connectionConfig,
+      tableName,
+      sampleMethod,
+      sampleSize,
+      seed,
+      stratifyColumn,
+      relationships,
+      foreignKeyValues,
+    }) => {
+      const { rows: sampleRows, totalRowCount, error } = await fetchRowsOnDemand(
+        connectionTester,
+        connectorService,
+        defaultConnector,
+        {
+          connectorId,
+          connectorType,
+          connectionConfig,
+          tableName,
+          sampleMethod: sampleMethod || "random",
+          sampleSize: sampleSize || 100,
+          seed,
+          stratifyColumn,
+          relationships,
+          foreignKeyValues,
+        }
+      );
+
+      if (error || sampleRows.length === 0) {
+        return {
+          headers: [],
+          rows: [],
+          error,
+        };
+      }
+
+      return normalizeRowsAndHeadersPl(sampleRows as SampleRow[]);
+    },
     {
       name: "normalizeSchema",
       description: "Normalize row keys and column headers to a consistent shape that downstream ingestion steps can consume.",
       schema: z.object({
-        rows: z.array(z.record(z.string(), z.any())).describe("Rows to normalize"),
+        connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
+        connectorType: z.string().optional().describe("Connector type fallback"),
+        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        tableName: z.string().describe("Table to clean"),
+        sampleMethod: z.enum(["random", "stratified", "interval"]).optional().describe("Sampling method"),
+        sampleSize: z.number().optional().describe("Number of sample records to fetch (defaults to 100)"),
+        seed: z.number().optional().describe("Deterministic seed for reproducible sampling"),
+        stratifyColumn: z.string().optional().describe("Column to group by for stratified sampling"),
+        relationships: z.array(z.object({
+          column: z.string().describe("Local FK column"),
+          foreignTable: z.string().describe("Referenced table"),
+          foreignColumn: z.string().describe("Referenced column"),
+        })).optional().describe("Table relationships for referential integrity filtering"),
+        foreignKeyValues: z.object({}).catchall(z.array(z.string())).optional().describe(
+          "Map of foreignTable → array of allowed FK values collected from parent table samples"
+        ),
       }),
     }
   );

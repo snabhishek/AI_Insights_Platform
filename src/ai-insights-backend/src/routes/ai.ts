@@ -6,6 +6,7 @@ export default function createAIRouter(controller: AIController): Router {
 
   router.post("/ingestion", controller.runIngestionWorkflow);
   router.post("/ingestion/stop", controller.stopIngestionWorkflow);
+  router.get("/thinking", controller.getThinking);
 
   return router;
 }

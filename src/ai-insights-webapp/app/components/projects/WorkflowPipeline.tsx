@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { PipelineStatuses, RunStatus } from "./types";
+import { PipelineStatus, PipelineStatuses, RunStatus } from "./types";
 import { PIPELINE_STEPS } from "./constants";
 import WorkflowCard from "./WorkflowCard";
 
@@ -154,6 +154,53 @@ function getStageTitle(stepId: string): string {
   }
 }
 
+// Data-driven map associating internal stage/sub-step keys to top-level pipeline card IDs
+const MAIN_STEP_MAPPING: Record<string, string> = {
+  "Data Ingestion": "Data Ingestion",
+  "Data Profiling": "Data Ingestion",
+  "Schema Resolver": "Data Ingestion",
+  "inspect": "Data Ingestion",
+  "profileData": "Data Ingestion",
+  "preprocess": "Data Ingestion",
+  "resolveSchema": "Data Ingestion",
+  "Feature Engineering": "Feature Engineering",
+  "Model Training": "Model Training",
+  "Model Validation": "Model Validation",
+  "Forecast": "Forecast",
+};
+
+const DEFAULT_MAIN_STEP_ID = "Data Ingestion";
+const DATA_INGESTION_SUBSTEPS = ["Data Ingestion", "Data Profiling", "Schema Resolver"] as const;
+
+export function getMainStepId(stepOrStageId: string | null): string {
+  if (!stepOrStageId) return DEFAULT_MAIN_STEP_ID;
+  return MAIN_STEP_MAPPING[stepOrStageId] ?? DEFAULT_MAIN_STEP_ID;
+}
+
+function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
+  const [s1, s2, s3] = DATA_INGESTION_SUBSTEPS.map(
+    (key) => (pipelineStatuses[key] as PipelineStatus) ?? "Not Started"
+  );
+
+  if (s3 === "Completed" || (s1 === "Completed" && s2 === "Completed")) {
+    return "Completed";
+  }
+  if ([s1, s2, s3].some((s) => s === "In Progress" || s === "Completed")) {
+    return "In Progress";
+  }
+  if ([s1, s2, s3].some((s) => s === "Pending")) {
+    return "Pending";
+  }
+  return "Not Started";
+}
+
+export function getMainStepStatus(stepId: string, pipelineStatuses: PipelineStatuses): PipelineStatus {
+  if (stepId === "Data Ingestion") {
+    return calculateDataIngestionStatus(pipelineStatuses);
+  }
+  return (pipelineStatuses[stepId] as PipelineStatus) ?? "Not Started";
+}
+
 export default function WorkflowPipeline({
   pipelineStatuses,
   completionPercentage,
@@ -172,8 +219,28 @@ export default function WorkflowPipeline({
   onRetry,
 }: WorkflowPipelineProps) {
   const currentStage = activeStage || "inspect";
-  const currentStepDisplay = currentStage === "inspect" ? "Data Ingestion" : currentStage === "profileData" || currentStage === "preprocess" ? "Data Profiling" : "Schema Resolver";
-  const detailItems = formatStageOutput(currentStage, stageOutputs);
+  const mainSelectedStage = getMainStepId(currentStage);
+
+  // Compute 5-main-step level statuses and progress line width across the 4 segment connections
+  const mainStatuses = PIPELINE_STEPS.map((step) => getMainStepStatus(step.id, pipelineStatuses));
+
+  let completedMainCount = 0;
+  for (let i = 0; i < mainStatuses.length; i++) {
+    if (mainStatuses[i] === "Completed") {
+      completedMainCount++;
+    } else {
+      break;
+    }
+  }
+
+  const nextIsInProgress = completedMainCount < mainStatuses.length && mainStatuses[completedMainCount] === "In Progress";
+  const totalSegments = PIPELINE_STEPS.length - 1; // 4 segments between 5 main cards
+  const calculatedCompletionPct = completedMainCount === PIPELINE_STEPS.length
+    ? 100
+    : Math.min(
+        100,
+        Math.max(0, ((completedMainCount + (nextIsInProgress ? 0.5 : 0)) / totalSegments) * 100)
+      );
 
   const hasExistingRun =
     lastRunTime !== "Not run yet" ||
@@ -245,18 +312,18 @@ export default function WorkflowPipeline({
         <div className="absolute top-[125px] left-[7.15%] right-[7.15%] h-[5px] bg-border/40 dark:bg-white/10 rounded-full pointer-events-none select-none z-0">
           <div
             className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-indigo-500 to-violet-600 transition-all duration-700 shadow-[0_0_12px_rgba(99,102,241,0.65)]"
-            style={{ width: `${completionPercentage}%` }}
+            style={{ width: `${calculatedCompletionPct}%` }}
           />
         </div>
 
-        <div className="flex-1 w-full grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-2 xl:gap-3 relative z-10 py-5">
+        <div className="flex-1 flex justify-between w-full gap-2 xl:gap-3 relative z-10 py-5">
           {PIPELINE_STEPS.map((step, idx) => (
             <WorkflowCard
               key={step.id}
               step={step}
-              status={pipelineStatuses[step.id] ?? "Not Started"}
+              status={getMainStepStatus(step.id, pipelineStatuses)}
               index={idx}
-              isActive={currentStepDisplay === step.id}
+              isActive={mainSelectedStage === step.id}
               onSelect={onSelectStage}
             />
           ))}
@@ -267,39 +334,31 @@ export default function WorkflowPipeline({
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] font-bold text-muted-foreground">Selected stage</p>
-            <h3 className="text-sm font-semibold text-foreground">{currentStepDisplay}</h3>
+            <h3 className="text-sm font-semibold text-foreground">{mainSelectedStage}</h3>
             <p className="text-xs text-muted-foreground mt-1">{workflowMessage || "Select a workflow stage to inspect the live output."}</p>
           </div>
-          <button
-            onClick={() => onRetry(currentStage || currentStepDisplay)}
-            className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors cursor-pointer"
-          >
-            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
-              <path d="M21 12a9 9 0 1 1-3-6.7" />
-              <path d="M21 3v6h-6" />
-            </svg>
-            Retry Stage
-          </button>
-        </div>
-
-        <div className="rounded-2xl border border-border bg-surface-muted/70 p-4">
-          <div className="flex items-center justify-between gap-3 mb-3">
-            <div>
-              <p className="text-[11px] uppercase tracking-[0.2em] font-bold text-muted-foreground">{getStageTitle(currentStepDisplay)}</p>
-              <p className="text-xs text-muted-foreground">Readable execution output for the active step.</p>
-            </div>
-          </div>
-          <div className="grid gap-3 md:grid-cols-2">
-            {detailItems.length > 0 ? detailItems.map((item, index) => (
-              <div key={`${item.title}-${index}`} className="rounded-xl border border-border bg-background/70 p-3">
-                <p className="text-[10px] uppercase tracking-[0.2em] font-semibold text-muted-foreground">{item.title}</p>
-                <p className="text-sm text-foreground mt-1">{item.body}</p>
-              </div>
-            )) : (
-              <div className="md:col-span-2 rounded-xl border border-dashed border-border bg-background/70 p-3 text-sm text-muted-foreground">
-                No output available yet for this stage. Start the workflow to populate it.
-              </div>
-            )}
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onSelectStage(mainSelectedStage)}
+              className="inline-flex items-center gap-2 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M15 3h6v6" />
+                <path d="M10 14 21 3" />
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+              </svg>
+              View Details
+            </button>
+            <button
+              onClick={() => onRetry(currentStage || mainSelectedStage)}
+              className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 12a9 9 0 1 1-3-6.7" />
+                <path d="M21 3v6h-6" />
+              </svg>
+              Retry Stage
+            </button>
           </div>
         </div>
       </div>
