@@ -251,7 +251,7 @@ export default function WorkflowPipeline({
   const handleRunClick = hasExistingRun && onReRunWorkflow ? onReRunWorkflow : onRunWorkflow;
 
   return (
-    <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-surface border border-border rounded-2xl p-6 shadow-soft">
+    <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-background border border-border rounded-lg p-6 shadow-soft">
       <div className="flex items-start justify-between gap-4 border-b border-border pb-4 mb-6 select-none">
         <div className="flex flex-col gap-1">
           <h2 className="text-base font-bold text-foreground leading-tight">Data Insights Workflow</h2>
@@ -340,9 +340,9 @@ export default function WorkflowPipeline({
           <div className="flex items-center gap-2">
             <button
               onClick={() => onSelectStage(mainSelectedStage)}
-              className="inline-flex items-center gap-2 px-3 py-2 bg-primary/10 hover:bg-primary/20 text-primary border border-primary/20 rounded-lg text-xs font-semibold transition-colors cursor-pointer"
+              className="inline-flex items-center gap-2 px-3.5 py-2 bg-primary hover:bg-primary/90 text-white rounded-lg text-xs font-semibold transition-colors cursor-pointer shadow-sm"
             >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2" className="text-white">
                 <path d="M15 3h6v6" />
                 <path d="M10 14 21 3" />
                 <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />

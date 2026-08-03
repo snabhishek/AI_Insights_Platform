@@ -15,6 +15,8 @@ export interface CreateProjectDto {
   dataSources?: string[];
   initials?: string;
   useCase?: string;
+  domain?: string;
+  subDomain?: string;
 }
 
 export interface UpdateProjectDto {

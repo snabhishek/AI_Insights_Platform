@@ -9,43 +9,43 @@ const COLOR_MAP: Record<string, { border: string; icon: string; glow: string; sh
   green:  { 
     border: "border-emerald-500/70 dark:border-emerald-400/50",  
     icon: "text-emerald-500 border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10",  
-    glow: "text-emerald-500/[0.04]",
+    glow: "text-emerald-500",
     shadow: "shadow-[0_0_15px_rgba(16,185,129,0.05)]"
   },
   blue:   { 
     border: "border-blue-500/70 dark:border-blue-400/50",   
     icon: "text-blue-500 border-blue-500/20 bg-blue-500/5 dark:bg-blue-500/10",    
-    glow: "text-blue-500/[0.04]",
+    glow: "text-blue-500",
     shadow: "shadow-[0_0_15px_rgba(59,130,246,0.05)]"
   },
   purple: { 
     border: "border-purple-500/70 dark:border-purple-400/50", 
     icon: "text-purple-500 border-purple-500/20 bg-purple-500/5 dark:bg-purple-500/10",  
-    glow: "text-purple-500/[0.04]",
+    glow: "text-purple-500",
     shadow: "shadow-[0_0_15px_rgba(168,85,247,0.05)]"
   },
   yellow: { 
     border: "border-amber-500/70 dark:border-amber-400/50",   
     icon: "text-amber-500 border-amber-500/20 bg-amber-500/5 dark:bg-amber-500/10",    
-    glow: "text-amber-500/[0.04]",
+    glow: "text-amber-500",
     shadow: "shadow-[0_0_15px_rgba(245,158,11,0.05)]"
   },
   red:    { 
     border: "border-rose-500/70 dark:border-rose-400/50",     
     icon: "text-rose-500 border-rose-500/20 bg-rose-500/5 dark:bg-rose-500/10",        
-    glow: "text-rose-500/[0.04]",
+    glow: "text-rose-500",
     shadow: "shadow-[0_0_15px_rgba(244,63,94,0.05)]"
   },
   pink:   { 
     border: "border-pink-500/70 dark:border-pink-400/50",     
     icon: "text-pink-500 border-pink-500/20 bg-pink-500/5 dark:bg-pink-500/10",        
-    glow: "text-pink-500/[0.04]",
+    glow: "text-pink-500",
     shadow: "shadow-[0_0_15px_rgba(236,72,153,0.05)]"
   },
   teal:   { 
     border: "border-teal-500/70 dark:border-teal-400/50",     
     icon: "text-teal-500 border-teal-500/20 bg-teal-500/5 dark:bg-teal-500/10",        
-    glow: "text-teal-500/[0.04]",
+    glow: "text-teal-500",
     shadow: "shadow-[0_0_15px_rgba(20,184,166,0.05)]"
   },
 };
@@ -134,11 +134,11 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
       <button
         type="button"
         onClick={() => onSelect?.(step.id)}
-        style={{ width: 155, height: 230 }}
-        className={`relative rounded-[28px] border-2 bg-surface dark:bg-slate-900 p-4.5 flex flex-col items-center justify-between transition-all duration-300 hover:-translate-y-1 cursor-pointer text-left ${colors.border} ${colors.shadow} ${isActive ? "ring-2 ring-primary/60 shadow-lg" : ""}`}
+        style={{ width: 155, height: 230, outline: "none" }}
+        className={`relative rounded-lg border-2 bg-[#F5F5F5] dark:bg-surface p-4.5 flex flex-col items-center justify-between transition-all duration-300 hover:-translate-y-1 cursor-pointer text-left ${colors.border} ${colors.shadow} ${isActive ? "ring-2 ring-primary/60 shadow-lg" : ""}`}
       >
-        {/* Monospaced card index in background */}
-        <div className={`absolute right-5 bottom-4 text-7xl font-black font-mono pointer-events-none select-none leading-none ${colors.glow}`}>
+        {/* Monospaced card index in background — opacity-[0.08] applied statically so Tailwind JIT picks it up */}
+        <div className={`absolute right-5 bottom-4 text-7xl font-black font-mono pointer-events-none select-none leading-none opacity-[0.08] ${colors.glow}`}>
           0{index + 1}
         </div>
 
@@ -173,7 +173,7 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
         </div>
 
         {/* Card Icon Container */}
-        <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border shrink-0 transition-all duration-300 mt-2 relative z-10 ${colors.icon}`}>
+        <div className={`w-14 h-14 rounded-lg flex items-center justify-center border shrink-0 transition-all duration-300 mt-2 relative z-10 ${colors.icon}`}>
           {step.icon}
         </div>
 
