@@ -57,9 +57,21 @@ export async function initializeDatabaseSchemas() {
       );
     `);
 
-    // Add use_case column to existing projects table if it doesn't exist (migration)
+    // Add use_case, domain, sub_domain columns to existing projects table if they don't exist (migration)
     await query(`
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS use_case TEXT;
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS domain VARCHAR(255);
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS sub_domain VARCHAR(255);
+    `);
+
+    // 3b. Domains table
+    await query(`
+      CREATE TABLE IF NOT EXISTS domains (
+        id VARCHAR(50) PRIMARY KEY,
+        domain VARCHAR(255) NOT NULL UNIQUE,
+        sub_domains JSONB NOT NULL DEFAULT '[]',
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
     `);
 
     // 4. Connectors table (with workspace scoping)
@@ -364,6 +376,107 @@ export async function initializeDatabaseSchemas() {
         );
       }
       console.log("[DB] Seeding mock connectors completed successfully.");
+    }
+
+    // 8. Seed standard business domains if domains table is empty
+    const domCheck = await query("SELECT COUNT(*) FROM domains");
+    const domCount = parseInt(domCheck.rows[0].count, 10);
+    if (domCount === 0) {
+      console.log("[DB] Seeding standard business domains and sub-domains...");
+      const seedDomains = [
+        {
+          id: "dom-1",
+          domain: "Retail & E-Commerce",
+          sub_domains: JSON.stringify([
+            "Order Management",
+            "Inventory & Stock Control",
+            "Customer & Loyalty Analytics",
+            "Pricing & Promotions",
+            "E-Commerce Fulfillment",
+          ]),
+        },
+        {
+          id: "dom-2",
+          domain: "Finance & Banking",
+          sub_domains: JSON.stringify([
+            "Risk Management",
+            "Fraud Detection",
+            "Credit & Loan Origination",
+            "Wealth Management",
+            "Transaction Auditing",
+          ]),
+        },
+        {
+          id: "dom-3",
+          domain: "Healthcare & Life Sciences",
+          sub_domains: JSON.stringify([
+            "Patient Health Records",
+            "Clinical Trial Analytics",
+            "Hospital Operations",
+            "Medical Billing & Claims",
+            "Pharmaceutical Supply",
+          ]),
+        },
+        {
+          id: "dom-4",
+          domain: "Supply Chain & Logistics",
+          sub_domains: JSON.stringify([
+            "Demand Forecasting & Planning",
+            "Warehouse Operations",
+            "Freight & Transportation",
+            "Supplier Performance",
+            "Procurement & Sourcing",
+          ]),
+        },
+        {
+          id: "dom-5",
+          domain: "Manufacturing",
+          sub_domains: JSON.stringify([
+            "Quality Assurance & Control",
+            "Equipment Predictive Maintenance",
+            "Production Line Optimization",
+            "Material Requirements Planning",
+            "Safety & Compliance",
+          ]),
+        },
+        {
+          id: "dom-6",
+          domain: "Energy & Utilities",
+          sub_domains: JSON.stringify([
+            "Smart Grid Analytics",
+            "Asset Performance Management",
+            "Energy Consumption Forecasting",
+            "Environmental Monitoring",
+          ]),
+        },
+        {
+          id: "dom-7",
+          domain: "Telecommunications",
+          sub_domains: JSON.stringify([
+            "Network Performance Monitoring",
+            "Subscriber Churn Prediction",
+            "Billing & Rating Systems",
+            "Customer Experience Analytics",
+          ]),
+        },
+        {
+          id: "dom-8",
+          domain: "Other",
+          sub_domains: JSON.stringify([
+            "General Business Analytics",
+          ]),
+        },
+      ];
+
+      for (const dom of seedDomains) {
+        await query(
+          `INSERT INTO domains (id, domain, sub_domains, created_at)
+           VALUES ($1, $2, $3, NOW())
+           ON CONFLICT (id) DO NOTHING`,
+          [dom.id, dom.domain, dom.sub_domains]
+        );
+      }
+      console.log("[DB] Seeding business domains completed successfully.");
     }
 
     console.log("[DB] Database tables initialization and migrations completed successfully.");

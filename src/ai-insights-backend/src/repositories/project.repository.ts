@@ -17,6 +17,8 @@ export class PostgresProjectRepository implements IProjectRepository {
       initials: row.initials,
       workspaceId: row.workspace_id || row.workspaceId,
       useCase: row.use_case ?? row.useCase ?? undefined,
+      domain: row.domain ?? undefined,
+      subDomain: row.sub_domain ?? row.subDomain ?? undefined,
       agentState: row.agent_state ?? row.agentState ?? {},
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
     };
@@ -156,6 +158,8 @@ export class PostgresProjectRepository implements IProjectRepository {
       initials: project.initials,
       workspaceId: project.workspaceId,
       useCase: project.useCase || null,
+      domain: project.domain || null,
+      subDomain: project.subDomain || null,
       createdAt: now,
     });
     return project;

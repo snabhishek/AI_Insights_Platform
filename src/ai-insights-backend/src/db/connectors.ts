@@ -19,6 +19,8 @@ export const projects = pgTable("projects", {
     .notNull()
     .references(() => workspaces.id, { onDelete: "cascade" }),
   useCase: text("use_case"),
+  domain: varchar("domain", { length: 255 }),
+  subDomain: varchar("sub_domain", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => {
   return {

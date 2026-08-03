@@ -449,9 +449,12 @@ export default function ProjectsPage() {
       <ProjectCreatePage
         dataSources={dataSources}
         onCancel={goToList}
-        onSubmit={(name, useCase, sources) => {
-          addProject(name, "OWNER", sources, useCase);
-          goToList();
+        onSubmit={async (name, useCase, sources, domain, subDomain) => {
+          const success = await addProject(name, "OWNER", sources, useCase, domain, subDomain);
+          if (success) {
+            goToList();
+          }
+          return success;
         }}
         onAddDataSource={(name, type, subtext, config) =>
           addDataSource(name, type, subtext, config)

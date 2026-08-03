@@ -46,6 +46,8 @@ export interface Project {
   workspaceId: string;
   createdAt?: string;
   useCase?: string;
+  domain?: string;
+  subDomain?: string;
   agentState?: Record<string, unknown>;
 }
 
@@ -72,7 +74,7 @@ interface AppContextType {
   addWorkspace: (name: string) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   projects: Project[];
-  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string) => Promise<void>;
+  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string) => Promise<boolean>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   dataSources: DataSource[];
@@ -276,7 +278,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ─── Projects ───────────────────────────────────────────────────────────────
-  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string) => {
+  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string): Promise<boolean> => {
     const initials = userProfile.name
       .split(" ")
       .map((n) => n[0])
@@ -289,17 +291,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, role, dataSources: dsSources, initials, useCase }),
+        body: JSON.stringify({ name, role, dataSources: dsSources, initials, useCase, domain, subDomain }),
       });
       if (res.ok) {
         const newProject = await res.json();
         setProjects((prev) => [newProject, ...prev]);
+        return true;
       } else {
         const err = await res.json();
-        throw new Error(err.message || "Failed to create project");
+        showAlert({ title: "Project Creation Error", message: err.message || "A project with this title already exists.", type: "error" });
+        return false;
       }
     } catch (err: any) {
-      showAlert({ title: "Project Creation Failed", message: err.message, type: "error" });
+      showAlert({ title: "Project Creation Failed", message: err.message || "Failed to create project", type: "error" });
+      return false;
     }
   };
 
