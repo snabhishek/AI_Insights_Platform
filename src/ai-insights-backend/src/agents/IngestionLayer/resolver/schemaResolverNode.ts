@@ -1,6 +1,6 @@
 import { RunnableConfig } from "@langchain/core/runnables";
-import path from "path";
-import fsSync from "fs";
+import * as path from "path";
+import * as fsSync from "fs";
 import { AgentState, IngestionServices } from "../../state";
 import { 
   getModel, 
@@ -104,7 +104,7 @@ ${safeUserRequest}
 
   const model = getModel();
 
-  await logMilestoneThinking(services, "Schema Resolver", `Resolving semantic types and target mappings to topics: [${targetParquetTopics.join(", ")}]...`);
+  await logMilestoneThinking(services, "Schema Resolver", `Resolving semantic types and target mappings according to Field Schema Taxonomy...`);
   const result = await invokeAgentJson("resolveSchema", model, prompt, fallback, services, {
     traceLabel: "agent:resolveSchema",
   });
@@ -113,7 +113,7 @@ ${safeUserRequest}
     ? result.mappings
     : fallbackMappings;
 
-  await logMilestoneThinking(services, "Schema Resolver", `Aligned ${rawMappings.length} structural columns with Parquet target categories.`);
+  await logMilestoneThinking(services, "Schema Resolver", `Aligned ${rawMappings.length} structural columns with Field Schema target categories.`);
 
   const resolvedDomain = (typeof result?.domain === "string" && result.domain.trim().length > 0)
     ? result.domain.trim()

@@ -1,11 +1,11 @@
 version: "1.0"
-priority_guidance: >
-  These are baseline priorities for typical ML use cases. An agent should treat them as a
-  starting default, then re-rank fields against the actual UseCase/UseCaseDescription defined
-  under DomainKnowledge -- e.g. Media jumps to Critical for an image-classification use case,
-  or Location jumps to High for a geo-demand-forecasting use case. Target and Label stay
-  Critical in effectively every supervised-learning use case.
 fields:
+  DomainKnowledge:
+    description: Establishes the industry/domain and business use case the insights platform is built for. Tier1/Tier2 may be suggested by the agent based on the data, but must be confirmed by the user. UseCase and UseCaseDescription are user-provided.
+    priority: Contextual
+    priority_rationale: Not an accessed data field itself — it supplies the use-case context that recalibrates every other field's priority
+    UseCase: Short name of the use case the user wants the platform to address, as provided by the user — e.g. "Customer Churn Prediction", "Predictive Maintenance"
+    UseCaseDescription: User-provided free-text explanation of the use case — goals, context, and what "insight" means for this platform
 
   Identifier:
     description: Unique keys used to reference records
@@ -213,11 +213,3 @@ fields:
     priority_rationale: Low by default; becomes Critical when the use case is itself media-based (e.g. image classification)
     subtypes: [Image, Video, Audio, Document, Attachment, Thumbnail]
 
-  DomainKnowledge:
-    description: Establishes the industry/domain and business use case the insights platform is built for. Tier1/Tier2 may be suggested by the agent based on the data, but must be confirmed by the user. UseCase and UseCaseDescription are user-provided.
-    priority: Contextual
-    priority_rationale: Not an accessed data field itself — it supplies the use-case context that recalibrates every other field's priority
-    Tier1: Industry or Domain the datasource belongs to (agent can suggest, user confirms) — e.g. "Retail", "Healthcare", "Manufacturing"
-    Tier2: Sub-domain describing the specialization within that Industry/Domain (agent can suggest, user confirms)
-    UseCase: Short name of the use case the user wants the platform to address, as provided by the user — e.g. "Customer Churn Prediction", "Predictive Maintenance"
-    UseCaseDescription: User-provided free-text explanation of the use case — goals, context, and what "insight" means for this platform
