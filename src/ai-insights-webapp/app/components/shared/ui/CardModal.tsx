@@ -290,7 +290,7 @@ export default function CardModal({
                 onClick={() => setActiveTab("output")}
                 className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
                   activeTab === "output"
-                    ? "border-primary text-primary"
+                    ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >
@@ -301,7 +301,7 @@ export default function CardModal({
                 onClick={() => setActiveTab("thinking")}
                 className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
                   activeTab === "thinking"
-                    ? "border-primary text-primary"
+                    ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
                     : "border-transparent text-muted-foreground hover:text-foreground"
                 }`}
               >

@@ -40,8 +40,8 @@ export default function ProjectsListPage({
         {/* Create New card */}
         <div
           onClick={onCreateProject}
-          style={{ width: 248, minHeight: 220 }}
-          className="flex flex-col items-center justify-center gap-4 rounded-2xl border-2 border-dashed border-primary/30 bg-gradient-to-br from-primary/5 via-surface to-surface p-6 text-center cursor-pointer transition-all duration-300 hover:border-primary hover:shadow-soft-hover hover:-translate-y-1.5 group"
+          style={{ width: 248, minHeight: 200 }}
+          className="flex flex-col items-center justify-center gap-3 rounded-2xl border-2 border-dashed border-primary/30 bg-gradient-to-br from-primary/5 via-surface to-surface p-5 text-center cursor-pointer transition-all duration-300 hover:border-primary hover:shadow-soft-hover hover:-translate-y-1.5 group"
         >
           <div className="w-12 h-12 rounded-full bg-gradient-to-tr from-primary to-indigo-600 flex items-center justify-center text-white shadow-md transform transition-transform duration-500 group-hover:rotate-90 group-hover:scale-110">
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -50,10 +50,10 @@ export default function ProjectsListPage({
             </svg>
           </div>
           <div className="flex flex-col items-center">
-            <p className="text-sm font-bold text-foreground tracking-tight group-hover:text-primary transition-colors">
+            <p className="text-sm font-bold text-foreground tracking-tight group-hover:text-primary dark:group-hover:text-indigo-400 transition-colors">
               Create New Project
             </p>
-            <p className="text-[11px] text-muted-foreground mt-1.5 leading-normal max-w-[190px]">
+            <p className="text-[11px] text-muted-foreground dark:text-gray-400 mt-1.5 leading-normal max-w-[190px]">
               Configure use case detail and link connected data catalogs.
             </p>
           </div>
