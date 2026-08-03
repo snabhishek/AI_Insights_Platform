@@ -77,7 +77,7 @@ export const createDataProfileTool = (connectionTester: ConnectionTesterService)
       description: "Profile data health and sample quality for selected tables.",
       schema: z.object({
         connectorType: z.string().describe("Connector type"),
-        connectionConfig: z.object({}).passthrough().describe("Connection settings for the connector"),
+        connectionConfig: z.record(z.string(), z.any()).describe("Connection settings for the connector"),
         tables: z.array(z.string()).describe("Tables to profile"),
       }),
     }

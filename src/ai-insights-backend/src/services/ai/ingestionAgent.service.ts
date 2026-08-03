@@ -11,6 +11,27 @@ import {
   mapRetryStepToInterruptNode 
 } from "../../agents/utils/agentUtils";
 import { WorkflowSessionMeta } from "../../agents/state";
+import { IAgentThinkingService } from "./agentThinking.service.interface";
+
+const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
+  "Data Ingestion": [
+    "Resolving connector properties and verifying credentials...",
+    "Connecting to database data sources...",
+    "Running metadata table inspection schemas...",
+    "Extracting tables list, column structures, and relationships..."
+  ],
+  "Data Profiling": [
+    "Reading data samples from target sources...",
+    "Computing column completeness profiles...",
+    "Running anomaly detection (outliers, formatting errors)...",
+    "Deriving rule-based preprocessing and transformation steps..."
+  ],
+  "Schema Resolver": [
+    "Analyzing target schemas and downstream constraints...",
+    "Generating mapping recommendations using LLM semantic alignment..."
+  ]
+};
+
 
 export class IngestionAgentService implements IIngestionAgentService {
   private checkpointer = new MemorySaver();
@@ -22,14 +43,15 @@ export class IngestionAgentService implements IIngestionAgentService {
     private connectorService: ConnectorService,
     private connectionTester: ConnectionTesterService,
     private fileService: IFileService,
-    private projectService: ProjectService
+    private projectService: ProjectService,
+    private agentThinkingService: IAgentThinkingService
   ) { }
 
-  async run(
+  async *run(
     connectorId: string[], 
     userPrompt?: string, 
     options?: { sessionId?: string; action?: "approve" | "retry"; step?: string; projectId?: string }
-  ): Promise<IngestionAgentRunResult> {
+  ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
     const traceSession = await this.traceHelper.createTraceSession();
     const runStartedAt = new Date().toISOString();
 
@@ -63,6 +85,9 @@ export class IngestionAgentService implements IIngestionAgentService {
         fileService: this.fileService,
         projectService: this.projectService,
         traceHelper: this.traceHelper,
+        agentThinkingService: this.agentThinkingService,
+        projectId: options?.projectId,
+        pipeline: "Data Ingestion",
       };
 
       const config = { 
@@ -73,6 +98,73 @@ export class IngestionAgentService implements IIngestionAgentService {
       };
 
       this.stoppedSessions.delete(threadId);
+
+      const pipeline = "Data Ingestion";
+      if (options?.projectId) {
+        const projectId = options.projectId;
+        let activeSubstep: string | undefined;
+
+        if (options.action === "retry" && options.step) {
+          const stepMap: Record<string, string> = {
+            inspect: "Data Ingestion",
+            profileData: "Data Profiling",
+            preprocess: "Data Profiling",
+            resolveSchema: "Schema Resolver",
+            "Data Ingestion": "Data Ingestion",
+            "Data Profiling": "Data Profiling",
+            "Schema Resolver": "Schema Resolver"
+          };
+          const substep = stepMap[options.step];
+          if (substep) {
+            activeSubstep = substep;
+            if (substep === "Data Ingestion") {
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Ingestion");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+            } else if (substep === "Data Profiling") {
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+            } else if (substep === "Schema Resolver") {
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+            }
+          }
+        } else if (options.action === "approve") {
+          const graphState = await workflow.getState(config);
+          const nextNodes = Array.isArray(graphState?.next) ? graphState.next : [];
+          if (nextNodes.includes("profileData")) {
+            activeSubstep = "Data Profiling";
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+          } else if (nextNodes.includes("resolveSchema")) {
+            activeSubstep = "Schema Resolver";
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+          }
+        } else {
+          activeSubstep = "Data Ingestion";
+          await this.agentThinkingService.clearProjectPipelineThinking(projectId, pipeline);
+        }
+
+        if (activeSubstep) {
+          const logs = SUBSTEP_THINKING_TEMPLATES[activeSubstep] || [];
+          const baseResult = {
+            connectorId,
+            status: "running",
+            summary: `${activeSubstep} agent reasoning in progress`,
+            steps: [],
+            inspection: {},
+            schemaResolution: {},
+            dataProfile: {},
+            preprocessing: {},
+            sessionId: threadId,
+            requiresApproval: false,
+          };
+          for await (const thinkingUpdate of this.streamThinking(projectId, pipeline, activeSubstep, baseResult, logs)) {
+            yield thinkingUpdate;
+          }
+        }
+      }
+
+      let stream: any;
 
       if (options?.action === "retry" && options.step) {
         const targetNode = mapRetryStepToInterruptNode(options.step);
@@ -89,7 +181,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               services,
             } 
           };
-          await workflow.invoke(
+          stream = await workflow.stream(
             { connectorId, projectId: options?.projectId ?? "", userPrompt: meta.userPrompt, status: "queued", summary: "Retrying from inspect" },
             freshConfig
           );
@@ -117,23 +209,33 @@ export class IngestionAgentService implements IIngestionAgentService {
                 services,
               } 
             };
-            await workflow.invoke(null, retryConfig);
+            stream = await workflow.stream(null, retryConfig);
           } else {
             console.warn(`[Workflow] No checkpoint found for retry target "${targetNode}", resuming from current position`);
-            await workflow.invoke(null, config);
+            stream = await workflow.stream(null, config);
           }
         }
       } else if (options?.action === "approve") {
         // Approve: resume from the current interrupt
         console.info(`[Workflow] Approve — resuming thread ${threadId}`);
-        await workflow.invoke(null, config);
+        stream = await workflow.stream(null, config);
       } else {
         // New workflow: first invocation
         console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);
-        await workflow.invoke(
+        stream = await workflow.stream(
           { connectorId, projectId: options?.projectId ?? "", userPrompt: userPrompt ?? "", status: "queued", summary: "Ingestion workflow started" },
           config
         );
+      }
+
+      // Stream updates from initial execution segment
+      for await (const _ of stream) {
+        const graphState = await workflow.getState(config);
+        const result = buildResultFromGraphState(graphState, threadId, connectorId);
+        if (options?.projectId) {
+          result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+        }
+        yield result;
       }
 
       // Auto-advance through interrupt gates to run all nodes through to schema resolution unless stopped
@@ -146,7 +248,15 @@ export class IngestionAgentService implements IIngestionAgentService {
         !this.stoppedSessions.has(threadId)
       ) {
         console.info(`[Workflow] Auto-advancing node [${graphState.next.join(", ")}], thread ${threadId}`);
-        await workflow.invoke(null, config);
+        const advanceStream = await workflow.stream(null, config);
+        for await (const _ of advanceStream) {
+          const currentGraphState = await workflow.getState(config);
+          const result = buildResultFromGraphState(currentGraphState, threadId, connectorId);
+          if (options?.projectId) {
+            result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+          }
+          yield result;
+        }
         graphState = await workflow.getState(config);
       }
       
@@ -164,8 +274,10 @@ export class IngestionAgentService implements IIngestionAgentService {
         stoppedResult.requiresApproval = false;
         if (options?.projectId) {
           await this.projectService.updateAgentState(options.projectId, stoppedValues);
+          stoppedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
         }
-        return stoppedResult;
+        yield stoppedResult;
+        return;
       }
 
       const result = buildResultFromGraphState(graphState, threadId, connectorId);
@@ -193,7 +305,10 @@ export class IngestionAgentService implements IIngestionAgentService {
         });
       }
 
-      return result;
+      if (options?.projectId) {
+        result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+      }
+      yield result;
     } catch (error: any) {
       console.error(`[Workflow] Run failed:`, error?.message || error);
       if (traceSession) {
@@ -206,6 +321,79 @@ export class IngestionAgentService implements IIngestionAgentService {
     } finally {
       this.traceHelper.clearTraceSession();
     }
+  }
+
+  private async *streamThinking(
+    projectId: string,
+    pipeline: string,
+    substep: string,
+    baseResult: IngestionAgentRunResult,
+    logs: string[]
+  ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
+    const thinkingLogs: Array<{ time: string; text: string; done: boolean }> = [];
+    
+    // Delete existing thinking for this substep first
+    await this.agentThinkingService.deleteThinking(projectId, pipeline, substep);
+
+    for (let i = 0; i < logs.length; i++) {
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      
+      // Mark previous logs as done
+      for (const log of thinkingLogs) {
+        log.done = true;
+      }
+      
+      // Add current log as not done
+      thinkingLogs.push({
+        time: timeStr,
+        text: logs[i],
+        done: false,
+      });
+
+      // Save to database
+      await this.agentThinkingService.saveThinking(projectId, pipeline, substep, thinkingLogs);
+
+      // Fetch all logs to pass down the full state
+      const allThinking = await this.getAllProjectPipelineThinking(projectId, pipeline);
+
+      // Yield with updated thinking
+      yield {
+        ...baseResult,
+        agentThinking: allThinking,
+      };
+
+      // Small delay to simulate real-time thinking
+      await new Promise((resolve) => setTimeout(resolve, 600));
+    }
+
+    // Mark the last one as done and save
+    if (thinkingLogs.length > 0) {
+      thinkingLogs[thinkingLogs.length - 1].done = true;
+      await this.agentThinkingService.saveThinking(projectId, pipeline, substep, thinkingLogs);
+      
+      const allThinking = await this.getAllProjectPipelineThinking(projectId, pipeline);
+      yield {
+        ...baseResult,
+        agentThinking: allThinking,
+      };
+    }
+  }
+
+  private async getAllProjectPipelineThinking(projectId: string, pipeline: string): Promise<Record<string, Array<{ time: string; text: string; done: boolean }>>> {
+    const map: Record<string, Array<{ time: string; text: string; done: boolean }>> = {};
+    try {
+      const substeps = ["Data Ingestion", "Data Profiling", "Schema Resolver"];
+      for (const substep of substeps) {
+        const entry = await this.agentThinkingService.getThinking(projectId, pipeline, substep);
+        if (entry) {
+          map[substep] = entry.thinking;
+        }
+      }
+    } catch (err) {
+      console.warn("Failed to retrieve agent thinking logs:", err);
+    }
+    return map;
   }
 
   async stop(sessionId: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }> {

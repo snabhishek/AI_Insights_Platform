@@ -1,5 +1,9 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import pl from "nodejs-polars";
+import { fetchRowsOnDemand } from "../samplingHelper";
+import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
+import { ConnectorService } from "../../../services/connector/connector.service";
 
 type SampleRow = Record<string, unknown>;
 
@@ -7,27 +11,30 @@ type Method = "iqr" | "zscore";
 
 type Strategy = "clip" | "flag";
 
-const toNumber = (value: unknown): number | undefined => {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
+export const detectAndTransformOutliersPl = (
+  rows: SampleRow[],
+  columnName: string,
+  method: Method = "iqr",
+  strategy: Strategy = "clip"
+) => {
+  if (rows.length === 0) {
+    return {
+      columnName,
+      method,
+      strategy,
+      outlierCount: 0,
+      transformedRows: [],
+      bounds: { lower: 0, upper: 0 },
+    };
   }
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    if (trimmed.length === 0) {
-      return undefined;
-    }
-    const parsed = Number(trimmed);
-    return Number.isFinite(parsed) ? parsed : undefined;
-  }
-  return undefined;
-};
 
-export const detectAndTransformOutliers = (rows: SampleRow[], columnName: string, method: Method = "iqr", strategy: Strategy = "clip") => {
-  const numericValues = rows
-    .map((row) => toNumber(row[columnName]))
-    .filter((value): value is number => typeof value === "number");
+  const df = pl.DataFrame(rows);
+  const s = df.getColumn(columnName);
 
-  if (numericValues.length === 0) {
+  let numericS: pl.Series;
+  try {
+    numericS = s.filter(s.isNotNull()).cast(pl.Float64).filter(s.filter(s.isNotNull()).isNotNull());
+  } catch {
     return {
       columnName,
       method,
@@ -38,54 +45,143 @@ export const detectAndTransformOutliers = (rows: SampleRow[], columnName: string
     };
   }
 
-  const sorted = [...numericValues].sort((left, right) => left - right);
-  const mid = Math.floor(sorted.length / 2);
-  const lowerHalf = sorted.slice(0, Math.floor(sorted.length / 2));
-  const upperHalf = sorted.slice(Math.ceil(sorted.length / 2));
-  const q1 = lowerHalf.length > 0 ? lowerHalf[Math.floor(lowerHalf.length / 2)] : sorted[0];
-  const q3 = upperHalf.length > 0 ? upperHalf[Math.floor(upperHalf.length / 2)] : sorted[sorted.length - 1];
+  const n = numericS.length;
+  if (n === 0) {
+    return {
+      columnName,
+      method,
+      strategy,
+      outlierCount: 0,
+      transformedRows: rows,
+      bounds: { lower: 0, upper: 0 },
+    };
+  }
+
+  const q1 = numericS.quantile(0.25) ?? 0;
+  const q3 = numericS.quantile(0.75) ?? 0;
   const iqr = q3 - q1;
   const lowerBound = q1 - 1.5 * iqr;
   const upperBound = q3 + 1.5 * iqr;
 
-  const transformedRows = rows.map((row) => {
-    const numericValue = toNumber(row[columnName]);
-    if (numericValue === undefined) {
-      return row;
+  const arr = s.toArray().map((val: any) => {
+    if (val === null || val === undefined) {
+      return val;
     }
-    const isOutlier = numericValue < lowerBound || numericValue > upperBound;
+    const num = Number(val);
+    if (isNaN(num)) {
+      return val;
+    }
+    const isOutlier = num < lowerBound || num > upperBound;
     if (!isOutlier) {
-      return row;
+      return val;
     }
 
-    const replacement = strategy === "clip"
-      ? Math.min(upperBound, Math.max(lowerBound, numericValue))
-      : `__outlier__`;
-
-    return {
-      ...row,
-      [columnName]: replacement,
-    };
+    return strategy === "clip"
+      ? Math.min(upperBound, Math.max(lowerBound, num))
+      : "__outlier__";
   });
+
+  const transformedS = pl.Series(columnName, arr);
+  const changedS = s.neq(transformedS).fillNull("zero");
+  const outlierCount = changedS.cast(pl.Int32).sum() as number;
+
+  const dfTransformed = df.withColumn(transformedS);
 
   return {
     columnName,
     method,
     strategy,
-    outlierCount: transformedRows.filter((row, index) => row[columnName] !== rows[index][columnName]).length,
-    transformedRows,
+    outlierCount,
+    transformedRows: dfTransformed.toRecords(),
     bounds: { lower: lowerBound, upper: upperBound },
   };
 };
 
-export const createOutlierTool = () =>
+export const createOutlierTool = (
+  connectionTester: ConnectionTesterService,
+  connectorService: ConnectorService,
+  defaultConnector?: any
+) =>
   tool(
-    async ({ rows, columnName, method = "iqr", strategy = "clip" }) => detectAndTransformOutliers(Array.isArray(rows) ? (rows as SampleRow[]) : [], String(columnName || ""), method as Method, strategy as Strategy),
+    async ({
+      connectorId,
+      connectorType,
+      connectionConfig,
+      tableName,
+      sampleMethod,
+      seed,
+      stratifyColumn,
+      relationships,
+      foreignKeyValues,
+      columnName,
+      method = "iqr",
+      strategy = "clip",
+    }) => {
+      const { rows: allRows, totalRowCount, error } = await fetchRowsOnDemand(
+        connectionTester,
+        connectorService,
+        defaultConnector,
+        {
+          connectorId,
+          connectorType,
+          connectionConfig,
+          tableName,
+          sampleMethod: sampleMethod || "random",
+          seed,
+          stratifyColumn,
+          relationships,
+          foreignKeyValues,
+          fetchAll: true,
+        }
+      );
+
+      if (error || allRows.length === 0) {
+        return {
+          columnName,
+          method,
+          strategy,
+          outlierCount: 0,
+          transformedRows: [],
+          bounds: { lower: 0, upper: 0 },
+          error,
+        };
+      }
+
+      const result = detectAndTransformOutliersPl(
+        allRows as SampleRow[],
+        String(columnName || ""),
+        method as Method,
+        strategy as Strategy
+      );
+
+      return {
+        columnName,
+        method,
+        strategy,
+        outlierCount: result.outlierCount,
+        transformedRows: result.transformedRows.slice(0, 100),
+        bounds: result.bounds,
+      };
+    },
     {
       name: "detectOutliers",
-      description: "Identify numeric outliers and clip or flag them using deterministic IQR-based bounds.",
+      description: "Identify numeric outliers and clip or flag them using bounds computed from all records in the table.",
       schema: z.object({
-        rows: z.array(z.record(z.string(), z.any())).describe("Sample rows to inspect"),
+        connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
+        connectorType: z.string().optional().describe("Connector type fallback"),
+        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        tableName: z.string().describe("Table to clean"),
+        sampleMethod: z.enum(["random", "stratified", "interval"]).optional().describe("Sampling method"),
+        seed: z.number().optional().describe("Deterministic seed for reproducible sampling"),
+        stratifyColumn: z.string().optional().describe("Column to group by for stratified sampling"),
+        relationships: z.array(z.object({
+          column: z.string().describe("Local FK column"),
+          foreignTable: z.string().describe("Referenced table"),
+          foreignColumn: z.string().describe("Referenced column"),
+        })).optional().describe("Table relationships for referential integrity filtering"),
+        foreignKeyValues: z.object({}).catchall(z.array(z.string())).optional().describe(
+          "Map of foreignTable → array of allowed FK values collected from parent table samples"
+        ),
         columnName: z.string().describe("Numeric column to inspect"),
         method: z.enum(["iqr", "zscore"]).optional().describe("Outlier detection method"),
         strategy: z.enum(["clip", "flag"]).optional().describe("Deterministic remediation strategy"),

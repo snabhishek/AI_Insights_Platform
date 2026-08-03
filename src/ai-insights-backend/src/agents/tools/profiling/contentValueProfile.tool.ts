@@ -1,5 +1,9 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
+import pl from "nodejs-polars";
+import { fetchRowsOnDemand } from "../samplingHelper";
+import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
+import { ConnectorService } from "../../../services/connector/connector.service";
 
 type SampleRow = Record<string, unknown>;
 
@@ -18,45 +22,68 @@ const PATTERN_CHECKS: Array<{ name: string; regex: RegExp }> = [
   { name: "currency", regex: /^[\$€£¥]\s?[\d,]+\.?\d*$/ },
 ];
 
-const inferType = (values: unknown[]): { inferredType: string; mixedTypePercent: number } => {
-  const typeCounts: Record<string, number> = {};
-  let valid = 0;
 
-  for (const val of values) {
-    if (val === null || val === undefined) continue;
-    const str = String(val).trim();
-    if (str.length === 0) continue;
-    valid++;
+const filterNonEmptySeries = (s: pl.Series): pl.Series => {
+  const lengths = s.str.lengths();
+  const zeroSeries = pl.Series("zeros", Array(lengths.length).fill(0));
+  return s.filter(lengths.gt(zeroSeries));
+};
 
-    if (typeof val === "number" || /^-?\d+(\.\d+)?$/.test(str)) {
-      typeCounts["numeric"] = (typeCounts["numeric"] || 0) + 1;
-    } else if (typeof val === "boolean" || /^(true|false)$/i.test(str)) {
-      typeCounts["boolean"] = (typeCounts["boolean"] || 0) + 1;
+const inferTypePl = (s: pl.Series): { inferredType: string; mixedTypePercent: number } => {
+  const nonNullS = s.filter(s.isNotNull());
+  const valid = nonNullS.length;
+  if (valid === 0) return { inferredType: "unknown", mixedTypePercent: 0 };
+
+  const strS = nonNullS.cast(pl.Utf8).str.strip();
+  const validStr = filterNonEmptySeries(strS);
+  const validCount = validStr.length;
+  if (validCount === 0) return { inferredType: "unknown", mixedTypePercent: 0 };
+
+  let numericCount = 0;
+  let booleanCount = 0;
+  let dateCount = 0;
+  let stringCount = 0;
+
+  const arr = validStr.toArray().map(String);
+  for (const str of arr) {
+    if (/^-?\d+(\.\d+)?$/.test(str)) {
+      numericCount++;
+    } else if (/^(true|false)$/i.test(str)) {
+      booleanCount++;
     } else if (!isNaN(Date.parse(str)) && /\d{4}/.test(str)) {
-      typeCounts["date"] = (typeCounts["date"] || 0) + 1;
+      dateCount++;
     } else {
-      typeCounts["string"] = (typeCounts["string"] || 0) + 1;
+      stringCount++;
     }
   }
 
-  if (valid === 0) return { inferredType: "unknown", mixedTypePercent: 0 };
+  const typeCounts = {
+    numeric: numericCount,
+    boolean: booleanCount,
+    date: dateCount,
+    string: stringCount,
+  };
 
   const sorted = Object.entries(typeCounts).sort((a, b) => b[1] - a[1]);
   const dominant = sorted[0];
-  const mixedCount = valid - dominant[1];
-  const mixedTypePercent = Number(((mixedCount / valid) * 100).toFixed(2));
+  const mixedCount = validCount - dominant[1];
+  const mixedTypePercent = Number(((mixedCount / validCount) * 100).toFixed(2));
 
-  return { inferredType: dominant[0], mixedTypePercent };
+  return { inferredType: dominant[1] > 0 ? dominant[0] : "unknown", mixedTypePercent };
 };
 
-const detectPatterns = (values: string[]): string[] => {
-  const nonEmpty = values.filter((v) => v.length > 0);
-  if (nonEmpty.length === 0) return [];
+const detectPatternsPl = (s: pl.Series): string[] => {
+  const nonNullS = s.filter(s.isNotNull());
+  const strS = nonNullS.cast(pl.Utf8).str.strip();
+  const nonEmpty = filterNonEmptySeries(strS);
+  const total = nonEmpty.length;
+  if (total === 0) return [];
 
+  const arr = nonEmpty.toArray().map(String);
   const detected: string[] = [];
   for (const check of PATTERN_CHECKS) {
-    const matchCount = nonEmpty.filter((v) => check.regex.test(v)).length;
-    if (matchCount / nonEmpty.length >= 0.5) {
+    const matchCount = arr.filter((v) => check.regex.test(v)).length;
+    if (matchCount / total >= 0.5) {
       detected.push(check.name);
     }
   }
@@ -77,37 +104,97 @@ const classifyCategoricalOrContinuous = (
   return distinctCount <= 50 ? "categorical" : "continuous";
 };
 
-const buildFrequencyDistribution = (values: string[], topN: number = 10) => {
-  const freq = new Map<string, number>();
-  for (const val of values) {
-    if (val.length === 0) continue;
-    freq.set(val, (freq.get(val) || 0) + 1);
+const buildFrequencyDistributionPl = (s: pl.Series, totalCount: number, topN: number = 10) => {
+  const nonNullS = s.filter(s.isNotNull());
+  const strS = nonNullS.cast(pl.Utf8).str.strip();
+  const nonEmpty = filterNonEmptySeries(strS);
+  if (nonEmpty.length === 0) return [];
+
+  const vc = nonEmpty.valueCounts();
+  const sortedVc = vc.sort("count", true);
+  const headVc = sortedVc.head(topN);
+
+  const valuesArr = headVc.getColumn(nonEmpty.name).toArray().map(String);
+  const countsArr = headVc.getColumn("count").toArray().map(Number);
+
+  const results = [];
+  for (let i = 0; i < headVc.shape.height; i++) {
+    const val = String(valuesArr[i]);
+    const count = Number(countsArr[i]);
+    results.push({
+      value: val,
+      count,
+      percentage: Number(((count / totalCount) * 100).toFixed(2)),
+    });
   }
-  return Array.from(freq.entries())
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
-    .slice(0, topN)
-    .map(([value, count]) => ({ value, count, percentage: Number(((count / values.length) * 100).toFixed(2)) }));
+  return results;
 };
 
-export const createContentValueProfileTool = () =>
+export const createContentValueProfileTool = (
+  connectionTester: ConnectionTesterService,
+  connectorService: ConnectorService,
+  defaultConnector?: any
+) =>
   tool(
-    async ({ rows, columns, tableName }) => {
-      const sampleRows = Array.isArray(rows) ? (rows as SampleRow[]) : [];
-      const targetColumns = Array.isArray(columns) && columns.length > 0
-        ? columns
-        : sampleRows.length > 0 ? Object.keys(sampleRows[0]) : [];
+    async ({
+      connectorId,
+      connectorType,
+      connectionConfig,
+      tableName,
+      sampleMethod,
+      sampleSize,
+      seed,
+      stratifyColumn,
+      relationships,
+      foreignKeyValues,
+      columns,
+    }) => {
+      const { rows: sampleRows, totalRowCount, error } = await fetchRowsOnDemand(
+        connectionTester,
+        connectorService,
+        defaultConnector,
+        {
+          connectorId,
+          connectorType,
+          connectionConfig,
+          tableName,
+          sampleMethod,
+          sampleSize,
+          seed,
+          stratifyColumn,
+          relationships,
+          foreignKeyValues,
+        }
+      );
+
+      if (error || sampleRows.length === 0) {
+        return {
+          tableName: tableName || "unknown",
+          profileType: "content_value_distribution",
+          totalRows: 0,
+          columnsProfiled: 0,
+          columns: [],
+          rows: [],
+          error,
+        };
+      }
+
+      const df = pl.DataFrame(sampleRows);
+      const allColumns = df.columns;
+      const targetColumns = Array.isArray(columns) && columns.length > 0 ? columns : allColumns;
 
       const columnProfiles = targetColumns.map((colName) => {
-        const values = sampleRows.map((row) => row[colName]);
-        const stringValues = values.map((v) => (v === null || v === undefined ? "" : String(v).trim()));
-        const nonEmptyValues = stringValues.filter((v) => v.length > 0);
+        const s = df.getColumn(colName);
+        const nonNullS = s.filter(s.isNotNull());
+        const strS = nonNullS.cast(pl.Utf8).str.strip();
+        const nonEmpty = filterNonEmptySeries(strS);
 
-        const distinctValues = new Set(nonEmptyValues);
-        const { inferredType, mixedTypePercent } = inferType(values);
-        const patterns = detectPatterns(nonEmptyValues);
-        const topValues = buildFrequencyDistribution(nonEmptyValues, 10);
+        const distinctCount = nonEmpty.nUnique();
+        const { inferredType, mixedTypePercent } = inferTypePl(s);
+        const patterns = detectPatternsPl(s);
+        const topValues = buildFrequencyDistributionPl(s, sampleRows.length, 10);
         const categoricalOrContinuous = classifyCategoricalOrContinuous(
-          distinctValues.size,
+          distinctCount,
           sampleRows.length,
           inferredType
         );
@@ -115,9 +202,9 @@ export const createContentValueProfileTool = () =>
         return {
           name: colName,
           inferredType,
-          distinctCount: distinctValues.size,
+          distinctCount,
           totalValues: sampleRows.length,
-          nonEmptyCount: nonEmptyValues.length,
+          nonEmptyCount: nonEmpty.length,
           topValues,
           patterns,
           mixedTypePercent,
@@ -131,19 +218,32 @@ export const createContentValueProfileTool = () =>
         totalRows: sampleRows.length,
         columnsProfiled: columnProfiles.length,
         columns: columnProfiles,
+        // rows: sampleRows, // Retain fetched rows so the agent can extract PKs to sync child tables
       };
     },
     {
       name: "contentValueProfile",
       description:
         "Profile content and value distribution for specified columns in sample data. " +
-        "Computes distinct value counts, top-N frequency distribution, value pattern detection (email, date, ID, etc.), " +
-        "data type inference (detects mixed types), and categorical vs continuous classification. " +
-        "Use this to understand what kind of data each column contains before deciding profiling strategy.",
+        "Fetches the required sample records on demand.",
       schema: z.object({
-        rows: z.array(z.record(z.string(), z.any())).describe("Sample rows to analyze"),
+        connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
+        connectorType: z.string().optional().describe("Connector type fallback"),
+        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        tableName: z.string().describe("Table name for context"),
+        sampleMethod: z.enum(["random", "stratified", "interval"]).optional().describe("Sampling method"),
+        sampleSize: z.number().optional().describe("Number of sample records to fetch (stratified defaults to 40% of table row count)"),
+        seed: z.number().optional().describe("Deterministic seed for reproducible sampling"),
+        stratifyColumn: z.string().optional().describe("Column to group by for stratified sampling"),
+        relationships: z.array(z.object({
+          column: z.string().describe("Local FK column"),
+          foreignTable: z.string().describe("Referenced table"),
+          foreignColumn: z.string().describe("Referenced column"),
+        })).optional().describe("Table relationships from inspector output for referential integrity filtering"),
+        foreignKeyValues: z.object({}).catchall(z.array(z.string())).optional().describe(
+          "Map of foreignTable → array of allowed FK values collected from parent table samples"
+        ),
         columns: z.array(z.string()).optional().describe("Specific columns to profile; omit to profile all columns"),
-        tableName: z.string().optional().describe("Table name for context"),
       }),
     }
   );

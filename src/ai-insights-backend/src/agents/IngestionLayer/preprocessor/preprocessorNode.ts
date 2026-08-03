@@ -13,18 +13,19 @@ import {
   getPromptFromFile, 
   invokeAgentJson,
   mergeBatchedTableStates,
-  buildBatchedTableState
+  buildBatchedTableState,
+  logMilestoneThinking
 } from "../../utils/agentUtils";
 
 export async function preprocess(connector: any, dataProfile: Record<string, unknown>, services: IngestionServices): Promise<any> {
   const model = getModel();
 
   const analyzeProfilingTool = createAnalyzeProfilingTool();
-  const missingValueTool = createMissingValueTool();
-  const categoricalTool = createCategoricalTool();
-  const outlierTool = createOutlierTool();
-  const normalizationTool = createNormalizationTool();
-  const statisticsTool = createStatisticsTool();
+  const missingValueTool = createMissingValueTool(services.connectionTester, services.connectorService, connector);
+  const categoricalTool = createCategoricalTool(services.connectionTester, services.connectorService, connector);
+  const outlierTool = createOutlierTool(services.connectionTester, services.connectorService, connector);
+  const normalizationTool = createNormalizationTool(services.connectionTester, services.connectorService, connector);
+  const statisticsTool = createStatisticsTool(services.connectionTester, services.connectorService, connector);
   const applyCleaningTool = createApplyDataCleaningTool(services.connectionTester, services.connectorService, connector);
   const duplicateDetectionTool = createDuplicateDetectionTool(services.connectionTester, services.connectorService, connector);
 
@@ -85,6 +86,7 @@ export async function preprocess(connector: any, dataProfile: Record<string, unk
   ].join("\n\n");
 
   try {
+    await logMilestoneThinking(services, "Data Profiling", "Running rule-based anomaly detection and data cleaning check...");
     const result = await invokeAgentJson(
       "preprocess",
       model,
@@ -97,6 +99,7 @@ export async function preprocess(connector: any, dataProfile: Record<string, unk
         traceLabel: "agent:preprocess",
       }
     );
+    await logMilestoneThinking(services, "Data Profiling", "Generating recommended data preprocessing rules...");
     return {
       ...fallback,
       ...result,

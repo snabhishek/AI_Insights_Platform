@@ -199,7 +199,7 @@ export const createAnalyzeProfilingTool = () =>
         "and statistical anomalies (outliers, skewness, zero-variance columns). " +
         "Returns actions sorted by priority (HIGH → MEDIUM → LOW) with specific method suggestions and reasoning.",
       schema: z.object({
-        profilingOutput: z.record(z.string(), z.any()).describe(
+        profilingOutput: z.object({}).catchall(z.any()).describe(
           "The complete profiling output from the DataProfile agent, containing completeness, content, and statistical profiles per table"
         ),
       }),

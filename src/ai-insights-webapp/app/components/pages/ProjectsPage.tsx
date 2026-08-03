@@ -294,13 +294,47 @@ export default function ProjectsPage() {
         };
         payload.step = stepMap[step] || step;
       }
-      const json = await executeWorkflowApi(payload, controller.signal);
-      if (!json.success) {
-        throw new Error("Workflow request failed");
+      const response = await executeWorkflowApi(payload, controller.signal);
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Response body reader not available");
       }
-      updateWorkflowState(json.data);
-      if (json.data.status === "completed") {
-        showAlert({ title: "Run Success", message: json.data.summary || "The workflow completed successfully.", type: "success" });
+
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let lastData: any = null;
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const dataStr = line.slice(6);
+            if (dataStr === "[DONE]") {
+              break;
+            }
+            try {
+              const chunk = JSON.parse(dataStr);
+              if (chunk.success && chunk.data) {
+                lastData = chunk.data;
+                updateWorkflowState(chunk.data);
+              } else if (chunk.success === false) {
+                throw new Error(chunk.message || "AI workflow failed");
+              }
+            } catch (err: any) {
+              console.warn("Failed to parse stream chunk", err);
+            }
+          }
+        }
+      }
+
+      if (lastData && lastData.status === "completed") {
+        showAlert({ title: "Run Success", message: lastData.summary || "The workflow completed successfully.", type: "success" });
       }
     } catch (error: any) {
       if (error.name === "AbortError") {
@@ -309,7 +343,7 @@ export default function ProjectsPage() {
       }
       console.error("Workflow execution failed", error);
       setRunStatus("Idle");
-      showAlert({ title: "Workflow Error", message: "The workflow could not be started or resumed.", type: "error" });
+      showAlert({ title: "Workflow Error", message: error.message || "The workflow could not be started or resumed.", type: "error" });
     } finally {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;

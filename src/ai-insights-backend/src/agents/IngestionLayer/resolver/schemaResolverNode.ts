@@ -7,6 +7,7 @@ import {
   invokeAgentJson,
   mergeBatchedTableStates,
   buildBatchedTableState,
+  logMilestoneThinking,
   getPromptFromFile
 } from "../../utils/agentUtils";
 import { 
@@ -103,6 +104,7 @@ ${safeUserRequest}
 
   const model = getModel();
 
+  await logMilestoneThinking(services, "Schema Resolver", `Resolving semantic types and target mappings to topics: [${targetParquetTopics.join(", ")}]...`);
   const result = await invokeAgentJson("resolveSchema", model, prompt, fallback, services, {
     traceLabel: "agent:resolveSchema",
   });
@@ -110,6 +112,8 @@ ${safeUserRequest}
   const rawMappings = (result && Array.isArray(result.mappings) && result.mappings.length > 0)
     ? result.mappings
     : fallbackMappings;
+
+  await logMilestoneThinking(services, "Schema Resolver", `Aligned ${rawMappings.length} structural columns with Parquet target categories.`);
 
   const resolvedDomain = (typeof result?.domain === "string" && result.domain.trim().length > 0)
     ? result.domain.trim()

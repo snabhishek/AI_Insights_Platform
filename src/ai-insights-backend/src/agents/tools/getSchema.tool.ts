@@ -53,7 +53,7 @@ export const createGetSchemaTool = (
       schema: z.object({
         connectorId: z.string().describe("Connector ID used to resolve the stored connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback when connectorId is unavailable"),
-        connectionConfig: z.object({}).passthrough().optional().describe("Fallback connection settings when connectorId is unavailable"),
+        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings when connectorId is unavailable"),
       }),
     }
   );
