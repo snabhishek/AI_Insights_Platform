@@ -3,6 +3,7 @@ import { IWorkspaceRepository } from "../../repositories/workspace.repository.in
 import { IProjectRepository } from "../../repositories/project.repository.interface";
 import { Workspace, CreateProjectDto, UpdateProjectDto } from "../../models/workspace.types";
 import { Project, ProjectRun } from "../../models/project.types";
+import { createProjectSchemaFile, deleteProjectSchemaFolder } from "../../agents/tools/schemaHelper";
 
 export type ServiceResult<T> =
   | { success: true; data: T }
@@ -112,6 +113,18 @@ export class WorkspaceService {
     };
 
     const created = await this.projectRepository.createProject(newProject);
+    if (created) {
+      try {
+        await createProjectSchemaFile(ws.name, {
+          name: newProject.name,
+          domain: newProject.domain,
+          subDomain: newProject.subDomain,
+          useCase: newProject.useCase,
+        });
+      } catch (schemaErr: any) {
+        console.warn(`[workspaceService] Failed to create project schema YAML file:`, schemaErr?.message || schemaErr);
+      }
+    }
     return { success: true, data: created };
   }
 
@@ -164,10 +177,29 @@ export class WorkspaceService {
   }
 
   async deleteProject(pid: string): Promise<ServiceResult<boolean>> {
+    let projectWithWs: any;
+    try {
+      projectWithWs = await this.projectRepository.getProjectWithWorkspace(pid);
+    } catch (e: any) {
+      console.warn(`[workspaceService] Could not lookup project/workspace prior to deletion:`, e?.message || e);
+    }
+
     const deleted = await this.projectRepository.deleteProject(pid);
     if (!deleted) {
       return { success: false, reason: "NOT_FOUND", message: "Project not found." };
     }
+
+    if (projectWithWs && projectWithWs.project && projectWithWs.workspaceName) {
+      try {
+        await deleteProjectSchemaFolder(
+          projectWithWs.workspaceName,
+          projectWithWs.project.name
+        );
+      } catch (folderErr: any) {
+        console.warn(`[workspaceService] Failed to delete project schema folder for ${pid}:`, folderErr?.message || folderErr);
+      }
+    }
+
     return { success: true, data: true };
   }
 }

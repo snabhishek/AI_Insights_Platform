@@ -13,6 +13,7 @@ import {
 import { 
   writeResolvedSchemaYaml, 
   loadFieldSchemaYaml,
+  updateOrCreateProjectSchemaFile,
   getPackagesDir,
   sanitizeName, 
   generateDateTimeStamp 
@@ -91,7 +92,7 @@ export async function resolveSchema(
 
   const prompt = `${systemPrompt}
 
-${rawFieldSchemaYaml ? `## Live Field Schema Taxonomy (field_schema.yaml)\n\`\`\`yaml\n${rawFieldSchemaYaml}\n\`\`\`\n` : ""}
+${rawFieldSchemaYaml ? `## Live Field Schema Taxonomy (Schema.yaml)\n\`\`\`yaml\n${rawFieldSchemaYaml}\n\`\`\`\n` : ""}
 
 ## Context
 ### Inspection Context
@@ -121,23 +122,7 @@ ${safeUserRequest}
 
   const packagesDir = getPackagesDir();
   let outputYamlPath = path.resolve(packagesDir, "resolved_schema.yaml");
-  if (projectId) {
-    try {
-      const projectWithWs = await services.projectService.getProjectWithWorkspace(projectId);
-      if (projectWithWs) {
-        const workspaceName = sanitizeName(projectWithWs.workspaceName);
-        const projectTitle = sanitizeName(projectWithWs.project.name);
-        const folderName = `${workspaceName}-${projectTitle}`;
-        const timestamp = generateDateTimeStamp();
-        const fileName = `${workspaceName}-${projectTitle}-${timestamp}.yaml`;
-
-        outputYamlPath = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas", fileName);
-      }
-    } catch (lookupErr: any) {
-      console.warn(`[resolveSchema] Failed to lookup project/workspace for ${projectId}, fallback path used:`, lookupErr?.message || lookupErr);
-    }
-  }
-
+  
   const payloadToWrite = {
     domainKnowledge: result?.domainKnowledge || fallback.domainKnowledge,
     domain: resolvedDomain,
@@ -147,12 +132,31 @@ ${safeUserRequest}
     unmappedDatasetFields: result?.unmappedDatasetFields || []
   };
 
-  if (rawMappings.length > 0) {
-    await writeResolvedSchemaYaml(
-      outputYamlPath,
-      payloadToWrite
-    );
-    console.info(`[resolveSchema] Wrote resolved schema YAML file to ${outputYamlPath} with ${rawMappings.length} mappings`);
+  if (projectId) {
+    try {
+      const projectWithWs = await services.projectService.getProjectWithWorkspace(projectId);
+      if (projectWithWs) {
+        outputYamlPath = await updateOrCreateProjectSchemaFile(
+          projectWithWs.workspaceName,
+          projectWithWs.project.name,
+          {
+            name: projectWithWs.project.name,
+            domain: projectWithWs.project.domain,
+            subDomain: projectWithWs.project.subDomain,
+            useCase: projectWithWs.project.useCase,
+          },
+          payloadToWrite
+        );
+        console.info(`[resolveSchema] Updated project schema YAML file at ${outputYamlPath} with ${rawMappings.length} mappings`);
+      }
+    } catch (lookupErr: any) {
+      console.warn(`[resolveSchema] Failed to lookup project/workspace for ${projectId}, using fallback:`, lookupErr?.message || lookupErr);
+      if (rawMappings.length > 0) {
+        await writeResolvedSchemaYaml(outputYamlPath, payloadToWrite);
+      }
+    }
+  } else if (rawMappings.length > 0) {
+    await writeResolvedSchemaYaml(outputYamlPath, payloadToWrite);
   }
 
   return {

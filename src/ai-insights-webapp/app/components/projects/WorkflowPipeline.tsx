@@ -201,6 +201,29 @@ export function getMainStepStatus(stepId: string, pipelineStatuses: PipelineStat
   return (pipelineStatuses[stepId] as PipelineStatus) ?? "Not Started";
 }
 
+export function getMainStepStatuses(
+  pipelineStatuses: PipelineStatuses,
+  runStatus?: RunStatus
+): Record<string, PipelineStatus> {
+  const result: Record<string, PipelineStatus> = {};
+  let foundActiveRunning = false;
+
+  for (const step of PIPELINE_STEPS) {
+    let rawStatus = getMainStepStatus(step.id, pipelineStatuses);
+
+    if (runStatus === "Running" && !foundActiveRunning) {
+      if (rawStatus !== "Completed") {
+        rawStatus = "In Progress";
+        foundActiveRunning = true;
+      }
+    }
+
+    result[step.id] = rawStatus;
+  }
+
+  return result;
+}
+
 export default function WorkflowPipeline({
   pipelineStatuses,
   completionPercentage,
@@ -222,7 +245,8 @@ export default function WorkflowPipeline({
   const mainSelectedStage = getMainStepId(currentStage);
 
   // Compute 5-main-step level statuses and progress line width across the 4 segment connections
-  const mainStatuses = PIPELINE_STEPS.map((step) => getMainStepStatus(step.id, pipelineStatuses));
+  const mainStatusMap = getMainStepStatuses(pipelineStatuses, runStatus);
+  const mainStatuses = PIPELINE_STEPS.map((step) => mainStatusMap[step.id]);
 
   let completedMainCount = 0;
   for (let i = 0; i < mainStatuses.length; i++) {
@@ -321,7 +345,7 @@ export default function WorkflowPipeline({
             <WorkflowCard
               key={step.id}
               step={step}
-              status={getMainStepStatus(step.id, pipelineStatuses)}
+              status={mainStatusMap[step.id]}
               index={idx}
               isActive={mainSelectedStage === step.id}
               onSelect={onSelectStage}
@@ -367,7 +391,7 @@ export default function WorkflowPipeline({
         <div className="flex items-center gap-4 flex-wrap text-xs">
           {[
             { color: "bg-emerald-500", label: "Completed" },
-            { color: "bg-indigo-500", label: "In Progress" },
+            { color: "bg-indigo-500", label: "Running" },
             { color: "bg-amber-500", label: "Pending" },
             { color: "bg-border dark:bg-gray-600", label: "Not Started" },
           ].map(({ color, label }) => (

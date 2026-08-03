@@ -268,7 +268,7 @@ export default function CardModal({
                     cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
                   }`} />
                   <span className="text-xs font-bold text-muted-foreground">
-                    {cardStatus}
+                    {cardStatus === "In Progress" ? "Running" : cardStatus}
                   </span>
                 </div>
               </div>
