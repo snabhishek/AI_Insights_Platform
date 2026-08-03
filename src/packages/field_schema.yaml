@@ -1,0 +1,215 @@
+version: "1.0"
+fields:
+  DomainKnowledge:
+    description: Establishes the industry/domain and business use case the insights platform is built for. Tier1/Tier2 may be suggested by the agent based on the data, but must be confirmed by the user. UseCase and UseCaseDescription are user-provided.
+    priority: Contextual
+    priority_rationale: Not an accessed data field itself — it supplies the use-case context that recalibrates every other field's priority
+    UseCase: Short name of the use case the user wants the platform to address, as provided by the user — e.g. "Customer Churn Prediction", "Predictive Maintenance"
+    UseCaseDescription: User-provided free-text explanation of the use case — goals, context, and what "insight" means for this platform
+
+  Identifier:
+    description: Unique keys used to reference records
+    typical_analysis: Deduplication, joins, entity tracking
+    priority: Low
+    priority_rationale: Used for joins/deduplication; rarely predictive on its own unless engineered (e.g. frequency encoding)
+    subtypes: [PrimaryKey, ForeignKey, UUID, ExternalID, CompositeKey, BatchID, TransactionID]
+
+  Categorical:
+    description: Discrete labels drawn from a fixed or open set
+    typical_analysis: Distribution, segmentation, group comparison
+    priority: High
+    priority_rationale: Common driver of segmentation and often a strong predictive feature once encoded
+    subtypes: [Nominal, Ordinal, Binary, MultiLabel, Hierarchical Category]
+
+  Numerical:
+    description: Quantitative values supporting arithmetic operations
+    typical_analysis: Descriptive statistics, regression, correlations
+    priority: High
+    priority_rationale: Core quantitative signal for most regression/classification models
+    subtypes: [Integer, Float, Count, Ratio, Index, Cumulative]
+
+  Boolean:
+    description: Two-state logical indicators
+    typical_analysis: Counts, proportions, classification
+    priority: Medium
+    priority_rationale: Useful indicator feature, but often low-variance on its own
+    subtypes: [Flag, Indicator, YesNo, OptIn/OptOut, Toggle]
+
+  Temporal:
+    description: Points in time
+    typical_analysis: Trend analysis, seasonality, forecasting
+    priority: Medium
+    priority_rationale: Drives trend/seasonality features but usually needs transformation before it's directly predictive
+    subtypes: [Date, DateTime, Time, Timestamp, Timezone, FiscalPeriod]
+
+  Duration:
+    description: Elapsed or span-based time measures
+    priority: Medium
+    priority_rationale: Useful engineered feature (e.g. time-to-event) but rarely used raw
+    subtypes: [ElapsedTime, Interval, Age, TTL, Lag, LeadTime]
+
+  Location:
+    description: Spatial or geographic references
+    typical_analysis: Maps, regional analysis, clustering
+    priority: Medium
+    priority_rationale: Valuable for regional/clustering features; raised to High when the use case is geo-specific
+    subtypes: [Address, GeoCoordinates, Region, Zone, Facility, Route]
+
+  Text:
+    description: Unstructured or semi-structured natural language
+    typical_analysis: NLP, sentiment analysis, keyword extraction
+    priority: Medium
+    priority_rationale: High potential value but requires NLP processing before it becomes a usable feature
+    subtypes: [FreeText, ShortText, StructuredText, Comment, Description, Tag/Keyword]
+
+  Financial:
+    description: Monetary values and financial line items
+    typical_analysis: Financial KPIs, profitability analysis
+    priority: High
+    priority_rationale: Directly tied to most business KPIs and financial-modeling use cases
+    subtypes: [Price, Cost, Revenue, Tax, Discount, Budget, Margin, Currency]
+
+  Percentage:
+    description: Proportional or rate-based values
+    priority: Medium
+    priority_rationale: Useful normalized signal, but often derived rather than a primary raw feature
+    subtypes: [Rate, Proportion, GrowthRate, Utilization, ConversionRate]
+
+  Score:
+    description: Composite or derived numeric evaluations
+    priority: High
+    priority_rationale: Composite/derived scores already encode strong predictive signal
+    subtypes: [RiskScore, CreditScore, PerformanceScore, SatisfactionScore, PropensityScore]
+
+  Measurement:
+    description: Physical or sensor-based quantities
+    typical_analysis: Statistical distributions, anomaly detection
+    priority: Medium
+    priority_rationale: Valuable for anomaly detection and physical-system use cases; situational elsewhere
+    subtypes: [Physical, Environmental, Sensor, Dimensional, Chemical, Biometric]
+
+  Operational:
+    description: Process- and workflow-level operating metrics
+    typical_analysis: Efficiency and bottleneck analysis
+    priority: Medium
+    priority_rationale: Useful for process/efficiency-focused use cases; less relevant otherwise
+    subtypes: [ProcessStep, Workflow, Capacity, Throughput, CycleTime, Utilization]
+
+  Status:
+    description: Current state within a lifecycle
+    priority: Medium
+    priority_rationale: Useful as a state feature or filter, but rarely the strongest signal on its own
+    subtypes: [Lifecycle, WorkflowState, ApprovalState, Availability, ExceptionState]
+
+  Event:
+    description: Discrete occurrences with a timestamp and payload
+    typical_analysis: Event sequence analysis
+    priority: High
+    priority_rationale: Rich source of behavioral/sequential features for churn, fraud, and similar use cases
+    subtypes: [Transaction, Interaction, SystemEvent, Alert, Milestone, Incident]
+
+  Customer:
+    description: Attributes describing customers/users
+    typical_analysis: Segmentation, churn analysis
+    priority: High
+    priority_rationale: Core to segmentation, churn, and personalization use cases
+    subtypes: [Demographics, Segment, LifetimeValue, Preferences, Behavior, Churn/RetentionSignal]
+
+  Inventory:
+    description: Stock and goods tracking
+    typical_analysis: Inventory optimization
+    priority: Medium
+    priority_rationale: Important for supply-chain use cases; low priority otherwise
+    subtypes: [StockLevel, SKU, Warehouse, ReorderPoint, Batch/LotNumber, ExpiryInfo]
+
+  Resource:
+    description: Allocatable assets used in operations
+    typical_analysis: Utilization and capacity planning
+    priority: Medium
+    priority_rationale: Drives utilization/capacity features; situational by use case
+    subtypes: [Personnel, Equipment, Material, Allocation, Capacity, Utilization]
+
+  Maintenance:
+    description: Asset upkeep and service history
+    typical_analysis: Predictive maintenance
+    priority: High
+    priority_rationale: Central to predictive-maintenance use cases; low priority otherwise
+    subtypes: [ScheduledMaintenance, Downtime, RepairHistory, WarrantyInfo, FailureMode]
+
+  Quality:
+    description: Conformance and defect tracking
+    typical_analysis: Statistical process control (SPC), quality trends
+    priority: High
+    priority_rationale: Directly tied to defect/quality-prediction use cases
+    subtypes: [DefectRate, ComplianceCheck, Inspection, CertificationStatus, ToleranceRange]
+
+  Risk:
+    description: Exposure and mitigation attributes
+    typical_analysis: Risk assessment, anomaly detection
+    priority: High
+    priority_rationale: Directly tied to risk/fraud-prediction use cases
+    subtypes: [ProbabilityOfFailure, ImpactSeverity, RiskCategory, MitigationPlan, ExposureLevel]
+
+  Relationship:
+    description: Links between entities, capturing which fields are connected and the nature/reason for that link
+    priority: Medium
+    priority_rationale: Useful for graph/network features but requires extra joins to exploit
+    structure:
+      related_field: Name of the other field this field is linked to
+      relationship_type: [OneToOne, OneToMany, ManyToMany, ParentChild, Association, DependencyLink]
+      explanation: Free-text description of why/how the two fields are related (e.g. "CustomerID links to OrderID: one customer can place many orders")
+
+  Hierarchical:
+    description: Structural position within a tree or org
+    priority: Medium
+    priority_rationale: Useful for rollup/level-based features; situational by use case
+    subtypes: [TreePath, Level, ParentID, OrgStructure, Rollup]
+
+  Derived:
+    description: Fields computed from other fields
+    priority: High
+    priority_rationale: Already-engineered signal, often more directly usable than the raw fields behind it
+    subtypes: [CalculatedField, Aggregate, RollingAverage, RatioMetric, Delta/Variance]
+
+  FeatureEngineering:
+    description: ML-ready transformations of raw fields
+    typical_analysis: Machine learning model input preparation
+    priority: Critical
+    priority_rationale: Purpose-built inputs for the model — this is the model's actual feature set
+
+  Label:
+    description: Human- or system-assigned labels used for supervised learning or annotation
+    typical_analysis: Classification evaluation
+    priority: Critical
+    priority_rationale: Ground truth the model is trained against; essential for supervised learning
+
+  Target:
+    description: Prediction objectives for modeling
+    typical_analysis: Supervised learning
+    priority: Critical
+    priority_rationale: The prediction objective itself — without it there is no ML use case
+
+  Metadata:
+    description: Information describing the data itself
+    typical_analysis: Data lineage, governance
+    priority: Low
+    priority_rationale: Useful for governance/lineage, rarely used as a modeling feature
+
+  ExternalFactor:
+    description: Outside variables influencing outcomes
+    typical_analysis: Correlation analysis, forecasting
+    priority: High
+    priority_rationale: Frequently a strong exogenous driver in forecasting use cases
+
+  Sensitive:
+    description: Data requiring restricted access/handling
+    priority: Conditional
+    priority_rationale: Governed by compliance rather than modeling value — may be required for specific use cases (e.g. fraud/credit risk) but needs masking/approval first
+    subtypes: [PII, PHI, FinancialSensitive, Confidential, LegalHold]
+
+  Media:
+    description: Non-tabular binary or rich content
+    priority: Low
+    priority_rationale: Low by default; becomes Critical when the use case is itself media-based (e.g. image classification)
+    subtypes: [Image, Video, Audio, Document, Attachment, Thumbnail]
+

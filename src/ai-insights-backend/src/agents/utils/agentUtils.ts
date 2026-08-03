@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
-import fsSync from "fs";
-import path from "path";
+import * as fsSync from "fs";
+import * as path from "path";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { AzureChatOpenAI, ChatOpenAI } from "@langchain/openai";
 import { HumanMessage } from "@langchain/core/messages";
@@ -187,6 +187,24 @@ export class AgentTraceHelper {
   }
 }
 
+export function createLiteLLMModel() {
+  if (!process.env.LITELLM_PROXY_URL) {
+    throw new Error("No LiteLLM")
+  }
+
+  const liteLLMModel = process.env.LITELLM_MODEL || process.env.LITELLM_MODEL_NAME || "gemini/gemini-3.1-pro-preview";
+
+  return new ChatOpenAI({
+    model: liteLLMModel,
+    temperature: 0.4,
+    maxTokens: 32000,
+    configuration:{
+      apiKey: process.env.LITELLM_VIRTUAL_KEY,
+      baseURL: process.env.LITELLM_PROXY_URL
+    }
+  });
+}
+
 export function createGeminiModel() {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {
@@ -248,6 +266,9 @@ export function getModel(): SupportedChatModel | null {
   } else if (provider === "openai") {
     const openai = createOpenAIModel();
     if (openai) return openai;
+  } else if (provider === "litellm") {
+    const litellm = createLiteLLMModel();
+    if (litellm) return litellm;
   }
 
   return createGeminiModel() || createAzureOpenAIModel() || createOpenAIModel();
@@ -269,9 +290,11 @@ export function extractModelText(response: unknown): string {
   return JSON.stringify(content ?? response ?? {});
 }
 
+import * as yaml from "js-yaml";
+
 export function parseJsonObject<T extends Record<string, unknown>>(rawText: string, fallback: T): T {
   const normalizedText = rawText
-    .replace(/^```(?:json)?/i, "")
+    .replace(/^```(?:json|yaml|yml)?/i, "")
     .replace(/```$/i, "")
     .trim();
 
@@ -279,9 +302,22 @@ export function parseJsonObject<T extends Record<string, unknown>>(rawText: stri
     return fallback;
   }
 
-  const parsed = JSON.parse(normalizedText);
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-    return parsed as T;
+  try {
+    const yamlParsed = yaml.load(normalizedText);
+    if (yamlParsed && typeof yamlParsed === "object" && !Array.isArray(yamlParsed)) {
+      return yamlParsed as T;
+    }
+  } catch {
+    // Fallback to JSON parse below
+  }
+
+  try {
+    const parsed = JSON.parse(normalizedText);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as T;
+    }
+  } catch {
+    // Ignore error
   }
 
   return fallback;
