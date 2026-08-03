@@ -111,7 +111,7 @@ export function WorkspaceSwitcherDropdown({
         className="inline-flex h-9 items-center gap-2 rounded-lg bg-surface-muted px-3 text-sm font-medium text-foreground shadow-soft transition-[transform,box-shadow] hover:shadow-soft-hover max-w-[220px]"
       >
         {selected?.isDefault && (
-          <span className="text-primary opacity-70 shrink-0">{LockIcon}</span>
+          <span className="text-primary dark:text-white/80 opacity-90 shrink-0">{LockIcon}</span>
         )}
         <span className="truncate">{selected?.name ?? "Select workspace"}</span>
         <ChevronIcon open={open} />
@@ -137,7 +137,9 @@ export function WorkspaceSwitcherDropdown({
                 aria-selected={isActive}
                 onClick={() => handleSelect(workspace.id)}
                 className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
-                  isActive ? "bg-primary/10 text-primary" : "text-foreground hover:bg-background"
+                  isActive
+                    ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white font-semibold"
+                    : "text-foreground hover:bg-background dark:hover:bg-white/5"
                 }`}
               >
                 <span className="flex items-center gap-2 truncate min-w-0">
@@ -152,7 +154,7 @@ export function WorkspaceSwitcherDropdown({
                   )}
                 </span>
                 {isActive && (
-                  <span className="text-primary shrink-0">{CheckIcon}</span>
+                  <span className="text-primary dark:text-white shrink-0">{CheckIcon}</span>
                 )}
               </button>
             );
@@ -163,7 +165,7 @@ export function WorkspaceSwitcherDropdown({
           <button
             type="button"
             onClick={handleCreate}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-primary transition-colors hover:bg-background"
+            className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-sm font-medium text-primary dark:text-white transition-colors hover:bg-background dark:hover:bg-white/5"
           >
             {PlusIcon}
             <span>Create workspace</span>

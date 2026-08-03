@@ -58,14 +58,6 @@ export interface UserProfile {
   tasksCount: number;
 }
 
-export interface SystemRole {
-  id: string;
-  name: string;
-  readSources: boolean;
-  modifyConnectors: boolean;
-  systemConfig: boolean;
-}
-
 export interface Workspace {
   id: string;
   name: string;
@@ -94,9 +86,6 @@ interface AppContextType {
   isSyncingAll: boolean;
   userProfile: UserProfile;
   updateUserProfile: (profile: Partial<UserProfile>) => void;
-  systemRoles: SystemRole[];
-  togglePermission: (roleId: string, permissionKey: "readSources" | "modifyConnectors" | "systemConfig") => void;
-  addSystemRole: (name: string) => void;
   testConnection: (type: DataSource["type"], config: ConnectionConfig) => Promise<{ success: boolean; message: string; latencyMs: number }>;
   showAlert: (config: { title: string; message: string; type: "success" | "error" | "info"; logs?: string }) => void;
   showConfirm: (config: { title: string; message: string; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
@@ -104,23 +93,6 @@ interface AppContextType {
 }
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
-
-const INITIAL_ROLES: SystemRole[] = [
-  {
-    id: "admin",
-    name: "Administrator",
-    readSources: true,
-    modifyConnectors: true,
-    systemConfig: true,
-  },
-  {
-    id: "user",
-    name: "Standard User",
-    readSources: true,
-    modifyConnectors: true,
-    systemConfig: false,
-  },
-];
 
 export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:4000/api";
 
@@ -147,11 +119,16 @@ async function fetchWithRetry(url: string, options?: RequestInit, retries = 5, d
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
   const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
-  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState<string>("default");
+  const [activeWorkspaceId, setActiveWorkspaceIdState] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("activeWorkspaceId");
+      if (saved) return saved;
+    }
+    return "default";
+  });
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
-  const [systemRoles, setSystemRoles] = useState<SystemRole[]>(INITIAL_ROLES);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
 
   // Message Modal state
@@ -203,13 +180,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         if (res.ok) {
           const data: Workspace[] = await res.json();
           setWorkspaces(data);
-          // Set active to the default workspace if currently on a stale id
-          const defaultWs = data.find((w) => w.isDefault);
-          if (defaultWs) {
-            setActiveWorkspaceIdState((prev) => {
-              // Keep selection if it still exists
-              return data.some((w) => w.id === prev) ? prev : defaultWs.id;
-            });
+
+          if (data.length > 0) {
+            const savedWsId = typeof window !== "undefined" ? localStorage.getItem("activeWorkspaceId") : null;
+            const hasSaved = savedWsId && data.some((w) => w.id === savedWsId);
+
+            if (hasSaved) {
+              // Land on current workspace user was in (default or custom)
+              setActiveWorkspaceIdState(savedWsId!);
+            } else {
+              // First load rules:
+              // If there are no workspaces other than Default workspace then load default workspace
+              // else load the first available workspace in the list.
+              const defaultWs = data.find((w) => w.isDefault || w.id === "default");
+              const nonDefaultWorkspaces = data.filter((w) => !w.isDefault && w.id !== "default");
+
+              let targetId: string;
+              if (nonDefaultWorkspaces.length === 0) {
+                targetId = defaultWs ? defaultWs.id : data[0].id;
+              } else {
+                targetId = data[0].id;
+              }
+
+              setActiveWorkspaceIdState(targetId);
+              if (typeof window !== "undefined") {
+                localStorage.setItem("activeWorkspaceId", targetId);
+              }
+            }
           }
         }
       } catch (err) {
@@ -237,10 +234,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (activeWorkspaceId) fetchWorkspaceData(activeWorkspaceId);
   }, [activeWorkspaceId, fetchWorkspaceData]);
 
-  // ─── Workspace switching (auto-saves by fetching fresh state) ──────────────
+  // ─── Workspace switching ────────────────────────────────────────────────────
   const setActiveWorkspaceId = (id: string) => {
     setActiveWorkspaceIdState(id);
-    // fetchWorkspaceData is triggered by the useEffect above on id change
+    if (typeof window !== "undefined") {
+      localStorage.setItem("activeWorkspaceId", id);
+    }
   };
 
   // ─── Create workspace ───────────────────────────────────────────────────────
@@ -253,7 +252,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message || "Failed to create workspace");
     setWorkspaces((prev) => [...prev, data]);
-    setActiveWorkspaceIdState(data.id);
+    setActiveWorkspaceId(data.id);
   };
 
   // ─── Delete workspace ───────────────────────────────────────────────────────
@@ -264,9 +263,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       showAlert({ title: "Delete Failed", message: data.message || "Could not delete workspace.", type: "error" });
       return;
     }
-    setWorkspaces((prev) => prev.filter((w) => w.id !== id));
-    // Switch to default if we just deleted the active workspace
-    setActiveWorkspaceIdState((prev) => (prev === id ? "default" : prev));
+    setWorkspaces((prev) => {
+      const remaining = prev.filter((w) => w.id !== id);
+      if (activeWorkspaceId === id && remaining.length > 0) {
+        const nonDefault = remaining.filter((w) => !w.isDefault && w.id !== "default");
+        const defaultWs = remaining.find((w) => w.isDefault || w.id === "default");
+        const nextId = nonDefault.length === 0 ? (defaultWs ? defaultWs.id : remaining[0].id) : remaining[0].id;
+        setActiveWorkspaceId(nextId);
+      }
+      return remaining;
+    });
   };
 
   // ─── Projects ───────────────────────────────────────────────────────────────
@@ -501,21 +507,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setUserProfile((prev) => ({ ...prev, ...profile }));
   };
 
-  const togglePermission = (roleId: string, permissionKey: "readSources" | "modifyConnectors" | "systemConfig") => {
-    setSystemRoles((prev) =>
-      prev.map((role) => {
-        if (role.id !== roleId) return role;
-        return { ...role, [permissionKey]: !role[permissionKey] };
-      })
-    );
-  };
-
-  const addSystemRole = (name: string) => {
-    const id = name.toLowerCase().replace(/\s+/g, "-") + "-" + Date.now();
-    const newRole: SystemRole = { id, name, readSources: true, modifyConnectors: false, systemConfig: false };
-    setSystemRoles((prev) => [...prev, newRole]);
-  };
-
   return (
     <AppContext.Provider
       value={{
@@ -539,9 +530,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         isSyncingAll,
         userProfile,
         updateUserProfile,
-        systemRoles,
-        togglePermission,
-        addSystemRole,
         testConnection,
         showAlert,
         showConfirm,
