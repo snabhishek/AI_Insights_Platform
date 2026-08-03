@@ -4,6 +4,8 @@ fields:
     description: Establishes the industry/domain and business use case the insights platform is built for. Tier1/Tier2 may be suggested by the agent based on the data, but must be confirmed by the user. UseCase and UseCaseDescription are user-provided.
     priority: Contextual
     priority_rationale: Not an accessed data field itself — it supplies the use-case context that recalibrates every other field's priority
+    Tier1: User Provided
+    Tier2: User Provided
     UseCase: Short name of the use case the user wants the platform to address, as provided by the user — e.g. "Customer Churn Prediction", "Predictive Maintenance"
     UseCaseDescription: User-provided free-text explanation of the use case — goals, context, and what "insight" means for this platform
 

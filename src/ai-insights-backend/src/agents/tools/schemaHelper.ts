@@ -72,15 +72,15 @@ export function resolvePackageFilePath(filename: string): string {
 }
 
 /**
- * Loads the static field_schema.yaml content from the packages folder.
+ * Loads the static Schema.yaml content from the packages folder.
  */
 export async function loadFieldSchemaYaml(): Promise<string> {
-  const schemaPath = resolvePackageFilePath("field_schema.yaml");
+  const schemaPath = resolvePackageFilePath("Schema.yaml");
   if (fsSync.existsSync(schemaPath)) {
     try {
       return await fs.readFile(schemaPath, "utf-8");
     } catch (err) {
-      console.warn(`Failed to read field_schema.yaml at ${schemaPath}:`, err);
+      console.warn(`Failed to read Schema.yaml at ${schemaPath}:`, err);
     }
   }
   return "";
@@ -131,11 +131,186 @@ export async function writeResolvedSchemaYaml(
       unmappedDatasetFields: payload.unmappedDatasetFields || []
     };
 
-    const yamlContent = yaml.dump(schemaData, { indent: 2 });
+    const yamlContent = yaml.dump(schemaData, { indent: 2, lineWidth: -1, noRefs: true });
     await fs.writeFile(filePath, yamlContent, 'utf-8');
   } catch (error) {
     console.error(`Failed to write resolved schema YAML file to ${filePath}:`, error);
   }
+}
+
+export interface ProjectSchemaInput {
+  name: string;
+  domain?: string;
+  subDomain?: string;
+  useCase?: string;
+}
+
+/**
+ * Creates the project folder inside packages and generates the initial schema file
+ * by copying Schema.yaml and updating the DomainKnowledge hierarchy fields.
+ */
+export async function createProjectSchemaFile(
+  workspaceName: string,
+  projectInput: ProjectSchemaInput
+): Promise<string> {
+  const packagesDir = getPackagesDir();
+  const rawYaml = await loadFieldSchemaYaml();
+  
+  let schemaObj: any = {};
+  if (rawYaml) {
+    try {
+      schemaObj = yaml.load(rawYaml) || {};
+    } catch (e) {
+      console.warn("[createProjectSchemaFile] Failed to parse Schema.yaml, initializing empty object", e);
+      schemaObj = {};
+    }
+  }
+
+  if (!schemaObj.fields) {
+    schemaObj.fields = {};
+  }
+  if (!schemaObj.fields.DomainKnowledge) {
+    schemaObj.fields.DomainKnowledge = {};
+  }
+
+  const dk = schemaObj.fields.DomainKnowledge;
+  dk.Tier1 = projectInput.domain && projectInput.domain.trim().length > 0 ? projectInput.domain.trim() : (dk.Tier1 || "User Provided");
+  dk.Tier2 = projectInput.subDomain && projectInput.subDomain.trim().length > 0 ? projectInput.subDomain.trim() : (dk.Tier2 || "User Provided");
+  dk.UseCase = projectInput.name && projectInput.name.trim().length > 0 ? projectInput.name.trim() : (dk.UseCase || "");
+  dk.UseCaseDescription = projectInput.useCase && projectInput.useCase.trim().length > 0 ? projectInput.useCase.trim() : (dk.UseCaseDescription || "");
+
+  const cleanWsName = sanitizeName(workspaceName);
+  const cleanProjectTitle = sanitizeName(projectInput.name);
+  const folderName = `${cleanWsName}-${cleanProjectTitle}`;
+  const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
+  const timestamp = generateDateTimeStamp();
+  const fileName = `${useCaseSlug}_schema_${timestamp}.yaml`;
+
+  const targetDir = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas");
+  await fs.mkdir(targetDir, { recursive: true });
+
+  const targetPath = path.resolve(targetDir, fileName);
+  const dumpedYaml = yaml.dump(schemaObj, { indent: 2, lineWidth: -1, noRefs: true });
+  await fs.writeFile(targetPath, dumpedYaml, "utf-8");
+
+  console.info(`[createProjectSchemaFile] Created project schema file at ${targetPath}`);
+  return targetPath;
+}
+
+/**
+ * Searches for an existing schema file under packages for the given project folder convention.
+ * If found, updates it with Schema Resolver findings; if not found, creates and populates it.
+ */
+export async function updateOrCreateProjectSchemaFile(
+  workspaceName: string,
+  projectTitle: string,
+  projectInput: ProjectSchemaInput,
+  payload: ResolvedSchemaPayload
+): Promise<string> {
+  const packagesDir = getPackagesDir();
+  const cleanWsName = sanitizeName(workspaceName);
+  const cleanProjectTitle = sanitizeName(projectTitle);
+  const folderName = `${cleanWsName}-${cleanProjectTitle}`;
+  const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
+
+  const candidateDirs = [
+    path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas"),
+    path.resolve(packagesDir, folderName, "Schemas"),
+  ];
+
+  let targetDir: string | null = null;
+  let existingFilePath: string | null = null;
+
+  for (const cDir of candidateDirs) {
+    if (fsSync.existsSync(cDir)) {
+      targetDir = cDir;
+      try {
+        const files = await fs.readdir(cDir);
+        const yamlFiles = files
+          .filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"))
+          .sort();
+        if (yamlFiles.length > 0) {
+          existingFilePath = path.resolve(cDir, yamlFiles[yamlFiles.length - 1]);
+        }
+      } catch (err) {
+        console.warn(`[updateOrCreateProjectSchemaFile] Failed readdir on ${cDir}:`, err);
+      }
+      break;
+    }
+  }
+
+  let schemaObj: any = {};
+  let targetFilePath: string;
+
+  if (existingFilePath && fsSync.existsSync(existingFilePath)) {
+    targetFilePath = existingFilePath;
+    try {
+      const content = await fs.readFile(existingFilePath, "utf-8");
+      schemaObj = yaml.load(content) || {};
+    } catch (err) {
+      console.warn(`[updateOrCreateProjectSchemaFile] Failed to parse existing schema file ${existingFilePath}:`, err);
+      schemaObj = {};
+    }
+  } else {
+    if (!targetDir) {
+      targetDir = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas");
+    }
+    await fs.mkdir(targetDir, { recursive: true });
+    const timestamp = generateDateTimeStamp();
+    const fileName = `${useCaseSlug}_schema_${timestamp}.yaml`;
+    targetFilePath = path.resolve(targetDir, fileName);
+
+    const rawYaml = await loadFieldSchemaYaml();
+    if (rawYaml) {
+      try {
+        schemaObj = yaml.load(rawYaml) || {};
+      } catch (e) {
+        schemaObj = {};
+      }
+    }
+  }
+
+  if (!schemaObj.fields) {
+    schemaObj.fields = {};
+  }
+  if (!schemaObj.fields.DomainKnowledge) {
+    schemaObj.fields.DomainKnowledge = {};
+  }
+
+  const dk = schemaObj.fields.DomainKnowledge;
+  if (projectInput.domain && projectInput.domain.trim().length > 0) dk.Tier1 = projectInput.domain.trim();
+  if (projectInput.subDomain && projectInput.subDomain.trim().length > 0) dk.Tier2 = projectInput.subDomain.trim();
+  if (projectInput.name && projectInput.name.trim().length > 0) dk.UseCase = projectInput.name.trim();
+  if (projectInput.useCase && projectInput.useCase.trim().length > 0) dk.UseCaseDescription = projectInput.useCase.trim();
+
+  schemaObj.generatedAt = new Date().toISOString();
+  schemaObj.resolvedTables = payload.resolvedTables || [];
+  schemaObj.strategy = payload.strategy || "inspect-and-map";
+
+  const groupedTopics: Record<string, any[]> = {};
+  for (const mapping of payload.mappings || []) {
+    const topic = mapping.targetTopic || "General";
+    if (!groupedTopics[topic]) {
+      groupedTopics[topic] = [];
+    }
+    groupedTopics[topic].push({
+      field: mapping.datasetField,
+      subtype: mapping.subtype || null,
+      priority: mapping.priority || "Medium",
+      priorityRationale: mapping.priorityRationale || null,
+      sensitiveSubtype: mapping.sensitiveSubtype || null,
+      relationship: mapping.relationship || null,
+    });
+  }
+
+  schemaObj.topics = groupedTopics;
+  schemaObj.mappings = payload.mappings || [];
+  schemaObj.unmappedDatasetFields = payload.unmappedDatasetFields || [];
+
+  const dumpedYaml = yaml.dump(schemaObj, { indent: 2, lineWidth: -1, noRefs: true });
+  await fs.writeFile(targetFilePath, dumpedYaml, "utf-8");
+  console.info(`[updateOrCreateProjectSchemaFile] Updated project schema file at ${targetFilePath}`);
+  return targetFilePath;
 }
 
 /**
@@ -160,3 +335,38 @@ export function generateDateTimeStamp(): string {
   const seconds = String(now.getSeconds()).padStart(2, '0');
   return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
+
+/**
+ * Deletes the project folder inside packages (e.g. packages/ProjectFiles/WorkspaceName-UseCaseTitle or packages/WorkspaceName-UseCaseTitle).
+ */
+export async function deleteProjectSchemaFolder(
+  workspaceName: string,
+  projectName: string
+): Promise<boolean> {
+  try {
+    const packagesDir = getPackagesDir();
+    const cleanWsName = sanitizeName(workspaceName);
+    const cleanProjectTitle = sanitizeName(projectName);
+    const folderName = `${cleanWsName}-${cleanProjectTitle}`;
+
+    const candidateDirs = [
+      path.resolve(packagesDir, "ProjectFiles", folderName),
+      path.resolve(packagesDir, folderName),
+    ];
+
+    let deletedAny = false;
+    for (const dir of candidateDirs) {
+      if (fsSync.existsSync(dir)) {
+        await fs.rm(dir, { recursive: true, force: true });
+        console.info(`[deleteProjectSchemaFolder] Deleted project folder at ${dir}`);
+        deletedAny = true;
+      }
+    }
+    return deletedAny;
+  } catch (error) {
+    console.error(`[deleteProjectSchemaFolder] Error deleting project folder for ${workspaceName}-${projectName}:`, error);
+    return false;
+  }
+}
+
+
