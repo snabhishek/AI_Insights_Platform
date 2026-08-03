@@ -2,6 +2,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
+import pl from "nodejs-polars";
 
 type ScalarValue = string | number | boolean | null | undefined;
 
@@ -302,23 +303,39 @@ export const createDataProfileTool = (connectionTester: ConnectionTesterService)
           const rowsToSample = filterRowsByRelationships(rows, tableName, inspectionTables, sampledRowsByTable);
           const sampledRows = buildHybridSample(rowsToSample, Math.max(1, Math.floor(sampleSize)), seed + validTables.indexOf(tableName));
           sampledRowsByTable.set(tableName, sampledRows);
+          const df = pl.DataFrame(sampledRows);
           const columnProfiles: ColumnProfile[] = headers.map((header) => {
-            const values = sampledRows.map((row) => row?.[header]);
-            const normalized = values.map((value) => normalizeCellValue(value));
-            const numericValues = values
-              .map((value) => toNumber(value))
-              .filter((value): value is number => typeof value === "number");
-            const nullCount = values.filter((value) => value === null || value === undefined).length;
-            const blankCount = normalized.filter((value) => value.length === 0).length;
-            const placeholderCount = values.filter((value) => isPlaceholder(value)).length;
-            const distinctValues = new Set(normalized.filter((value) => value.length > 0));
+            const s = df.getColumn(header);
+            
+            const nullCount = s.isNull().cast(pl.Int32).sum() as number;
+            
+            const nonNullStrS = s.filter(s.isNotNull()).cast(pl.Utf8);
+            const blankCount = nonNullStrS.str.strip().eq("").cast(pl.Int32).sum() as number;
+            
+            const nonNullBlankStrS = nonNullStrS.filter(nonNullStrS.str.strip().neq(""));
+            const placeholderCount = nonNullBlankStrS.str.strip().str.toLowerCase().isIn(Array.from(PLACEHOLDER_VALUES)).cast(pl.Int32).sum() as number;
+            
+            const normalizedArray = nonNullBlankStrS.str.strip().str.toLowerCase().toArray().map(String);
+            const distinctValues = new Set(normalizedArray);
+            
             const frequencyDistribution = summarizeFrequency(Array.from(distinctValues));
             const topValues = summarizeFrequency(Array.from(distinctValues));
-            const inconsistentCategoricalValues = normalized.filter((value) => value.length > 0 && /^\d+(\.\d+)?$/.test(value) === false && value.length > 20).slice(0, 3);
+            
+            const inconsistentCategoricalValues = normalizedArray.filter((value: string) => /^\d+(\.\d+)?$/.test(value) === false && value.length > 20).slice(0, 3);
+            
+            const totalMissing = nullCount + blankCount + placeholderCount;
             const completenessPercentage = sampledRows.length > 0
-              ? Number(((sampledRows.length - (nullCount + blankCount + placeholderCount)) / sampledRows.length * 100).toFixed(2))
+              ? Number(((sampledRows.length - totalMissing) / sampledRows.length * 100).toFixed(2))
               : 100;
+
+            let numericValues: number[] = [];
+            try {
+              numericValues = s.filter(s.isNotNull()).cast(pl.Float64).filter(s.filter(s.isNotNull()).isNotNull()).toArray().map(Number);
+            } catch {
+              // Ignore
+            }
             const statistics = buildStatistics(numericValues);
+
             return {
               name: header,
               nullCount,
@@ -403,7 +420,7 @@ export const createDataProfileTool = (connectionTester: ConnectionTesterService)
       description: "Profile selected tables using deterministic hybrid sampling and structured metrics derived from the inspection output.",
       schema: z.object({
         connectorType: z.string().describe("Connector type"),
-        connectionConfig: z.object({}).passthrough().optional().describe("Connection settings for the connector"),
+        connectionConfig: z.record(z.string(), z.any()).optional().describe("Connection settings for the connector"),
         tables: z.array(z.string()).optional().describe("Tables to profile"),
         inspectionOutput: z.record(z.string(), z.any()).optional().describe("Inspection output context used for state validation"),
         seed: z.number().optional().describe("Deterministic seed value for repeated sampling"),
