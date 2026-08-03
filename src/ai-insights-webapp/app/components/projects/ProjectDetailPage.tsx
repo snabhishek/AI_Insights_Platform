@@ -3,7 +3,6 @@
 import React, { useState } from "react";
 import { Project, DataSource, UserProfile } from "../providers/AppContext";
 import { PipelineStatuses, RunStatus, Workflow } from "./types";
-import ProjectDataSources from "./ProjectDataSources";
 import WorkflowPipeline, { getMainStepId } from "./WorkflowPipeline";
 import CardModal from "../shared/ui/CardModal";
 import { PIPELINE_STEPS } from "./constants";
@@ -144,9 +143,6 @@ export default function ProjectDetailPage({
     projectSources.length > 0
       ? projectSources
       : buildMockSources(project.workspaceId);
-  projectSources.length > 0
-    ? projectSources
-    : buildMockSources(project.workspaceId);
 
   return (
     <>
@@ -164,7 +160,7 @@ export default function ProjectDetailPage({
         </nav>
 
         {/* ── Project Header ── */}
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-6">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
@@ -175,6 +171,28 @@ export default function ProjectDetailPage({
                 Active
               </span>
             </div>
+
+            {/* Domain & Sub-domain inline pills */}
+            {(project.domain || project.subDomain) && (
+              <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                {project.domain && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary text-white shadow-sm">
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-white">
+                      <circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
+                    </svg>
+                    {project.domain}
+                  </span>
+                )}
+                {project.subDomain && (
+                  <>
+                    <span className="text-muted-foreground/40 text-xs select-none">›</span>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/90 text-white shadow-sm">
+                      {project.subDomain}
+                    </span>
+                  </>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Icon action buttons */}
@@ -218,89 +236,113 @@ export default function ProjectDetailPage({
           </div>
         </div>
 
-        {/* ── Modernized Top Metadata Grid ── */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-4 mb-8 select-none">
-          {/* Owner */}
-          <div className="flex flex-col gap-1.5 p-3.5 bg-surface border border-border rounded-xl shadow-soft">
-            <span className="font-bold text-muted-foreground uppercase tracking-wider text-[9px]">Owner</span>
-            <span className="font-semibold text-foreground text-xs truncate">{userProfile.name}</span>
-          </div>
-
-          {/* Environment */}
-          <div className="flex flex-col gap-1.5 p-3.5 bg-surface border border-border rounded-xl shadow-soft">
-            <span className="font-bold text-muted-foreground uppercase tracking-wider text-[9px]">Environment</span>
-            <span className="font-semibold text-foreground text-xs">Production</span>
-          </div>
-
-          {/* Schedule */}
-          <div className="flex flex-col gap-1.5 p-3.5 bg-surface border border-border rounded-xl shadow-soft">
-            <span className="font-bold text-muted-foreground uppercase tracking-wider text-[9px]">Schedule</span>
-            <span className="font-semibold text-foreground text-xs truncate">Daily at 02:00 AM (UTC)</span>
-          </div>
-
-          {/* Notifications */}
-          <div className="flex flex-col gap-1.5 p-3.5 bg-surface border border-border rounded-xl shadow-soft">
-            <span className="font-bold text-muted-foreground uppercase tracking-wider text-[9px]">Notifications</span>
-            <span className="font-semibold text-foreground text-xs">On</span>
-          </div>
-
-          {/* Tags */}
-          <div className="flex flex-col gap-1.5 p-3.5 bg-surface border border-border rounded-xl shadow-soft">
-            <span className="font-bold text-muted-foreground uppercase tracking-wider text-[9px]">Tags</span>
-            <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
-              {["Sales", "Analytics", "Executive"].map((tag) => (
-                <span key={tag} className="px-2 py-0.5 rounded-md bg-surface-muted border border-border text-[9px] font-bold text-muted-foreground">
-                  {tag}
-                </span>
-              ))}
-              <button
-                onClick={onAddTag}
-                className="w-4 h-4 rounded border border-dashed border-border flex items-center justify-center text-muted-foreground hover:border-primary hover:text-primary transition-colors cursor-pointer text-[10px] font-bold select-none"
-                title="Add Tag"
-              >
-                +
-              </button>
-            </div>
-          </div>
-        </div>
-
         {/* ── Main Layout Grid ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
 
-          {/* Left Column: Data Sources & Project Description */}
-          <div className="col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-6">
-            <ProjectDataSources
-              displaySources={displaySources}
-              onManage={onManageSources}
-              onViewDetails={(ds) =>
-                showAlert({
-                  title: ds.name,
-                  message: `Connector properties for ${ds.name}. Details: ${JSON.stringify(ds.connectionConfig ?? {})}`,
-                  type: "info",
-                })
-              }
-            />
+          {/* Left Column: Data Sources & Use Case — flat, no card wrappers */}
+          <div className="col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-8">
 
-            {/* Project Use Case Description Panel */}
-            <div className="flex flex-col bg-surface border border-border rounded-2xl p-5 shadow-soft select-none">
-              <div className="flex items-center justify-between mb-3 pb-2 border-b border-border">
+            {/* ── Data Sources Section ── */}
+            <div className="border border-border rounded-lg shadow-sm bg-background p-5">
+              {/* Header with divider */}
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
                 <div>
-                  <h2 className="text-sm font-bold text-foreground">
-                    Project Use Case
+                  <h2 className="text-base font-bold text-foreground leading-tight">
+                    Data Sources ({displaySources.length})
                   </h2>
-                  <p className="text-[9px] text-muted-foreground mt-0.5">
-                    Detailed description of project objectives.
-                  </p>
+                  <p className="text-xs text-muted-foreground mt-0.5">Connected to this project.</p>
                 </div>
+              </div>
+
+              <div className="space-y-2 mb-4">
+                {displaySources.map((ds) => {
+                  const category = (() => {
+                    const s = ds.subtext.toLowerCase();
+                    if (s.includes("warehouse")) return "Warehouse";
+                    if (s.includes("database")) return "Database";
+                    if (s.includes("api")) return "API";
+                    if (s.includes("cloud") || s.includes("storage")) return "Cloud";
+                    if (s.includes("file")) return "File";
+                    return "Database";
+                  })();
+                  const detail = ds.connectionConfig?.host
+                    ? `${ds.connectionConfig.database ?? "Database"} · ${ds.connectionConfig.host}${ds.connectionConfig.port ? `:${ds.connectionConfig.port}` : ""}`
+                    : ds.connectionConfig?.fileName ?? category;
+
+                  return (
+                    <div
+                      key={ds.id}
+                      className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-border hover:border-border/80 transition-colors"
+                    >
+                      <div className="flex items-center gap-3 overflow-hidden">
+                        <div className="w-8 h-8 rounded-lg bg-surface-muted border border-border flex items-center justify-center shrink-0 text-[10px] font-bold text-muted-foreground uppercase">
+                          {ds.name.slice(0, 2)}
+                        </div>
+                        <div className="flex flex-col overflow-hidden">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-foreground truncate max-w-[120px]" title={ds.name}>
+                              {ds.name}
+                            </span>
+                            <span className="px-1.5 py-0.5 rounded bg-surface-muted border border-border text-[9px] font-semibold text-muted-foreground uppercase shrink-0">
+                              {category}
+                            </span>
+                          </div>
+                          <span className="text-[10px] text-muted-foreground truncate mt-0.5" title={detail}>{detail}</span>
+                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5 flex items-center gap-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                            Connected
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() =>
+                          showAlert({
+                            title: ds.name,
+                            message: `Connector properties for ${ds.name}. Details: ${JSON.stringify(ds.connectionConfig ?? {})}`,
+                            type: "info",
+                          })
+                        }
+                        className="w-7 h-7 rounded-lg border border-border text-muted-foreground hover:bg-surface-muted hover:border-border/60 flex items-center justify-center cursor-pointer transition-colors shrink-0 focus:outline-none"
+                        title="View details"
+                      >
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
+                        </svg>
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="pt-4 mt-1 border-t border-border">
+                <button
+                  onClick={onManageSources}
+                  className="w-full py-2 border border-dashed border-border hover:border-primary text-muted-foreground hover:text-primary rounded-xl text-xs font-semibold cursor-pointer transition-colors flex items-center justify-center gap-2"
+                >
+                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.62V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
+                Manage Data Sources
+                </button>
+              </div>
+            </div>
+
+            {/* ── Use Case Section ── */}
+            <div className="border border-border rounded-lg shadow-sm bg-background p-5">
+              {/* Header with divider */}
+              <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
+                <h2 className="text-base font-bold text-foreground leading-tight">Project Use Case</h2>
                 {!isEditingUseCase && (
                   <button
                     onClick={() => {
                       setEditedUseCaseText(project.useCase || "");
                       setIsEditingUseCase(true);
                     }}
-                    className="px-2.5 py-1 text-xs font-bold rounded-lg border border-border bg-surface hover:bg-surface-muted text-primary cursor-pointer transition-colors"
+                    className="px-3 py-1 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 cursor-pointer transition-colors shadow-sm"
                   >
-                    Edit Use Case
+                    Edit
                   </button>
                 )}
               </div>
@@ -311,7 +353,7 @@ export default function ProjectDetailPage({
                     value={editedUseCaseText}
                     onChange={(e) => setEditedUseCaseText(e.target.value)}
                     rows={4}
-                    className="w-full text-xs p-3 rounded-xl border border-border bg-surface-muted text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 resize-y"
+                    className="w-full text-xs p-3 rounded-xl border border-border bg-surface-muted text-foreground focus:outline-none focus:ring-0 resize-y"
                     placeholder="Describe your use case goals..."
                   />
                   <div className="flex items-center justify-end gap-2 flex-wrap">
@@ -326,7 +368,7 @@ export default function ProjectDetailPage({
                         if (onSaveUseCase) await onSaveUseCase(editedUseCaseText);
                         setIsEditingUseCase(false);
                       }}
-                      className="px-3 py-1.5 text-xs font-bold rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground cursor-pointer"
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground cursor-pointer"
                     >
                       Save Only
                     </button>
@@ -340,20 +382,18 @@ export default function ProjectDetailPage({
                           onRunWorkflow();
                         }
                       }}
-                      className="px-3 py-1.5 text-xs font-bold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-sm"
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-sm"
                     >
                       Save & Re-Run Workflow
                     </button>
                   </div>
                 </div>
               ) : (
-                <div className="flex flex-col gap-3">
-                  <div className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                    {project.useCase
-                      ? project.useCase.replace(/[#*`_[\]]/g, "")
-                      : "Analyze sales trends, top-performing regions, and product effectiveness across all channels."}
-                  </div>
-                </div>
+                <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                  {project.useCase
+                    ? project.useCase.replace(/[#*`_[\]]/g, "")
+                    : "Analyze sales trends, top-performing regions, and product effectiveness across all channels."}
+                </p>
               )}
             </div>
           </div>

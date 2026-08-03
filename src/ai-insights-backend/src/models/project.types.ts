@@ -6,6 +6,8 @@ export interface Project {
   initials: string;
   workspaceId: string;
   useCase?: string;
+  domain?: string;
+  subDomain?: string;
   agentState?: Record<string, unknown>;
   createdAt: string;
 }

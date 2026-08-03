@@ -25,6 +25,10 @@ import { AgentThinkingService } from "./services/ai/agentThinking.service";
 // import { AgentController } from "./controllers/agent.controller";
 import { IngestionAgentService } from "./services/ai/ingestionAgent.service";
 import { AIController } from "./controllers/ai.controller";
+import { PostgresDomainRepository } from "./repositories/domain.repository";
+import { DomainService } from "./services/domain/domain.service";
+import { DomainController } from "./controllers/domain.controller";
+import createDomainRouter from "./routes/domains";
 
 dotenv.config();
 
@@ -75,8 +79,13 @@ async function bootstrap() {
   ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService, agentThinkingService);
   aiController = new AIController(ingestionAgentService, agentThinkingService);
 
+  const domainRepository = new PostgresDomainRepository();
+  const domainService = new DomainService(domainRepository);
+  const domainController = new DomainController(domainService);
+
   // 4. Mount Main routers
   app.use("/api/connectors", createConnectorRouter(connectorController));
+  app.use("/api/domains", createDomainRouter(domainController));
   
   // Agent Router
   const agentRouter = express.Router();

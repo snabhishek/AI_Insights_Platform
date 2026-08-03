@@ -19,7 +19,7 @@
 }
 
 .dark {
-    --app-primary: #6366f1;
+    --app-primary: #111e57;
     --app-primary-foreground: #ffffff;
 
     --app-background: #0d0f12;
@@ -48,14 +48,20 @@
     --shadow-soft-hover: var(--app-shadow-soft-hover);
 }
 
-html, body {
+html,
+body {
     font-family: var(--font-sans);
     background-color: var(--app-background);
     color: var(--app-foreground);
 }
 
 /* Typography weight overrides for bold titles & headers */
-h1, h2, h3, h4, h5, h6 {
+h1,
+h2,
+h3,
+h4,
+h5,
+h6 {
     font-weight: 700 !important;
 }
 
@@ -77,6 +83,7 @@ th {
         opacity: 0;
         transform: translateY(12px) scale(0.995);
     }
+
     to {
         opacity: 1;
         transform: translateY(0) scale(1);
