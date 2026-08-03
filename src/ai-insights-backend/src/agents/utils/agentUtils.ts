@@ -1,6 +1,6 @@
 import { promises as fs } from "fs";
-import fsSync from "fs";
-import path from "path";
+import * as fsSync from "fs";
+import * as path from "path";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { AzureChatOpenAI, ChatOpenAI } from "@langchain/openai";
 import { HumanMessage } from "@langchain/core/messages";
@@ -290,9 +290,11 @@ export function extractModelText(response: unknown): string {
   return JSON.stringify(content ?? response ?? {});
 }
 
+import * as yaml from "js-yaml";
+
 export function parseJsonObject<T extends Record<string, unknown>>(rawText: string, fallback: T): T {
   const normalizedText = rawText
-    .replace(/^```(?:json)?/i, "")
+    .replace(/^```(?:json|yaml|yml)?/i, "")
     .replace(/```$/i, "")
     .trim();
 
@@ -300,9 +302,22 @@ export function parseJsonObject<T extends Record<string, unknown>>(rawText: stri
     return fallback;
   }
 
-  const parsed = JSON.parse(normalizedText);
-  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-    return parsed as T;
+  try {
+    const yamlParsed = yaml.load(normalizedText);
+    if (yamlParsed && typeof yamlParsed === "object" && !Array.isArray(yamlParsed)) {
+      return yamlParsed as T;
+    }
+  } catch {
+    // Fallback to JSON parse below
+  }
+
+  try {
+    const parsed = JSON.parse(normalizedText);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as T;
+    }
+  } catch {
+    // Ignore error
   }
 
   return fallback;
