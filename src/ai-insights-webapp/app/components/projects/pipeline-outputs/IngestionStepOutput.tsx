@@ -117,7 +117,7 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
                     key={tableKey}
                     type="button"
                     onClick={() => setSelectedTableKey(tableKey)}
-                    className={`w-full rounded-lg border px-4 py-3 text-left transition ${isSelected ? "border-indigo-500 bg-indigo-500/10" : "border-border bg-surface/50 hover:border-indigo-300 hover:bg-surface-muted/60"}`}
+                    className={`w-full rounded-lg border px-4 py-3 text-left transition ${isSelected ? "border-indigo-500 dark:border-indigo-400 bg-indigo-500/10 dark:bg-indigo-500/20" : "border-border bg-surface/50 hover:border-indigo-300 hover:bg-surface-muted/60"}`}
                   >
                     <div className="text-xs font-semibold text-foreground">{tableName}</div>
                     <div className="mt-1 text-[10px] text-muted-foreground">

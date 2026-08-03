@@ -15,16 +15,6 @@ export default function DataSourcePage() {
 
   return (
     <div className="px-6 py-8 flex flex-col gap-8">
-      {/* Title Header */}
-      <div className="flex flex-col gap-1.5">
-        <h1 className="text-3xl font-bold tracking-tight text-foreground">
-          Data Sources Library
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Connect, manage and monitor your data sources
-        </p>
-      </div>
-
       {/* Top section: Health and Connectors */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         <div className="lg:col-span-3">
