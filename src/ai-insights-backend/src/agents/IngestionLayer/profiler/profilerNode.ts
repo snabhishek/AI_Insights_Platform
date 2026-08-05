@@ -35,6 +35,26 @@ export async function profileData(connector: any, inspection: Record<string, unk
   });
   const tableNames = allTables.map((t: any) => t.name || t.tableName);
 
+  const getColName = (c: any): string => {
+    if (!c) return "unknown";
+    if (typeof c === "string") return c;
+    if (typeof c.technicalName === "string") return c.technicalName;
+    if (typeof c.name === "string") return c.name;
+    if (typeof c.name === "object" && c.name !== null) {
+      return c.name.technicalName || c.name.name || c.name.expandedName || "unknown";
+    }
+    return String(c);
+  };
+
+  const getColDataType = (c: any): string => {
+    if (!c) return "string";
+    if (typeof c.dataType === "string") return c.dataType;
+    if (typeof c.name === "object" && c.name !== null && typeof c.name.dataType === "string") {
+      return c.name.dataType;
+    }
+    return "string";
+  };
+
   const fallback = {
     status: "OK",
     tables: allTables.map((t: any) => {
@@ -42,8 +62,31 @@ export async function profileData(connector: any, inspection: Record<string, unk
       const columns = Array.isArray(t.columns) ? t.columns : [];
       return {
         tableName,
-        contentProfile: { columns: columns.map((c: any) => ({ name: c.name || c, sampleValues: [], uniqueCount: 0, dataType: c.dataType || "string" })) },
-        completenessProfile: { columns: columns.map((c: any) => ({ name: c.name || c, nullCount: 0, completeness: 1.0 })) },
+        contentProfile: {
+          columns: columns.map((c: any) => ({
+            name: getColName(c),
+            inferredType: getColDataType(c),
+            distinctCount: 0,
+            nonEmptyCount: 0,
+            totalValues: 0,
+            topValues: [],
+            patterns: [],
+            mixedTypePercent: 0,
+            categoricalOrContinuous: "unknown",
+          })),
+        },
+        completenessProfile: {
+          columns: columns.map((c: any) => ({
+            name: getColName(c),
+            nullCount: 0,
+            blankCount: 0,
+            placeholderCount: 0,
+            totalMissing: 0,
+            completenessPercent: 100,
+            missingPattern: "unknown",
+            recommendation: "Column appears complete",
+          })),
+        },
         statisticalProfile: { numericColumns: [], dateColumns: [] },
       };
     }),
@@ -62,7 +105,7 @@ export async function profileData(connector: any, inspection: Record<string, unk
 
   const inspectionSummary = allTables.map((t: any) => ({
     tableName: t.name || t.tableName,
-    columns: Array.isArray(t.columns) ? t.columns.map((c: any) => ({ name: c.name || c, dataType: c.dataType || "string", nullable: c.nullable ?? true })) : [],
+    columns: Array.isArray(t.columns) ? t.columns.map((c: any) => ({ name: getColName(c), dataType: getColDataType(c), nullable: c.nullable ?? true })) : [],
     relationships: {
       explicit: Array.isArray(t.relations) ? t.relations : [],
       inferred: Array.isArray(t.relationships?.inferred) ? t.relationships.inferred : [],
@@ -96,9 +139,45 @@ export async function profileData(connector: any, inspection: Record<string, unk
       }
     );
     await logMilestoneThinking(services, "Data Profiling", `Data profiling successfully completed for ${tableNames.length} tables.`);
+
+    // Normalize output tables to guarantee clean schema across result sources
+    const rawTables = Array.isArray(result?.tables) ? result.tables : fallback.tables;
+    const normalizedTables = rawTables.map((t: any) => {
+      const columns = Array.isArray(t?.contentProfile?.columns) ? t.contentProfile.columns : [];
+      const normalizedColumns = columns.map((c: any) => {
+        const colName = getColName(c);
+        const inferredType = c.inferredType || c.dataType || "string";
+        const distinctCount = typeof c.distinctCount === "number" ? c.distinctCount : (typeof c.uniqueCount === "number" ? c.uniqueCount : 0);
+        const topValues = Array.isArray(c.topValues)
+          ? c.topValues
+          : (Array.isArray(c.sampleValues) ? c.sampleValues.map((v: any) => ({ value: String(v), count: 1, percentage: 0 })) : []);
+
+        return {
+          name: colName,
+          inferredType,
+          distinctCount,
+          totalValues: typeof c.totalValues === "number" ? c.totalValues : (c.nonEmptyCount || 0),
+          nonEmptyCount: typeof c.nonEmptyCount === "number" ? c.nonEmptyCount : 0,
+          topValues,
+          patterns: Array.isArray(c.patterns) ? c.patterns : [],
+          mixedTypePercent: typeof c.mixedTypePercent === "number" ? c.mixedTypePercent : 0,
+          categoricalOrContinuous: c.categoricalOrContinuous || "unknown",
+        };
+      });
+
+      return {
+        ...t,
+        contentProfile: {
+          ...t?.contentProfile,
+          columns: normalizedColumns,
+        },
+      };
+    });
+
     return {
       ...fallback,
       ...result,
+      tables: normalizedTables,
     };
   } catch (error) {
     console.warn("DataProfile agent execution failed, using fallback", error);

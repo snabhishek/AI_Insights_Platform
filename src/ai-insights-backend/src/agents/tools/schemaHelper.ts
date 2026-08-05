@@ -87,6 +87,64 @@ export async function loadFieldSchemaYaml(): Promise<string> {
 }
 
 /**
+ * Resolves the path of an existing schema file for a project inside packages/ProjectFiles/<Workspace>-<Project>/Schemas/.
+ */
+export async function getProjectSchemaPath(
+  workspaceName?: string,
+  projectName?: string
+): Promise<string | null> {
+  if (!workspaceName || !projectName) return null;
+  const packagesDir = getPackagesDir();
+  const cleanWsName = sanitizeName(workspaceName);
+  const cleanProjectTitle = sanitizeName(projectName);
+  const folderName = `${cleanWsName}-${cleanProjectTitle}`;
+
+  const candidateDirs = [
+    path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas"),
+    path.resolve(packagesDir, folderName, "Schemas"),
+  ];
+
+  for (const cDir of candidateDirs) {
+    if (fsSync.existsSync(cDir)) {
+      try {
+        const files = await fs.readdir(cDir);
+        const yamlFiles = files
+          .filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"))
+          .sort();
+        if (yamlFiles.length > 0) {
+          return path.resolve(cDir, yamlFiles[yamlFiles.length - 1]);
+        }
+      } catch (err) {
+        console.warn(`[getProjectSchemaPath] Failed readdir on ${cDir}:`, err);
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Loads the project schema YAML from packages/ProjectFiles if present,
+ * or falls back to static Schema.yaml if not found.
+ */
+export async function loadProjectOrFieldSchemaYaml(
+  workspaceName?: string,
+  projectName?: string
+): Promise<{ content: string; sourcePath: string; isProjectSchema: boolean }> {
+  const projectFilePath = await getProjectSchemaPath(workspaceName, projectName);
+  if (projectFilePath && fsSync.existsSync(projectFilePath)) {
+    try {
+      const content = await fs.readFile(projectFilePath, "utf-8");
+      return { content, sourcePath: projectFilePath, isProjectSchema: true };
+    } catch (err) {
+      console.warn(`[loadProjectOrFieldSchemaYaml] Failed to read project schema file at ${projectFilePath}:`, err);
+    }
+  }
+  const defaultSchemaPath = resolvePackageFilePath("Schema.yaml");
+  const content = await loadFieldSchemaYaml();
+  return { content, sourcePath: defaultSchemaPath, isProjectSchema: false };
+}
+
+/**
  * Writes the resolved dataset-to-topic mappings and domain knowledge to a structured YAML file.
  */
 export async function writeResolvedSchemaYaml(
@@ -115,20 +173,22 @@ export async function writeResolvedSchemaYaml(
       });
     }
 
+    const fieldsObj: Record<string, any> = {
+      DomainKnowledge: {
+        Tier1: payload.domainKnowledge?.tier1 || "General Industry",
+        Tier2: payload.domainKnowledge?.tier2 || "General Business Domain",
+        UseCase: payload.domainKnowledge?.useCase || "Data Analytics & Ingestion",
+        UseCaseDescription: payload.domainKnowledge?.useCaseDescription || payload.domain || "General Business Domain"
+      },
+      ...groupedTopics
+    };
+
     const schemaData = {
       version: "1.0",
       generatedAt: new Date().toISOString(),
-      domainKnowledge: payload.domainKnowledge || {
-        tier1: "General Industry",
-        tier2: "General Business Domain",
-        useCase: "Data Analytics & Ingestion",
-        useCaseDescription: payload.domain || "General Business Domain"
-      },
       resolvedTables: payload.resolvedTables || [],
       strategy: payload.strategy || "inspect-and-map",
-      topics: groupedTopics,
-      mappings: payload.mappings || [],
-      unmappedDatasetFields: payload.unmappedDatasetFields || []
+      fields: fieldsObj
     };
 
     const yamlContent = yaml.dump(schemaData, { indent: 2, lineWidth: -1, noRefs: true });
@@ -283,10 +343,18 @@ export async function updateOrCreateProjectSchemaFile(
   if (projectInput.name && projectInput.name.trim().length > 0) dk.UseCase = projectInput.name.trim();
   if (projectInput.useCase && projectInput.useCase.trim().length > 0) dk.UseCaseDescription = projectInput.useCase.trim();
 
+  if (payload.domainKnowledge) {
+    if (payload.domainKnowledge.tier1) dk.Tier1 = payload.domainKnowledge.tier1;
+    if (payload.domainKnowledge.tier2) dk.Tier2 = payload.domainKnowledge.tier2;
+    if (payload.domainKnowledge.useCase) dk.UseCase = payload.domainKnowledge.useCase;
+    if (payload.domainKnowledge.useCaseDescription) dk.UseCaseDescription = payload.domainKnowledge.useCaseDescription;
+  }
+
   schemaObj.generatedAt = new Date().toISOString();
   schemaObj.resolvedTables = payload.resolvedTables || [];
   schemaObj.strategy = payload.strategy || "inspect-and-map";
 
+  // Group dataset fields by topic
   const groupedTopics: Record<string, any[]> = {};
   for (const mapping of payload.mappings || []) {
     const topic = mapping.targetTopic || "General";
@@ -303,9 +371,21 @@ export async function updateOrCreateProjectSchemaFile(
     });
   }
 
-  schemaObj.topics = groupedTopics;
-  schemaObj.mappings = payload.mappings || [];
-  schemaObj.unmappedDatasetFields = payload.unmappedDatasetFields || [];
+  // Update schemaObj.fields categories with mapped dataset fields
+  for (const [topic, mappedFields] of Object.entries(groupedTopics)) {
+    if (schemaObj.fields[topic] && typeof schemaObj.fields[topic] === "object" && !Array.isArray(schemaObj.fields[topic])) {
+      schemaObj.fields[topic].dataset_fields = mappedFields;
+    } else {
+      schemaObj.fields[topic] = mappedFields;
+    }
+  }
+
+  // Remove unwanted legacy/duplicate top-level keys
+  delete schemaObj.topics;
+  delete schemaObj.mappings;
+  delete schemaObj.unmappedDatasetFields;
+  delete schemaObj.unmappedfields;
+  delete schemaObj.domainKnowledge;
 
   const dumpedYaml = yaml.dump(schemaObj, { indent: 2, lineWidth: -1, noRefs: true });
   await fs.writeFile(targetFilePath, dumpedYaml, "utf-8");

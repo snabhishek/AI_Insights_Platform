@@ -262,19 +262,24 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 7: Top Values Distribution list
+    // Custom Formatter 7: Top Values Distribution list or Sample Values list
     if (key === "topValues" && Array.isArray(val)) {
       if (val.length === 0) return <span className="text-muted-foreground/60 italic text-[10px]">No values</span>;
       return (
         <div className="space-y-1.5 py-1 min-w-[200px] select-text">
-          {val.slice(0, 3).map((tv: any, tvIdx: number) => (
-            <MiniBarChart 
-              key={tvIdx} 
-              percentage={tv.percentage || 0} 
-              value={String(tv.value ?? "")} 
-              count={tv.count || 0}
-            />
-          ))}
+          {val.slice(0, 3).map((tv: any, tvIdx: number) => {
+            const valStr = typeof tv === "object" && tv !== null ? String(tv.value ?? "") : String(tv);
+            const count = typeof tv === "object" && tv !== null ? (tv.count ?? 0) : 0;
+            const pct = typeof tv === "object" && tv !== null ? (tv.percentage ?? 0) : 0;
+            return (
+              <MiniBarChart 
+                key={tvIdx} 
+                percentage={pct} 
+                value={valStr} 
+                count={count}
+              />
+            );
+          })}
           {val.length > 3 && (
             <span className="text-[9px] text-muted-foreground block text-right font-bold select-none">
               + {val.length - 3} more
@@ -284,7 +289,45 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 8: Constraints Array
+    if (key === "sampleValues" && Array.isArray(val)) {
+      if (val.length === 0) return <span className="text-muted-foreground/60 italic text-[10px]">No samples</span>;
+      return (
+        <div className="flex flex-wrap gap-1 max-w-[250px]">
+          {val.slice(0, 5).map((v: any, idx: number) => (
+            <span key={idx} className="px-1.5 py-0.5 rounded bg-surface-muted text-foreground border border-border/60 font-mono text-[10px] truncate max-w-[120px]" title={String(v)}>
+              {String(v)}
+            </span>
+          ))}
+          {val.length > 5 && (
+            <span className="text-[9px] text-muted-foreground font-bold self-center">
+              +{val.length - 5}
+            </span>
+          )}
+        </div>
+      );
+    }
+
+    // Custom Formatter 8: Percentiles & Outliers in Statistics
+    if (key === "percentiles" && typeof val === "object" && val !== null) {
+      const p = val as Record<string, any>;
+      return (
+        <span className="font-mono text-[10px] text-foreground/90">
+          p25: {p.p25 ?? "n/a"} | p50: {p.p50 ?? "n/a"} | p75: {p.p75 ?? "n/a"}
+        </span>
+      );
+    }
+
+    if (key === "outliers" && typeof val === "object" && val !== null) {
+      const o = val as Record<string, any>;
+      const count = o.count ?? 0;
+      return (
+        <Badge variant={count > 0 ? "error" : "success"}>
+          {count > 0 ? `${count} Outliers` : "None"}
+        </Badge>
+      );
+    }
+
+    // Custom Formatter 9: Constraints Array
     if (key === "constraints" && Array.isArray(val)) {
       if (val.length === 0) return <span className="text-muted-foreground/60">—</span>;
       return (
@@ -298,7 +341,7 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 9: Patterns Array
+    // Custom Formatter 10: Patterns Array
     if (key === "patterns" && Array.isArray(val)) {
       if (val.length === 0) return <span className="text-muted-foreground/60">—</span>;
       return (
@@ -315,7 +358,7 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
     // Default renderer
     if (typeof val === "object") {
       if (Array.isArray(val)) {
-        if (val.length === 0) return "[]";
+        if (val.length === 0) return <span className="text-muted-foreground/60 italic text-[10px]">—</span>;
         if (val.every(x => typeof x !== "object")) return val.join(", ");
         return `[${val.length} items]`;
       }
