@@ -1,13 +1,14 @@
 import { ConnectionTesterService } from "../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../services/connector/connector.service";
 import { ConnectionConfig, ConnectorType } from "../../models/connector.types";
+import { parseForeignKeyValues } from "./commonSchemas";
 
 type SampleRow = Record<string, unknown>;
 
 export interface SamplingParams {
   connectorId?: string;
   connectorType?: string;
-  connectionConfig?: Record<string, any>;
+  connectionConfig?: unknown;
   tableName: string;
   sampleMethod?: "random" | "stratified" | "interval";
   sampleSize?: number;
@@ -19,7 +20,7 @@ export interface SamplingParams {
     foreignTable: string;
     foreignColumn: string;
   }>;
-  foreignKeyValues?: Record<string, string[]>;
+  foreignKeyValues?: unknown;
   fetchAll?: boolean;
 }
 
@@ -126,7 +127,7 @@ export async function fetchRowsOnDemand(
     }
 
     if (Array.isArray(relationships) && relationships.length > 0 && foreignKeyValues) {
-      const fkMap = foreignKeyValues as Record<string, string[]>;
+      const fkMap = parseForeignKeyValues(foreignKeyValues);
       for (const rel of relationships) {
         const relObj = rel as { column?: string; foreignTable?: string; foreignColumn?: string };
         const localCol = relObj.column;

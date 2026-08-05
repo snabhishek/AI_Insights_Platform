@@ -2,6 +2,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { ConnectionTesterService } from "../../services/connector/connectionTester.service";
 import { ConnectionConfig, ConnectorType } from "../../models/connector.types";
+import { connectionConfigSchema } from "./commonSchemas";
 
 type ColumnProfile = {
   name: string;
@@ -77,7 +78,7 @@ export const createDataProfileTool = (connectionTester: ConnectionTesterService)
       description: "Profile data health and sample quality for selected tables.",
       schema: z.object({
         connectorType: z.string().describe("Connector type"),
-        connectionConfig: z.record(z.string(), z.any()).describe("Connection settings for the connector"),
+        connectionConfig: connectionConfigSchema,
         tables: z.array(z.string()).describe("Tables to profile"),
       }),
     }

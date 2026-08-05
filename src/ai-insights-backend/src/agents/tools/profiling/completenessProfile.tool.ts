@@ -4,6 +4,7 @@ import pl from "nodejs-polars";
 import { fetchRowsOnDemand } from "../samplingHelper";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
+import { connectionConfigSchema, foreignKeyValuesSchema } from "../commonSchemas";
 
 type SampleRow = Record<string, unknown>;
 
@@ -212,7 +213,7 @@ export const createCompletenessProfileTool = (
       schema: z.object({
         connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback"),
-        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        connectionConfig: connectionConfigSchema,
         tableName: z.string().describe("Table name for context"),
         sampleMethod: z.enum(["random", "stratified", "interval"]).optional().describe("Sampling method"),
         sampleSize: z.number().optional().describe("Number of sample records to fetch (stratified defaults to 40% of table row count)"),
@@ -223,9 +224,7 @@ export const createCompletenessProfileTool = (
           foreignTable: z.string().describe("Referenced table"),
           foreignColumn: z.string().describe("Referenced column"),
         })).optional().describe("Table relationships from inspector output for referential integrity filtering"),
-        foreignKeyValues: z.object({}).catchall(z.array(z.string())).optional().describe(
-          "Map of foreignTable → array of allowed FK values collected from parent table samples"
-        ),
+        foreignKeyValues: foreignKeyValuesSchema,
         columns: z.array(z.string()).optional().describe("Specific columns to check; omit to check all"),
         placeholderPatterns: z.array(z.string()).optional().describe(
           "Additional placeholder strings to treat as missing (e.g. 'TBD', 'NOT SET')"

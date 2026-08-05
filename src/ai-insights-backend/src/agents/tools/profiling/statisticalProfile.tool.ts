@@ -4,6 +4,7 @@ import pl from "nodejs-polars";
 import { fetchRowsOnDemand } from "../samplingHelper";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
+import { connectionConfigSchema, foreignKeyValuesSchema, parseColumnTypes } from "../commonSchemas";
 
 type SampleRow = Record<string, unknown>;
 
@@ -246,7 +247,7 @@ export const createStatisticalProfileTool = (
       const df = pl.DataFrame(sampleRows);
       const allColumns = df.columns;
       const targetColumns = Array.isArray(columns) && columns.length > 0 ? columns : allColumns;
-      const typeMap = (columnTypes || {}) as Record<string, string>;
+      const typeMap = parseColumnTypes(columnTypes);
 
       const numericProfiles: ReturnType<typeof profileNumericColumnPl>[] = [];
       const dateProfiles: ReturnType<typeof profileDateColumnPl>[] = [];
@@ -314,7 +315,7 @@ export const createStatisticalProfileTool = (
       schema: z.object({
         connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback"),
-        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        connectionConfig: connectionConfigSchema,
         tableName: z.string().describe("Table name for context"),
         sampleMethod: z.enum(["random", "stratified", "interval"]).optional().describe("Sampling method"),
         sampleSize: z.number().optional().describe("Number of sample records to fetch (stratified defaults to 40% of table row count)"),
@@ -325,13 +326,12 @@ export const createStatisticalProfileTool = (
           foreignTable: z.string().describe("Referenced table"),
           foreignColumn: z.string().describe("Referenced column"),
         })).optional().describe("Table relationships from inspector output for referential integrity filtering"),
-        foreignKeyValues: z.object({}).catchall(z.array(z.string())).optional().describe(
-          "Map of foreignTable → array of allowed FK values collected from parent table samples"
-        ),
+        foreignKeyValues: foreignKeyValuesSchema,
         columns: z.array(z.string()).optional().describe("Columns to profile; omit to auto-detect all numeric/date columns"),
-        columnTypes: z.object({}).catchall(z.string()).optional().describe(
-          "Map of column name → inferred type from contentValueProfile (e.g. 'numeric', 'date', 'string'). Helps skip non-applicable columns."
-        ),
+        columnTypes: z.array(z.object({
+          columnName: z.string().describe("Column name"),
+          inferredType: z.string().describe("Inferred type (numeric, date, string)"),
+        })).optional().describe("List of column types inferred from contentValueProfile"),
       }),
     }
   );
