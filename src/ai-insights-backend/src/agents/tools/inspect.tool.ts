@@ -5,6 +5,7 @@ import * as xlsx from "xlsx";
 import { IFileService } from "../../services/file/file.service.interface";
 import { ConnectorService } from "../../services/connector/connector.service";
 import { ConnectionConfig, ConnectorType } from "../../models/connector.types";
+import { connectionConfigSchema } from "./commonSchemas";
 
 type ColumnInfo = {
   name: string;
@@ -480,7 +481,7 @@ export const createInspectTool = (
       schema: z.object({
         connectorId: z.string().describe("Connector ID used to resolve the stored connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback when connectorId is unavailable"),
-        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings when connectorId is unavailable"),
+        connectionConfig: connectionConfigSchema,
         tableNames: z.array(z.string()).optional().describe("Specific tables to inspect for column/constraint details"),
         maxTables: z.number().optional().describe("Maximum tables to list when tableNames is not provided"),
         maxColumns: z.number().optional().describe("Maximum columns per table in detailed inspection"),

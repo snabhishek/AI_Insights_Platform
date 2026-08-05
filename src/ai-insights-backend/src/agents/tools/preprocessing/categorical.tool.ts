@@ -4,6 +4,7 @@ import pl from "nodejs-polars";
 import { fetchRowsOnDemand } from "../samplingHelper";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
+import { connectionConfigSchema, foreignKeyValuesSchema } from "../commonSchemas";
 
 type SampleRow = Record<string, unknown>;
 
@@ -111,7 +112,7 @@ export const createCategoricalTool = (
       schema: z.object({
         connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback"),
-        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        connectionConfig: connectionConfigSchema,
         tableName: z.string().describe("Table to clean"),
         sampleMethod: z.enum(["random", "stratified", "interval"]).optional().describe("Sampling method"),
         sampleSize: z.number().optional().describe("Number of sample records to fetch (defaults to 100)"),
@@ -122,9 +123,7 @@ export const createCategoricalTool = (
           foreignTable: z.string().describe("Referenced table"),
           foreignColumn: z.string().describe("Referenced column"),
         })).optional().describe("Table relationships for referential integrity filtering"),
-        foreignKeyValues: z.object({}).catchall(z.array(z.string())).optional().describe(
-          "Map of foreignTable → array of allowed FK values collected from parent table samples"
-        ),
+        foreignKeyValues: foreignKeyValuesSchema,
         columnName: z.string().describe("Categorical column to normalize"),
       }),
     }

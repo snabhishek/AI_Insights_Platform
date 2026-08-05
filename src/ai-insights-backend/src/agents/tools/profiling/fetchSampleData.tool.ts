@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
 import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
+import { connectionConfigSchema, foreignKeyValuesSchema, parseForeignKeyValues } from "../commonSchemas";
 
 type SampleRow = Record<string, unknown>;
 
@@ -108,7 +109,7 @@ export const createFetchSampleDataTool = (
         }
 
         if (Array.isArray(relationships) && relationships.length > 0 && foreignKeyValues) {
-          const fkMap = foreignKeyValues as Record<string, string[]>;
+          const fkMap = parseForeignKeyValues(foreignKeyValues);
           for (const rel of relationships) {
             const relObj = rel as { column?: string; foreignTable?: string; foreignColumn?: string };
             const localCol = relObj.column;
@@ -161,7 +162,7 @@ export const createFetchSampleDataTool = (
       schema: z.object({
         connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback"),
-        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        connectionConfig: connectionConfigSchema,
         tableName: z.string().describe("Table name to sample from"),
         sampleMethod: z.enum(["random", "stratified", "interval"]).describe(
           "Sampling method: 'interval' fetches from different record positions, 'stratified' groups by a column, 'random' is simple random"
@@ -175,9 +176,7 @@ export const createFetchSampleDataTool = (
           foreignTable: z.string().describe("Referenced table"),
           foreignColumn: z.string().describe("Referenced column"),
         })).optional().describe("Table relationships from inspector output for referential integrity filtering"),
-        foreignKeyValues: z.object({}).catchall(z.array(z.string())).optional().describe(
-          "Map of foreignTable → array of allowed FK values collected from parent table samples"
-        ),
+        foreignKeyValues: foreignKeyValuesSchema,
       }),
     }
   );

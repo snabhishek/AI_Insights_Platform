@@ -2,6 +2,7 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
+import { connectionConfigSchema } from "../commonSchemas";
 import pl from "nodejs-polars";
 
 type ScalarValue = string | number | boolean | null | undefined;
@@ -420,9 +421,9 @@ export const createDataProfileTool = (connectionTester: ConnectionTesterService)
       description: "Profile selected tables using deterministic hybrid sampling and structured metrics derived from the inspection output.",
       schema: z.object({
         connectorType: z.string().describe("Connector type"),
-        connectionConfig: z.record(z.string(), z.any()).optional().describe("Connection settings for the connector"),
+        connectionConfig: connectionConfigSchema,
         tables: z.array(z.string()).optional().describe("Tables to profile"),
-        inspectionOutput: z.record(z.string(), z.any()).optional().describe("Inspection output context used for state validation"),
+        inspectionOutput: z.union([z.string(), z.object({ tables: z.array(z.object({ name: z.string().optional() })).optional() })]).optional().describe("Inspection output context"),
         seed: z.number().optional().describe("Deterministic seed value for repeated sampling"),
         sampleSize: z.number().optional().describe("Maximum number of sampled rows to inspect"),
       }),
