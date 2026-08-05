@@ -1,4 +1,9 @@
 version: "1.0"
+generatedAt: Exact Time Stamp of file created
+resolvedTables: List of tables resolved from the dataset, if files like excel or csv accounts to individual files.
+  - sample table 1
+  - sample table 2
+strategy: inspect-and-map
 fields:
   DomainKnowledge:
     description: Establishes the industry/domain and business use case the insights platform is built for. Tier1/Tier2 may be suggested by the agent based on the data, but must be confirmed by the user. UseCase and UseCaseDescription are user-provided.
