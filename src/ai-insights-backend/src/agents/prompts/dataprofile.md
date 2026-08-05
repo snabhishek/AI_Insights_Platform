@@ -206,9 +206,41 @@ Return valid JSON with this structure:
         "stratifyColumn": "string",
         "stratifiedSampleSize": 0
       },
-      "contentProfile": { "columns": [] },
-      "completenessProfile": { "columns": [] },
-      "statisticalProfile": { "numericColumns": [], "dateColumns": [] },
+      "contentProfile": {
+        "columns": [
+          {
+            "name": "string",
+            "inferredType": "string",
+            "distinctCount": 0,
+            "totalValues": 0,
+            "nonEmptyCount": 0,
+            "topValues": [
+              { "value": "string", "count": 0, "percentage": 0.0 }
+            ],
+            "patterns": [],
+            "mixedTypePercent": 0,
+            "categoricalOrContinuous": "categorical"
+          }
+        ]
+      },
+      "completenessProfile": {
+        "columns": [
+          {
+            "name": "string",
+            "nullCount": 0,
+            "blankCount": 0,
+            "placeholderCount": 0,
+            "totalMissing": 0,
+            "completenessPercent": 100,
+            "missingPattern": "unknown",
+            "recommendation": "string"
+          }
+        ]
+      },
+      "statisticalProfile": {
+        "numericColumns": [],
+        "dateColumns": []
+      },
       "relationships": [],
       "businessDomain": "string"
     }
@@ -219,18 +251,8 @@ Return valid JSON with this structure:
 }
 ```
 ### Output Format Rules
-1. Always add the name of column as a first key when filling the columns in Profiling step
-Eg: 
-```json
-"contentProfile": {
-  "columns": [
-    {
-      columnName: "string",...
-    }
-  ]
-}
-```
-This should be followed for contentProfile, completenessProfile and statisticalProfile
+1. Always populate the column name under the key `"name"` (e.g. `"name": "Customer_ID"`).
+2. Follow the exact field keys produced by the profiling tools (`contentValueProfile`, `completenessProfile`, `statisticalProfile`).
 ---
 
 ## Rules

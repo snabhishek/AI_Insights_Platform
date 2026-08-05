@@ -1,6 +1,7 @@
 import { RunnableConfig } from "@langchain/core/runnables";
 import * as path from "path";
 import * as fsSync from "fs";
+import * as yaml from "js-yaml";
 import { AgentState, IngestionServices } from "../../state";
 import { 
   getModel, 
@@ -13,6 +14,7 @@ import {
 import { 
   writeResolvedSchemaYaml, 
   loadFieldSchemaYaml,
+  loadProjectOrFieldSchemaYaml,
   updateOrCreateProjectSchemaFile,
   getPackagesDir,
   sanitizeName, 
@@ -79,33 +81,71 @@ export async function resolveSchema(
     unmappedDatasetFields: []
   };
 
+  let workspaceName: string | undefined;
+  let projectName: string | undefined;
+  let projectWithWs: any = null;
+
+  if (projectId && services?.projectService) {
+    try {
+      projectWithWs = await services.projectService.getProjectWithWorkspace(projectId);
+      if (projectWithWs) {
+        workspaceName = projectWithWs.workspaceName;
+        projectName = projectWithWs.project.name;
+      }
+    } catch (lookupErr: any) {
+      console.warn(`[resolveSchema] Failed upfront project lookup for ${projectId}:`, lookupErr?.message || lookupErr);
+    }
+  }
+
+  const { content: rawFieldSchemaYaml, sourcePath: schemaSourcePath, isProjectSchema } = 
+    await loadProjectOrFieldSchemaYaml(workspaceName, projectName);
+
+  if (isProjectSchema && rawFieldSchemaYaml) {
+    try {
+      const parsedProjectYaml: any = yaml.load(rawFieldSchemaYaml);
+      const dk = parsedProjectYaml?.fields?.DomainKnowledge || parsedProjectYaml?.domainKnowledge;
+      if (dk) {
+        fallback.domainKnowledge = {
+          tier1: dk.Tier1 || dk.tier1 || fallback.domainKnowledge.tier1,
+          tier2: dk.Tier2 || dk.tier2 || fallback.domainKnowledge.tier2,
+          useCase: dk.UseCase || dk.useCase || fallback.domainKnowledge.useCase,
+          useCaseDescription: dk.UseCaseDescription || dk.useCaseDescription || fallback.domainKnowledge.useCaseDescription,
+        };
+        const dkDomain = (dk.Tier1 || dk.tier1) && (dk.Tier2 || dk.tier2) ? `${dk.Tier1 || dk.tier1} - ${dk.Tier2 || dk.tier2}` : null;
+        if (dkDomain) {
+          fallback.domain = dkDomain;
+        }
+      }
+    } catch (e) {
+      // ignore fallback error
+    }
+  }
+
   const systemPrompt = await getPromptFromFile(
     "resolveSchema.md",
     "You are an expert AI Data Architect specialized in schema resolution and data ingestion planning."
   );
 
-  const rawFieldSchemaYaml = await loadFieldSchemaYaml();
-
   const safeUserRequest = typeof userPrompt === "string" && userPrompt.trim().length > 0 
     ? userPrompt 
     : "No additional request provided.";
 
-  const prompt = `${systemPrompt}
+  const schemaHeader = isProjectSchema
+    ? `## Project Field Schema Taxonomy & Updated Domain Knowledge (${path.basename(schemaSourcePath)})`
+    : `## Live Field Schema Taxonomy (Schema.yaml)`;
 
-${rawFieldSchemaYaml ? `## Live Field Schema Taxonomy (Schema.yaml)\n\`\`\`yaml\n${rawFieldSchemaYaml}\n\`\`\`\n` : ""}
-
-## Context
-### Inspection Context
-${JSON.stringify({ connector, inspection }, null, 2)}
-
-${dataProfile ? `### Data Profile Context\n${JSON.stringify(dataProfile, null, 2)}\n` : ""}
-### User Request
-${safeUserRequest}
-`;
+  const prompt = [
+    systemPrompt,
+    rawFieldSchemaYaml ? `${schemaHeader}\n\`\`\`yaml\n${rawFieldSchemaYaml}\n\`\`\`` : "",
+    "## Context",
+    inspection ? `### Inspection Context\n\`\`\`json\n${JSON.stringify({ connector, inspection }, null, 2)}\n\`\`\`` : "",
+    dataProfile ? `### Data Profile Context\n\`\`\`json\n${JSON.stringify(dataProfile, null, 2)}\n\`\`\`` : "",
+    safeUserRequest ? `### User Request\n${safeUserRequest}` : ""
+  ].filter(Boolean).join("\n\n");
 
   const model = getModel();
 
-  await logMilestoneThinking(services, "Schema Resolver", `Resolving semantic types and target mappings according to Field Schema Taxonomy...`);
+  await logMilestoneThinking(services, "Schema Resolver", `Resolving semantic types and target mappings according to ${isProjectSchema ? "Project" : "Field"} Schema Taxonomy...`);
   const result = await invokeAgentJson("resolveSchema", model, prompt, fallback, services, {
     traceLabel: "agent:resolveSchema",
   });
@@ -118,7 +158,7 @@ ${safeUserRequest}
 
   const resolvedDomain = (typeof result?.domain === "string" && result.domain.trim().length > 0)
     ? result.domain.trim()
-    : inferredDomain;
+    : (fallback.domain || inferredDomain);
 
   const packagesDir = getPackagesDir();
   let outputYamlPath = path.resolve(packagesDir, "resolved_schema.yaml");
@@ -132,22 +172,44 @@ ${safeUserRequest}
     unmappedDatasetFields: result?.unmappedDatasetFields || []
   };
 
-  if (projectId) {
+  if (projectWithWs) {
     try {
-      const projectWithWs = await services.projectService.getProjectWithWorkspace(projectId);
-      if (projectWithWs) {
+      outputYamlPath = await updateOrCreateProjectSchemaFile(
+        projectWithWs.workspaceName,
+        projectWithWs.project.name,
+        {
+          name: projectWithWs.project.name,
+          domain: projectWithWs.project.domain,
+          subDomain: projectWithWs.project.subDomain,
+          useCase: projectWithWs.project.useCase,
+        },
+        payloadToWrite
+      );
+      console.info(`[resolveSchema] Updated project schema YAML file at ${outputYamlPath} with ${rawMappings.length} mappings`);
+    } catch (writeErr: any) {
+      console.warn(`[resolveSchema] Failed to update project schema file, using fallback:`, writeErr?.message || writeErr);
+      if (rawMappings.length > 0) {
+        await writeResolvedSchemaYaml(outputYamlPath, payloadToWrite);
+      }
+    }
+  } else if (projectId) {
+    try {
+      const pWs = await services.projectService.getProjectWithWorkspace(projectId);
+      if (pWs) {
         outputYamlPath = await updateOrCreateProjectSchemaFile(
-          projectWithWs.workspaceName,
-          projectWithWs.project.name,
+          pWs.workspaceName,
+          pWs.project.name,
           {
-            name: projectWithWs.project.name,
-            domain: projectWithWs.project.domain,
-            subDomain: projectWithWs.project.subDomain,
-            useCase: projectWithWs.project.useCase,
+            name: pWs.project.name,
+            domain: pWs.project.domain,
+            subDomain: pWs.project.subDomain,
+            useCase: pWs.project.useCase,
           },
           payloadToWrite
         );
         console.info(`[resolveSchema] Updated project schema YAML file at ${outputYamlPath} with ${rawMappings.length} mappings`);
+      } else if (rawMappings.length > 0) {
+        await writeResolvedSchemaYaml(outputYamlPath, payloadToWrite);
       }
     } catch (lookupErr: any) {
       console.warn(`[resolveSchema] Failed to lookup project/workspace for ${projectId}, using fallback:`, lookupErr?.message || lookupErr);
