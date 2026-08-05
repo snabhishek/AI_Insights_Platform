@@ -4,6 +4,7 @@ import pl from "nodejs-polars";
 import { fetchRowsOnDemand } from "../samplingHelper";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
+import { connectionConfigSchema, foreignKeyValuesSchema } from "../commonSchemas";
 
 type SampleRow = Record<string, unknown>;
 
@@ -201,7 +202,7 @@ export const createMissingValueTool = (
       schema: z.object({
         connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback"),
-        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        connectionConfig: connectionConfigSchema,
         tableName: z.string().describe("Table to clean"),
         sampleMethod: z.enum(["random", "stratified", "interval"]).optional().describe("Sampling method"),
         seed: z.number().optional().describe("Deterministic seed for reproducible sampling"),
@@ -211,9 +212,7 @@ export const createMissingValueTool = (
           foreignTable: z.string().describe("Referenced table"),
           foreignColumn: z.string().describe("Referenced column"),
         })).optional().describe("Table relationships for referential integrity filtering"),
-        foreignKeyValues: z.object({}).catchall(z.array(z.string())).optional().describe(
-          "Map of foreignTable → array of allowed FK values collected from parent table samples"
-        ),
+        foreignKeyValues: foreignKeyValuesSchema,
         columnName: z.string().describe("Column to impute"),
         strategy: z.enum(["mean", "median", "mode", "constant"]).optional().describe("Imputation strategy"),
         fillValue: z.union([z.number(), z.string()]).optional().describe("Constant value replacement (only used for constant strategy)"),

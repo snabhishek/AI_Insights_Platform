@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
 import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
+import { connectionConfigSchema } from "../commonSchemas";
 
 type CleaningOperation = {
   columnName: string;
@@ -107,12 +108,18 @@ export const createApplyDataCleaningTool = (
       schema: z.object({
         connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback"),
-        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        connectionConfig: connectionConfigSchema,
         tableName: z.string().describe("Table to apply cleaning operations on"),
         operations: z.array(z.object({
           columnName: z.string().describe("Target column"),
           method: z.string().describe("Cleaning method: impute_constant, impute_median, normalize_categories, clip_iqr, drop_column, coerce_type, standardize_headers, log_transform"),
-          params: z.object({}).catchall(z.any()).optional().describe("Method-specific parameters (e.g. fillValue, targetType, lowerBound, upperBound)"),
+          params: z.object({
+            fillValue: z.union([z.string(), z.number()]).optional().describe("Fill value for imputation"),
+            targetType: z.string().optional().describe("Target data type for coercion"),
+            lowerBound: z.number().optional().describe("Lower bound for clipping"),
+            upperBound: z.number().optional().describe("Upper bound for clipping"),
+            strategy: z.string().optional().describe("Method strategy"),
+          }).optional().describe("Method-specific parameters"),
         })).describe("List of cleaning operations to apply"),
       }),
     }

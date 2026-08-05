@@ -3,6 +3,7 @@ import { z } from "zod";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
 import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
+import { connectionConfigSchema } from "../commonSchemas";
 import pl from "nodejs-polars";
 
 type SampleRow = Record<string, unknown>;
@@ -179,7 +180,7 @@ export const createDuplicateDetectionTool = (
       schema: z.object({
         connectorId: z.string().optional().describe("Connector ID to resolve connection settings"),
         connectorType: z.string().optional().describe("Connector type fallback"),
-        connectionConfig: z.record(z.string(), z.any()).optional().describe("Fallback connection settings"),
+        connectionConfig: connectionConfigSchema,
         tableName: z.string().describe("Table to check for duplicates"),
         keyColumns: z.array(z.string()).describe("Columns to use as the composite key for duplicate detection"),
         strategy: z.enum(["flag", "remove_exact", "remove_fuzzy"]).optional().describe(

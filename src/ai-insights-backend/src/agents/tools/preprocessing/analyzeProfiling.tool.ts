@@ -154,7 +154,14 @@ const analyzeStatisticalIssues = (tableName: string, statisticalData: any): Clea
 export const createAnalyzeProfilingTool = () =>
   tool(
     async ({ profilingOutput }) => {
-      const profile = (profilingOutput || {}) as Record<string, unknown>;
+      let profile = (profilingOutput || {}) as any;
+      if (typeof profilingOutput === "string") {
+        try {
+          profile = JSON.parse(profilingOutput);
+        } catch {
+          // Ignore
+        }
+      }
       const allActions: CleaningAction[] = [];
 
       // Handle multi-table structure: iterate tables array or single-table
@@ -199,9 +206,14 @@ export const createAnalyzeProfilingTool = () =>
         "and statistical anomalies (outliers, skewness, zero-variance columns). " +
         "Returns actions sorted by priority (HIGH → MEDIUM → LOW) with specific method suggestions and reasoning.",
       schema: z.object({
-        profilingOutput: z.object({}).catchall(z.any()).describe(
-          "The complete profiling output from the DataProfile agent, containing completeness, content, and statistical profiles per table"
-        ),
+        profilingOutput: z.union([
+          z.string(),
+          z.object({
+            tables: z.array(z.object({
+              tableName: z.string().optional(),
+            })).optional(),
+          }),
+        ]).optional().describe("The profiling output from DataProfile agent (or raw JSON string)"),
       }),
     }
   );

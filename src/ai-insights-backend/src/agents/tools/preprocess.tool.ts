@@ -43,7 +43,13 @@ export const createPreprocessTool = () =>
       description: "Derive preprocessing steps based on profiling output and connector type.",
       schema: z.object({
         connectorType: z.string().describe("Connector type"),
-        dataProfile: z.record(z.string(), z.any()).describe("Profile output from the data profiling step"),
+        dataProfile: z.union([
+          z.string(),
+          z.object({
+            selectedTables: z.array(z.string()).optional(),
+            tables: z.array(z.object({ tableName: z.string().optional() })).optional(),
+          }),
+        ]).optional().describe("Profile output from the data profiling step"),
       }),
     }
   );
