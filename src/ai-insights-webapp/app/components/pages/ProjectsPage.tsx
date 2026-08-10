@@ -353,10 +353,26 @@ export default function ProjectsPage() {
 
   const handleStopWorkflow = () => {
     const currentSession = workflowSessionId;
+    const currentProjectId = selectedProject?.id;
+
     resetPipeline();
-    if (currentSession) {
-      void stopWorkflowApi(currentSession);
+
+    if (currentProjectId) {
+      void updateProject(currentProjectId, {
+        agentState: {
+          status: "failed",
+          summary: "Workflow stopped by user",
+          message: "Workflow stopped by user",
+          sessionId: currentSession || undefined,
+          requiresApproval: false,
+        },
+      });
     }
+
+    if (currentSession || currentProjectId) {
+      void stopWorkflowApi(currentSession || undefined, currentProjectId);
+    }
+
     showAlert({
       title: "Workflow Stopped",
       message: "The agentic workflow execution has been stopped and pipeline stages have been reset.",
