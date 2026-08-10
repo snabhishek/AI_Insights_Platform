@@ -17,6 +17,11 @@ export interface DetailedTopicMapping {
   priorityRationale?: string;
   sensitiveSubtype?: string | null;
   relationship?: RelationshipDetails;
+  relatedField?: string | null;
+  related_field?: string | null;
+  relationshipType?: string | null;
+  relationship_type?: string | null;
+  explanation?: string | null;
 }
 
 export interface DomainKnowledgeDetails {
@@ -361,22 +366,39 @@ export async function updateOrCreateProjectSchemaFile(
     if (!groupedTopics[topic]) {
       groupedTopics[topic] = [];
     }
-    groupedTopics[topic].push({
-      field: mapping.datasetField,
-      subtype: mapping.subtype || null,
-      priority: mapping.priority || "Medium",
-      priorityRationale: mapping.priorityRationale || null,
-      sensitiveSubtype: mapping.sensitiveSubtype || null,
-      relationship: mapping.relationship || null,
-    });
+    if (topic === "Relationship") {
+      groupedTopics[topic].push({
+        field: mapping.datasetField,
+        relatedField: mapping.relatedField || mapping.related_field || mapping.relationship?.relatedField || (mapping.relationship as any)?.related_field || null,
+        relationshipType: mapping.relationshipType || mapping.relationship_type || mapping.relationship?.relationshipType || (mapping.relationship as any)?.relationship_type || "Association",
+        explanation: mapping.explanation || mapping.relationship?.explanation || null,
+        priority: mapping.priority || "Medium",
+        priorityRationale: mapping.priorityRationale || null,
+      });
+    } else {
+      groupedTopics[topic].push({
+        field: mapping.datasetField,
+        subtype: mapping.subtype || null,
+        priority: mapping.priority || "Medium",
+        priorityRationale: mapping.priorityRationale || null,
+        sensitiveSubtype: mapping.sensitiveSubtype || null,
+      });
+    }
   }
 
   // Update schemaObj.fields categories with mapped dataset fields
+  const hasRealMappings = Object.keys(groupedTopics).some((t) => t !== "Domain" && t !== "General");
+
   for (const [topic, mappedFields] of Object.entries(groupedTopics)) {
-    if (schemaObj.fields[topic] && typeof schemaObj.fields[topic] === "object" && !Array.isArray(schemaObj.fields[topic])) {
-      schemaObj.fields[topic].dataset_fields = mappedFields;
-    } else {
-      schemaObj.fields[topic] = mappedFields;
+    schemaObj.fields[topic] = mappedFields;
+  }
+
+  // Remove stale placeholder/fallback categories if we have real category mappings
+  if (hasRealMappings) {
+    for (const key of Object.keys(schemaObj.fields)) {
+      if (key !== "DomainKnowledge" && !groupedTopics[key]) {
+        delete schemaObj.fields[key];
+      }
     }
   }
 
