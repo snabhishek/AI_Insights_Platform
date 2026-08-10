@@ -4,12 +4,12 @@ import { z } from "zod";
 import { AgentState, IngestionServices } from "../../state";
 import { createGetSchemaTool } from "../../tools/getSchema.tool";
 import { createInspectTool } from "../../tools/inspect.tool";
-import { 
-  getModel, 
-  getInspectionSystemPrompt, 
-  chunkInspectionTableNames, 
-  buildBatchedTableState, 
-  buildInspectionBatchUserMessage, 
+import {
+  getModel,
+  getInspectionSystemPrompt,
+  chunkInspectionTableNames,
+  buildBatchedTableState,
+  buildInspectionBatchUserMessage,
   mergeInspectionPayload,
   mergeBatchedTableStates,
   extractModelText,

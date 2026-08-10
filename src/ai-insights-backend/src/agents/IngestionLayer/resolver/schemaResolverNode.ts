@@ -150,9 +150,8 @@ export async function resolveSchema(
     traceLabel: "agent:resolveSchema",
   });
 
-  const rawMappings = (result && Array.isArray(result.mappings) && result.mappings.length > 0)
-    ? result.mappings
-    : fallbackMappings;
+  const { mappings: rawMappings, domainKnowledge: extractedDk } = extractResolvedMappings(result, fallbackMappings);
+  const resolvedDomainKnowledge = extractedDk || result?.domainKnowledge || fallback.domainKnowledge;
 
   await logMilestoneThinking(services, "Schema Resolver", `Aligned ${rawMappings.length} structural columns with Field Schema target categories.`);
 
@@ -164,7 +163,7 @@ export async function resolveSchema(
   let outputYamlPath = path.resolve(packagesDir, "resolved_schema.yaml");
   
   const payloadToWrite = {
-    domainKnowledge: result?.domainKnowledge || fallback.domainKnowledge,
+    domainKnowledge: resolvedDomainKnowledge,
     domain: resolvedDomain,
     resolvedTables: result?.resolvedTables || fallback.resolvedTables,
     strategy: result?.strategy || fallback.strategy,
@@ -276,4 +275,73 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
     stageOutputs: { resolveSchema: { sources: resolvedSources } },
     stageStatuses: { resolveSchema: "Completed" },
   };
+}
+
+export function extractResolvedMappings(result: any, fallbackMappings: any[]): { mappings: any[]; domainKnowledge?: any } {
+  if (!result || typeof result !== "object") {
+    return { mappings: fallbackMappings };
+  }
+
+  let domainKnowledge = result.domainKnowledge;
+
+  if (Array.isArray(result.mappings) && result.mappings.length > 0) {
+    const mappings = result.mappings.map((m: any) => ({
+      datasetField: m.datasetField || m.field || "unknown",
+      targetTopic: m.targetTopic || m.topic || m.category || "General",
+      subtype: m.subtype || null,
+      priority: m.priority || "Medium",
+      priorityRationale: m.priorityRationale || null,
+      sensitiveSubtype: m.sensitiveSubtype || null,
+      relationship: m.relationship || null,
+    }));
+    return { mappings, domainKnowledge };
+  }
+
+  const fieldsSource = (result.fields && typeof result.fields === "object") ? result.fields : result;
+  const extractedMappings: any[] = [];
+
+  for (const [categoryName, categoryVal] of Object.entries(fieldsSource)) {
+    if (categoryName.toLowerCase() === "domainknowledge") {
+      if (categoryVal && typeof categoryVal === "object" && !Array.isArray(categoryVal)) {
+        const dkObj: any = categoryVal;
+        domainKnowledge = {
+          tier1: dkObj.Tier1 || dkObj.tier1 || domainKnowledge?.tier1,
+          tier2: dkObj.Tier2 || dkObj.tier2 || domainKnowledge?.tier2,
+          useCase: dkObj.UseCase || dkObj.useCase || domainKnowledge?.useCase,
+          useCaseDescription: dkObj.UseCaseDescription || dkObj.useCaseDescription || domainKnowledge?.useCaseDescription,
+        };
+      }
+      continue;
+    }
+
+    if (["domain", "strategy", "resolvedtables", "generatedat", "unmappeddatasetfields"].includes(categoryName.toLowerCase())) {
+      continue;
+    }
+
+    if (Array.isArray(categoryVal)) {
+      for (const item of categoryVal) {
+        if (!item || typeof item !== "object") continue;
+        const fieldName = item.field || item.datasetField;
+        if (!fieldName) continue;
+        extractedMappings.push({
+          datasetField: fieldName,
+          targetTopic: categoryName,
+          subtype: item.subtype || null,
+          priority: item.priority || "Medium",
+          priorityRationale: item.priorityRationale || null,
+          sensitiveSubtype: item.sensitiveSubtype || null,
+          relatedField: item.relatedField || item.related_field || item.relationship?.relatedField || item.relationship?.related_field || null,
+          relationshipType: item.relationshipType || item.relationship_type || item.relationship?.relationshipType || item.relationship?.relationship_type || null,
+          explanation: item.explanation || item.relationship?.explanation || null,
+          relationship: item.relationship || null,
+        });
+      }
+    }
+  }
+
+  if (extractedMappings.length > 0) {
+    return { mappings: extractedMappings, domainKnowledge };
+  }
+
+  return { mappings: fallbackMappings, domainKnowledge };
 }

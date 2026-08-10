@@ -48,13 +48,16 @@ export const AgentState = Annotation.Root({
   preprocessing: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   batchedTables: Annotation<BatchedTableState[]>({
     reducer: (left = [], right = []) => {
+      if (Array.isArray(right) && right.length === 0) {
+        return [];
+      }
       const mergedMap = new Map<string, BatchedTableState>();
-      for (const entry of left) {
+      for (const entry of left || []) {
         if (entry.tableName) {
           mergedMap.set(entry.tableName, entry);
         }
       }
-      for (const entry of right) {
+      for (const entry of right || []) {
         if (!entry.tableName) {
           continue;
         }
@@ -66,15 +69,42 @@ export const AgentState = Annotation.Root({
     default: () => [],
   }),
   steps: Annotation<Array<{ name: string; status: string; summary: string }>>({
-    reducer: (left, right) => [...left, ...right],
+    reducer: (left = [], right = []) => {
+      if (Array.isArray(right) && right.length === 0) {
+        return [];
+      }
+      const stepMap = new Map<string, { name: string; status: string; summary: string }>();
+      for (const step of left || []) {
+        if (step.name) stepMap.set(step.name, step);
+      }
+      for (const step of right || []) {
+        if (step.name) stepMap.set(step.name, step);
+      }
+      return Array.from(stepMap.values());
+    },
     default: () => [],
   }),
   stageOutputs: Annotation<Record<string, unknown>>({
-    reducer: (left, right) => ({ ...left, ...right }),
+    reducer: (left, right) => {
+      if (right && Object.keys(right).length === 0) {
+        return {};
+      }
+      return { ...left, ...right };
+    },
     default: () => ({}),
   }),
   stageStatuses: Annotation<Record<string, string>>({
-    reducer: (left, right) => ({ ...left, ...right }),
+    reducer: (left, right) => {
+      if (right && Object.keys(right).length === 0) {
+        return {
+          inspect: "Pending",
+          profileData: "Pending",
+          preprocess: "Pending",
+          resolveSchema: "Pending",
+        };
+      }
+      return { ...left, ...right };
+    },
     default: () => ({
       inspect: "Pending",
       profileData: "Pending",

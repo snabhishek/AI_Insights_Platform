@@ -69,10 +69,11 @@ export class IngestionAgentService implements IIngestionAgentService {
       const workflow = createAgentGraph(this.checkpointer);
 
       // Resolve or create the thread ID
-      let threadId: string = options?.sessionId ?? "";
+      const isNewRun = !options?.action;
+      let threadId: string = isNewRun ? "" : (options?.sessionId ?? "");
       let meta = threadId ? this.sessionMeta.get(threadId) : undefined;
 
-      if (!meta) {
+      if (isNewRun || !meta) {
         threadId = `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         meta = { threadId, connectorId, userPrompt: userPrompt ?? "", projectId: options?.projectId };
         this.sessionMeta.set(threadId, meta);
@@ -145,6 +146,27 @@ export class IngestionAgentService implements IIngestionAgentService {
         } else {
           activeSubstep = "Data Ingestion";
           await this.agentThinkingService.clearProjectPipelineThinking(projectId, pipeline);
+
+          const cleanInitialState = {
+            connectorId,
+            projectId: options.projectId,
+            userPrompt: userPrompt ?? "",
+            batchedTables: [],
+            inspection: {},
+            dataProfile: {},
+            preprocess: {},
+            schemaResolution: {},
+            status: "running",
+            summary: "Ingestion workflow started",
+            steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
+            stageOutputs: {},
+            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
+          };
+          try {
+            await this.projectService.updateAgentState(options.projectId, cleanInitialState, userPrompt);
+          } catch (e) {
+            console.warn("[Workflow] Failed to reset project agent state on new run:", e);
+          }
         }
 
         if (activeSubstep) {
@@ -185,8 +207,25 @@ export class IngestionAgentService implements IIngestionAgentService {
               services,
             } 
           };
+          if (options?.projectId) {
+            await this.agentThinkingService.clearProjectPipelineThinking(options.projectId, pipeline);
+          }
           stream = await workflow.stream(
-            { connectorId, projectId: options?.projectId ?? "", userPrompt: meta.userPrompt, status: "queued", summary: "Retrying from inspect" },
+            { 
+              connectorId, 
+              projectId: options?.projectId ?? "", 
+              userPrompt: meta.userPrompt, 
+              status: "queued", 
+              summary: "Retrying from inspect",
+              inspection: {},
+              dataProfile: {},
+              schemaResolution: {},
+              preprocessing: {},
+              batchedTables: [],
+              steps: [],
+              stageOutputs: {},
+              stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
+            },
             freshConfig
           );
         } else {
@@ -224,10 +263,24 @@ export class IngestionAgentService implements IIngestionAgentService {
         console.info(`[Workflow] Approve — resuming thread ${threadId}`);
         stream = await workflow.stream(null, config);
       } else {
-        // New workflow: first invocation
+        // New workflow: first invocation / re-run
         console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);
         stream = await workflow.stream(
-          { connectorId, projectId: options?.projectId ?? "", userPrompt: userPrompt ?? "", status: "queued", summary: "Ingestion workflow started" },
+          { 
+            connectorId, 
+            projectId: options?.projectId ?? "", 
+            userPrompt: userPrompt ?? "", 
+            status: "queued", 
+            summary: "Ingestion workflow started",
+            inspection: {},
+            dataProfile: {},
+            schemaResolution: {},
+            preprocessing: {},
+            batchedTables: [],
+            steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
+            stageOutputs: {},
+            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
+          },
           config
         );
       }
