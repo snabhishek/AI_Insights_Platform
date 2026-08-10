@@ -16,6 +16,7 @@ export interface WorkflowSessionMeta {
   threadId: string;
   connectorId: string[];
   userPrompt: string;
+  projectId?: string;
 }
 
 export interface IngestionServices {

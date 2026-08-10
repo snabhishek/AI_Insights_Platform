@@ -74,7 +74,10 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       if (!meta) {
         threadId = `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        meta = { threadId, connectorId, userPrompt: userPrompt ?? "" };
+        meta = { threadId, connectorId, userPrompt: userPrompt ?? "", projectId: options?.projectId };
+        this.sessionMeta.set(threadId, meta);
+      } else if (options?.projectId && !meta.projectId) {
+        meta.projectId = options.projectId;
         this.sessionMeta.set(threadId, meta);
       }
 
@@ -158,7 +161,8 @@ export class IngestionAgentService implements IIngestionAgentService {
             sessionId: threadId,
             requiresApproval: false,
           };
-          for await (const thinkingUpdate of this.streamThinking(projectId, pipeline, activeSubstep, baseResult, logs)) {
+          for await (const thinkingUpdate of this.streamThinking(projectId, pipeline, activeSubstep, baseResult, logs, threadId)) {
+            if (this.stoppedSessions.has(threadId)) break;
             yield thinkingUpdate;
           }
         }
@@ -230,6 +234,7 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       // Stream updates from initial execution segment
       for await (const _ of stream) {
+        if (this.stoppedSessions.has(threadId)) break;
         const graphState = await workflow.getState(config);
         const result = buildResultFromGraphState(graphState, threadId, connectorId);
         if (options?.projectId) {
@@ -250,6 +255,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         console.info(`[Workflow] Auto-advancing node [${graphState.next.join(", ")}], thread ${threadId}`);
         const advanceStream = await workflow.stream(null, config);
         for await (const _ of advanceStream) {
+          if (this.stoppedSessions.has(threadId)) break;
           const currentGraphState = await workflow.getState(config);
           const result = buildResultFromGraphState(currentGraphState, threadId, connectorId);
           if (options?.projectId) {
@@ -328,7 +334,8 @@ export class IngestionAgentService implements IIngestionAgentService {
     pipeline: string,
     substep: string,
     baseResult: IngestionAgentRunResult,
-    logs: string[]
+    logs: string[],
+    threadId?: string
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
     const thinkingLogs: Array<{ time: string; text: string; done: boolean }> = [];
     
@@ -336,6 +343,11 @@ export class IngestionAgentService implements IIngestionAgentService {
     await this.agentThinkingService.deleteThinking(projectId, pipeline, substep);
 
     for (let i = 0; i < logs.length; i++) {
+      if (threadId && this.stoppedSessions.has(threadId)) {
+        console.info(`[Workflow] Aborting streamThinking for stopped thread ${threadId}`);
+        return;
+      }
+
       const now = new Date();
       const timeStr = now.toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" });
       
@@ -400,6 +412,9 @@ export class IngestionAgentService implements IIngestionAgentService {
     this.stoppedSessions.add(sessionId);
     console.info(`[Workflow] Session ${sessionId} marked as stopped.`);
 
+    const meta = this.sessionMeta.get(sessionId);
+    const targetProjectId = projectId || meta?.projectId;
+
     try {
       const workflow = createAgentGraph(this.checkpointer);
       const services = {
@@ -423,18 +438,27 @@ export class IngestionAgentService implements IIngestionAgentService {
         summary: "Workflow stopped by user",
       };
 
-      const result = buildResultFromGraphState({ ...graphState, values: updatedValues }, sessionId, graphState?.values?.connectorId || []);
+      const result = buildResultFromGraphState({ ...graphState, values: updatedValues }, sessionId, graphState?.values?.connectorId || meta?.connectorId || []);
       result.status = "failed";
       result.summary = "Workflow stopped by user";
       result.message = "Workflow stopped by user.";
       result.requiresApproval = false;
 
-      if (projectId) {
-        await this.projectService.updateAgentState(projectId, updatedValues);
+      if (targetProjectId) {
+        await this.projectService.updateAgentState(targetProjectId, updatedValues);
+        console.info(`[Workflow] Project ${targetProjectId} agent state updated to stopped/failed.`);
       }
       return result;
     } catch (err: any) {
       console.warn(`[Workflow] Failed to update stopped state for session ${sessionId}:`, err?.message || err);
+      if (targetProjectId) {
+        try {
+          await this.projectService.updateAgentState(targetProjectId, {
+            status: "failed",
+            summary: "Workflow stopped by user",
+          });
+        } catch (_) {}
+      }
       return { success: true, message: "Workflow stopped" };
     }
   }
