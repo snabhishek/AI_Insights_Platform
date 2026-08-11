@@ -392,7 +392,8 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     const substepMap: Record<string, string> = {
       profileData: "Data Profiling",
       preprocess: "Data Profiling",
-      resolveSchema: "Schema Resolver"
+      resolveSchema: "Schema Resolver",
+      exogenousScout: "Feature Engineering",
     };
     const substep = substepMap[stepName] || "Data Ingestion";
     await logAgentMessagesAsThinking(services, substep, result);
@@ -639,6 +640,7 @@ export function buildResultFromGraphState(
     schemaResolution: (values.schemaResolution && typeof values.schemaResolution === "object") ? values.schemaResolution : {},
     dataProfile: (values.dataProfile && typeof values.dataProfile === "object") ? values.dataProfile : {},
     preprocessing: (values.preprocessing && typeof values.preprocessing === "object") ? values.preprocessing : {},
+    exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
