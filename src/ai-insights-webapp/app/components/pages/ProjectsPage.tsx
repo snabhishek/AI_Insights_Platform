@@ -122,33 +122,40 @@ export default function ProjectsPage() {
     ? selectedProject.dataSources.filter((sourceId): sourceId is string => typeof sourceId === "string" && sourceId.trim().length > 0)
     : [];
 
-  const mapStageToPipelineStatus = (stageStatuses?: Record<string, string>): PipelineStatuses => {
-    const next = { ...INITIAL_PIPELINE_STATUSES } as PipelineStatuses;
+  const mapStageToPipelineStatus = (
+    stageStatuses?: Record<string, string>,
+    currentStatuses?: PipelineStatuses
+  ): PipelineStatuses => {
+    const next = { ...(currentStatuses || INITIAL_PIPELINE_STATUSES) } as PipelineStatuses;
     if (!stageStatuses) return next;
 
     // Single-node stages
     const mapSingle = (node: string, label: string) => {
-      const v = stageStatuses[node] || "Pending";
+      const v = stageStatuses[node];
+      if (!v) return;
       if (v === "Completed") next[label] = "Completed";
       else if (v === "Retrying" || v === "In Progress") next[label] = "In Progress";
       else if (v === "Failed") next[label] = "Pending";
+      else if (v === "Pending" && next[label] !== "Completed") next[label] = "Pending";
     };
     mapSingle("inspect", "Data Ingestion");
     mapSingle("resolveSchema", "Schema Resolver");
 
     // Merged stage: Data Profiling = profileData + preprocess
-    const profileVal = stageStatuses.profileData || "Pending";
-    const preprocessVal = stageStatuses.preprocess || "Pending";
-    const isAnyRunning = [profileVal, preprocessVal].some((v) => v === "In Progress" || v === "Retrying");
-    const allCompleted = profileVal === "Completed" && preprocessVal === "Completed";
-    const anyCompleted = profileVal === "Completed" || preprocessVal === "Completed";
+    const profileVal = stageStatuses.profileData;
+    const preprocessVal = stageStatuses.preprocess;
+    if (profileVal || preprocessVal) {
+      const vals = [profileVal, preprocessVal].filter(Boolean);
+      const isAnyRunning = vals.some((v) => v === "In Progress" || v === "Retrying");
+      const allCompleted = profileVal === "Completed" && preprocessVal === "Completed";
+      const anyCompleted = profileVal === "Completed" || preprocessVal === "Completed";
 
-    if (allCompleted) {
-      next["Data Profiling"] = "Completed";
-    } else if (isAnyRunning || anyCompleted) {
-      next["Data Profiling"] = "In Progress";
+      if (allCompleted) {
+        next["Data Profiling"] = "Completed";
+      } else if (isAnyRunning || anyCompleted) {
+        next["Data Profiling"] = "In Progress";
+      }
     }
-    // else stays "Not Started" from INITIAL_PIPELINE_STATUSES
 
     return next;
   };
@@ -179,7 +186,7 @@ export default function ProjectsPage() {
 
     const state = selectedProject.agentState as Record<string, any> | undefined;
     if (state && typeof state === "object" && (state.stageStatuses || state.status || state.stageOutputs)) {
-      const nextStatuses = mapStageToPipelineStatus(state.stageStatuses);
+      const nextStatuses = mapStageToPipelineStatus(state.stageStatuses, pipelineStatuses);
       setPipelineStatuses(nextStatuses);
 
       if (state.status === "completed") {
@@ -219,8 +226,10 @@ export default function ProjectsPage() {
   }, [selectedProjectId, selectedProject?.agentState]);
 
   const updateWorkflowState = (payload: WorkflowResponse["data"]) => {
-    const nextStatuses = mapStageToPipelineStatus(payload.stageStatuses);
-    setPipelineStatuses(nextStatuses);
+    setPipelineStatuses((prev) => {
+      const nextStatuses = mapStageToPipelineStatus(payload.stageStatuses, prev);
+      return nextStatuses;
+    });
 
     if (payload.status === "completed") {
       setRunStatus("Success");
@@ -386,15 +395,18 @@ export default function ProjectsPage() {
 
   const handleApprove = () => {
     setRequiresApproval(false);
-    setRunStatus("Running");
-    if (activeStage === "inspect" || activeStage === null) {
-      setActiveStage("profileData");
-      setWorkflowMessage("Running Data Profiling & Preprocessing...");
-    } else if (activeStage === "profileData" || activeStage === "preprocess") {
-      setActiveStage("resolveSchema");
-      setWorkflowMessage("Running Schema Resolution...");
+    if (pipelineStatuses["Data Ingestion"] === "Completed" || pipelineStatuses["Schema Resolver"] === "Completed") {
+      setRunStatus("Running");
+      setActiveStage("Feature Engineering");
+      setWorkflowMessage("Advancing workflow to Feature Engineering stage...");
+      setPipelineStatuses((prev) => ({
+        ...prev,
+        "Feature Engineering": "In Progress",
+      }));
+    } else {
+      setRunStatus("Running");
+      void runWorkflow("approve");
     }
-    void runWorkflow("approve");
   };
 
   const handleRetry = (step?: string) => {

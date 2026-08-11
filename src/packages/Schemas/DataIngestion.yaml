@@ -3,17 +3,7 @@ generatedAt: Exact Time Stamp of file created
 resolvedTables: List of tables resolved from the dataset, if files like excel or csv accounts to individual files.
   - sample table 1
   - sample table 2
-strategy: inspect-and-map
 fields:
-  DomainKnowledge:
-    description: Establishes the industry/domain and business use case the insights platform is built for. Tier1/Tier2 may be suggested by the agent based on the data, but must be confirmed by the user. UseCase and UseCaseDescription are user-provided.
-    priority: Contextual
-    priority_rationale: Not an accessed data field itself — it supplies the use-case context that recalibrates every other field's priority
-    Tier1: User Provided
-    Tier2: User Provided
-    UseCase: Short name of the use case the user wants the platform to address, as provided by the user — e.g. "Customer Churn Prediction", "Predictive Maintenance"
-    UseCaseDescription: User-provided free-text explanation of the use case — goals, context, and what "insight" means for this platform
-
   Identifier:
     description: Unique keys used to reference records
     typical_analysis: Deduplication, joins, entity tracking
@@ -155,16 +145,7 @@ fields:
     typical_analysis: Risk assessment, anomaly detection
     priority: High
     priority_rationale: Directly tied to risk/fraud-prediction use cases
-    subtypes: [ProbabilityOfFailure, ImpactSeverity, RiskCategory, MitigationPlan, ExposureLevel]
-
-  Relationship:
-    description: Links between entities, capturing which fields are connected and the nature/reason for that link
-    priority: Medium
-    priority_rationale: Useful for graph/network features but requires extra joins to exploit
-    structure:
-      related_field: Name of the other field this field is linked to
-      relationship_type: [OneToOne, OneToMany, ManyToMany, ParentChild, Association, DependencyLink]
-      explanation: Free-text description of why/how the two fields are related (e.g. "CustomerID links to OrderID: one customer can place many orders")
+    subtypes: [ProbabilityOfFailure, ImpactSeverity, RiskCategory, MitigationPlan, ExposureLevel]    
 
   Hierarchical:
     description: Structural position within a tree or org
@@ -178,45 +159,8 @@ fields:
     priority_rationale: Already-engineered signal, often more directly usable than the raw fields behind it
     subtypes: [CalculatedField, Aggregate, RollingAverage, RatioMetric, Delta/Variance]
 
-  FeatureEngineering:
-    description: ML-ready transformations of raw fields
-    typical_analysis: Machine learning model input preparation
-    priority: Critical
-    priority_rationale: Purpose-built inputs for the model — this is the model's actual feature set
-
-  Label:
-    description: Human- or system-assigned labels used for supervised learning or annotation
-    typical_analysis: Classification evaluation
-    priority: Critical
-    priority_rationale: Ground truth the model is trained against; essential for supervised learning
-
-  Target:
-    description: Prediction objectives for modeling
-    typical_analysis: Supervised learning
-    priority: Critical
-    priority_rationale: The prediction objective itself — without it there is no ML use case
-
-  Metadata:
-    description: Information describing the data itself
-    typical_analysis: Data lineage, governance
-    priority: Low
-    priority_rationale: Useful for governance/lineage, rarely used as a modeling feature
-
-  ExternalFactor:
-    description: Outside variables influencing outcomes
-    typical_analysis: Correlation analysis, forecasting
-    priority: High
-    priority_rationale: Frequently a strong exogenous driver in forecasting use cases
-
-  Sensitive:
-    description: Data requiring restricted access/handling
-    priority: Conditional
-    priority_rationale: Governed by compliance rather than modeling value — may be required for specific use cases (e.g. fraud/credit risk) but needs masking/approval first
-    subtypes: [PII, PHI, FinancialSensitive, Confidential, LegalHold]
-
   Media:
     description: Non-tabular binary or rich content
     priority: Low
     priority_rationale: Low by default; becomes Critical when the use case is itself media-based (e.g. image classification)
     subtypes: [Image, Video, Audio, Document, Attachment, Thumbnail]
-

@@ -55,6 +55,15 @@ export class WorkspaceService {
       return { success: false, reason: "FORBIDDEN", message: "The Default Workspace cannot be deleted." };
     }
 
+    try {
+      const projects = await this.projectRepository.getByWorkspaceId(id);
+      for (const p of projects) {
+        await deleteProjectSchemaFolder(ws.name, p.name);
+      }
+    } catch (e: any) {
+      console.warn(`[workspaceService] Failed to clean up project folders during workspace deletion:`, e?.message || e);
+    }
+
     await this.workspaceRepository.delete(id);
     return { success: true, data: true };
   }

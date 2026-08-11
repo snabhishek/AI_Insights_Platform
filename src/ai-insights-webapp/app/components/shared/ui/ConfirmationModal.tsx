@@ -24,12 +24,12 @@ export default function ConfirmationModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-md animate-fade-in">
+      <div className="relative w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col">
         
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-surface-muted">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between border-b border-border/80 px-5 py-3 bg-surface-muted/60">
+          <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg border shrink-0 bg-amber-500/10 border-amber-500/20 text-amber-500">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v2m0 4h.01" />
@@ -49,21 +49,21 @@ export default function ConfirmationModal({
         </div>
 
         {/* Modal Middle Message Section */}
-        <div className="p-6 flex flex-col gap-4 overflow-y-auto text-sm text-foreground">
+        <div className="p-5 flex flex-col gap-3 overflow-y-auto text-sm text-foreground">
           <p className="leading-relaxed font-semibold">{message}</p>
         </div>
 
         {/* Horizontal Line Separator & Footer Section */}
-        <div className="border-t border-border px-6 py-4 bg-surface-muted flex justify-end gap-3">
+        <div className="border-t border-border/80 px-5 py-3 bg-surface-muted/60 flex justify-end gap-2.5">
           <button
             onClick={onCancel}
-            className="h-9 px-5 bg-surface border border-border text-xs font-semibold rounded-lg hover:bg-surface-muted hover:border-foreground/20 text-foreground transition-all cursor-pointer"
+            className="h-8 px-4 bg-surface border border-border text-xs font-semibold rounded-lg hover:bg-surface-muted hover:border-foreground/20 text-foreground transition-all cursor-pointer"
           >
             {cancelText}
           </button>
           <button
             onClick={onConfirm}
-            className="h-9 px-5 bg-red-500 text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            className="h-8 px-4 bg-red-500 text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
           >
             {confirmText}
           </button>

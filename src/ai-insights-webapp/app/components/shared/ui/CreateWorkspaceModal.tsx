@@ -52,14 +52,14 @@ export default function CreateWorkspaceModal({
 
   return (
     <div
-      className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-md animate-fade-in"
       onKeyDown={handleKeyDown}
     >
-      <div className="relative w-full max-w-md overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl flex flex-col">
+      <div className="relative w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col">
 
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-surface-muted">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between border-b border-border/80 px-5 py-3 bg-surface-muted/60">
+          <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg border shrink-0 bg-primary/10 border-primary/20 text-primary">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -80,12 +80,12 @@ export default function CreateWorkspaceModal({
 
         {/* Body */}
         <form onSubmit={handleSubmit}>
-          <div className="p-6 flex flex-col gap-4">
-            <p className="text-sm text-muted-foreground leading-relaxed">
+          <div className="p-5 flex flex-col gap-3.5">
+            <p className="text-xs text-muted-foreground leading-relaxed">
               Create a new workspace to organise projects and data sources independently.
             </p>
             <div className="flex flex-col gap-1.5">
-              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+              <label className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                 Workspace Name
               </label>
               <input
@@ -94,7 +94,7 @@ export default function CreateWorkspaceModal({
                 value={name}
                 onChange={(e) => { setName(e.target.value); setError(""); }}
                 placeholder="e.g. Marketing Analytics"
-                className="h-10 w-full rounded-lg border border-border bg-background px-3 text-sm text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
+                className="h-9 w-full rounded-lg border border-border bg-background px-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary transition-all"
               />
               {error && (
                 <p className="text-xs text-red-500 font-medium mt-0.5">{error}</p>
@@ -103,19 +103,19 @@ export default function CreateWorkspaceModal({
           </div>
 
           {/* Footer */}
-          <div className="border-t border-border px-6 py-4 bg-surface-muted flex justify-end gap-3">
+          <div className="border-t border-border/80 px-5 py-3 bg-surface-muted/60 flex justify-end gap-2.5">
             <button
               type="button"
               onClick={onClose}
               disabled={isLoading}
-              className="h-9 px-5 bg-surface border border-border text-xs font-semibold rounded-lg hover:bg-surface-muted hover:border-foreground/20 text-foreground transition-all cursor-pointer disabled:opacity-50"
+              className="h-8 px-4 bg-surface border border-border text-xs font-semibold rounded-lg hover:bg-surface-muted hover:border-foreground/20 text-foreground transition-all cursor-pointer disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={isLoading || !name.trim()}
-              className="h-9 px-5 bg-primary text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 flex items-center gap-2"
+              className="h-8 px-4 bg-primary text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed disabled:scale-100 flex items-center gap-2"
             >
               {isLoading ? (
                 <>

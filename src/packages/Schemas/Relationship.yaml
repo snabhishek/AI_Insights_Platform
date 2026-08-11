@@ -1,0 +1,11 @@
+version: "1.0"
+generatedAt: Exact Time Stamp of file created
+resolvedTables: List of tables resolved from the dataset, if files like excel or csv accounts to individual files.
+  - sample table 1
+  - sample table 2
+Relationship:
+    field: Name of the current field in the database
+    related_field: Name of the other field this field is linked to
+    priority: [Critical, High. Medium, Low]
+    relationship_type: [OneToOne, OneToMany, ManyToMany, ParentChild, Association, DependencyLink]
+    explanation: Free-text description of why/how the two fields are related (e.g. "CustomerID links to OrderID: one customer can place many orders")re:
