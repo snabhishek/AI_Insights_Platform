@@ -78,9 +78,17 @@ export default function CardModal({
   const activeStep = stepsList[activeStepIndex] || null;
   const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Not Started") : "Not Started";
 
-  // Auto-select first step when modal opens or workflow changes
+  // Auto-select active (In Progress) step, or first uncompleted step when modal opens
   useEffect(() => {
-    setActiveStepIndex(0);
+    if (!isOpen || !workflowCard) return;
+    const steps = workflowCard.step || [];
+    const inProgressIdx = steps.findIndex((s) => pipelineStatuses[s.id] === "In Progress");
+    if (inProgressIdx !== -1) {
+      setActiveStepIndex(inProgressIdx);
+    } else {
+      const firstUncompletedIdx = steps.findIndex((s) => pipelineStatuses[s.id] !== "Completed");
+      setActiveStepIndex(firstUncompletedIdx !== -1 ? firstUncompletedIdx : 0);
+    }
   }, [workflowCard?.id, isOpen]);
 
   // Synchronize and fetch agent thinking logs
@@ -168,19 +176,19 @@ export default function CardModal({
   const cardStatus = pipelineStatuses[workflowCard.id] ?? "Not Started";
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-3 bg-slate-950/60 animate-fade-in select-none">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-3 bg-slate-950/50 backdrop-blur-md animate-fade-in select-none">
       {/* Extended width to full screen with minimum gap, reduced border radius to rounded-xl */}
       <div className="relative w-[98vw] h-[96vh] max-w-none overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col sm:flex-row animate-scale-up">
         
         {/* Left Panel: Steps Sidebar */}
-        <div className="w-full sm:w-[250px] border-b sm:border-b-0 sm:border-r border-border p-6 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
+        <div className="w-full sm:w-[250px] border-b sm:border-b-0 sm:border-r border-border p-5 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
 
-          <div className="mb-5 shrink-0">
+          <div className="mb-4 shrink-0">
             <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Execution Steps</span>
             <p className="text-xs text-muted-foreground mt-0.5">Select a pipeline step to review outputs.</p>
           </div>
 
-          <div className="relative flex flex-col gap-6 flex-1 min-h-0">
+          <div className="relative flex flex-col gap-5 flex-1 min-h-0">
             {stepsList.map((stepItem, idx) => {
               const isSelected = activeStepIndex === idx;
               const stepStatus = pipelineStatuses[stepItem.id] ?? "Not Started";
@@ -252,13 +260,13 @@ export default function CardModal({
         <div className="flex-1 overflow-y-auto flex flex-col bg-background/30 relative">
           
           {/* Header of right panel containing Title, Icon, Status and Close button */}
-          <div className="flex items-center justify-between p-4 border-b border-border shrink-0 select-none">
+          <div className="flex items-center justify-between px-5 py-3 border-b border-border/80 bg-surface-muted/60 shrink-0 select-none">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 flex items-center justify-center border border-indigo-500/20 text-indigo-500 bg-indigo-500/5 shadow-inner">
+              <div className="w-9 h-9 flex items-center justify-center border border-indigo-500/20 text-indigo-500 bg-indigo-500/5 rounded-lg shadow-inner">
                 {workflowCard.icon}
               </div>
               <div>
-                <h2 className="text-lg font-bold text-foreground leading-snug">
+                <h2 className="text-sm font-bold text-foreground leading-snug">
                   {workflowCard.title} Node
                 </h2>
                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -267,7 +275,7 @@ export default function CardModal({
                     cardStatus === "In Progress" ? "bg-indigo-500 animate-ping" :
                     cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
                   }`} />
-                  <span className="text-xs font-bold text-muted-foreground">
+                  <span className="text-[11px] font-semibold text-muted-foreground">
                     {cardStatus === "In Progress" ? "Running" : cardStatus}
                   </span>
                 </div>
@@ -276,7 +284,7 @@ export default function CardModal({
 
             <button 
               onClick={onClose} 
-              className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-surface-muted border border-border text-muted-foreground transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-background border border-border text-muted-foreground transition-colors cursor-pointer"
               title="Close Details"
             >
               ✕

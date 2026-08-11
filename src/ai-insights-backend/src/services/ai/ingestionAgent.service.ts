@@ -171,19 +171,35 @@ export class IngestionAgentService implements IIngestionAgentService {
 
         if (activeSubstep) {
           const logs = SUBSTEP_THINKING_TEMPLATES[activeSubstep] || [];
-          const baseResult = {
+          const currentGraphState = await workflow.getState(config).catch(() => null);
+          const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
+
+          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver") ? "Completed" : "In Progress";
+          const profileStatus = activeSubstep === "Schema Resolver" ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+          const preprocessStatus = activeSubstep === "Schema Resolver" ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+          const schemaStatus = activeSubstep === "Schema Resolver" ? "In Progress" : "Pending";
+
+          const mergedStageStatuses = {
+            inspect: inspectStatus,
+            profileData: profileStatus,
+            preprocess: preprocessStatus,
+            resolveSchema: schemaStatus,
+            ...(calculatedBase.stageStatuses || {}),
+          };
+
+          const fullBaseResult: IngestionAgentRunResult = {
+            ...calculatedBase,
             connectorId,
             status: "running",
             summary: `${activeSubstep} agent reasoning in progress`,
-            steps: [],
-            inspection: {},
-            schemaResolution: {},
-            dataProfile: {},
-            preprocessing: {},
             sessionId: threadId,
             requiresApproval: false,
+            stageStatuses: mergedStageStatuses,
+            currentNode: activeSubstep === "Data Ingestion" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : "resolveSchema",
+            currentStage: activeSubstep === "Data Ingestion" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : "resolveSchema",
           };
-          for await (const thinkingUpdate of this.streamThinking(projectId, pipeline, activeSubstep, baseResult, logs, threadId)) {
+
+          for await (const thinkingUpdate of this.streamThinking(projectId, pipeline, activeSubstep, fullBaseResult, logs, threadId)) {
             if (this.stoppedSessions.has(threadId)) break;
             yield thinkingUpdate;
           }

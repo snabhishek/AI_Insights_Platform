@@ -22,12 +22,12 @@ export default function MessageModal({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-md animate-fade-in">
+      <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col max-h-[85vh]">
         
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-surface-muted">
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-between border-b border-border/80 px-5 py-3 bg-surface-muted/60">
+          <div className="flex items-center gap-2.5">
             <div className={`p-1.5 rounded-lg border shrink-0 ${
               type === "success"
                 ? "bg-green-500/10 border-green-500/20 text-green-500"
@@ -65,7 +65,7 @@ export default function MessageModal({
         </div>
 
         {/* Modal Middle Message Section */}
-        <div className="p-6 flex flex-col gap-4 overflow-y-auto text-sm text-foreground">
+        <div className="p-5 flex flex-col gap-3 overflow-y-auto text-sm text-foreground">
           <p className="leading-relaxed font-medium">{message}</p>
 
           {/* Logs Block if provided */}
@@ -74,7 +74,7 @@ export default function MessageModal({
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                 Diagnostics Logs
               </span>
-              <div className="border border-border/85 rounded-xl bg-[#0f172a] p-3.5 text-xs font-mono text-slate-300 max-h-[220px] overflow-y-auto whitespace-pre-wrap select-all leading-normal">
+              <div className="border border-border/85 rounded-lg bg-[#0f172a] p-3 text-xs font-mono text-slate-300 max-h-[220px] overflow-y-auto whitespace-pre-wrap select-all leading-normal">
                 {logs}
               </div>
             </div>
@@ -82,10 +82,10 @@ export default function MessageModal({
         </div>
 
         {/* Horizontal Line Separator & Footer Section */}
-        <div className="border-t border-border px-6 py-4 bg-surface-muted flex justify-end">
+        <div className="border-t border-border/80 px-5 py-3 bg-surface-muted/60 flex justify-end">
           <button
             onClick={onClose}
-            className="h-9 px-5 bg-primary text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
+            className="h-8 px-4 bg-primary text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
           >
             Okay
           </button>

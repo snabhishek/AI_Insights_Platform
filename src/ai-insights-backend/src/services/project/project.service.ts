@@ -1,5 +1,6 @@
 import { IProjectRepository } from "../../repositories/project.repository.interface";
 import { Project, ProjectRun, ProjectWithWorkspace } from "../../models/project.types";
+import { deleteProjectSchemaFolder } from "../../agents/tools/schemaHelper";
 
 export class ProjectService {
   constructor(private repository: IProjectRepository) {}
@@ -33,6 +34,14 @@ export class ProjectService {
   }
 
   async deleteProject(id: string): Promise<boolean> {
+    try {
+      const pWs = await this.repository.getProjectWithWorkspace(id);
+      if (pWs && pWs.project && pWs.workspaceName) {
+        await deleteProjectSchemaFolder(pWs.workspaceName, pWs.project.name);
+      }
+    } catch (e: any) {
+      console.warn(`[projectService] Failed to delete project schema folder for ${id}:`, e?.message || e);
+    }
     return this.repository.deleteProject(id);
   }
 }

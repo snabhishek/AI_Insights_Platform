@@ -62,10 +62,15 @@ export function getPackagesDir(): string {
  * Resolves the location of candidate package files in the workspace.
  */
 export function resolvePackageFilePath(filename: string): string {
+  const packagesDir = getPackagesDir();
   const candidatePaths = [
-    path.join(getPackagesDir(), filename),
+    path.join(packagesDir, "Schemas", filename),
+    path.join(packagesDir, filename),
+    path.resolve(__dirname, "../../../../../packages/Schemas", filename),
     path.resolve(__dirname, "../../../../../packages", filename),
+    path.resolve(process.cwd(), "../packages/Schemas", filename),
     path.resolve(process.cwd(), "../packages", filename),
+    path.resolve(process.cwd(), "src/packages/Schemas", filename),
     path.resolve(process.cwd(), "src/packages", filename),
   ];
   for (const candidate of candidatePaths) {
@@ -77,15 +82,38 @@ export function resolvePackageFilePath(filename: string): string {
 }
 
 /**
- * Loads the static Schema.yaml content from the packages folder.
+ * Loads and merges the base modular schema files (Domain.yaml, DataIngestion.yaml, FeatureEngineering.yaml, Relationship.yaml)
+ * from the packages/Schemas folder, falling back to static Schema.yaml if present.
  */
 export async function loadFieldSchemaYaml(): Promise<string> {
-  const schemaPath = resolvePackageFilePath("Schema.yaml");
-  if (fsSync.existsSync(schemaPath)) {
+  const packagesDir = getPackagesDir();
+  const schemasDir = path.resolve(packagesDir, "Schemas");
+  if (fsSync.existsSync(schemasDir)) {
     try {
-      return await fs.readFile(schemaPath, "utf-8");
+      const mergedObj: any = { version: "1.0", generatedAt: new Date().toISOString(), fields: {} };
+      const modularFiles = ["Domain.yaml", "DataIngestion.yaml", "FeatureEngineering.yaml", "Relationship.yaml"];
+      for (const file of modularFiles) {
+        const filePath = path.resolve(schemasDir, file);
+        if (fsSync.existsSync(filePath)) {
+          const content = await fs.readFile(filePath, "utf-8");
+          const parsed: any = yaml.load(content) || {};
+          if (parsed.DomainKnowledge) mergedObj.fields.DomainKnowledge = parsed.DomainKnowledge;
+          if (parsed.fields) Object.assign(mergedObj.fields, parsed.fields);
+          if (parsed.FeatureEngineering) mergedObj.fields.FeatureEngineering = parsed.FeatureEngineering;
+          if (parsed.Relationship) mergedObj.fields.Relationship = parsed.Relationship;
+        }
+      }
+      return yaml.dump(mergedObj, { indent: 2, lineWidth: -1, noRefs: true });
     } catch (err) {
-      console.warn(`Failed to read Schema.yaml at ${schemaPath}:`, err);
+      console.warn(`[loadFieldSchemaYaml] Failed to merge modular schemas at ${schemasDir}:`, err);
+    }
+  }
+  const defaultSchemaPath = resolvePackageFilePath("Schema.yaml");
+  if (fsSync.existsSync(defaultSchemaPath)) {
+    try {
+      return await fs.readFile(defaultSchemaPath, "utf-8");
+    } catch (err) {
+      console.warn(`Failed to read Schema.yaml at ${defaultSchemaPath}:`, err);
     }
   }
   return "";
@@ -113,6 +141,10 @@ export async function getProjectSchemaPath(
     if (fsSync.existsSync(cDir)) {
       try {
         const files = await fs.readdir(cDir);
+        const domainFile = files.find((f) => f.includes("_domain_") && (f.endsWith(".yaml") || f.endsWith(".yml")));
+        if (domainFile) {
+          return path.resolve(cDir, domainFile);
+        }
         const yamlFiles = files
           .filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"))
           .sort();
@@ -129,22 +161,50 @@ export async function getProjectSchemaPath(
 
 /**
  * Loads the project schema YAML from packages/ProjectFiles if present,
- * or falls back to static Schema.yaml if not found.
+ * merging modular schemas, or falls back to base modular Schema files.
  */
 export async function loadProjectOrFieldSchemaYaml(
   workspaceName?: string,
   projectName?: string
 ): Promise<{ content: string; sourcePath: string; isProjectSchema: boolean }> {
-  const projectFilePath = await getProjectSchemaPath(workspaceName, projectName);
-  if (projectFilePath && fsSync.existsSync(projectFilePath)) {
-    try {
-      const content = await fs.readFile(projectFilePath, "utf-8");
-      return { content, sourcePath: projectFilePath, isProjectSchema: true };
-    } catch (err) {
-      console.warn(`[loadProjectOrFieldSchemaYaml] Failed to read project schema file at ${projectFilePath}:`, err);
+  if (workspaceName && projectName) {
+    const packagesDir = getPackagesDir();
+    const cleanWsName = sanitizeName(workspaceName);
+    const cleanProjectTitle = sanitizeName(projectName);
+    const folderName = `${cleanWsName}-${cleanProjectTitle}`;
+    const candidateDirs = [
+      path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas"),
+      path.resolve(packagesDir, folderName, "Schemas"),
+    ];
+
+    for (const targetDir of candidateDirs) {
+      if (fsSync.existsSync(targetDir)) {
+        try {
+          const files = await fs.readdir(targetDir);
+          const yamlFiles = files.filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+          if (yamlFiles.length > 0) {
+            const mergedObj: any = { version: "1.0", generatedAt: new Date().toISOString(), fields: {} };
+            for (const file of yamlFiles) {
+              const filePath = path.resolve(targetDir, file);
+              const content = await fs.readFile(filePath, "utf-8");
+              const parsed: any = yaml.load(content) || {};
+              if (parsed.DomainKnowledge) mergedObj.fields.DomainKnowledge = parsed.DomainKnowledge;
+              if (parsed.fields) Object.assign(mergedObj.fields, parsed.fields);
+              if (parsed.FeatureEngineering) mergedObj.fields.FeatureEngineering = parsed.FeatureEngineering;
+              if (parsed.Relationship) mergedObj.fields.Relationship = parsed.Relationship;
+            }
+            const mergedContent = yaml.dump(mergedObj, { indent: 2, lineWidth: -1, noRefs: true });
+            const domainPath = path.resolve(targetDir, yamlFiles.find(f => f.includes("_domain_")) || yamlFiles[0]);
+            return { content: mergedContent, sourcePath: domainPath, isProjectSchema: true };
+          }
+        } catch (err) {
+          console.warn(`[loadProjectOrFieldSchemaYaml] Failed reading project dir ${targetDir}:`, err);
+        }
+      }
     }
   }
-  const defaultSchemaPath = resolvePackageFilePath("Schema.yaml");
+
+  const defaultSchemaPath = resolvePackageFilePath("Domain.yaml");
   const content = await loadFieldSchemaYaml();
   return { content, sourcePath: defaultSchemaPath, isProjectSchema: false };
 }
@@ -160,7 +220,6 @@ export async function writeResolvedSchemaYaml(
     const dir = path.dirname(filePath);
     await fs.mkdir(dir, { recursive: true });
 
-    // Group dataset fields by topic
     const groupedTopics: Record<string, any[]> = {};
 
     for (const mapping of payload.mappings || []) {
@@ -211,60 +270,75 @@ export interface ProjectSchemaInput {
 }
 
 /**
- * Creates the project folder inside packages and generates the initial schema file
- * by copying Schema.yaml and updating the DomainKnowledge hierarchy fields.
+ * Creates the project folder inside packages/ProjectFiles/<Workspace>-<Project>/Schemas
+ * and updates the Domain.yaml modular schema with domain knowledge from project creation.
+ * The Domain file is named `<usecasetitle>_domain_<timestamp>.yaml`.
+ * Remaining modular schema templates (DataIngestion.yaml, FeatureEngineering.yaml, Relationship.yaml) are copied into the folder.
+ * Any legacy single schema file (*_schema_*.yaml) is removed.
  */
 export async function createProjectSchemaFile(
   workspaceName: string,
   projectInput: ProjectSchemaInput
 ): Promise<string> {
   const packagesDir = getPackagesDir();
-  const rawYaml = await loadFieldSchemaYaml();
-  
-  let schemaObj: any = {};
-  if (rawYaml) {
-    try {
-      schemaObj = yaml.load(rawYaml) || {};
-    } catch (e) {
-      console.warn("[createProjectSchemaFile] Failed to parse Schema.yaml, initializing empty object", e);
-      schemaObj = {};
-    }
-  }
-
-  if (!schemaObj.fields) {
-    schemaObj.fields = {};
-  }
-  if (!schemaObj.fields.DomainKnowledge) {
-    schemaObj.fields.DomainKnowledge = {};
-  }
-
-  const dk = schemaObj.fields.DomainKnowledge;
-  dk.Tier1 = projectInput.domain && projectInput.domain.trim().length > 0 ? projectInput.domain.trim() : (dk.Tier1 || "User Provided");
-  dk.Tier2 = projectInput.subDomain && projectInput.subDomain.trim().length > 0 ? projectInput.subDomain.trim() : (dk.Tier2 || "User Provided");
-  dk.UseCase = projectInput.name && projectInput.name.trim().length > 0 ? projectInput.name.trim() : (dk.UseCase || "");
-  dk.UseCaseDescription = projectInput.useCase && projectInput.useCase.trim().length > 0 ? projectInput.useCase.trim() : (dk.UseCaseDescription || "");
-
   const cleanWsName = sanitizeName(workspaceName);
   const cleanProjectTitle = sanitizeName(projectInput.name);
   const folderName = `${cleanWsName}-${cleanProjectTitle}`;
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
   const timestamp = generateDateTimeStamp();
-  const fileName = `${useCaseSlug}_schema_${timestamp}.yaml`;
+  const domainFileName = `${useCaseSlug}_domain_${timestamp}.yaml`;
 
   const targetDir = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas");
   await fs.mkdir(targetDir, { recursive: true });
 
-  const targetPath = path.resolve(targetDir, fileName);
-  const dumpedYaml = yaml.dump(schemaObj, { indent: 2, lineWidth: -1, noRefs: true });
-  await fs.writeFile(targetPath, dumpedYaml, "utf-8");
+  // Remove any old legacy single schema files (*_schema_*.yaml) inside targetDir
+  try {
+    const existingFiles = await fs.readdir(targetDir);
+    for (const f of existingFiles) {
+      if (f.includes("_schema_") && (f.endsWith(".yaml") || f.endsWith(".yml"))) {
+        await fs.unlink(path.resolve(targetDir, f));
+        console.info(`[createProjectSchemaFile] Removed legacy single schema file: ${f}`);
+      }
+    }
+  } catch (cleanErr) {
+    console.warn(`[createProjectSchemaFile] Warning during cleanup of old single schema files:`, cleanErr);
+  }
 
-  console.info(`[createProjectSchemaFile] Created project schema file at ${targetPath}`);
-  return targetPath;
+  // Load Domain.yaml template from packages/Schemas
+  const domainTemplatePath = resolvePackageFilePath("Domain.yaml");
+  let domainObj: any = {};
+  if (fsSync.existsSync(domainTemplatePath)) {
+    try {
+      const rawDomain = await fs.readFile(domainTemplatePath, "utf-8");
+      domainObj = yaml.load(rawDomain) || {};
+    } catch (e) {
+      console.warn("[createProjectSchemaFile] Failed to parse Domain.yaml template, initializing standard object", e);
+    }
+  }
+
+  if (!domainObj.DomainKnowledge) {
+    domainObj.DomainKnowledge = {};
+  }
+
+  const dk = domainObj.DomainKnowledge;
+  dk.Tier1 = projectInput.domain && projectInput.domain.trim().length > 0 ? projectInput.domain.trim() : (dk.Tier1 || "User Provided");
+  dk.Tier2 = projectInput.subDomain && projectInput.subDomain.trim().length > 0 ? projectInput.subDomain.trim() : (dk.Tier2 || "User Provided");
+  dk.UseCase = projectInput.name && projectInput.name.trim().length > 0 ? projectInput.name.trim() : (dk.UseCase || "");
+  dk.UseCaseDescription = projectInput.useCase && projectInput.useCase.trim().length > 0 ? projectInput.useCase.trim() : (dk.UseCaseDescription || "");
+  domainObj.generatedAt = new Date().toISOString();
+
+  const domainTargetPath = path.resolve(targetDir, domainFileName);
+  const dumpedDomainYaml = yaml.dump(domainObj, { indent: 2, lineWidth: -1, noRefs: true });
+  await fs.writeFile(domainTargetPath, dumpedDomainYaml, "utf-8");
+  console.info(`[createProjectSchemaFile] Created project domain schema file at ${domainTargetPath}`);
+
+  return domainTargetPath;
 }
 
 /**
- * Searches for an existing schema file under packages for the given project folder convention.
- * If found, updates it with Schema Resolver findings; if not found, creates and populates it.
+ * Searches for modular schema files under packages/ProjectFiles for the given project folder convention.
+ * Updates <usecasetitle>_domain_<timestamp>.yaml with domain knowledge and updates modular schemas with resolved mappings.
+ * Removes legacy single schema files if present.
  */
 export async function updateOrCreateProjectSchemaFile(
   workspaceName: string,
@@ -284,65 +358,61 @@ export async function updateOrCreateProjectSchemaFile(
   ];
 
   let targetDir: string | null = null;
-  let existingFilePath: string | null = null;
-
   for (const cDir of candidateDirs) {
     if (fsSync.existsSync(cDir)) {
       targetDir = cDir;
-      try {
-        const files = await fs.readdir(cDir);
-        const yamlFiles = files
-          .filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"))
-          .sort();
-        if (yamlFiles.length > 0) {
-          existingFilePath = path.resolve(cDir, yamlFiles[yamlFiles.length - 1]);
-        }
-      } catch (err) {
-        console.warn(`[updateOrCreateProjectSchemaFile] Failed readdir on ${cDir}:`, err);
-      }
       break;
     }
   }
 
-  let schemaObj: any = {};
-  let targetFilePath: string;
+  if (!targetDir) {
+    targetDir = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas");
+  }
+  await fs.mkdir(targetDir, { recursive: true });
 
-  if (existingFilePath && fsSync.existsSync(existingFilePath)) {
-    targetFilePath = existingFilePath;
+  // Clean up legacy single schema files (*_schema_*.yaml)
+  try {
+    const files = await fs.readdir(targetDir);
+    for (const f of files) {
+      if (f.includes("_schema_") && (f.endsWith(".yaml") || f.endsWith(".yml"))) {
+        await fs.unlink(path.resolve(targetDir, f));
+      }
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  // Update or create the domain file
+  const filesInDir = await fs.readdir(targetDir);
+  let domainFileName = filesInDir.find((f) => f.includes("_domain_") && (f.endsWith(".yaml") || f.endsWith(".yml")));
+  if (!domainFileName) {
+    const timestamp = generateDateTimeStamp();
+    domainFileName = `${useCaseSlug}_domain_${timestamp}.yaml`;
+  }
+
+  const domainFilePath = path.resolve(targetDir, domainFileName);
+  let domainObj: any = {};
+  if (fsSync.existsSync(domainFilePath)) {
     try {
-      const content = await fs.readFile(existingFilePath, "utf-8");
-      schemaObj = yaml.load(content) || {};
-    } catch (err) {
-      console.warn(`[updateOrCreateProjectSchemaFile] Failed to parse existing schema file ${existingFilePath}:`, err);
-      schemaObj = {};
+      const content = await fs.readFile(domainFilePath, "utf-8");
+      domainObj = yaml.load(content) || {};
+    } catch (e) {
+      domainObj = {};
     }
   } else {
-    if (!targetDir) {
-      targetDir = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas");
-    }
-    await fs.mkdir(targetDir, { recursive: true });
-    const timestamp = generateDateTimeStamp();
-    const fileName = `${useCaseSlug}_schema_${timestamp}.yaml`;
-    targetFilePath = path.resolve(targetDir, fileName);
-
-    const rawYaml = await loadFieldSchemaYaml();
-    if (rawYaml) {
+    const domainTemplatePath = resolvePackageFilePath("Domain.yaml");
+    if (fsSync.existsSync(domainTemplatePath)) {
       try {
-        schemaObj = yaml.load(rawYaml) || {};
+        const content = await fs.readFile(domainTemplatePath, "utf-8");
+        domainObj = yaml.load(content) || {};
       } catch (e) {
-        schemaObj = {};
+        domainObj = {};
       }
     }
   }
 
-  if (!schemaObj.fields) {
-    schemaObj.fields = {};
-  }
-  if (!schemaObj.fields.DomainKnowledge) {
-    schemaObj.fields.DomainKnowledge = {};
-  }
-
-  const dk = schemaObj.fields.DomainKnowledge;
+  if (!domainObj.DomainKnowledge) domainObj.DomainKnowledge = {};
+  const dk = domainObj.DomainKnowledge;
   if (projectInput.domain && projectInput.domain.trim().length > 0) dk.Tier1 = projectInput.domain.trim();
   if (projectInput.subDomain && projectInput.subDomain.trim().length > 0) dk.Tier2 = projectInput.subDomain.trim();
   if (projectInput.name && projectInput.name.trim().length > 0) dk.UseCase = projectInput.name.trim();
@@ -354,28 +424,31 @@ export async function updateOrCreateProjectSchemaFile(
     if (payload.domainKnowledge.useCase) dk.UseCase = payload.domainKnowledge.useCase;
     if (payload.domainKnowledge.useCaseDescription) dk.UseCaseDescription = payload.domainKnowledge.useCaseDescription;
   }
+  domainObj.generatedAt = new Date().toISOString();
 
-  schemaObj.generatedAt = new Date().toISOString();
-  schemaObj.resolvedTables = payload.resolvedTables || [];
-  schemaObj.strategy = payload.strategy || "inspect-and-map";
+  await fs.writeFile(domainFilePath, yaml.dump(domainObj, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
+  console.info(`[updateOrCreateProjectSchemaFile] Updated domain schema file at ${domainFilePath}`);
 
-  // Group dataset fields by topic
+  // Update DataIngestion.yaml with mapped fields
+  const dataIngestionPath = path.resolve(targetDir, "DataIngestion.yaml");
+  let dataIngestionObj: any = { version: "1.0", generatedAt: new Date().toISOString(), resolvedTables: payload.resolvedTables || [], fields: {} };
+  if (fsSync.existsSync(dataIngestionPath)) {
+    try {
+      const content = await fs.readFile(dataIngestionPath, "utf-8");
+      dataIngestionObj = yaml.load(content) || dataIngestionObj;
+    } catch (e) {
+      // use default
+    }
+  }
+  dataIngestionObj.resolvedTables = payload.resolvedTables || [];
+  dataIngestionObj.generatedAt = new Date().toISOString();
+  if (!dataIngestionObj.fields) dataIngestionObj.fields = {};
+
   const groupedTopics: Record<string, any[]> = {};
   for (const mapping of payload.mappings || []) {
     const topic = mapping.targetTopic || "General";
-    if (!groupedTopics[topic]) {
-      groupedTopics[topic] = [];
-    }
-    if (topic === "Relationship") {
-      groupedTopics[topic].push({
-        field: mapping.datasetField,
-        relatedField: mapping.relatedField || mapping.related_field || mapping.relationship?.relatedField || (mapping.relationship as any)?.related_field || null,
-        relationshipType: mapping.relationshipType || mapping.relationship_type || mapping.relationship?.relationshipType || (mapping.relationship as any)?.relationship_type || "Association",
-        explanation: mapping.explanation || mapping.relationship?.explanation || null,
-        priority: mapping.priority || "Medium",
-        priorityRationale: mapping.priorityRationale || null,
-      });
-    } else {
+    if (!groupedTopics[topic]) groupedTopics[topic] = [];
+    if (topic !== "Relationship" && topic !== "FeatureEngineering") {
       groupedTopics[topic].push({
         field: mapping.datasetField,
         subtype: mapping.subtype || null,
@@ -386,33 +459,98 @@ export async function updateOrCreateProjectSchemaFile(
     }
   }
 
-  // Update schemaObj.fields categories with mapped dataset fields
-  const hasRealMappings = Object.keys(groupedTopics).some((t) => t !== "Domain" && t !== "General");
-
-  for (const [topic, mappedFields] of Object.entries(groupedTopics)) {
-    schemaObj.fields[topic] = mappedFields;
+  for (const [topic, fields] of Object.entries(groupedTopics)) {
+    dataIngestionObj.fields[topic] = fields;
   }
+  return domainFilePath;
+}
 
-  // Remove stale placeholder/fallback categories if we have real category mappings
-  if (hasRealMappings) {
-    for (const key of Object.keys(schemaObj.fields)) {
-      if (key !== "DomainKnowledge" && !groupedTopics[key]) {
-        delete schemaObj.fields[key];
+export interface ModularSchemaPayload {
+  dataIngestionSchema?: {
+    version?: string;
+    generatedAt?: string;
+    resolvedTables?: string[];
+    fields?: Record<string, any[]>;
+  };
+  relationshipSchema?: {
+    version?: string;
+    generatedAt?: string;
+    resolvedTables?: string[];
+    relationships?: any[];
+  };
+}
+
+/**
+ * Saves resolved Schema Resolver output into two distinct modular YAML files inside
+ * packages/ProjectFiles/<Workspace>-<Project>/Schemas/:
+ * 1. <usecasetitle>_data_ingestion_<timestamp>.yaml
+ * 2. <usecasetitle>_relationship_<timestamp>.yaml
+ */
+export async function saveModularResolvedSchemas(
+  workspaceName: string,
+  projectName: string,
+  payload: ModularSchemaPayload
+): Promise<{ dataIngestionPath: string; relationshipPath: string }> {
+  const packagesDir = getPackagesDir();
+  const cleanWsName = sanitizeName(workspaceName);
+  const cleanProjectTitle = sanitizeName(projectName);
+  const folderName = `${cleanWsName}-${cleanProjectTitle}`;
+  const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
+
+  const targetDir = path.resolve(packagesDir, "ProjectFiles", folderName, "Schemas");
+  await fs.mkdir(targetDir, { recursive: true });
+
+  const timestamp = generateDateTimeStamp();
+
+  // 1. Data Ingestion Schema: <usecasetitle>_data_ingestion_<timestamp>.yaml
+  const dataIngestionFileName = `${useCaseSlug}_data_ingestion_${timestamp}.yaml`;
+  const dataIngestionPath = path.resolve(targetDir, dataIngestionFileName);
+
+  try {
+    const files = await fs.readdir(targetDir);
+    for (const f of files) {
+      if ((f.includes("_data_ingestion_") || f === "DataIngestion.yaml") && (f.endsWith(".yaml") || f.endsWith(".yml"))) {
+        await fs.unlink(path.resolve(targetDir, f));
       }
     }
+  } catch (e) {
+    // ignore cleanup warning
   }
 
-  // Remove unwanted legacy/duplicate top-level keys
-  delete schemaObj.topics;
-  delete schemaObj.mappings;
-  delete schemaObj.unmappedDatasetFields;
-  delete schemaObj.unmappedfields;
-  delete schemaObj.domainKnowledge;
+  const diData = {
+    version: payload.dataIngestionSchema?.version || "1.0",
+    generatedAt: payload.dataIngestionSchema?.generatedAt || new Date().toISOString(),
+    resolvedTables: payload.dataIngestionSchema?.resolvedTables || [],
+    fields: payload.dataIngestionSchema?.fields || {}
+  };
+  await fs.writeFile(dataIngestionPath, yaml.dump(diData, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
+  console.info(`[saveModularResolvedSchemas] Saved Data Ingestion schema to ${dataIngestionPath}`);
 
-  const dumpedYaml = yaml.dump(schemaObj, { indent: 2, lineWidth: -1, noRefs: true });
-  await fs.writeFile(targetFilePath, dumpedYaml, "utf-8");
-  console.info(`[updateOrCreateProjectSchemaFile] Updated project schema file at ${targetFilePath}`);
-  return targetFilePath;
+  // 2. Relationship Schema: <usecasetitle>_relationship_<timestamp>.yaml
+  const relationshipFileName = `${useCaseSlug}_relationship_${timestamp}.yaml`;
+  const relationshipPath = path.resolve(targetDir, relationshipFileName);
+
+  try {
+    const files = await fs.readdir(targetDir);
+    for (const f of files) {
+      if ((f.includes("_relationship_") || f === "Relationship.yaml") && (f.endsWith(".yaml") || f.endsWith(".yml"))) {
+        await fs.unlink(path.resolve(targetDir, f));
+      }
+    }
+  } catch (e) {
+    // ignore cleanup warning
+  }
+
+  const relData = {
+    version: payload.relationshipSchema?.version || "1.0",
+    generatedAt: payload.relationshipSchema?.generatedAt || new Date().toISOString(),
+    resolvedTables: payload.relationshipSchema?.resolvedTables || [],
+    Relationship: payload.relationshipSchema?.relationships || (payload.relationshipSchema as any)?.Relationship || []
+  };
+  await fs.writeFile(relationshipPath, yaml.dump(relData, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
+  console.info(`[saveModularResolvedSchemas] Saved Relationship schema to ${relationshipPath}`);
+
+  return { dataIngestionPath, relationshipPath };
 }
 
 /**
@@ -440,6 +578,7 @@ export function generateDateTimeStamp(): string {
 
 /**
  * Deletes the project folder inside packages (e.g. packages/ProjectFiles/WorkspaceName-UseCaseTitle or packages/WorkspaceName-UseCaseTitle).
+ * Ensures all related files inside ProjectFiles respective to the project are completely deleted.
  */
 export async function deleteProjectSchemaFolder(
   workspaceName: string,
@@ -464,11 +603,34 @@ export async function deleteProjectSchemaFolder(
         deletedAny = true;
       }
     }
+
+    // Additional scan in ProjectFiles directory for matching folder name (case-insensitive or normalized)
+    const projectFilesParent = path.resolve(packagesDir, "ProjectFiles");
+    if (fsSync.existsSync(projectFilesParent)) {
+      const entries = await fs.readdir(projectFilesParent);
+      for (const entry of entries) {
+        const lowerEntry = entry.toLowerCase();
+        if (
+          lowerEntry === folderName.toLowerCase() ||
+          lowerEntry.endsWith(`-${cleanProjectTitle.toLowerCase()}`) ||
+          lowerEntry === cleanProjectTitle.toLowerCase()
+        ) {
+          const entryPath = path.resolve(projectFilesParent, entry);
+          if (fsSync.existsSync(entryPath)) {
+            await fs.rm(entryPath, { recursive: true, force: true });
+            console.info(`[deleteProjectSchemaFolder] Cleaned up matching project folder at ${entryPath}`);
+            deletedAny = true;
+          }
+        }
+      }
+    }
+
     return deletedAny;
   } catch (error) {
     console.error(`[deleteProjectSchemaFolder] Error deleting project folder for ${workspaceName}-${projectName}:`, error);
     return false;
   }
 }
+
 
 
