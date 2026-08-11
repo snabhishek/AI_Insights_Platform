@@ -198,7 +198,7 @@ export function createLiteLLMModel() {
     model: liteLLMModel,
     temperature: 0.4,
     maxTokens: 32000,
-    configuration:{
+    configuration: {
       apiKey: process.env.LITELLM_VIRTUAL_KEY,
       baseURL: process.env.LITELLM_PROXY_URL
     }
@@ -387,7 +387,7 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
       },
       async () => agent.invoke(input)
     );
-    
+
     // Dynamically log thinking messages based on the running step name
     const substepMap: Record<string, string> = {
       profileData: "Data Profiling",
@@ -676,7 +676,7 @@ export async function logMilestoneThinking(
   try {
     const existing = await agentThinkingService.getThinking(projectId, pipeline, substep);
     const thinkingLogs = existing ? [...existing.thinking] : [];
-    
+
     // Check for duplicates
     if (thinkingLogs.some((l: any) => l.text === text)) {
       return;

@@ -1,13 +1,47 @@
 "use client";
 
 import React, { useState } from "react";
+import Image from "next/image";
 import { useApp, DataSource, ConnectionConfig } from "../providers/AppContext";
+import {
+  PostgresqlIcon,
+  SnowflakeIcon,
+  SqlServerIcon,
+  MysqlIcon,
+  MongodbIcon,
+  RestApiIcon,
+} from "./Icons";
 
 interface ConnectionModalProps {
   type: DataSource["type"] | null;
   onClose: () => void;
   onConnect: (name: string, subtext: string, config: ConnectionConfig) => void;
 }
+
+const getSourceIcon = (type: DataSource["type"]) => {
+  switch (type) {
+    case "postgres":
+      return <PostgresqlIcon size={24} />;
+    case "snowflake":
+      return <SnowflakeIcon size={24} />;
+    case "sqlserver":
+      return <SqlServerIcon size={24} />;
+    case "csv":
+      return <Image src="/images/csv.png" alt="CSV" width={24} height={24} className="object-contain" />;
+    case "tsv":
+      return <Image src="/images/tsv.png" alt="TSV" width={24} height={24} className="object-contain" />;
+    case "excel":
+      return <Image src="/images/microsoft-excel.jpg" alt="Excel" width={24} height={24} className="object-contain" />;
+    case "mysql":
+      return <MysqlIcon size={24} />;
+    case "mongodb":
+      return <MongodbIcon size={24} />;
+    case "restapi":
+      return <RestApiIcon size={24} />;
+    default:
+      return <PostgresqlIcon size={24} />;
+  }
+};
 
 export default function ConnectionModal({
   type,
@@ -175,17 +209,22 @@ export default function ConnectionModal({
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="relative w-full max-w-lg overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-md animate-fade-in">
+      <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col max-h-[90vh]">
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-surface-muted">
-          <div>
-            <h3 className="text-base font-bold text-foreground">
-              Connect to {getSourceLabel()}
-            </h3>
-            <p className="text-xs text-muted-foreground mt-0.5">
-              Provide authorization details to pull catalog metadata.
-            </p>
+        <div className="flex items-center justify-between border-b border-border/80 px-5 py-3 bg-surface-muted/60">
+          <div className="flex items-center gap-2.5">
+            <div className="flex items-center justify-center p-1.5 rounded-lg bg-surface border border-border/20 shrink-0">
+              {getSourceIcon(type)}
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-foreground">
+                Connect to {getSourceLabel()}
+              </h3>
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Provide authorization details to pull catalog metadata.
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
@@ -193,8 +232,8 @@ export default function ConnectionModal({
           >
             <svg
               xmlns="http://www.w3.org/2000/svg"
-              width="18"
-              height="18"
+              width="16"
+              height="16"
               viewBox="0 0 24 24"
               fill="none"
               stroke="currentColor"
@@ -209,7 +248,7 @@ export default function ConnectionModal({
         </div>
 
         {/* Modal Form */}
-        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-3.5">
           <div>
             <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
               Source Connection Name *
@@ -441,13 +480,13 @@ export default function ConnectionModal({
         </form>
 
         {/* Modal Footer */}
-        <div className="flex items-center justify-between border-t border-border px-6 py-4 bg-surface-muted">
+        <div className="flex items-center justify-between border-t border-border/80 px-5 py-3 bg-surface-muted/60">
           {!["excel", "csv", "tsv"].includes(type) ? (
             <button
               type="button"
               onClick={handleTestConnection}
               disabled={testing || isDuplicate}
-              className="h-9 px-4 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-surface hover:border-foreground/30 transition-all cursor-pointer disabled:opacity-50"
+              className="h-8 px-3.5 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-surface hover:border-foreground/30 transition-all cursor-pointer disabled:opacity-50"
             >
               Test Connection
             </button>
@@ -455,11 +494,11 @@ export default function ConnectionModal({
             <div />
           )}
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             <button
               type="button"
               onClick={onClose}
-              className="h-9 px-4 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-surface hover:border-foreground/30 transition-all cursor-pointer"
+              className="h-8 px-3.5 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-surface hover:border-foreground/30 transition-all cursor-pointer"
             >
               Cancel
             </button>
@@ -467,7 +506,7 @@ export default function ConnectionModal({
               type="button"
               onClick={handleSubmit}
               disabled={!isFormValid() || testing}
-              className="h-9 px-4 bg-primary text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:scale-100"
+              className="h-8 px-4 bg-primary text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer disabled:opacity-50 disabled:scale-100"
             >
               Save Connector
             </button>

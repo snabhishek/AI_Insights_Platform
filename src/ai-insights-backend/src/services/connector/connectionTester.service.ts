@@ -1217,69 +1217,183 @@ export class ConnectionTesterService implements IConnectionTesterService {
     return { results };
   }
 
+  private parseCsvLine(line: string, delimiter: string, headers: string[]): Record<string, string> {
+    const parts = line.split(delimiter).map((p) => p.replace(/^["']|["']$/g, "").trim());
+    const rowObj: Record<string, string> = {};
+    headers.forEach((header, idx) => {
+      rowObj[header] = parts[idx] || "";
+    });
+    return rowObj;
+  }
+
   private getFileSlice(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, limit: number, offset: number): SampleResult {
-    const allRows = this.getAllFileRows(type, config, tableName);
-    const sliced = allRows.rows.slice(offset, offset + limit);
-    return { success: true, headers: allRows.headers, rows: sliced, totalRowCount: allRows.rows.length };
-  }
+    const fileName = config.fileName;
+    if (!fileName || !this.fileService.fileExists(fileName)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
 
-  private getFileRandomSample(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, limit: number, seed?: number): SampleResult {
-    const allRows = this.getAllFileRows(type, config, tableName);
-    const shuffled = this.deterministicShuffle(allRows.rows, seed ?? 42);
-    const sampled = shuffled.slice(0, Math.min(limit, shuffled.length));
-    return { success: true, headers: allRows.headers, rows: sampled, totalRowCount: allRows.rows.length };
-  }
+    if (["csv", "tsv"].includes(type)) {
+      const content = this.fileService.readTextFile(fileName);
+      const delimiter = type === "tsv" ? "\t" : ",";
+      const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      if (lines.length === 0) return { success: true, headers: [], rows: [], totalRowCount: 0 };
 
-  private getFileStratifiedSample(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, stratifyColumn: string, limitPerGroup: number, seed?: number): SampleResult {
-    const allRows = this.getAllFileRows(type, config, tableName);
-    const groups = new Map<string, any[]>();
-    for (const row of allRows.rows) {
-      const key = String(row[stratifyColumn] ?? "null");
-      const existing = groups.get(key) || [];
-      existing.push(row);
-      groups.set(key, existing);
+      const headers = lines[0].split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim());
+      const totalRowCount = lines.length - 1;
+      const targetLines = lines.slice(1 + offset, 1 + offset + limit);
+      const rows = targetLines.map((line) => this.parseCsvLine(line, delimiter, headers));
+
+      return { success: true, headers, rows, totalRowCount };
     }
-    const sampled: any[] = [];
-    for (const [, groupRows] of groups) {
-      const shuffled = this.deterministicShuffle(groupRows, seed ?? 42);
-      sampled.push(...shuffled.slice(0, limitPerGroup));
-    }
-    const groupNames = Array.from(groups.keys());
-    return { success: true, headers: allRows.headers, rows: sampled, totalRowCount: allRows.rows.length, metadata: { stratifyColumn, groups: groupNames, groupCount: groupNames.length } };
-  }
 
-  private getAllFileRows(type: ConnectorType, config: ConnectionConfig, tableName?: string): { headers: string[]; rows: any[] } {
     if (type === "excel") {
-      const fileName = config.fileName;
-      if (!fileName || !this.fileService.fileExists(fileName)) return { headers: [], rows: [] };
       const filePath = this.fileService.getFilePath(fileName);
       const workbook = xlsx.readFile(filePath);
       const sheetName = tableName || workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
-      if (!worksheet) return { headers: [], rows: [] };
-      const jsonRows = xlsx.utils.sheet_to_json(worksheet, { defval: "" }) as any[];
-      const headers = jsonRows.length > 0 ? Object.keys(jsonRows[0]) : [];
-      return { headers, rows: jsonRows };
+      if (!worksheet || !worksheet["!ref"]) return { success: true, headers: [], rows: [], totalRowCount: 0 };
+
+      const range = xlsx.utils.decode_range(worksheet["!ref"]);
+      const totalRowCount = Math.max(0, range.e.r - range.s.r);
+      const headerRows = xlsx.utils.sheet_to_json<any[]>(worksheet, { header: 1, range: { s: range.s, e: { r: range.s.r, c: range.e.c } } });
+      const headers = (headerRows[0] || []).map(String);
+
+      const sliceStartRow = range.s.r + 1 + offset;
+      const sliceEndRow = Math.min(range.e.r, sliceStartRow + limit - 1);
+      let rows: any[] = [];
+      if (sliceStartRow <= range.e.r) {
+        rows = xlsx.utils.sheet_to_json(worksheet, {
+          range: { s: { r: sliceStartRow, c: range.s.c }, e: { r: sliceEndRow, c: range.e.c } },
+          header: headers,
+          defval: ""
+        });
+      }
+
+      return { success: true, headers, rows, totalRowCount };
     }
 
+    return { success: false, headers: [], rows: [], totalRowCount: 0 };
+  }
+
+  private getFileRandomSample(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, limit: number, seed?: number): SampleResult {
+    const fileName = config.fileName;
+    if (!fileName || !this.fileService.fileExists(fileName)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
+
     if (["csv", "tsv"].includes(type)) {
-      const fileName = config.fileName;
-      if (!fileName || !this.fileService.fileExists(fileName)) return { headers: [], rows: [] };
       const content = this.fileService.readTextFile(fileName);
       const delimiter = type === "tsv" ? "\t" : ",";
       const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
-      if (lines.length === 0) return { headers: [], rows: [] };
+      if (lines.length <= 1) return { success: true, headers: lines.length === 1 ? lines[0].split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim()) : [], rows: [], totalRowCount: 0 };
+
       const headers = lines[0].split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim());
-      const rows = lines.slice(1).map((line) => {
-        const parts = line.split(delimiter).map((p) => p.replace(/^["']|["']$/g, "").trim());
-        const rowObj: Record<string, string> = {};
-        headers.forEach((header, idx) => { rowObj[header] = parts[idx] || ""; });
-        return rowObj;
-      });
-      return { headers, rows };
+      const totalRowCount = lines.length - 1;
+
+      const dataIndices = Array.from({ length: totalRowCount }, (_, i) => i + 1);
+      const shuffledIndices = this.deterministicShuffle(dataIndices, seed ?? 42);
+      const sampledIndices = shuffledIndices.slice(0, Math.min(limit, shuffledIndices.length));
+
+      const rows = sampledIndices.map((idx) => this.parseCsvLine(lines[idx], delimiter, headers));
+      return { success: true, headers, rows, totalRowCount };
     }
 
-    return { headers: [], rows: [] };
+    if (type === "excel") {
+      const filePath = this.fileService.getFilePath(fileName);
+      const workbook = xlsx.readFile(filePath);
+      const sheetName = tableName || workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      if (!worksheet || !worksheet["!ref"]) return { success: true, headers: [], rows: [], totalRowCount: 0 };
+
+      const jsonRows = xlsx.utils.sheet_to_json(worksheet, { defval: "" }) as any[];
+      const headers = jsonRows.length > 0 ? Object.keys(jsonRows[0]) : [];
+      const totalRowCount = jsonRows.length;
+
+      const shuffled = this.deterministicShuffle(jsonRows, seed ?? 42);
+      const sampled = shuffled.slice(0, Math.min(limit, shuffled.length));
+
+      return { success: true, headers, rows: sampled, totalRowCount };
+    }
+
+    return { success: false, headers: [], rows: [], totalRowCount: 0 };
+  }
+
+  private getFileStratifiedSample(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, stratifyColumn: string, limitPerGroup: number, seed?: number): SampleResult {
+    const fileName = config.fileName;
+    if (!fileName || !this.fileService.fileExists(fileName)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
+
+    if (["csv", "tsv"].includes(type)) {
+      const content = this.fileService.readTextFile(fileName);
+      const delimiter = type === "tsv" ? "\t" : ",";
+      const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
+      if (lines.length <= 1) return { success: true, headers: [], rows: [], totalRowCount: 0 };
+
+      const headers = lines[0].split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim());
+      const totalRowCount = lines.length - 1;
+      const colIndex = headers.indexOf(stratifyColumn);
+
+      const groups = new Map<string, number[]>();
+      for (let i = 1; i < lines.length; i++) {
+        let val = "null";
+        if (colIndex !== -1) {
+          const parts = lines[i].split(delimiter);
+          val = (parts[colIndex] ?? "null").replace(/^["']|["']$/g, "").trim() || "null";
+        }
+        const existing = groups.get(val) || [];
+        existing.push(i);
+        groups.set(val, existing);
+      }
+
+      const sampledIndices: number[] = [];
+      for (const [, groupLineIndices] of groups) {
+        const shuffled = this.deterministicShuffle(groupLineIndices, seed ?? 42);
+        sampledIndices.push(...shuffled.slice(0, limitPerGroup));
+      }
+
+      const rows = sampledIndices.map((idx) => this.parseCsvLine(lines[idx], delimiter, headers));
+      const groupNames = Array.from(groups.keys());
+
+      return {
+        success: true,
+        headers,
+        rows,
+        totalRowCount,
+        metadata: { stratifyColumn, groups: groupNames, groupCount: groupNames.length }
+      };
+    }
+
+    if (type === "excel") {
+      const filePath = this.fileService.getFilePath(fileName);
+      const workbook = xlsx.readFile(filePath);
+      const sheetName = tableName || workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[sheetName];
+      if (!worksheet || !worksheet["!ref"]) return { success: true, headers: [], rows: [], totalRowCount: 0 };
+
+      const jsonRows = xlsx.utils.sheet_to_json(worksheet, { defval: "" }) as any[];
+      const headers = jsonRows.length > 0 ? Object.keys(jsonRows[0]) : [];
+      const totalRowCount = jsonRows.length;
+
+      const groups = new Map<string, any[]>();
+      for (const row of jsonRows) {
+        const key = String(row[stratifyColumn] ?? "null");
+        const existing = groups.get(key) || [];
+        existing.push(row);
+        groups.set(key, existing);
+      }
+
+      const sampled: any[] = [];
+      for (const [, groupRows] of groups) {
+        const shuffled = this.deterministicShuffle(groupRows, seed ?? 42);
+        sampled.push(...shuffled.slice(0, limitPerGroup));
+      }
+
+      const groupNames = Array.from(groups.keys());
+      return {
+        success: true,
+        headers,
+        rows: sampled,
+        totalRowCount,
+        metadata: { stratifyColumn, groups: groupNames, groupCount: groupNames.length }
+      };
+    }
+
+    return { success: false, headers: [], rows: [], totalRowCount: 0 };
   }
 
   private deterministicShuffle<T>(values: T[], seed: number): T[] {

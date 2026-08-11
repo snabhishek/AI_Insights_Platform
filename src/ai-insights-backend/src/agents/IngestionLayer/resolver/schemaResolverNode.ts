@@ -16,6 +16,7 @@ import {
   loadFieldSchemaYaml,
   loadProjectOrFieldSchemaYaml,
   updateOrCreateProjectSchemaFile,
+  saveModularResolvedSchemas,
   getPackagesDir,
   sanitizeName, 
   generateDateTimeStamp 
@@ -145,16 +146,15 @@ export async function resolveSchema(
 
   const model = getModel();
 
-  await logMilestoneThinking(services, "Schema Resolver", `Resolving semantic types and target mappings according to ${isProjectSchema ? "Project" : "Field"} Schema Taxonomy...`);
+  await logMilestoneThinking(services, "Schema Resolver", `Resolving DataIngestion and Relationship modular schemas in a single prompt...`);
   const result = await invokeAgentJson("resolveSchema", model, prompt, fallback, services, {
     traceLabel: "agent:resolveSchema",
   });
 
-  const rawMappings = (result && Array.isArray(result.mappings) && result.mappings.length > 0)
-    ? result.mappings
-    : fallbackMappings;
+  const { mappings: rawMappings, domainKnowledge: extractedDk } = extractResolvedMappings(result, fallbackMappings);
+  const resolvedDomainKnowledge = extractedDk || result?.domainKnowledge || fallback.domainKnowledge;
 
-  await logMilestoneThinking(services, "Schema Resolver", `Aligned ${rawMappings.length} structural columns with Field Schema target categories.`);
+  await logMilestoneThinking(services, "Schema Resolver", `Aligned ${rawMappings.length} structural columns across DataIngestion and Relationship schemas.`);
 
   const resolvedDomain = (typeof result?.domain === "string" && result.domain.trim().length > 0)
     ? result.domain.trim()
@@ -162,69 +162,93 @@ export async function resolveSchema(
 
   const packagesDir = getPackagesDir();
   let outputYamlPath = path.resolve(packagesDir, "resolved_schema.yaml");
-  
-  const payloadToWrite = {
-    domainKnowledge: result?.domainKnowledge || fallback.domainKnowledge,
-    domain: resolvedDomain,
-    resolvedTables: result?.resolvedTables || fallback.resolvedTables,
-    strategy: result?.strategy || fallback.strategy,
-    mappings: rawMappings,
-    unmappedDatasetFields: result?.unmappedDatasetFields || []
-  };
+  const resolvedTablesList = result?.dataIngestionSchema?.resolvedTables || result?.resolvedTables || fallback.resolvedTables;
+
+  // Build/extract dataIngestionSchema
+  let dataIngestionSchema = result?.dataIngestionSchema;
+  if (!dataIngestionSchema || !dataIngestionSchema.fields) {
+    const fieldsObj: Record<string, any[]> = {};
+    for (const mapping of rawMappings) {
+      const topic = mapping.targetTopic || "General";
+      if (topic !== "Relationship") {
+        if (!fieldsObj[topic]) fieldsObj[topic] = [];
+        fieldsObj[topic].push({
+          field: mapping.datasetField,
+          subtype: mapping.subtype || null,
+          priority: mapping.priority || "Medium",
+          priorityRationale: mapping.priorityRationale || null,
+          sensitiveSubtype: mapping.sensitiveSubtype || null,
+        });
+      }
+    }
+    dataIngestionSchema = {
+      version: "1.0",
+      generatedAt: new Date().toISOString(),
+      resolvedTables: resolvedTablesList,
+      fields: fieldsObj,
+    };
+  }
+
+  // Build/extract relationshipSchema
+  let relationshipSchema = result?.relationshipSchema;
+  if (!relationshipSchema || (!relationshipSchema.relationships && !(relationshipSchema as any).Relationship)) {
+    const rels: any[] = [];
+    for (const mapping of rawMappings) {
+      if (mapping.targetTopic === "Relationship" || mapping.relationship || mapping.relatedField || mapping.related_field) {
+        rels.push({
+          field: mapping.datasetField,
+          related_field: mapping.relatedField || mapping.related_field || mapping.relationship?.relatedField || mapping.relationship?.related_field || null,
+          relationship_type: mapping.relationshipType || mapping.relationship_type || mapping.relationship?.relationshipType || mapping.relationship?.relationship_type || "Association",
+          priority: mapping.priority || "Medium",
+          explanation: mapping.explanation || mapping.relationship?.explanation || "Linked field relationship",
+        });
+      }
+    }
+    relationshipSchema = {
+      version: "1.0",
+      generatedAt: new Date().toISOString(),
+      resolvedTables: resolvedTablesList,
+      relationships: rels,
+    };
+  }
+
+  const modularPayload = { dataIngestionSchema, relationshipSchema };
 
   if (projectWithWs) {
     try {
-      outputYamlPath = await updateOrCreateProjectSchemaFile(
+      const saved = await saveModularResolvedSchemas(
         projectWithWs.workspaceName,
         projectWithWs.project.name,
-        {
-          name: projectWithWs.project.name,
-          domain: projectWithWs.project.domain,
-          subDomain: projectWithWs.project.subDomain,
-          useCase: projectWithWs.project.useCase,
-        },
-        payloadToWrite
+        modularPayload
       );
-      console.info(`[resolveSchema] Updated project schema YAML file at ${outputYamlPath} with ${rawMappings.length} mappings`);
+      outputYamlPath = saved.dataIngestionPath;
+      console.info(`[resolveSchema] Saved modular schema files for project: DataIngestion -> ${saved.dataIngestionPath}, Relationship -> ${saved.relationshipPath}`);
     } catch (writeErr: any) {
-      console.warn(`[resolveSchema] Failed to update project schema file, using fallback:`, writeErr?.message || writeErr);
-      if (rawMappings.length > 0) {
-        await writeResolvedSchemaYaml(outputYamlPath, payloadToWrite);
-      }
+      console.warn(`[resolveSchema] Failed to save modular project schema files:`, writeErr?.message || writeErr);
     }
   } else if (projectId) {
     try {
       const pWs = await services.projectService.getProjectWithWorkspace(projectId);
       if (pWs) {
-        outputYamlPath = await updateOrCreateProjectSchemaFile(
+        const saved = await saveModularResolvedSchemas(
           pWs.workspaceName,
           pWs.project.name,
-          {
-            name: pWs.project.name,
-            domain: pWs.project.domain,
-            subDomain: pWs.project.subDomain,
-            useCase: pWs.project.useCase,
-          },
-          payloadToWrite
+          modularPayload
         );
-        console.info(`[resolveSchema] Updated project schema YAML file at ${outputYamlPath} with ${rawMappings.length} mappings`);
-      } else if (rawMappings.length > 0) {
-        await writeResolvedSchemaYaml(outputYamlPath, payloadToWrite);
+        outputYamlPath = saved.dataIngestionPath;
+        console.info(`[resolveSchema] Saved modular schema files for project: DataIngestion -> ${saved.dataIngestionPath}, Relationship -> ${saved.relationshipPath}`);
       }
     } catch (lookupErr: any) {
-      console.warn(`[resolveSchema] Failed to lookup project/workspace for ${projectId}, using fallback:`, lookupErr?.message || lookupErr);
-      if (rawMappings.length > 0) {
-        await writeResolvedSchemaYaml(outputYamlPath, payloadToWrite);
-      }
+      console.warn(`[resolveSchema] Failed to lookup project/workspace for ${projectId}:`, lookupErr?.message || lookupErr);
     }
-  } else if (rawMappings.length > 0) {
-    await writeResolvedSchemaYaml(outputYamlPath, payloadToWrite);
   }
 
   return {
     ...fallback,
     ...result,
     domain: resolvedDomain,
+    dataIngestionSchema,
+    relationshipSchema,
     mappings: rawMappings,
     yamlPath: outputYamlPath,
     schemaPath: outputYamlPath,
@@ -276,4 +300,73 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
     stageOutputs: { resolveSchema: { sources: resolvedSources } },
     stageStatuses: { resolveSchema: "Completed" },
   };
+}
+
+export function extractResolvedMappings(result: any, fallbackMappings: any[]): { mappings: any[]; domainKnowledge?: any } {
+  if (!result || typeof result !== "object") {
+    return { mappings: fallbackMappings };
+  }
+
+  let domainKnowledge = result.domainKnowledge;
+
+  if (Array.isArray(result.mappings) && result.mappings.length > 0) {
+    const mappings = result.mappings.map((m: any) => ({
+      datasetField: m.datasetField || m.field || "unknown",
+      targetTopic: m.targetTopic || m.topic || m.category || "General",
+      subtype: m.subtype || null,
+      priority: m.priority || "Medium",
+      priorityRationale: m.priorityRationale || null,
+      sensitiveSubtype: m.sensitiveSubtype || null,
+      relationship: m.relationship || null,
+    }));
+    return { mappings, domainKnowledge };
+  }
+
+  const fieldsSource = (result.fields && typeof result.fields === "object") ? result.fields : result;
+  const extractedMappings: any[] = [];
+
+  for (const [categoryName, categoryVal] of Object.entries(fieldsSource)) {
+    if (categoryName.toLowerCase() === "domainknowledge") {
+      if (categoryVal && typeof categoryVal === "object" && !Array.isArray(categoryVal)) {
+        const dkObj: any = categoryVal;
+        domainKnowledge = {
+          tier1: dkObj.Tier1 || dkObj.tier1 || domainKnowledge?.tier1,
+          tier2: dkObj.Tier2 || dkObj.tier2 || domainKnowledge?.tier2,
+          useCase: dkObj.UseCase || dkObj.useCase || domainKnowledge?.useCase,
+          useCaseDescription: dkObj.UseCaseDescription || dkObj.useCaseDescription || domainKnowledge?.useCaseDescription,
+        };
+      }
+      continue;
+    }
+
+    if (["domain", "strategy", "resolvedtables", "generatedat", "unmappeddatasetfields"].includes(categoryName.toLowerCase())) {
+      continue;
+    }
+
+    if (Array.isArray(categoryVal)) {
+      for (const item of categoryVal) {
+        if (!item || typeof item !== "object") continue;
+        const fieldName = item.field || item.datasetField;
+        if (!fieldName) continue;
+        extractedMappings.push({
+          datasetField: fieldName,
+          targetTopic: categoryName,
+          subtype: item.subtype || null,
+          priority: item.priority || "Medium",
+          priorityRationale: item.priorityRationale || null,
+          sensitiveSubtype: item.sensitiveSubtype || null,
+          relatedField: item.relatedField || item.related_field || item.relationship?.relatedField || item.relationship?.related_field || null,
+          relationshipType: item.relationshipType || item.relationship_type || item.relationship?.relationshipType || item.relationship?.relationship_type || null,
+          explanation: item.explanation || item.relationship?.explanation || null,
+          relationship: item.relationship || null,
+        });
+      }
+    }
+  }
+
+  if (extractedMappings.length > 0) {
+    return { mappings: extractedMappings, domainKnowledge };
+  }
+
+  return { mappings: fallbackMappings, domainKnowledge };
 }

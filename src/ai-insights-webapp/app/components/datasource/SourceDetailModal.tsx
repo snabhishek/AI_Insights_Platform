@@ -132,10 +132,10 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in">
-      <div className="relative w-full max-w-3xl overflow-hidden rounded-2xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col max-h-[90vh]">
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-md animate-fade-in">
+      <div className="relative w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col max-h-[90vh]">
         {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-border px-6 py-4 bg-surface-muted">
+        <div className="flex items-center justify-between border-b border-border/80 px-5 py-3 bg-surface-muted/60">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center p-1.5 rounded-lg bg-surface border border-border/20">
               {getSourceIcon(source.type)}
@@ -153,10 +153,10 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                 </div>
               ) : (
                 <>
-                  <h3 className="text-base font-bold text-foreground">
+                  <h3 className="text-sm font-bold text-foreground">
                     {source.name} Explorer
                   </h3>
-                  <p className="text-xs text-muted-foreground mt-0.5">
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
                     Provider: {getSourceLabel()}
                   </p>
                 </>
@@ -453,13 +453,13 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
         </div>
 
         {/* Modal Footer */}
-        <div className="flex items-center justify-between border-t border-border px-6 py-4 bg-surface-muted">
+        <div className="flex items-center justify-between border-t border-border/80 px-5 py-3 bg-surface-muted/60">
           {activeTab === "config" ? (
             isEditing ? (
               <button
                 type="button"
                 onClick={() => setIsEditing(false)}
-                className="h-9 px-4 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-surface transition-all cursor-pointer"
+                className="h-8 px-3.5 rounded-lg border border-border text-xs font-semibold text-foreground hover:bg-surface transition-all cursor-pointer"
               >
                 Cancel Edits
               </button>
@@ -467,7 +467,7 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
               <button
                 type="button"
                 onClick={() => setIsEditing(true)}
-                className="h-9 px-4 rounded-lg border border-primary/20 text-xs font-semibold text-primary hover:bg-primary/5 hover:border-primary/45 transition-all cursor-pointer"
+                className="h-8 px-3.5 rounded-lg border border-primary/20 text-xs font-semibold text-primary hover:bg-primary/5 hover:border-primary/45 transition-all cursor-pointer"
               >
                 Edit Connection
               </button>
@@ -476,12 +476,12 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
             <div />
           )}
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5">
             {isEditing ? (
               <button
                 type="button"
                 onClick={handleSaveEdits}
-                className="h-9 px-5 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                className="h-8 px-4 bg-green-600 hover:bg-green-700 text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
               >
                 Save Changes
               </button>
@@ -489,7 +489,7 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
               <button
                 type="button"
                 onClick={onClose}
-                className="h-9 px-5 bg-primary text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
+                className="h-8 px-4 bg-primary text-white text-xs font-semibold rounded-lg hover:scale-105 active:scale-95 transition-all cursor-pointer"
               >
                 Close Explorer
               </button>
