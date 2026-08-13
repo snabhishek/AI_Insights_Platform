@@ -91,15 +91,15 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
 
   let schemaDetails: { success?: boolean; type?: string; tables?: Array<Record<string, unknown>> } | undefined;
   try {
-    console.info(`[Workflow] Step [Data Ingestion] Connecting to database & querying table list for connector "${connector.name}"...`);
-    await logMilestoneThinking(services, "Data Ingestion", `Querying schema tables list for connector "${connector.name}"...`);
+    console.info(`[Workflow] Step [Data Inspection] Connecting to database & querying table list for connector "${connector.name}"...`);
+    await logMilestoneThinking(services, "Data Inspection", `Querying schema tables list for connector "${connector.name}"...`);
     schemaDetails = await schemaTool.invoke({
       connectorId: connector.id,
       connectorType: connector.type,
     }) as { success?: boolean; type?: string; tables?: Array<Record<string, unknown>> };
     if (schemaDetails?.tables) {
-      console.info(`[Workflow] Step [Data Ingestion] Discovered ${schemaDetails.tables.length} tables in data source.`);
-      await logMilestoneThinking(services, "Data Ingestion", `Discovered ${schemaDetails.tables.length} tables in data source.`);
+      console.info(`[Workflow] Step [Data Inspection] Discovered ${schemaDetails.tables.length} tables in data source.`);
+      await logMilestoneThinking(services, "Data Inspection", `Discovered ${schemaDetails.tables.length} tables in data source.`);
     }
   } catch (error) {
     console.warn("Schema tool inspection failed, continuing without table context", error);
@@ -141,11 +141,7 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
     "analysed",
     `Analyzed in inspection batch ${batchIndex + 1}/${batches.length}`
   ));
-  const inspectionAgent = createAgent({
-    model,
-    tools: [inspectAgentTool],
-    systemPrompt: inspectionPrompt,
-  });
+
   let accumulatedInspection: InspectionPayload = {
     connectorId: connector.id,
     connectorName: connector.name,
@@ -156,7 +152,7 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
   let lastToolResult: Record<string, unknown> | undefined;
 
   for (const [batchIndex, batchTableNames] of batches.entries()) {
-    await logMilestoneThinking(services, "Data Ingestion", `Extracting table schema metadata for batch ${batchIndex + 1}/${batches.length}: [${batchTableNames.join(", ")}]...`);
+    await logMilestoneThinking(services, "Data Inspection", `Extracting table schema metadata for batch ${batchIndex + 1}/${batches.length}: [${batchTableNames.join(", ")}]...`);
     
     // 1. Direct fast schema & constraint extraction from DB/file (~100ms)
     let directBatchInspection: InspectionPayload;
@@ -201,6 +197,7 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
           {
             systemPrompt: inspectionPrompt,
             traceLabel: `inspect:${connector.type}:batch-${batchIndex + 1}`,
+            tools: [inspectAgentTool],
           }
         );
         if (enrichedResult && Array.isArray(enrichedResult.tables) && enrichedResult.tables.length > 0) {

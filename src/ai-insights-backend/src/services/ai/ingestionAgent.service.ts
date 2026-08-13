@@ -168,7 +168,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             let currentNode = "inspect";
             let currentStage = "inspect";
 
-            if (substep === "Data Ingestion" || substep === "inspect") {
+            if (substep === "Data Inspection" || substep === "Data Ingestion" || substep === "inspect") {
               currentNode = "inspect";
               currentStage = "inspect";
               currentStageStatuses.inspect = "Running";
@@ -217,7 +217,8 @@ export class IngestionAgentService implements IIngestionAgentService {
         configurable: { 
           thread_id: threadId,
           services,
-        } 
+        },
+        recursionLimit: 100,
       };
 
       this.stoppedSessions.delete(threadId);
@@ -229,18 +230,20 @@ export class IngestionAgentService implements IIngestionAgentService {
 
         if (options.action === "retry" && options.step) {
           const stepMap: Record<string, string> = {
-            inspect: "Data Ingestion",
+            inspect: "Data Inspection",
             profileData: "Data Profiling",
             preprocess: "Data Profiling",
             resolveSchema: "Schema Resolver",
-            "Data Ingestion": "Data Ingestion",
+            "Data Inspection": "Data Inspection",
+            "Data Ingestion": "Data Inspection",
             "Data Profiling": "Data Profiling",
             "Schema Resolver": "Schema Resolver"
           };
           const substep = stepMap[options.step];
           if (substep) {
             activeSubstep = substep;
-            if (substep === "Data Ingestion") {
+            if (substep === "Data Inspection" || substep === "Data Ingestion") {
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Inspection");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Ingestion");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
@@ -254,7 +257,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         } else if (options.action === "approve") {
           activeSubstep = undefined;
         } else {
-          activeSubstep = "Data Ingestion";
+          activeSubstep = "Data Inspection";
           await this.agentThinkingService.clearProjectPipelineThinking(projectId, pipeline);
 
           const cleanInitialState = {
@@ -268,7 +271,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             schemaResolution: {},
             status: "running",
             summary: "Ingestion workflow started",
-            steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
+            steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
             stageOutputs: {},
             stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
           };
@@ -305,8 +308,8 @@ export class IngestionAgentService implements IIngestionAgentService {
             sessionId: threadId,
             requiresApproval: false,
             stageStatuses: mergedStageStatuses,
-            currentNode: activeSubstep === "Data Ingestion" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : "resolveSchema",
-            currentStage: activeSubstep === "Data Ingestion" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : "resolveSchema",
+            currentNode: (activeSubstep === "Data Inspection" || activeSubstep === "Data Ingestion") ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : "resolveSchema",
+            currentStage: (activeSubstep === "Data Inspection" || activeSubstep === "Data Ingestion") ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : "resolveSchema",
           };
 
           for await (const thinkingUpdate of this.streamThinking(projectId, pipeline, activeSubstep, fullBaseResult, logs, threadId)) {
@@ -331,7 +334,8 @@ export class IngestionAgentService implements IIngestionAgentService {
             configurable: { 
               thread_id: threadId,
               services,
-            } 
+            },
+            recursionLimit: 100,
           };
           if (options?.projectId) {
             await this.agentThinkingService.clearProjectPipelineThinking(options.projectId, pipeline);
@@ -376,7 +380,8 @@ export class IngestionAgentService implements IIngestionAgentService {
                 thread_id: threadId, 
                 checkpoint_id: retryCheckpointId,
                 services,
-              } 
+              },
+              recursionLimit: 100,
             };
             stream = await workflow.stream(null, retryConfig);
           } else {
@@ -636,7 +641,7 @@ export class IngestionAgentService implements IIngestionAgentService {
   private async getAllProjectPipelineThinking(projectId: string, pipeline: string): Promise<Record<string, Array<{ time: string; text: string; done: boolean }>>> {
     const map: Record<string, Array<{ time: string; text: string; done: boolean }>> = {};
     try {
-      const substeps = ["Data Ingestion", "Data Profiling", "Schema Resolver"];
+      const substeps = ["Data Inspection", "Data Ingestion", "Data Profiling", "Schema Resolver"];
       for (const substep of substeps) {
         const entry = await this.agentThinkingService.getThinking(projectId, pipeline, substep);
         if (entry) {

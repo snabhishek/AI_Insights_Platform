@@ -404,6 +404,7 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     systemPrompt?: string;
     tools?: unknown[];
     traceLabel?: string;
+    recursionLimit?: number;
   }
 ): Promise<T> {
   if (!model) {
@@ -421,24 +422,41 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
   };
 
   const substepMap: Record<string, string> = {
-    inspect: "Data Ingestion",
+    inspect: "Data Inspection",
     profileData: "Data Profiling",
     preprocess: "Data Profiling",
     resolveSchema: "Schema Resolver"
   };
-  const substep = substepMap[stepName] || "Data Ingestion";
+  const substep = substepMap[stepName] || "Data Inspection";
 
   try {
     console.info(`[Workflow] Node [${stepName}] started agent execution`);
 
+    const recursionLimit = options?.recursionLimit ?? 100;
+
     const finalResult = await services.traceHelper.invokeWithTrace(
       options?.traceLabel ?? `agent:${stepName}`,
       { systemPrompt: options?.systemPrompt, userMessage },
-      async () => agent.invoke(input)
+      async () => {
+        let lastResult: any = null;
+        const stream = await agent.stream(input, {
+          streamMode: "values",
+          recursionLimit,
+        });
+
+        for await (const chunk of stream) {
+          lastResult = chunk;
+          await logAgentMessagesAsThinking(services, substep, chunk);
+        }
+
+        return lastResult;
+      }
     );
 
     console.info(`[Workflow] Node [${stepName}] completed agent execution`);
-    await logAgentMessagesAsThinking(services, substep, finalResult);
+    if (finalResult) {
+      await logAgentMessagesAsThinking(services, substep, finalResult);
+    }
 
     const latestMessage = getLatestAgentMessage(finalResult);
     const rawText = extractModelText(latestMessage);
@@ -446,6 +464,8 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     if (!("__parseFailed" in parsed)) {
       return parsed;
     }
+
+    console.warn(`[Workflow] Node [${stepName}] parseJsonObject failed for raw response text:\n${rawText ? rawText.slice(0, 500) : "[empty]"}`);
 
     const toolResult = getLastToolResult(finalResult);
     if (toolResult && typeof toolResult === "object" && !Array.isArray(toolResult) && Object.keys(toolResult).length > 0) {
@@ -515,11 +535,10 @@ export function chunkInspectionTableNames(tableNames: string[], initialBatchSize
 }
 
 export function normalizeInspectionTable(table: Record<string, unknown>): Record<string, unknown> {
-  const tableName = typeof table.tableName === "string" && table.tableName.trim().length > 0
-    ? table.tableName
-    : typeof table.name === "string" && table.name.trim().length > 0
-      ? table.name
-      : undefined;
+  const rawName = table.tableName || table.name || table.table_name || table.table || table.title;
+  const tableName = typeof rawName === "string" && rawName.trim().length > 0
+    ? rawName.trim()
+    : undefined;
 
   if (!tableName) {
     return table;
@@ -533,11 +552,17 @@ export function normalizeInspectionTable(table: Record<string, unknown>): Record
 }
 
 export function normalizeInspectionPayload(payload: InspectionPayload): InspectionPayload {
-  const tables = Array.isArray(payload.tables)
+  const rawTables = Array.isArray(payload?.tables)
     ? payload.tables
-      .filter((table): table is Record<string, unknown> => !!table && typeof table === "object" && !Array.isArray(table))
-      .map((table) => normalizeInspectionTable(table))
-    : [];
+    : Array.isArray((payload as any)?.sources)
+      ? (payload as any).sources
+      : Array.isArray((payload as any)?.data)
+        ? (payload as any).data
+        : [];
+
+  const tables = rawTables
+    .filter((table: any): table is Record<string, unknown> => !!table && typeof table === "object" && !Array.isArray(table))
+    .map((table: any) => normalizeInspectionTable(table));
 
   return {
     ...payload,
@@ -559,22 +584,33 @@ export function mergeInspectionPayload(
   for (const table of normalizedAccumulated.tables || []) {
     const tableName = typeof table.tableName === "string" ? table.tableName : typeof table.name === "string" ? table.name : undefined;
     if (tableName) {
-      mergedTableMap.set(tableName, table);
+      mergedTableMap.set(tableName.toLowerCase(), table);
     }
   }
 
   for (const table of normalizedIncoming.tables || []) {
     const tableName = typeof table.tableName === "string" ? table.tableName : typeof table.name === "string" ? table.name : undefined;
     if (!tableName) {
+      if (mergedTableMap.size === 1) {
+        const [existingKey, previousTable] = Array.from(mergedTableMap.entries())[0];
+        mergedTableMap.set(existingKey, normalizeInspectionTable({
+          ...previousTable,
+          ...table,
+        }));
+      }
       continue;
     }
 
-    const previousTable = mergedTableMap.get(tableName) || {};
-    mergedTableMap.set(tableName, normalizeInspectionTable({
+    const key = tableName.toLowerCase();
+    const previousTable = mergedTableMap.get(key) || {};
+    mergedTableMap.set(key, normalizeInspectionTable({
       ...previousTable,
       ...table,
     }));
   }
+
+  const mergedTables = Array.from(mergedTableMap.values());
+  const finalTables = mergedTables.length > 0 ? mergedTables : (normalizedIncoming.tables?.length ? normalizedIncoming.tables : normalizedAccumulated.tables || []);
 
   return {
     ...normalizedAccumulated,
@@ -582,8 +618,8 @@ export function mergeInspectionPayload(
     connectorId: connector.id,
     connectorName: connector.name,
     schemaType: normalizedIncoming.schemaType || normalizedAccumulated.schemaType || schemaType,
-    tableCount,
-    tables: Array.from(mergedTableMap.values()),
+    tableCount: finalTables.length || tableCount,
+    tables: finalTables,
   };
 }
 
@@ -714,6 +750,7 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     profileData: "profileData",
     preprocess: "profileData",
     resolveSchema: "resolveSchema",
+    "Data Inspection": "inspect",
     "Data Ingestion": "inspect",
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
@@ -770,7 +807,15 @@ export async function logAgentMessagesAsThinking(
     return;
   }
   try {
-    const messages = Array.isArray(agentResult?.messages) ? agentResult.messages : [];
+    const messages = Array.isArray(agentResult?.messages)
+      ? agentResult.messages
+      : Array.isArray(agentResult?.values?.messages)
+        ? agentResult.values.messages
+        : Array.isArray(agentResult?.agent?.messages)
+          ? agentResult.agent.messages
+          : Array.isArray(agentResult?.tools?.messages)
+            ? agentResult.tools.messages
+            : [];
     if (messages.length === 0) return;
 
     const thinkingLogs: Array<{ time: string; text: string; done: boolean }> = [];
