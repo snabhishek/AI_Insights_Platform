@@ -2,6 +2,7 @@ import { NodePgDatabase } from "drizzle-orm/node-postgres";
 import { eq, desc } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import * as schema from "../db/connectors";
+import { agentThinking } from "../db/agentThinking";
 import { IProjectRepository } from "./project.repository.interface";
 import { Project, ProjectRun, ProjectWithWorkspace } from "../models/project.types";
 
@@ -166,6 +167,12 @@ export class PostgresProjectRepository implements IProjectRepository {
   }
 
   async deleteProject(id: string): Promise<boolean> {
+    try {
+      await this.db.delete(schema.projectRuns).where(eq(schema.projectRuns.projectId, id));
+    } catch {}
+    try {
+      await this.db.delete(agentThinking).where(eq(agentThinking.projectId, id));
+    } catch {}
     const res = await this.db.delete(schema.projects).where(eq(schema.projects.id, id));
     return (res.rowCount ?? 0) > 0;
   }

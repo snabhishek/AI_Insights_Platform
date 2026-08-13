@@ -148,14 +148,11 @@ export class AgentTraceHelper {
       return;
     }
 
-    const prefix = `[AI Trace] [${stepName}] ${direction}`;
-    const message = this.serializeForLog(payload, maxChars);
     if (direction === "error") {
+      const prefix = `[AI Trace] [${stepName}] ${direction}`;
+      const message = this.serializeForLog(payload, maxChars);
       console.error(`${prefix}: ${message}`);
-      return;
     }
-
-    console.info(`${prefix}: ${message}`);
   }
 
   public async invokeWithTrace<T>(stepName: string, input: unknown, invoke: () => Promise<T>): Promise<T> {
@@ -293,28 +290,73 @@ export function extractModelText(response: unknown): string {
 import * as yaml from "js-yaml";
 
 export function parseJsonObject<T extends Record<string, unknown>>(rawText: string, fallback: T): T {
-  const normalizedText = rawText
-    .replace(/^```(?:json|yaml|yml)?/i, "")
-    .replace(/```$/i, "")
-    .trim();
-
-  if (!normalizedText) {
+  if (!rawText || typeof rawText !== "string") {
     return fallback;
   }
 
-  try {
-    const yamlParsed = yaml.load(normalizedText);
-    if (yamlParsed && typeof yamlParsed === "object" && !Array.isArray(yamlParsed)) {
-      return yamlParsed as T;
-    }
-  } catch {
-    // Fallback to JSON parse below
+  const trimmed = rawText.trim();
+  if (!trimmed) {
+    return fallback;
   }
 
+  // 1. Direct JSON parse
   try {
-    const parsed = JSON.parse(normalizedText);
+    const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as T;
+    }
+  } catch {
+    // Continue to next extraction method
+  }
+
+  // 2. Code block extraction ```json ... ```
+  const codeBlockMatch = trimmed.match(/```(?:json|yaml|yml)?\s*([\s\S]*?)\s*```/i);
+  if (codeBlockMatch && codeBlockMatch[1]) {
+    const blockContent = codeBlockMatch[1].trim();
+    try {
+      const parsed = JSON.parse(blockContent);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as T;
+      }
+    } catch {
+      try {
+        const yamlParsed = yaml.load(blockContent);
+        if (yamlParsed && typeof yamlParsed === "object" && !Array.isArray(yamlParsed)) {
+          return yamlParsed as T;
+        }
+      } catch {
+        // Continue to next extraction method
+      }
+    }
+  }
+
+  // 3. Outermost JSON object extraction { ... }
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace !== -1 && lastBrace > firstBrace) {
+    const jsonSubstring = trimmed.substring(firstBrace, lastBrace + 1);
+    try {
+      const parsed = JSON.parse(jsonSubstring);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+        return parsed as T;
+      }
+    } catch {
+      try {
+        const yamlParsed = yaml.load(jsonSubstring);
+        if (yamlParsed && typeof yamlParsed === "object" && !Array.isArray(yamlParsed)) {
+          return yamlParsed as T;
+        }
+      } catch {
+        // Continue to next extraction method
+      }
+    }
+  }
+
+  // 4. YAML parse fallback
+  try {
+    const yamlParsed = yaml.load(trimmed);
+    if (yamlParsed && typeof yamlParsed === "object" && !Array.isArray(yamlParsed)) {
+      return yamlParsed as T;
     }
   } catch {
     // Ignore error
@@ -378,29 +420,42 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     messages: [new HumanMessage(userMessage)],
   };
 
+  const substepMap: Record<string, string> = {
+    inspect: "Data Ingestion",
+    profileData: "Data Profiling",
+    preprocess: "Data Profiling",
+    resolveSchema: "Schema Resolver"
+  };
+  const substep = substepMap[stepName] || "Data Ingestion";
+
   try {
-    const result = await services.traceHelper.invokeWithTrace(
+    console.info(`[Workflow] Node [${stepName}] started agent execution`);
+
+    const finalResult = await services.traceHelper.invokeWithTrace(
       options?.traceLabel ?? `agent:${stepName}`,
-      {
-        systemPrompt: options?.systemPrompt,
-        userMessage,
-      },
+      { systemPrompt: options?.systemPrompt, userMessage },
       async () => agent.invoke(input)
     );
 
-    // Dynamically log thinking messages based on the running step name
-    const substepMap: Record<string, string> = {
-      profileData: "Data Profiling",
-      preprocess: "Data Profiling",
-      resolveSchema: "Schema Resolver"
-    };
-    const substep = substepMap[stepName] || "Data Ingestion";
-    await logAgentMessagesAsThinking(services, substep, result);
+    console.info(`[Workflow] Node [${stepName}] completed agent execution`);
+    await logAgentMessagesAsThinking(services, substep, finalResult);
 
-    const rawText = extractModelText(getLatestAgentMessage(result));
-    return parseJsonObject(rawText, fallback);
+    const latestMessage = getLatestAgentMessage(finalResult);
+    const rawText = extractModelText(latestMessage);
+    const parsed = parseJsonObject(rawText, { __parseFailed: true } as unknown as T);
+    if (!("__parseFailed" in parsed)) {
+      return parsed;
+    }
+
+    const toolResult = getLastToolResult(finalResult);
+    if (toolResult && typeof toolResult === "object" && !Array.isArray(toolResult) && Object.keys(toolResult).length > 0) {
+      console.info(`[Workflow] Node [${stepName}] extracted result from tool output fallback`);
+      return toolResult as T;
+    }
+
+    return fallback;
   } catch (error) {
-    console.warn(`Agent ${stepName} fallback triggered`, error);
+    console.warn(`Agent ${stepName} execution failed, returning fallback`, error);
     return fallback;
   }
 }
@@ -592,26 +647,28 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 }
 
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
-  if (nextNodes.includes("profileData")) return "inspect";
-  if (nextNodes.includes("resolveSchema")) return "preprocess";
-  if (stageStatuses.resolveSchema === "Completed") return "resolveSchema";
-  if (stageStatuses.preprocess === "Completed") return "preprocess";
-  if (stageStatuses.profileData === "Completed") return "profileData";
-  if (stageStatuses.inspect === "Completed") return "inspect";
+  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress") return "resolveSchema";
+  if (stageStatuses.preprocess === "Completed" || stageStatuses.preprocess === "In Progress" || stageStatuses.profileData === "Completed" || stageStatuses.profileData === "In Progress") return "profileData";
   return "inspect";
 }
 
-export function buildMessage(nextNodes: string[], status: string): string {
-  if (status === "completed" || status === "failed") {
-    return status === "completed" ? "Workflow completed successfully." : "Workflow failed.";
+export function buildMessage(nextNodes: string[], status: string, stageStatuses?: Record<string, string>): string {
+  if (status === "failed") {
+    return "Workflow failed.";
   }
-  if (nextNodes.includes("profileData")) {
-    return "Inspect stage completed. Approve to continue to data profiling.";
+  if (status === "completed" || stageStatuses?.resolveSchema === "Completed") {
+    return "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.";
   }
-  if (nextNodes.includes("resolveSchema")) {
-    return "Data profiling and preprocessing completed. Approve to continue to schema resolution.";
+  if (stageStatuses?.resolveSchema === "In Progress") {
+    return "Resolving schema mappings...";
   }
-  return "Workflow is running.";
+  if (stageStatuses?.profileData === "In Progress" || stageStatuses?.preprocess === "In Progress") {
+    return "Running data profiling and preprocessing...";
+  }
+  if (stageStatuses?.inspect === "In Progress") {
+    return "Inspecting data sources...";
+  }
+  return "Data Ingestion workflow is running...";
 }
 
 export function buildResultFromGraphState(
@@ -626,8 +683,8 @@ export function buildResultFromGraphState(
     ? values.stageStatuses as Record<string, string>
     : defaultStatuses;
   const status = (typeof values.status === "string" && values.status) ? values.status : "running";
-  const isCompleted = status === "completed" || status === "failed";
-  const requiresApproval = !isCompleted && nextNodes.length > 0;
+  const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
+  const requiresApproval = isIngestionComplete && status !== "failed";
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
   return {
@@ -642,12 +699,12 @@ export function buildResultFromGraphState(
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
-    nextStep: nextNodes[0],
+    nextStep: isIngestionComplete ? "Feature Engineering" : (nextNodes[0] || "inspect"),
     currentNode: currentStage,
     currentStage,
     stageOutputs: (values.stageOutputs && typeof values.stageOutputs === "object") ? values.stageOutputs : {},
     stageStatuses,
-    message: buildMessage(nextNodes, status),
+    message: buildMessage(nextNodes, status, stageStatuses),
   };
 }
 
@@ -692,6 +749,11 @@ export async function logMilestoneThinking(
     });
 
     await agentThinkingService.saveThinking(projectId, pipeline, substep, thinkingLogs);
+    if (typeof services?.onThinkingUpdate === "function") {
+      try {
+        await services.onThinkingUpdate(substep);
+      } catch {}
+    }
   } catch (err) {
     console.warn("[AgentUtils] Failed to log milestone thinking:", err);
   }
@@ -700,7 +762,8 @@ export async function logMilestoneThinking(
 export async function logAgentMessagesAsThinking(
   services: any,
   substep: string,
-  agentResult: any
+  agentResult: any,
+  options?: { skipTools?: boolean }
 ): Promise<void> {
   const { agentThinkingService, projectId, pipeline } = services || {};
   if (!agentThinkingService || !projectId || !pipeline || !agentResult) {
@@ -718,15 +781,22 @@ export async function logAgentMessagesAsThinking(
       const type = typeof msg?.getType === "function" ? msg.getType() : msg?.type;
 
       if (type === "ai") {
-        const content = extractModelText(msg);
-        if (content && content.trim() && content.trim().length > 10) {
+        const rawContent = extractModelText(msg).trim();
+        if (rawContent && rawContent.length > 10) {
+          let formattedReasoning = rawContent;
+          if (/^```(?:json|yaml)?/i.test(rawContent) || /^\s*[\{\[]/.test(rawContent)) {
+            formattedReasoning = "Completed analysis and generated structured output payload.";
+          } else if (rawContent.length > 300) {
+            formattedReasoning = `${rawContent.slice(0, 300)}...`;
+          }
+
           thinkingLogs.push({
             time: timeStr,
-            text: `Agent reasoning: ${content.trim()}`,
+            text: `Agent reasoning: ${formattedReasoning}`,
             done: true,
           });
         }
-        if (msg?.tool_calls && msg.tool_calls.length > 0) {
+        if (!options?.skipTools && msg?.tool_calls && msg.tool_calls.length > 0) {
           for (const tc of msg.tool_calls) {
             thinkingLogs.push({
               time: timeStr,
@@ -735,7 +805,7 @@ export async function logAgentMessagesAsThinking(
             });
           }
         }
-      } else if (type === "tool") {
+      } else if (!options?.skipTools && type === "tool") {
         const content = extractModelText(msg);
         thinkingLogs.push({
           time: timeStr,
@@ -756,6 +826,11 @@ export async function logAgentMessagesAsThinking(
       }
 
       await agentThinkingService.saveThinking(projectId, pipeline, substep, allLogs);
+      if (typeof services?.onThinkingUpdate === "function") {
+        try {
+          await services.onThinkingUpdate(substep);
+        } catch {}
+      }
     }
   } catch (err) {
     console.warn("[AgentUtils] Failed to log agent messages as thinking:", err);

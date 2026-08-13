@@ -28,6 +28,7 @@ export interface IngestionServices {
   agentThinkingService?: any;
   projectId?: string;
   pipeline?: string;
+  onThinkingUpdate?: (substep: string) => Promise<void> | void;
 }
 
 export const AgentState = Annotation.Root({

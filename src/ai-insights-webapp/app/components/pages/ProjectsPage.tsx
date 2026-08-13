@@ -161,16 +161,8 @@ export default function ProjectsPage() {
   };
 
   const determineActiveStage = (payload: Partial<WorkflowResponse["data"]>): string => {
-    if (payload.status === "completed") {
+    if (payload.status === "completed" || payload.requiresApproval) {
       return "resolveSchema";
-    }
-    if (payload.requiresApproval) {
-      if (payload.nextStep === "profileData") {
-        return "inspect";
-      }
-      if (payload.nextStep === "resolveSchema") {
-        return "profileData";
-      }
     }
     if (payload.currentStage || payload.currentNode) {
       const node = payload.currentStage || payload.currentNode;
@@ -185,7 +177,9 @@ export default function ProjectsPage() {
     if (!selectedProject) return;
 
     const state = selectedProject.agentState as Record<string, any> | undefined;
-    if (state && typeof state === "object" && (state.stageStatuses || state.status || state.stageOutputs)) {
+    const hasValidState = state && typeof state === "object" && (state.stageStatuses || state.status || state.stageOutputs);
+
+    if (hasValidState) {
       const nextStatuses = mapStageToPipelineStatus(state.stageStatuses, pipelineStatuses);
       setPipelineStatuses(nextStatuses);
 
@@ -211,8 +205,8 @@ export default function ProjectsPage() {
         setWorkflowSessionId(state.sessionId);
       }
 
-      if (state.status === "completed" || selectedProject.createdAt) {
-        const dateObj = new Date(state.updatedAt || selectedProject.createdAt || Date.now());
+      if (state.status === "completed" || state.lastRunTime) {
+        const dateObj = new Date(state.lastRunTime || state.updatedAt || Date.now());
         setLastRunTime(dateObj.toLocaleString("en-US", {
           month: "short",
           day: "2-digit",
@@ -221,7 +215,19 @@ export default function ProjectsPage() {
           minute: "2-digit",
           hour12: true,
         }));
+      } else {
+        setLastRunTime("Not run yet");
       }
+    } else {
+      // Fresh project with no workflow runs yet
+      setPipelineStatuses(INITIAL_PIPELINE_STATUSES);
+      setStageOutputs({});
+      setRunStatus("Idle");
+      setRequiresApproval(false);
+      setWorkflowSessionId(null);
+      setWorkflowMessage("");
+      setLastRunTime("Not run yet");
+      setActiveStage("inspect");
     }
   }, [selectedProjectId, selectedProject?.agentState]);
 
@@ -281,8 +287,21 @@ export default function ProjectsPage() {
     if (action === "approve") {
       setRequiresApproval(false);
     }
-    setWorkflowMessage(action === "approve" ? "Resuming workflow..." : "Starting workflow...");
-
+    if (!action) {
+      setRequiresApproval(false);
+      setStageOutputs({});
+      setActiveStage("inspect");
+      setPipelineStatuses({
+        "Data Ingestion": "In Progress",
+        "Data Profiling": "Pending",
+        "Schema Resolver": "Pending",
+        "Feature Engineering": "Not Started",
+        "Model Training": "Not Started",
+        "Model Validation": "Not Started",
+        "Forecast": "Not Started",
+      });
+    }
+    let lastData: any = null;
     try {
       const payload: WorkflowRequestPayload = {
         connectorId: workflowConnectorIds,
@@ -311,7 +330,6 @@ export default function ProjectsPage() {
 
       const decoder = new TextDecoder();
       let buffer = "";
-      let lastData: any = null;
 
       while (true) {
         const { value, done } = await reader.read();
@@ -350,9 +368,14 @@ export default function ProjectsPage() {
         console.info("Workflow execution request aborted by user.");
         return;
       }
-      console.error("Workflow execution failed", error);
+      console.error("Workflow execution stream error", error);
+      if (lastData && (lastData.status === "completed" || lastData.stageStatuses?.resolveSchema === "Completed")) {
+        updateWorkflowState(lastData);
+        showAlert({ title: "Run Success", message: lastData.summary || "Data Ingestion completed successfully.", type: "success" });
+        return;
+      }
       setRunStatus("Idle");
-      showAlert({ title: "Workflow Error", message: error.message || "The workflow could not be started or resumed.", type: "error" });
+      showAlert({ title: "Workflow Error", message: error.message || "The workflow stream was interrupted.", type: "error" });
     } finally {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
@@ -395,14 +418,30 @@ export default function ProjectsPage() {
 
   const handleApprove = () => {
     setRequiresApproval(false);
-    if (pipelineStatuses["Data Ingestion"] === "Completed" || pipelineStatuses["Schema Resolver"] === "Completed") {
+    const isDataIngestionComplete = pipelineStatuses["Schema Resolver"] === "Completed" || pipelineStatuses["Data Ingestion"] === "Completed";
+
+    if (isDataIngestionComplete) {
       setRunStatus("Running");
       setActiveStage("Feature Engineering");
       setWorkflowMessage("Advancing workflow to Feature Engineering stage...");
       setPipelineStatuses((prev) => ({
         ...prev,
+        "Data Ingestion": "Completed",
+        "Data Profiling": "Completed",
+        "Schema Resolver": "Completed",
         "Feature Engineering": "In Progress",
       }));
+      if (selectedProject?.id) {
+        void updateProject(selectedProject.id, {
+          agentState: {
+            ...(selectedProject.agentState as Record<string, any> || {}),
+            requiresApproval: false,
+            activeStage: "Feature Engineering",
+            status: "completed",
+            message: "Data Ingestion approved; advancing to Feature Engineering stage",
+          },
+        });
+      }
     } else {
       setRunStatus("Running");
       void runWorkflow("approve");
@@ -441,6 +480,17 @@ export default function ProjectsPage() {
     setWorkflowSessionId(null);
     setRunStatus("Idle");
     setRequiresApproval(false);
+    setStageOutputs({});
+    setActiveStage("inspect");
+    setPipelineStatuses({
+      "Data Ingestion": "In Progress",
+      "Data Profiling": "Pending",
+      "Schema Resolver": "Pending",
+      "Feature Engineering": "Not Started",
+      "Model Training": "Not Started",
+      "Model Validation": "Not Started",
+      "Forecast": "Not Started",
+    });
     void runWorkflow(undefined, undefined, newUseCase ?? selectedProject.useCase);
   };
 

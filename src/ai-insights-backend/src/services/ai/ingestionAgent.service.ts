@@ -32,6 +32,42 @@ const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   ]
 };
 
+class PushQueue<T> {
+  private queue: T[] = [];
+  private resolvers: Array<(value: IteratorResult<T>) => void> = [];
+  private isDone = false;
+
+  push(item: T) {
+    if (this.resolvers.length > 0) {
+      const resolve = this.resolvers.shift()!;
+      resolve({ value: item, done: false });
+    } else {
+      this.queue.push(item);
+    }
+  }
+
+  close() {
+    this.isDone = true;
+    for (const resolve of this.resolvers) {
+      resolve({ value: undefined as any, done: true });
+    }
+    this.resolvers = [];
+  }
+
+  async *[Symbol.asyncIterator](): AsyncGenerator<T, void, unknown> {
+    while (true) {
+      if (this.queue.length > 0) {
+        yield this.queue.shift()!;
+      } else if (this.isDone) {
+        return;
+      } else {
+        const res = await new Promise<IteratorResult<T>>((r) => this.resolvers.push(r));
+        if (res.done) return;
+        yield res.value;
+      }
+    }
+  }
+}
 
 export class IngestionAgentService implements IIngestionAgentService {
   private checkpointer = new MemorySaver();
@@ -73,6 +109,20 @@ export class IngestionAgentService implements IIngestionAgentService {
       let threadId: string = isNewRun ? "" : (options?.sessionId ?? "");
       let meta = threadId ? this.sessionMeta.get(threadId) : undefined;
 
+      if (isNewRun) {
+        this.checkpointer = new MemorySaver();
+        if (this.sessionMeta.size > 10) {
+          const keysToDelete = Array.from(this.sessionMeta.keys()).slice(0, this.sessionMeta.size - 5);
+          for (const k of keysToDelete) {
+            this.sessionMeta.delete(k);
+            this.stoppedSessions.delete(k);
+          }
+        }
+        if (typeof global.gc === "function") {
+          try { global.gc(); } catch {}
+        }
+      }
+
       if (isNewRun || !meta) {
         threadId = `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
         meta = { threadId, connectorId, userPrompt: userPrompt ?? "", projectId: options?.projectId };
@@ -81,6 +131,21 @@ export class IngestionAgentService implements IIngestionAgentService {
         meta.projectId = options.projectId;
         this.sessionMeta.set(threadId, meta);
       }
+
+      const queue = new PushQueue<IngestionAgentRunResult>();
+
+      let latestGraphStateValues: any = {
+        status: "running",
+        summary: "Ingestion workflow running",
+        inspection: {},
+        dataProfile: {},
+        schemaResolution: {},
+        preprocessing: {},
+        batchedTables: [],
+        steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
+        stageOutputs: {},
+        stageStatuses: { inspect: "Running", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
+      };
 
       // Populate services dependencies context to pass inside LangGraph config
       const services = {
@@ -92,6 +157,60 @@ export class IngestionAgentService implements IIngestionAgentService {
         agentThinkingService: this.agentThinkingService,
         projectId: options?.projectId,
         pipeline: "Data Ingestion",
+        onThinkingUpdate: async (substep: string) => {
+          if (this.stoppedSessions.has(threadId)) return;
+          try {
+            const allThinking = options?.projectId
+              ? await this.getAllProjectPipelineThinking(options.projectId, "Data Ingestion")
+              : {};
+
+            const currentStageStatuses = { ...(latestGraphStateValues.stageStatuses || {}) };
+            let currentNode = "inspect";
+            let currentStage = "inspect";
+
+            if (substep === "Data Ingestion" || substep === "inspect") {
+              currentNode = "inspect";
+              currentStage = "inspect";
+              currentStageStatuses.inspect = "Running";
+            } else if (substep === "Data Profiling" || substep === "profileData") {
+              currentNode = "profileData";
+              currentStage = "profileData";
+              currentStageStatuses.inspect = "Completed";
+              currentStageStatuses.profileData = "Running";
+            } else if (substep === "preprocess") {
+              currentNode = "preprocess";
+              currentStage = "preprocess";
+              currentStageStatuses.inspect = "Completed";
+              currentStageStatuses.profileData = "Completed";
+              currentStageStatuses.preprocess = "Running";
+            } else if (substep === "Schema Resolver" || substep === "resolveSchema") {
+              currentNode = "resolveSchema";
+              currentStage = "resolveSchema";
+              currentStageStatuses.inspect = "Completed";
+              currentStageStatuses.profileData = "Completed";
+              currentStageStatuses.preprocess = "Completed";
+              currentStageStatuses.resolveSchema = "Running";
+            }
+
+            const mergedValues = {
+              ...latestGraphStateValues,
+              stageStatuses: currentStageStatuses,
+            };
+
+            const resVal = buildResultFromGraphState(
+              { values: mergedValues },
+              threadId,
+              connectorId
+            );
+            resVal.currentNode = currentNode;
+            resVal.currentStage = currentStage;
+            resVal.agentThinking = allThinking;
+
+            queue.push(resVal);
+          } catch (err) {
+            console.warn(`[Workflow] Failed to push thinking update:`, err);
+          }
+        },
       };
 
       const config = { 
@@ -133,16 +252,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             }
           }
         } else if (options.action === "approve") {
-          const graphState = await workflow.getState(config);
-          const nextNodes = Array.isArray(graphState?.next) ? graphState.next : [];
-          if (nextNodes.includes("profileData")) {
-            activeSubstep = "Data Profiling";
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
-          } else if (nextNodes.includes("resolveSchema")) {
-            activeSubstep = "Schema Resolver";
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
-          }
+          activeSubstep = undefined;
         } else {
           activeSubstep = "Data Ingestion";
           await this.agentThinkingService.clearProjectPipelineThinking(projectId, pipeline);
@@ -160,7 +270,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             summary: "Ingestion workflow started",
             steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
             stageOutputs: {},
-            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
+            stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
           };
           try {
             await this.projectService.updateAgentState(options.projectId, cleanInitialState, userPrompt);
@@ -180,11 +290,11 @@ export class IngestionAgentService implements IIngestionAgentService {
           const schemaStatus = activeSubstep === "Schema Resolver" ? "In Progress" : "Pending";
 
           const mergedStageStatuses = {
+            ...(calculatedBase.stageStatuses || {}),
             inspect: inspectStatus,
             profileData: profileStatus,
             preprocess: preprocessStatus,
             resolveSchema: schemaStatus,
-            ...(calculatedBase.stageStatuses || {}),
           };
 
           const fullBaseResult: IngestionAgentRunResult = {
@@ -201,7 +311,7 @@ export class IngestionAgentService implements IIngestionAgentService {
 
           for await (const thinkingUpdate of this.streamThinking(projectId, pipeline, activeSubstep, fullBaseResult, logs, threadId)) {
             if (this.stoppedSessions.has(threadId)) break;
-            yield thinkingUpdate;
+            queue.push(thinkingUpdate);
           }
         }
       }
@@ -215,7 +325,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         if (targetNode === "inspect") {
           // Retry inspect = start fresh with a new thread
           threadId = `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          meta = { threadId, connectorId, userPrompt: userPrompt ?? meta.userPrompt ?? "" };
+          meta = { threadId, connectorId, userPrompt: userPrompt ?? meta.userPrompt ?? "", projectId: options?.projectId };
           this.sessionMeta.set(threadId, meta);
           const freshConfig = { 
             configurable: { 
@@ -301,89 +411,151 @@ export class IngestionAgentService implements IIngestionAgentService {
         );
       }
 
-      // Stream updates from initial execution segment
-      for await (const _ of stream) {
-        if (this.stoppedSessions.has(threadId)) break;
-        const graphState = await workflow.getState(config);
-        const result = buildResultFromGraphState(graphState, threadId, connectorId);
-        if (options?.projectId) {
-          result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
-        }
-        yield result;
-      }
+      // Execute graph in background task pushing updates to queue
+      (async () => {
+        try {
+          // Stream updates from initial execution segment
+          for await (const chunk of stream) {
+            if (this.stoppedSessions.has(threadId)) break;
 
-      // Auto-advance through interrupt gates to run all nodes through to schema resolution unless stopped
-      let graphState = await workflow.getState(config);
-      while (
-        Array.isArray(graphState?.next) &&
-        graphState.next.length > 0 &&
-        graphState?.values?.status !== "completed" &&
-        graphState?.values?.status !== "failed" &&
-        !this.stoppedSessions.has(threadId)
-      ) {
-        console.info(`[Workflow] Auto-advancing node [${graphState.next.join(", ")}], thread ${threadId}`);
-        const advanceStream = await workflow.stream(null, config);
-        for await (const _ of advanceStream) {
-          if (this.stoppedSessions.has(threadId)) break;
-          const currentGraphState = await workflow.getState(config);
-          const result = buildResultFromGraphState(currentGraphState, threadId, connectorId);
+            const completedNodes = Object.keys(chunk || {});
+            for (const nodeName of completedNodes) {
+              console.info(`[Workflow] Node [${nodeName}] completed`);
+            }
+
+            const graphState = await workflow.getState(config);
+            if (graphState?.values) {
+              latestGraphStateValues = {
+                ...latestGraphStateValues,
+                ...graphState.values,
+                stageOutputs: { ...(latestGraphStateValues.stageOutputs || {}), ...(graphState.values.stageOutputs || {}) },
+                stageStatuses: { ...(latestGraphStateValues.stageStatuses || {}), ...(graphState.values.stageStatuses || {}) }
+              };
+            }
+            const result = buildResultFromGraphState(graphState, threadId, connectorId);
+            if (options?.projectId) {
+              result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+            }
+            queue.push(result);
+          }
+
+          // Auto-advance through interrupt gates to run all nodes through to schema resolution unless stopped
+          let graphState = await workflow.getState(config);
+          if (graphState?.values) {
+            latestGraphStateValues = {
+              ...latestGraphStateValues,
+              ...graphState.values,
+              stageOutputs: { ...(latestGraphStateValues.stageOutputs || {}), ...(graphState.values.stageOutputs || {}) },
+              stageStatuses: { ...(latestGraphStateValues.stageStatuses || {}), ...(graphState.values.stageStatuses || {}) }
+            };
+          }
+          while (
+            Array.isArray(graphState?.next) &&
+            graphState.next.length > 0 &&
+            graphState?.values?.status !== "completed" &&
+            graphState?.values?.status !== "failed" &&
+            !this.stoppedSessions.has(threadId)
+          ) {
+            const nextNodes = graphState.next;
+            console.info(`[Workflow] Node [${nextNodes.join(", ")}] started`);
+            const advanceStream = await workflow.stream(null, config);
+            for await (const chunk of advanceStream) {
+              if (this.stoppedSessions.has(threadId)) break;
+
+              const completedNodes = Object.keys(chunk || {});
+              for (const nodeName of completedNodes) {
+                console.info(`[Workflow] Node [${nodeName}] completed`);
+              }
+
+              const currentGraphState = await workflow.getState(config);
+              if (currentGraphState?.values) {
+                latestGraphStateValues = {
+                  ...latestGraphStateValues,
+                  ...currentGraphState.values,
+                  stageOutputs: { ...(latestGraphStateValues.stageOutputs || {}), ...(currentGraphState.values.stageOutputs || {}) },
+                  stageStatuses: { ...(latestGraphStateValues.stageStatuses || {}), ...(currentGraphState.values.stageStatuses || {}) }
+                };
+              }
+              const result = buildResultFromGraphState(currentGraphState, threadId, connectorId);
+              if (options?.projectId) {
+                result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+              }
+              queue.push(result);
+            }
+            graphState = await workflow.getState(config);
+            if (graphState?.values) {
+              latestGraphStateValues = {
+                ...latestGraphStateValues,
+                ...graphState.values,
+                stageOutputs: { ...(latestGraphStateValues.stageOutputs || {}), ...(graphState.values.stageOutputs || {}) },
+                stageStatuses: { ...(latestGraphStateValues.stageStatuses || {}), ...(graphState.values.stageStatuses || {}) }
+              };
+            }
+          }
+
+          console.info(`[Workflow] State after invoke — next: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}], status: ${graphState?.values?.status || "unknown"}`);
+          
+          if (this.stoppedSessions.has(threadId)) {
+            const stoppedValues = {
+              ...(graphState?.values || {}),
+              status: "failed",
+              summary: "Workflow stopped by user",
+            };
+            const stoppedResult = buildResultFromGraphState({ ...graphState, values: stoppedValues }, threadId, connectorId);
+            stoppedResult.status = "failed";
+            stoppedResult.summary = "Workflow stopped by user";
+            stoppedResult.requiresApproval = false;
+            if (options?.projectId) {
+              await this.projectService.updateAgentState(options.projectId, stoppedValues);
+              stoppedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+            }
+            queue.push(stoppedResult);
+            return;
+          }
+
+          const result = buildResultFromGraphState(graphState, threadId, connectorId);
+          if (options?.action === "approve") {
+            result.requiresApproval = false;
+            result.message = "Data Ingestion approved. Moving to Feature Engineering stage.";
+          }
+
+          if (options?.projectId) {
+            try {
+              await this.projectService.updateAgentState(
+                options.projectId, 
+                graphState?.values ?? {}, 
+                userPrompt ?? meta.userPrompt
+              );
+            } catch (persistError: any) {
+              console.warn(`[Workflow] Failed to persist agent state for project ${options.projectId}:`, persistError?.message || persistError);
+            }
+          }
+
+          if (traceSession) {
+            await this.traceHelper.appendTraceEntry("workflow:end", "output", {
+              connectorId,
+              startedAt: runStartedAt,
+              completedAt: new Date().toISOString(),
+              status: result.status,
+              summary: result.summary,
+              nextStep: result.nextStep,
+            });
+          }
+
           if (options?.projectId) {
             result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
           }
-          yield result;
+          queue.push(result);
+        } catch (err: any) {
+          console.error(`[Workflow] Execution error:`, err?.message || err);
+        } finally {
+          queue.close();
         }
-        graphState = await workflow.getState(config);
-      }
-      
-      console.info(`[Workflow] State after invoke — next: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}], status: ${graphState?.values?.status || "unknown"}`);
-      
-      if (this.stoppedSessions.has(threadId)) {
-        const stoppedValues = {
-          ...(graphState?.values || {}),
-          status: "failed",
-          summary: "Workflow stopped by user",
-        };
-        const stoppedResult = buildResultFromGraphState({ ...graphState, values: stoppedValues }, threadId, connectorId);
-        stoppedResult.status = "failed";
-        stoppedResult.summary = "Workflow stopped by user";
-        stoppedResult.requiresApproval = false;
-        if (options?.projectId) {
-          await this.projectService.updateAgentState(options.projectId, stoppedValues);
-          stoppedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
-        }
-        yield stoppedResult;
-        return;
-      }
+      })();
 
-      const result = buildResultFromGraphState(graphState, threadId, connectorId);
-
-      if (options?.projectId) {
-        try {
-          await this.projectService.updateAgentState(
-            options.projectId, 
-            graphState?.values ?? {}, 
-            userPrompt ?? meta.userPrompt
-          );
-        } catch (persistError: any) {
-          console.warn(`[Workflow] Failed to persist agent state for project ${options.projectId}:`, persistError?.message || persistError);
-        }
+      for await (const update of queue) {
+        yield update;
       }
-
-      if (traceSession) {
-        await this.traceHelper.appendTraceEntry("workflow:end", "output", {
-          connectorId,
-          startedAt: runStartedAt,
-          completedAt: new Date().toISOString(),
-          status: result.status,
-          summary: result.summary,
-          nextStep: result.nextStep,
-        });
-      }
-
-      if (options?.projectId) {
-        result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
-      }
-      yield result;
     } catch (error: any) {
       console.error(`[Workflow] Run failed:`, error?.message || error);
       if (traceSession) {

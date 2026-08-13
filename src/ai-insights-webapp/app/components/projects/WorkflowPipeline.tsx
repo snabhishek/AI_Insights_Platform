@@ -182,7 +182,7 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
     (key) => (pipelineStatuses[key] as PipelineStatus) ?? "Not Started"
   );
 
-  if (s3 === "Completed" || (s1 === "Completed" && s2 === "Completed")) {
+  if (s1 === "Completed" && s2 === "Completed" && s3 === "Completed") {
     return "Completed";
   }
   if ([s1, s2, s3].some((s) => s === "In Progress" || s === "Completed")) {

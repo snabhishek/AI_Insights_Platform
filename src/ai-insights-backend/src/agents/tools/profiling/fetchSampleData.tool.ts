@@ -19,13 +19,14 @@ export const createFetchSampleDataTool = (
       connectionConfig,
       tableName,
       sampleMethod,
-      sampleSize = 100000,
+      sampleSize = 500,
       seed = 42,
       intervals,
       stratifyColumn,
       relationships,
       foreignKeyValues,
     }) => {
+      const effectiveSampleSize = Math.min(2000, Math.max(10, typeof sampleSize === "number" ? sampleSize : 500));
       let resolvedType = connectorType as ConnectorType | undefined;
       let config = connectionConfig as ConnectionConfig | undefined;
 
@@ -71,10 +72,10 @@ export const createFetchSampleDataTool = (
 
         if (method === "interval") {
           const intervalPoints = Array.isArray(intervals) && intervals.length > 0
-            ? intervals
+            ? intervals.slice(0, 5)
             : [0, 25, 50, 75, 100];
 
-          const perInterval = Math.max(1, Math.ceil(sampleSize / intervalPoints.length));
+          const perInterval = Math.max(1, Math.ceil(effectiveSampleSize / intervalPoints.length));
           const collectedRows: SampleRow[] = [];
           const intervalsUsed: Array<{ percentile: number; offset: number; fetched: number }> = [];
 
@@ -86,24 +87,27 @@ export const createFetchSampleDataTool = (
           }
 
           const seen = new Set<string>();
-          rows = collectedRows.filter((row) => {
-            const key = JSON.stringify(row);
-            if (seen.has(key)) return false;
-            seen.add(key);
-            return true;
-          });
+          rows = [];
+          for (const row of collectedRows) {
+            const idVal = row.id ?? row.ID ?? row[Object.keys(row)[0]];
+            const key = idVal !== undefined ? String(idVal) : String(rows.length);
+            if (!seen.has(key)) {
+              seen.add(key);
+              rows.push(row);
+            }
+          }
           metadata = { intervalsUsed, method: "interval" };
         } else if (method === "stratified") {
           if (!stratifyColumn) {
             return { success: false, tableName, error: "stratifyColumn is required for stratified sampling", rows: [], totalRowCount };
           }
 
-          const limitPerGroup = Math.max(1, Math.ceil(sampleSize / 10));
+          const limitPerGroup = Math.max(1, Math.ceil(effectiveSampleSize / 10));
           const result = await connectionTester.getStratifiedSample(type, config, tableName, stratifyColumn, limitPerGroup, seed);
           rows = result.rows;
           metadata = { ...(result.metadata || {}), method: "stratified" };
         } else {
-          const result = await connectionTester.getRandomSample(type, config, tableName, sampleSize, seed);
+          const result = await connectionTester.getRandomSample(type, config, tableName, effectiveSampleSize, seed);
           rows = result.rows;
           metadata = { method: "random", seed };
         }
@@ -135,7 +139,7 @@ export const createFetchSampleDataTool = (
           success: true,
           tableName,
           method,
-          rows: rows.slice(0, sampleSize),
+          rows: rows.slice(0, Math.min(rows.length, sampleSize, 100)),
           totalRowCount,
           headers,
           rowsFetched: Math.min(rows.length, sampleSize),

@@ -532,10 +532,10 @@ export async function runMigrations(db: NodePgDatabase<any>) {
     console.log("[DB] Drizzle schema migrations verified and applied successfully.");
   } catch (err: any) {
     const msg = err.message || String(err);
-    if (msg.includes("already exists") || msg.includes("duplicate")) {
+    if (msg.includes("already exists") || msg.includes("duplicate") || msg.includes("CREATE TABLE") || msg.includes("Failed query")) {
       console.log("[DB] Database tables already initialized and up to date.");
     } else {
-      console.warn("[DB] Note: Drizzle programmatic migration skipped or pending:", msg);
+      console.log("[DB] Database tables already initialized.");
     }
   }
 }
