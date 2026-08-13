@@ -142,6 +142,8 @@ export default function ProjectsPage() {
     mapSingle("resolveSchema", "Schema Resolver");
     mapSingle("exogenousScout", "Exogenous Scout");
     mapSingle("exogenous", "Exogenous Scout");
+    mapSingle("exogenousScout", "Exogenous Scout");
+    mapSingle("exogenous", "Exogenous Scout");
 
     // Merged stage: Data Profiling = profileData + preprocess
     const profileVal = stageStatuses.profileData;
@@ -157,6 +159,16 @@ export default function ProjectsPage() {
       } else if (isAnyRunning || anyCompleted) {
         next["Data Profiling"] = "In Progress";
       }
+    }
+
+    // Feature Engineering stage mapping
+    const exoVal = stageStatuses.exogenousScout || stageStatuses.exogenous;
+    if (exoVal === "Completed") {
+      next["Exogenous Scout"] = "Completed";
+      next["Feature Engineering"] = "Completed";
+    } else if (exoVal === "In Progress" || exoVal === "Retrying") {
+      next["Exogenous Scout"] = "In Progress";
+      next["Feature Engineering"] = "In Progress";
     }
 
     // Feature Engineering stage mapping

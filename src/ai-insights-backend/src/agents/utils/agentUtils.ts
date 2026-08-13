@@ -717,6 +717,7 @@ export function buildResultFromGraphState(
   const values = graphState?.values ?? {};
   const nextNodes: string[] = Array.isArray(graphState?.next) ? graphState.next : [];
   const defaultStatuses = { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" };
+  const defaultStatuses = { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" };
   const stageStatuses = (values.stageStatuses && typeof values.stageStatuses === "object")
     ? values.stageStatuses as Record<string, string>
     : defaultStatuses;
@@ -734,6 +735,7 @@ export function buildResultFromGraphState(
     schemaResolution: (values.schemaResolution && typeof values.schemaResolution === "object") ? values.schemaResolution : {},
     dataProfile: (values.dataProfile && typeof values.dataProfile === "object") ? values.dataProfile : {},
     preprocessing: (values.preprocessing && typeof values.preprocessing === "object") ? values.preprocessing : {},
+    exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
     exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
@@ -755,9 +757,13 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     resolveSchema: "resolveSchema",
     exogenous: "exogenous",
     exogenousScout: "exogenous",
+    exogenous: "exogenous",
+    exogenousScout: "exogenous",
     "Data Ingestion": "inspect",
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
+    "Exogenous Scout": "exogenous",
+    "Feature Engineering": "exogenous",
     "Exogenous Scout": "exogenous",
     "Feature Engineering": "exogenous",
   };
