@@ -163,6 +163,12 @@ const MAIN_STEP_MAPPING: Record<string, string> = {
   "profileData": "Data Ingestion",
   "preprocess": "Data Ingestion",
   "resolveSchema": "Data Ingestion",
+  "Exogenous Scout": "Feature Engineering",
+  "exogenousScout": "Feature Engineering",
+  "exogenous": "Feature Engineering",
+  "Hierarchy Mapper": "Feature Engineering",
+  "Feature Architect": "Feature Engineering",
+  "Feature Validator": "Feature Engineering",
   "Feature Engineering": "Feature Engineering",
   "Model Training": "Model Training",
   "Model Validation": "Model Validation",
@@ -194,9 +200,20 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
   return "Not Started";
 }
 
+function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
+  const status = (pipelineStatuses["Exogenous Scout"] || pipelineStatuses["Feature Engineering"]) as PipelineStatus ?? "Not Started";
+  if (status === "Completed") return "Completed";
+  if (status === "In Progress") return "In Progress";
+  if (status === "Pending") return "Pending";
+  return "Not Started";
+}
+
 export function getMainStepStatus(stepId: string, pipelineStatuses: PipelineStatuses): PipelineStatus {
   if (stepId === "Data Ingestion") {
     return calculateDataIngestionStatus(pipelineStatuses);
+  }
+  if (stepId === "Feature Engineering") {
+    return calculateFeatureEngineeringStatus(pipelineStatuses);
   }
   return (pipelineStatuses[stepId] as PipelineStatus) ?? "Not Started";
 }
