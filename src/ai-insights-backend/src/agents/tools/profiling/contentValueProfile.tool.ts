@@ -81,10 +81,12 @@ const detectPatternsPl = (s: pl.Series): string[] => {
   if (total === 0) return [];
 
   const arr = nonEmpty.toArray().map(String);
+  const sampleArr = arr.length > 250 ? arr.slice(0, 250) : arr;
+  const sampleTotal = sampleArr.length;
   const detected: string[] = [];
   for (const check of PATTERN_CHECKS) {
-    const matchCount = arr.filter((v) => check.regex.test(v)).length;
-    if (matchCount / total >= 0.5) {
+    const matchCount = sampleArr.filter((v) => check.regex.test(v)).length;
+    if (matchCount / sampleTotal >= 0.5) {
       detected.push(check.name);
     }
   }

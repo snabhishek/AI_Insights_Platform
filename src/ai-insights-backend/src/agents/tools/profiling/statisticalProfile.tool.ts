@@ -56,23 +56,39 @@ const profileNumericColumnPl = (colName: string, s: pl.Series) => {
   }
 
   const statsDf = pl.DataFrame({ v: numericS });
-  const mean = statsDf.select(pl.col("v").mean()).toRecords()[0]["v"] as number ?? 0;
-  const variance = statsDf.select(pl.col("v").var()).toRecords()[0]["v"] as number ?? 0;
-  const stddev = statsDf.select(pl.col("v").std()).toRecords()[0]["v"] as number ?? 0;
-  const median = statsDf.select(pl.col("v").median()).toRecords()[0]["v"] as number ?? 0;
-  const skewness = statsDf.select(pl.col("v").skew()).toRecords()[0]["v"] as number ?? 0;
-  const kurtosis = statsDf.select(pl.col("v").kurtosis()).toRecords()[0]["v"] as number ?? 0;
-  const minVal = statsDf.select(pl.col("v").min()).toRecords()[0]["v"] as number ?? 0;
-  const maxVal = statsDf.select(pl.col("v").max()).toRecords()[0]["v"] as number ?? 0;
+  const selResult: any = statsDf.select(
+    pl.col("v").mean().alias("mean"),
+    pl.col("v").var().alias("variance"),
+    pl.col("v").std().alias("stddev"),
+    pl.col("v").median().alias("median"),
+    pl.col("v").skew().alias("skewness"),
+    pl.col("v").kurtosis().alias("kurtosis"),
+    pl.col("v").min().alias("minVal"),
+    pl.col("v").max().alias("maxVal"),
+    pl.col("v").quantile(0.05).alias("p5"),
+    pl.col("v").quantile(0.25).alias("p25"),
+    pl.col("v").quantile(0.50).alias("p50"),
+    pl.col("v").quantile(0.75).alias("p75"),
+    pl.col("v").quantile(0.95).alias("p95")
+  );
+  const aggregatedRec: Record<string, any> = selResult.toRecords()[0] || {};
+
+  const mean = (aggregatedRec["mean"] as number) ?? 0;
+  const variance = (aggregatedRec["variance"] as number) ?? 0;
+  const stddev = (aggregatedRec["stddev"] as number) ?? 0;
+  const median = (aggregatedRec["median"] as number) ?? 0;
+  const skewness = (aggregatedRec["skewness"] as number) ?? 0;
+  const kurtosis = (aggregatedRec["kurtosis"] as number) ?? 0;
+  const minVal = (aggregatedRec["minVal"] as number) ?? 0;
+  const maxVal = (aggregatedRec["maxVal"] as number) ?? 0;
+  const p5 = (aggregatedRec["p5"] as number) ?? 0;
+  const p25 = (aggregatedRec["p25"] as number) ?? 0;
+  const p50 = (aggregatedRec["p50"] as number) ?? 0;
+  const p75 = (aggregatedRec["p75"] as number) ?? 0;
+  const p95 = (aggregatedRec["p95"] as number) ?? 0;
 
   const modeSeries = numericS.mode();
   const mode = modeSeries.length > 0 ? Number(modeSeries.get(0)) : null;
-
-  const p5 = statsDf.select(pl.col("v").quantile(0.05)).toRecords()[0]["v"] as number ?? 0;
-  const p25 = statsDf.select(pl.col("v").quantile(0.25)).toRecords()[0]["v"] as number ?? 0;
-  const p50 = statsDf.select(pl.col("v").quantile(0.50)).toRecords()[0]["v"] as number ?? 0;
-  const p75 = statsDf.select(pl.col("v").quantile(0.75)).toRecords()[0]["v"] as number ?? 0;
-  const p95 = statsDf.select(pl.col("v").quantile(0.95)).toRecords()[0]["v"] as number ?? 0;
   const iqr = p75 - p25;
 
   const lowerBound = p25 - 1.5 * iqr;

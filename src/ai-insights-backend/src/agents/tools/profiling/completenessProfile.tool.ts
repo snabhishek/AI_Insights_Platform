@@ -28,9 +28,8 @@ const inferMissingPatternPl = (
   const missingRate = nullCount / totalRows;
 
   // Check for MAR: is missingness correlated with other columns?
-  for (const otherCol of allColumns) {
-    if (otherCol === columnName) continue;
-
+  const candidateOtherCols = allColumns.filter((c) => c !== columnName).slice(0, 5);
+  for (const otherCol of candidateOtherCols) {
     const otherS = df.getColumn(otherCol).cast(pl.Utf8).str.strip().str.toLowerCase();
     const otherMissing = otherS.filter(isNullS);
     const otherPresent = otherS.filter(s.isNotNull());

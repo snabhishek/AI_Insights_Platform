@@ -147,6 +147,7 @@ function formatStageOutput(stage: string, stageOutputs: Record<string, unknown>)
 
 function getStageTitle(stepId: string): string {
   switch (stepId) {
+    case "Data Inspection":
     case "Data Ingestion": return "Inspect";
     case "Data Profiling": return "Profile & Preprocess";
     case "Schema Resolver": return "Schema Resolution";
@@ -156,6 +157,7 @@ function getStageTitle(stepId: string): string {
 
 // Data-driven map associating internal stage/sub-step keys to top-level pipeline card IDs
 const MAIN_STEP_MAPPING: Record<string, string> = {
+  "Data Inspection": "Data Ingestion",
   "Data Ingestion": "Data Ingestion",
   "Data Profiling": "Data Ingestion",
   "Schema Resolver": "Data Ingestion",
@@ -176,7 +178,7 @@ const MAIN_STEP_MAPPING: Record<string, string> = {
 };
 
 const DEFAULT_MAIN_STEP_ID = "Data Ingestion";
-const DATA_INGESTION_SUBSTEPS = ["Data Ingestion", "Data Profiling", "Schema Resolver"] as const;
+const DATA_INGESTION_SUBSTEPS = ["Data Inspection", "Data Profiling", "Schema Resolver"] as const;
 
 export function getMainStepId(stepOrStageId: string | null): string {
   if (!stepOrStageId) return DEFAULT_MAIN_STEP_ID;
@@ -184,11 +186,11 @@ export function getMainStepId(stepOrStageId: string | null): string {
 }
 
 function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
-  const [s1, s2, s3] = DATA_INGESTION_SUBSTEPS.map(
-    (key) => (pipelineStatuses[key] as PipelineStatus) ?? "Not Started"
-  );
+  const s1 = (pipelineStatuses["Data Inspection"] as PipelineStatus) ?? (pipelineStatuses["Data Ingestion"] as PipelineStatus) ?? "Not Started";
+  const s2 = (pipelineStatuses["Data Profiling"] as PipelineStatus) ?? "Not Started";
+  const s3 = (pipelineStatuses["Schema Resolver"] as PipelineStatus) ?? "Not Started";
 
-  if (s3 === "Completed" || (s1 === "Completed" && s2 === "Completed")) {
+  if (s1 === "Completed" && s2 === "Completed" && s3 === "Completed") {
     return "Completed";
   }
   if ([s1, s2, s3].some((s) => s === "In Progress" || s === "Completed")) {
