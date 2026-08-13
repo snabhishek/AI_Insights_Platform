@@ -67,6 +67,13 @@ export class AIController {
     res.setHeader("X-Accel-Buffering", "no"); // Prevents Nginx buffering streams
     res.flushHeaders();
 
+    // Heartbeat interval to keep SSE connection alive during long model processing
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded) {
+        res.write(": keep-alive\n\n");
+      }
+    }, 15000);
+
     try {
       const stream = this.ingestionAgentService.run(connectorId, userPrompt ?? prompt ?? "", {
         sessionId,
@@ -76,7 +83,10 @@ export class AIController {
       });
 
       for await (const update of stream) {
-        res.write(`data: ${JSON.stringify({ success: true, data: update })}\n\n`);
+        const canWrite = res.write(`data: ${JSON.stringify({ success: true, data: update })}\n\n`);
+        if (!canWrite) {
+          await new Promise<void>((resolve) => res.once("drain", resolve));
+        }
       }
 
       res.write("data: [DONE]\n\n");
@@ -84,6 +94,8 @@ export class AIController {
     } catch (error: any) {
       res.write(`data: ${JSON.stringify({ success: false, message: error.message || "AI workflow failed" })}\n\n`);
       res.end();
+    } finally {
+      clearInterval(heartbeat);
     }
   };
 

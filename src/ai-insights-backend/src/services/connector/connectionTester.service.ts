@@ -1,6 +1,8 @@
 import net from "net";
 import http from "http";
 import https from "https";
+import fsSync from "fs";
+import readline from "readline";
 import { Pool } from "pg";
 import * as xlsx from "xlsx";
 import { IConnectionTesterService, TestResult, SampleResult } from "./connectionTester.service.interface";
@@ -618,9 +620,18 @@ export class ConnectionTesterService implements IConnectionTesterService {
     if (["csv", "tsv"].includes(type)) {
       const fileName = config.fileName;
       if (!fileName || !this.fileService.fileExists(fileName)) return 0;
-      const content = this.fileService.readTextFile(fileName);
-      const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
-      return Math.max(0, lines.length - 1);
+      const filePath = this.fileService.getFilePath(fileName);
+      try {
+        const fileStream = fsSync.createReadStream(filePath, { encoding: "utf8" });
+        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
+        let count = 0;
+        for await (const line of rl) {
+          if (line.trim().length > 0) count++;
+        }
+        return Math.max(0, count - 1);
+      } catch {
+        return 0;
+      }
     }
 
     return 0;
@@ -1226,26 +1237,50 @@ export class ConnectionTesterService implements IConnectionTesterService {
     return rowObj;
   }
 
-  private getFileSlice(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, limit: number, offset: number): SampleResult {
+  private async getFileSlice(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, limit: number, offset: number): Promise<SampleResult> {
     const fileName = config.fileName;
     if (!fileName || !this.fileService.fileExists(fileName)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
+    const filePath = this.fileService.getFilePath(fileName);
 
     if (["csv", "tsv"].includes(type)) {
-      const content = this.fileService.readTextFile(fileName);
       const delimiter = type === "tsv" ? "\t" : ",";
-      const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
-      if (lines.length === 0) return { success: true, headers: [], rows: [], totalRowCount: 0 };
+      try {
+        const fileStream = fsSync.createReadStream(filePath, { encoding: "utf8" });
+        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
-      const headers = lines[0].split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim());
-      const totalRowCount = lines.length - 1;
-      const targetLines = lines.slice(1 + offset, 1 + offset + limit);
-      const rows = targetLines.map((line) => this.parseCsvLine(line, delimiter, headers));
+        let headers: string[] = [];
+        const rows: Record<string, string>[] = [];
+        let lineIdx = 0;
+        let totalRowCount = 0;
+        const maxNeeded = 1 + offset + limit;
 
-      return { success: true, headers, rows, totalRowCount };
+        for await (const line of rl) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          if (lineIdx === 0) {
+            headers = trimmed.split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim());
+          } else {
+            totalRowCount++;
+            if (lineIdx >= 1 + offset && rows.length < limit) {
+              rows.push(this.parseCsvLine(trimmed, delimiter, headers));
+            }
+          }
+          lineIdx++;
+          if (lineIdx >= maxNeeded) {
+            rl.close();
+            fileStream.destroy();
+            break;
+          }
+        }
+
+        return { success: true, headers, rows, totalRowCount: totalRowCount || Math.max(0, lineIdx - 1) };
+      } catch {
+        return { success: false, headers: [], rows: [], totalRowCount: 0 };
+      }
     }
 
     if (type === "excel") {
-      const filePath = this.fileService.getFilePath(fileName);
       const workbook = xlsx.readFile(filePath);
       const sheetName = tableName || workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
@@ -1273,29 +1308,53 @@ export class ConnectionTesterService implements IConnectionTesterService {
     return { success: false, headers: [], rows: [], totalRowCount: 0 };
   }
 
-  private getFileRandomSample(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, limit: number, seed?: number): SampleResult {
+  private async getFileRandomSample(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, limit: number, seed?: number): Promise<SampleResult> {
     const fileName = config.fileName;
     if (!fileName || !this.fileService.fileExists(fileName)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
+    const filePath = this.fileService.getFilePath(fileName);
 
     if (["csv", "tsv"].includes(type)) {
-      const content = this.fileService.readTextFile(fileName);
       const delimiter = type === "tsv" ? "\t" : ",";
-      const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
-      if (lines.length <= 1) return { success: true, headers: lines.length === 1 ? lines[0].split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim()) : [], rows: [], totalRowCount: 0 };
+      try {
+        const fileStream = fsSync.createReadStream(filePath, { encoding: "utf8" });
+        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
-      const headers = lines[0].split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim());
-      const totalRowCount = lines.length - 1;
+        let headers: string[] = [];
+        const reservoir: string[] = [];
+        let lineIdx = 0;
+        let totalRowCount = 0;
+        const maxReservoir = Math.min(2000, Math.max(limit, 500));
 
-      const dataIndices = Array.from({ length: totalRowCount }, (_, i) => i + 1);
-      const shuffledIndices = this.deterministicShuffle(dataIndices, seed ?? 42);
-      const sampledIndices = shuffledIndices.slice(0, Math.min(limit, shuffledIndices.length));
+        for await (const line of rl) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
 
-      const rows = sampledIndices.map((idx) => this.parseCsvLine(lines[idx], delimiter, headers));
-      return { success: true, headers, rows, totalRowCount };
+          if (lineIdx === 0) {
+            headers = trimmed.split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim());
+          } else {
+            totalRowCount++;
+            if (reservoir.length < maxReservoir) {
+              reservoir.push(trimmed);
+            } else {
+              const r = Math.floor(Math.random() * totalRowCount);
+              if (r < maxReservoir) {
+                reservoir[r] = trimmed;
+              }
+            }
+          }
+          lineIdx++;
+        }
+
+        const shuffled = this.deterministicShuffle(reservoir, seed ?? 42);
+        const sampled = shuffled.slice(0, Math.min(limit, shuffled.length));
+        const rows = sampled.map((l) => this.parseCsvLine(l, delimiter, headers));
+        return { success: true, headers, rows, totalRowCount };
+      } catch {
+        return { success: false, headers: [], rows: [], totalRowCount: 0 };
+      }
     }
 
     if (type === "excel") {
-      const filePath = this.fileService.getFilePath(fileName);
       const workbook = xlsx.readFile(filePath);
       const sheetName = tableName || workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
@@ -1314,48 +1373,65 @@ export class ConnectionTesterService implements IConnectionTesterService {
     return { success: false, headers: [], rows: [], totalRowCount: 0 };
   }
 
-  private getFileStratifiedSample(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, stratifyColumn: string, limitPerGroup: number, seed?: number): SampleResult {
+  private async getFileStratifiedSample(type: ConnectorType, config: ConnectionConfig, tableName: string | undefined, stratifyColumn: string, limitPerGroup: number, seed?: number): Promise<SampleResult> {
     const fileName = config.fileName;
     if (!fileName || !this.fileService.fileExists(fileName)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
+    const filePath = this.fileService.getFilePath(fileName);
 
     if (["csv", "tsv"].includes(type)) {
-      const content = this.fileService.readTextFile(fileName);
       const delimiter = type === "tsv" ? "\t" : ",";
-      const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
-      if (lines.length <= 1) return { success: true, headers: [], rows: [], totalRowCount: 0 };
+      try {
+        const fileStream = fsSync.createReadStream(filePath, { encoding: "utf8" });
+        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
 
-      const headers = lines[0].split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim());
-      const totalRowCount = lines.length - 1;
-      const colIndex = headers.indexOf(stratifyColumn);
+        let headers: string[] = [];
+        let colIndex = -1;
+        const groupRows = new Map<string, string[]>();
+        let lineIdx = 0;
+        let totalRowCount = 0;
+        const effectiveLimitPerGroup = Math.min(100, Math.max(1, limitPerGroup));
 
-      const groups = new Map<string, number[]>();
-      for (let i = 1; i < lines.length; i++) {
-        let val = "null";
-        if (colIndex !== -1) {
-          const parts = lines[i].split(delimiter);
-          val = (parts[colIndex] ?? "null").replace(/^["']|["']$/g, "").trim() || "null";
+        for await (const line of rl) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          if (lineIdx === 0) {
+            headers = trimmed.split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim());
+            colIndex = headers.indexOf(stratifyColumn);
+          } else {
+            totalRowCount++;
+            let val = "null";
+            if (colIndex !== -1) {
+              const parts = trimmed.split(delimiter);
+              val = (parts[colIndex] ?? "null").replace(/^["']|["']$/g, "").trim() || "null";
+            }
+            const existing = groupRows.get(val) || [];
+            if (existing.length < effectiveLimitPerGroup * 5) {
+              existing.push(trimmed);
+              groupRows.set(val, existing);
+            }
+          }
+          lineIdx++;
         }
-        const existing = groups.get(val) || [];
-        existing.push(i);
-        groups.set(val, existing);
+
+        const selectedRows: Record<string, string>[] = [];
+        for (const [, lines] of groupRows) {
+          const shuffled = this.deterministicShuffle(lines, seed ?? 42);
+          const picked = shuffled.slice(0, effectiveLimitPerGroup);
+          selectedRows.push(...picked.map((l) => this.parseCsvLine(l, delimiter, headers)));
+        }
+
+        const groupNames = Array.from(groupRows.keys());
+        return {
+          success: true,
+          headers,
+          rows: selectedRows,
+          totalRowCount,
+          metadata: { stratifyColumn, groups: groupNames, groupCount: groupNames.length }
+        };
+      } catch {
+        return { success: false, headers: [], rows: [], totalRowCount: 0 };
       }
-
-      const sampledIndices: number[] = [];
-      for (const [, groupLineIndices] of groups) {
-        const shuffled = this.deterministicShuffle(groupLineIndices, seed ?? 42);
-        sampledIndices.push(...shuffled.slice(0, limitPerGroup));
-      }
-
-      const rows = sampledIndices.map((idx) => this.parseCsvLine(lines[idx], delimiter, headers));
-      const groupNames = Array.from(groups.keys());
-
-      return {
-        success: true,
-        headers,
-        rows,
-        totalRowCount,
-        metadata: { stratifyColumn, groups: groupNames, groupCount: groupNames.length }
-      };
     }
 
     if (type === "excel") {

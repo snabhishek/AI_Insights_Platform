@@ -16,8 +16,8 @@ export const PIPELINE_STEPS: Workflow[] = [
     ),
     step: [
       {
-        id: "Data Ingestion",
-        title: "Data Ingestion",
+        id: "Data Inspection",
+        title: "Data Inspection",
         description: "Inspect connector sources and discover structure",
         metric: "Inspect",
         color: "green",

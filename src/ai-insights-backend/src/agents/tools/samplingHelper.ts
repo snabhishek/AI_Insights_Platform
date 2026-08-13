@@ -24,6 +24,20 @@ export interface SamplingParams {
   fetchAll?: boolean;
 }
 
+interface SampleCacheEntry {
+  timestamp: number;
+  data: { rows: SampleRow[]; totalRowCount: number; error?: string };
+}
+
+const sampleCache = new Map<string, SampleCacheEntry>();
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
+function getCacheKey(connId: string, tableName: string, params: SamplingParams): string {
+  const method = params.sampleMethod || "random";
+  const size = params.fetchAll ? "all" : params.sampleSize || 100;
+  return `${connId}:${tableName}:${method}:${size}`;
+}
+
 export async function fetchRowsOnDemand(
   connectionTester: ConnectionTesterService,
   connectorService: ConnectorService,
@@ -44,6 +58,15 @@ export async function fetchRowsOnDemand(
     foreignKeyValues,
     fetchAll,
   } = params;
+
+  const cacheConnId = typeof connectorId === "string" && connectorId.trim().length > 0
+    ? connectorId
+    : (defaultConnector?.id || "default");
+  const cacheKey = getCacheKey(cacheConnId, tableName, params);
+  const cached = sampleCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+    return cached.data;
+  }
 
   let resolvedType = connectorType as ConnectorType | undefined;
   let config = connectionConfig as ConnectionConfig | undefined;
@@ -86,11 +109,11 @@ export async function fetchRowsOnDemand(
     const totalRowCount = await connectionTester.getRowCount(type, config, tableName);
 
     let rows: SampleRow[] = [];
-    const size = fetchAll ? totalRowCount : (typeof inputSampleSize === "number" && inputSampleSize > 0 ? inputSampleSize : 100);
+    const size = fetchAll ? totalRowCount : Math.min(2000, typeof inputSampleSize === "number" && inputSampleSize > 0 ? inputSampleSize : 100);
 
     if (method === "interval") {
       const intervalPoints = Array.isArray(intervals) && intervals.length > 0
-        ? intervals
+        ? intervals.slice(0, 5)
         : [0, 25, 50, 75, 100];
 
       const perInterval = Math.max(1, Math.ceil(size / intervalPoints.length));
@@ -103,17 +126,18 @@ export async function fetchRowsOnDemand(
       }
 
       const seen = new Set<string>();
-      rows = collectedRows.filter((row) => {
-        const key = JSON.stringify(row);
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      });
+      rows = [];
+      for (const row of collectedRows) {
+        const idVal = row.id ?? row.ID ?? row[Object.keys(row)[0]];
+        const key = idVal !== undefined ? String(idVal) : String(rows.length);
+        if (!seen.has(key)) {
+          seen.add(key);
+          rows.push(row);
+        }
+      }
     } else if (method === "stratified") {
-      // Stratified row count must be 40% of total row count
-      const stratifiedSize = Math.max(1, Math.ceil(totalRowCount * 0.40));
+      const stratifiedSize = fetchAll ? totalRowCount : Math.min(500, Math.max(20, Math.ceil(totalRowCount * 0.10)));
       if (!stratifyColumn) {
-        // Fallback to random with 40% size
         const result = await connectionTester.getRandomSample(type, config, tableName, stratifiedSize, seed);
         rows = result.rows;
       } else {
@@ -146,11 +170,13 @@ export async function fetchRowsOnDemand(
       }
     }
 
-    const finalSize = method === "stratified" ? Math.max(1, Math.ceil(totalRowCount * 0.40)) : size;
-    return {
+    const finalSize = fetchAll ? totalRowCount : (method === "stratified" ? Math.min(500, Math.max(20, Math.ceil(totalRowCount * 0.10))) : size);
+    const resObj = {
       rows: rows.slice(0, finalSize),
       totalRowCount,
     };
+    sampleCache.set(cacheKey, { timestamp: Date.now(), data: resObj });
+    return resObj;
   } catch (error) {
     return {
       rows: [],

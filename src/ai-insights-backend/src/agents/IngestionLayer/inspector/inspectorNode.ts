@@ -18,7 +18,8 @@ import {
   getLastToolResult,
   InspectionPayload,
   logMilestoneThinking,
-  logAgentMessagesAsThinking
+  logAgentMessagesAsThinking,
+  invokeAgentJson
 } from "../../utils/agentUtils";
 import { createAgent } from "langchain";
 import { HumanMessage } from "@langchain/core/messages";
@@ -90,13 +91,15 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
 
   let schemaDetails: { success?: boolean; type?: string; tables?: Array<Record<string, unknown>> } | undefined;
   try {
-    await logMilestoneThinking(services, "Data Ingestion", `Querying schema tables list for connector "${connector.name}"...`);
+    console.info(`[Workflow] Step [Data Inspection] Connecting to database & querying table list for connector "${connector.name}"...`);
+    await logMilestoneThinking(services, "Data Inspection", `Querying schema tables list for connector "${connector.name}"...`);
     schemaDetails = await schemaTool.invoke({
       connectorId: connector.id,
       connectorType: connector.type,
     }) as { success?: boolean; type?: string; tables?: Array<Record<string, unknown>> };
     if (schemaDetails?.tables) {
-      await logMilestoneThinking(services, "Data Ingestion", `Discovered ${schemaDetails.tables.length} tables in data source.`);
+      console.info(`[Workflow] Step [Data Inspection] Discovered ${schemaDetails.tables.length} tables in data source.`);
+      await logMilestoneThinking(services, "Data Inspection", `Discovered ${schemaDetails.tables.length} tables in data source.`);
     }
   } catch (error) {
     console.warn("Schema tool inspection failed, continuing without table context", error);
@@ -138,11 +141,7 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
     "analysed",
     `Analyzed in inspection batch ${batchIndex + 1}/${batches.length}`
   ));
-  const inspectionAgent = createAgent({
-    model,
-    tools: [inspectAgentTool],
-    systemPrompt: inspectionPrompt,
-  });
+
   let accumulatedInspection: InspectionPayload = {
     connectorId: connector.id,
     connectorName: connector.name,
@@ -153,61 +152,60 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
   let lastToolResult: Record<string, unknown> | undefined;
 
   for (const [batchIndex, batchTableNames] of batches.entries()) {
-    const userMessage = buildInspectionBatchUserMessage({
-      safeConnector,
-      schemaSummary,
-      batchTableNames,
-      batchIndex,
-      totalBatches: batches.length,
-      previousAnalysis: accumulatedInspection,
-    });
-
-    let inspectionResult: unknown;
+    await logMilestoneThinking(services, "Data Inspection", `Extracting table schema metadata for batch ${batchIndex + 1}/${batches.length}: [${batchTableNames.join(", ")}]...`);
+    
+    // 1. Direct fast schema & constraint extraction from DB/file (~100ms)
+    let directBatchInspection: InspectionPayload;
     try {
-      await logMilestoneThinking(services, "Data Ingestion", `Analyzing schema details for tables batch ${batchIndex + 1}/${batches.length}: [${batchTableNames.join(", ")}]...`);
-      inspectionResult = await services.traceHelper.invokeWithTrace(
-        `inspect:${connector.type}:batch-${batchIndex + 1}`,
-        {
-          systemPrompt: inspectionPrompt,
-          userMessage,
-        },
-        async () => inspectionAgent.invoke({
-          messages: [new HumanMessage(userMessage)],
-        })
-      );
-      await logAgentMessagesAsThinking(services, "Data Ingestion", inspectionResult);
-    } catch (error) {
-      console.warn("Inspector agent execution failed for batch, falling back to direct inspection", error);
-      inspectionResult = undefined;
-    }
-
-    let parsedBatchPayload: InspectionPayload | undefined;
-    try {
-      const rawText = extractModelText(getLatestAgentMessage(inspectionResult));
-      const parsed = parseJsonObject(rawText, { __parseFailed: true } as Record<string, unknown>);
-      if (!("__parseFailed" in parsed)) {
-        parsedBatchPayload = parsed;
-      }
-    } catch (error) {
-      console.warn("Inspector tool-calling output parse failed for batch, using fallback", error);
-    }
-
-    const batchToolResult = getLastToolResult(inspectionResult);
-    if (batchToolResult) {
-      lastToolResult = batchToolResult;
-    }
-
-    if (!parsedBatchPayload && batchToolResult) {
-      parsedBatchPayload = batchToolResult;
-    }
-
-    if (!parsedBatchPayload) {
-      parsedBatchPayload = await inspectTool.invoke({
+      directBatchInspection = await inspectTool.invoke({
         connectorId: connector.id,
         connectorType: connector.type,
         tableNames: batchTableNames,
         maxColumns: 200,
       }) as InspectionPayload;
+    } catch (err) {
+      console.warn(`[inspectorNode] Direct inspection failed for batch ${batchIndex + 1}:`, err);
+      directBatchInspection = {
+        connectorId: connector.id,
+        connectorName: connector.name,
+        schemaType,
+        tableCount: batchTableNames.length,
+        tables: batchTableNames.map((name) => ({ tableName: name, columns: [] })),
+      };
+    }
+
+    let parsedBatchPayload: InspectionPayload = directBatchInspection;
+
+    // 2. Single-pass LLM metadata enrichment for semantic descriptions & business meaning (~500ms)
+    if (model && directBatchInspection && Array.isArray(directBatchInspection.tables) && directBatchInspection.tables.length > 0) {
+      try {
+        const userMessage = buildInspectionBatchUserMessage({
+          safeConnector,
+          schemaSummary,
+          batchTableNames,
+          batchIndex,
+          totalBatches: batches.length,
+          previousAnalysis: directBatchInspection,
+        });
+
+        const enrichedResult = await invokeAgentJson(
+          "inspect",
+          model,
+          userMessage,
+          directBatchInspection,
+          services,
+          {
+            systemPrompt: inspectionPrompt,
+            traceLabel: `inspect:${connector.type}:batch-${batchIndex + 1}`,
+            tools: [inspectAgentTool],
+          }
+        );
+        if (enrichedResult && Array.isArray(enrichedResult.tables) && enrichedResult.tables.length > 0) {
+          parsedBatchPayload = enrichedResult as InspectionPayload;
+        }
+      } catch (err) {
+        console.warn(`[inspectorNode] LLM enrichment skipped for batch ${batchIndex + 1}, using direct schema`, err);
+      }
     }
 
     accumulatedInspection = mergeInspectionPayload(

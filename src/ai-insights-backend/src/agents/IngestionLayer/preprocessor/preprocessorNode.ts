@@ -97,6 +97,7 @@ export async function preprocess(connector: any, dataProfile: Record<string, unk
         systemPrompt,
         tools: preprocessingTools,
         traceLabel: "agent:preprocess",
+        recursionLimit: 100,
       }
     );
     await logMilestoneThinking(services, "Data Profiling", "Generating recommended data preprocessing rules...");
