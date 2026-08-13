@@ -89,7 +89,7 @@ export async function exogenousScoutNode(state: typeof AgentState.State, config?
 
   await logMilestoneThinking(
     services,
-    "Feature Engineering",
+    "Exogenous Scout",
     `Spawning LangGraph worker subagents for ${tableNames.length} tables in ${batches.length} batch(es)...`
   );
 

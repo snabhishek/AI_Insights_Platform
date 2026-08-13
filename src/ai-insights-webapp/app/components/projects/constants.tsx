@@ -74,6 +74,66 @@ export const PIPELINE_STEPS: Workflow[] = [
         <circle cx="17" cy="12" r="3" />
       </svg>
     ),
+    step: [
+      {
+        id: "Hierarchy Mapper",
+        title: "Hierarchy Mapper",
+        description: "Discovers dimensional hierarchies and builds and builds the queryable filter graph",
+        metric: "HierarchyMapper",
+        color: "green",
+        icon: (
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
+          </svg>
+        ),
+      },
+      {
+        id: "Feature Architect",
+        title: "Feature Architect",
+        description: "Generates and statistically validates lag/rolling/seasonal/calendar feature",
+        metric: "FeatureArchitect",
+        color: "blue",
+        icon: (
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+            <polyline points="14 2 14 8 20 8" />
+            <line x1="16" y1="13" x2="8" y2="13" />
+            <line x1="16" y1="17" x2="8" y2="17" />
+            <polyline points="10 9 9 9 8 9" />
+          </svg>
+        ),
+      },
+      {
+        id: "Exogenous Scout",
+        title: "Exogenous Scout",
+        description: "Scouts and ranks external signals by predictive power",
+        metric: "ExogenousScout",
+        color: "purple",
+        icon: (
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="7" height="9" rx="1" />
+            <rect x="14" y="3" width="7" height="5" rx="1" />
+            <rect x="14" y="12" width="7" height="9" rx="1" />
+            <rect x="3" y="16" width="7" height="5" rx="1" />
+          </svg>
+        ),
+      },
+      {
+        id: "Feature Validator",
+        title: "Feature Validator",
+        description: "Validates the quality of generated features and identifies potential issues",
+        metric: "FeatureValidator",
+        color: "purple",
+        icon: (
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+            <rect x="3" y="3" width="7" height="9" rx="1" />
+            <rect x="14" y="3" width="7" height="5" rx="1" />
+            <rect x="14" y="12" width="7" height="9" rx="1" />
+            <rect x="3" y="16" width="7" height="5" rx="1" />
+          </svg>
+        ),
+      },
+    ]
   },
   {
     id: "Model Training",

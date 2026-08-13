@@ -1,6 +1,7 @@
 import { RunnableConfig } from "@langchain/core/runnables";
 import { IngestionServices } from "../../state";
 import { createWebSearchTool } from "../../tools/websearch";
+import { createExtractUrlContentTool } from "../../tools/extractUrlContent.tool";
 import {
   getModel,
   buildBatchedTableState,
@@ -20,7 +21,7 @@ import {
 
 /**
  * Worker Subagent Node in LangGraph
- * Processes a single batch of tables using websearch tool and invokeAgentJson.
+ * Processes a single batch of tables using websearch tool and extractUrlContent tool.
  */
 export async function exogenousWorkerNode(
   input: WorkerBatchInput,
@@ -66,12 +67,13 @@ export async function exogenousWorkerNode(
   if (services) {
     await logMilestoneThinking(
       services,
-      "Feature Engineering",
+      "Exogenous Scout",
       `[Worker ${input.workerId}] Scouting exogenous data sources for batch ${input.batchIndex + 1}/${input.totalBatches}: [${input.batchTableNames.join(", ")}]...`
     );
   }
 
   const webSearchToolInstance = createWebSearchTool();
+  const extractUrlContentToolInstance = createExtractUrlContentTool();
 
   try {
     const result = await invokeAgentJson<ExogenousScoutBatchResult>(
@@ -82,7 +84,7 @@ export async function exogenousWorkerNode(
       services,
       {
         systemPrompt: input.systemPrompt,
-        tools: [webSearchToolInstance],
+        tools: [webSearchToolInstance, extractUrlContentToolInstance],
         traceLabel: `exogenousScout:worker-${input.workerId}:batch-${input.batchIndex + 1}`,
       }
     );
@@ -128,7 +130,7 @@ export async function exogenousAggregatorNode(
   if (services) {
     await logMilestoneThinking(
       services,
-      "Feature Engineering",
+      "Exogenous Scout",
       `Aggregated exogenous scouting results from all worker nodes for ${accumulatedTables.length} tables.`
     );
   }

@@ -5,7 +5,12 @@ export interface ExogenousSourceRecommendation {
   sourceName: string;
   category: "macroeconomic" | "weather" | "demographic" | "financial" | "geospatial" | "industry_benchmark" | "calendar_events" | "public_api" | "other";
   providerOrUrl?: string;
+  sourceUrl?: string;
   description: string;
+  exogenousFactor?: string;
+  affectedColumns?: string[];
+  impactMechanism?: string;
+  extractedContentSummary?: string;
   joinStrategy: {
     datasetField: string;
     exogenousKey: string;
