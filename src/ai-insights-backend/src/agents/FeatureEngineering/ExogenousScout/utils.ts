@@ -21,7 +21,9 @@ export const EXOGENOUS_BATCH_USER_PROMPT_TEMPLATE = PromptTemplate.fromTemplate(
 
 ## Instructions:
 1. Use the 'web_search' tool to scout relevant external datasets, APIs, macroeconomic series (e.g., FRED), weather APIs (e.g., Open-Meteo), calendar/holiday data, demographic data, or domain benchmarks for the tables in this batch.
-2. Return valid JSON only adhering to the specified schema, detailing 'tableName', 'domain', 'summary', 'exogenousSources' (with sourceName, category, providerOrUrl, description, joinStrategy, featuresToExtract, expectedImpact, feasibility), 'featureOpportunities', and 'searchQueriesExecuted'.`);
+2. Use the 'extract_url_content' tool to inspect the content from the URLs/links found in the web search results. Analyze the extracted page text to uncover specific exogenous factors, market trends, or domain data points.
+3. Evaluate how the extracted exogenous factors directly affect the columns (target metrics, timestamps, geographic keys, feature columns) of each table.
+4. Return valid JSON only adhering to the specified schema, detailing 'tableName', 'domain', 'summary', 'exogenousSources' (including 'sourceName', 'category', 'providerOrUrl', 'sourceUrl', 'description', 'exogenousFactor', 'affectedColumns', 'impactMechanism', 'extractedContentSummary', 'joinStrategy', 'featuresToExtract', 'expectedImpact', 'feasibility'), 'featureOpportunities', and 'searchQueriesExecuted'.`);
 
 /**
  * Extracts all relevant table column summaries and metadata from state

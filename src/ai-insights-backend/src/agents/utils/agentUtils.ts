@@ -393,7 +393,8 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
       profileData: "Data Profiling",
       preprocess: "Data Profiling",
       resolveSchema: "Schema Resolver",
-      exogenousScout: "Feature Engineering",
+      exogenousScout: "Exogenous Scout",
+      exogenous: "Exogenous Scout",
     };
     const substep = substepMap[stepName] || "Data Ingestion";
     await logAgentMessagesAsThinking(services, substep, result);
@@ -595,6 +596,8 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
   if (nextNodes.includes("profileData")) return "inspect";
   if (nextNodes.includes("resolveSchema")) return "preprocess";
+  if (nextNodes.includes("exogenous")) return "resolveSchema";
+  if (stageStatuses.exogenousScout === "Completed" || stageStatuses.exogenous === "Completed") return "exogenousScout";
   if (stageStatuses.resolveSchema === "Completed") return "resolveSchema";
   if (stageStatuses.preprocess === "Completed") return "preprocess";
   if (stageStatuses.profileData === "Completed") return "profileData";
@@ -622,7 +625,7 @@ export function buildResultFromGraphState(
 ): any {
   const values = graphState?.values ?? {};
   const nextNodes: string[] = Array.isArray(graphState?.next) ? graphState.next : [];
-  const defaultStatuses = { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" };
+  const defaultStatuses = { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" };
   const stageStatuses = (values.stageStatuses && typeof values.stageStatuses === "object")
     ? values.stageStatuses as Record<string, string>
     : defaultStatuses;
@@ -659,9 +662,13 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     profileData: "profileData",
     preprocess: "profileData",
     resolveSchema: "resolveSchema",
+    exogenous: "exogenous",
+    exogenousScout: "exogenous",
     "Data Ingestion": "inspect",
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
+    "Exogenous Scout": "exogenous",
+    "Feature Engineering": "exogenous",
   };
   return step ? mapping[step] : undefined;
 }

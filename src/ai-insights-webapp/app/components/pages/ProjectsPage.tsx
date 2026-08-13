@@ -140,6 +140,8 @@ export default function ProjectsPage() {
     };
     mapSingle("inspect", "Data Ingestion");
     mapSingle("resolveSchema", "Schema Resolver");
+    mapSingle("exogenousScout", "Exogenous Scout");
+    mapSingle("exogenous", "Exogenous Scout");
 
     // Merged stage: Data Profiling = profileData + preprocess
     const profileVal = stageStatuses.profileData;
@@ -157,11 +159,24 @@ export default function ProjectsPage() {
       }
     }
 
+    // Feature Engineering stage mapping
+    const exoVal = stageStatuses.exogenousScout || stageStatuses.exogenous;
+    if (exoVal === "Completed") {
+      next["Exogenous Scout"] = "Completed";
+      next["Feature Engineering"] = "Completed";
+    } else if (exoVal === "In Progress" || exoVal === "Retrying") {
+      next["Exogenous Scout"] = "In Progress";
+      next["Feature Engineering"] = "In Progress";
+    }
+
     return next;
   };
 
   const determineActiveStage = (payload: Partial<WorkflowResponse["data"]>): string => {
     if (payload.status === "completed") {
+      if (payload.stageOutputs?.exogenousScout || payload.stageStatuses?.exogenousScout || payload.stageStatuses?.exogenous) {
+        return "exogenousScout";
+      }
       return "resolveSchema";
     }
     if (payload.requiresApproval) {
@@ -171,10 +186,14 @@ export default function ProjectsPage() {
       if (payload.nextStep === "resolveSchema") {
         return "profileData";
       }
+      if (payload.nextStep === "exogenous" || payload.nextStep === "exogenousScout") {
+        return "resolveSchema";
+      }
     }
     if (payload.currentStage || payload.currentNode) {
       const node = payload.currentStage || payload.currentNode;
       if (node === "preprocess") return "profileData";
+      if (node === "exogenous") return "exogenousScout";
       return node!;
     }
     return "inspect";
@@ -300,6 +319,8 @@ export default function ProjectsPage() {
           "Data Ingestion": "inspect",
           "Data Profiling": "profileData",
           "Schema Resolver": "resolveSchema",
+          "Exogenous Scout": "exogenous",
+          "Feature Engineering": "exogenous",
         };
         payload.step = stepMap[step] || step;
       }
@@ -415,9 +436,13 @@ export default function ProjectsPage() {
       profileData: "profileData",
       preprocess: "preprocess",
       resolveSchema: "resolveSchema",
+      exogenous: "exogenous",
+      exogenousScout: "exogenous",
       "Data Ingestion": "inspect",
       "Data Profiling": "profileData",
       "Schema Resolver": "resolveSchema",
+      "Exogenous Scout": "exogenous",
+      "Feature Engineering": "exogenous",
     };
     const normalizedStep = typeof step === "string" ? stepMap[step] || step : undefined;
     void runWorkflow("retry", normalizedStep);
@@ -428,6 +453,8 @@ export default function ProjectsPage() {
       "Data Ingestion": "inspect",
       "Data Profiling": "profileData",
       "Schema Resolver": "resolveSchema",
+      "Exogenous Scout": "exogenousScout",
+      "Feature Engineering": "exogenousScout",
     };
     setActiveStage(stageMap[stepId] || stepId);
   };
