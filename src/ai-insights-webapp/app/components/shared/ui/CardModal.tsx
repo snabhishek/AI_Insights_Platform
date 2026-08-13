@@ -95,16 +95,22 @@ export default function CardModal({
   useEffect(() => {
     if (!isOpen || !activeStep) return;
 
-    const pipeline = "Data Ingestion";
+    const cardPipeline = workflowCard?.title || workflowCard?.id || "Data Ingestion";
     const stepIdChanged = lastStepIdRef.current !== activeStep.id;
 
     if (activeStepStatus === "Completed" && projectId) {
-      fetchAgentThinkingApi(projectId, pipeline, activeStep.id)
+      fetchAgentThinkingApi(projectId, cardPipeline, activeStep.id)
         .then((res) => {
-          if (res.success && res.data?.thinking) {
+          if (res.success && res.data?.thinking && res.data.thinking.length > 0) {
             setThinkingLogs(res.data.thinking);
           } else {
-            setThinkingLogs([]);
+            return fetchAgentThinkingApi(projectId, "Data Ingestion", activeStep.id).then((fallbackRes) => {
+              if (fallbackRes.success && fallbackRes.data?.thinking) {
+                setThinkingLogs(fallbackRes.data.thinking);
+              } else {
+                setThinkingLogs([]);
+              }
+            });
           }
         })
         .catch((err) => {
@@ -123,7 +129,7 @@ export default function CardModal({
         lastStepIdRef.current = activeStep.id;
       }
     }
-  }, [activeStep?.id, activeStepStatus, isOpen, projectId, agentState?.agentThinking]);
+  }, [activeStep?.id, activeStepStatus, isOpen, projectId, agentState?.agentThinking, workflowCard?.id, workflowCard?.title]);
 
   // Synchronize activeTab based on step status and selection
   useEffect(() => {

@@ -29,6 +29,11 @@ const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Schema Resolver": [
     "Analyzing target schemas and downstream constraints...",
     "Generating mapping recommendations using LLM semantic alignment..."
+  ],
+  "Exogenous Scout": [
+    "Analyzing internal dataset schemas and domain context...",
+    "Searching web for relevant external APIs, public datasets, and economic indicators...",
+    "Scouting and ranking exogenous feature candidates by predictive power..."
   ]
 };
 
@@ -234,10 +239,13 @@ export class IngestionAgentService implements IIngestionAgentService {
             profileData: "Data Profiling",
             preprocess: "Data Profiling",
             resolveSchema: "Schema Resolver",
-            "Data Inspection": "Data Inspection",
-            "Data Ingestion": "Data Inspection",
+            exogenous: "Exogenous Scout",
+            exogenousScout: "Exogenous Scout",
+            "Data Ingestion": "Data Ingestion",
             "Data Profiling": "Data Profiling",
-            "Schema Resolver": "Schema Resolver"
+            "Schema Resolver": "Schema Resolver",
+            "Exogenous Scout": "Exogenous Scout",
+            "Feature Engineering": "Exogenous Scout"
           };
           const substep = stepMap[options.step];
           if (substep) {
@@ -247,15 +255,34 @@ export class IngestionAgentService implements IIngestionAgentService {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Ingestion");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             } else if (substep === "Data Profiling") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             } else if (substep === "Schema Resolver") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+            } else if (substep === "Exogenous Scout") {
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             }
           }
         } else if (options.action === "approve") {
-          activeSubstep = undefined;
+          const graphState = await workflow.getState(config);
+          const nextNodes = Array.isArray(graphState?.next) ? graphState.next : [];
+          if (nextNodes.includes("profileData")) {
+            activeSubstep = "Data Profiling";
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+          } else if (nextNodes.includes("resolveSchema")) {
+            activeSubstep = "Schema Resolver";
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+          } else if (nextNodes.includes("exogenous")) {
+            activeSubstep = "Exogenous Scout";
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+          }
         } else {
           activeSubstep = "Data Inspection";
           await this.agentThinkingService.clearProjectPipelineThinking(projectId, pipeline);
@@ -269,11 +296,12 @@ export class IngestionAgentService implements IIngestionAgentService {
             dataProfile: {},
             preprocess: {},
             schemaResolution: {},
+            exogenousScout: {},
             status: "running",
             summary: "Ingestion workflow started",
             steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
             stageOutputs: {},
-            stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
+            stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" }
           };
           try {
             await this.projectService.updateAgentState(options.projectId, cleanInitialState, userPrompt);
@@ -287,10 +315,11 @@ export class IngestionAgentService implements IIngestionAgentService {
           const currentGraphState = await workflow.getState(config).catch(() => null);
           const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
 
-          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver") ? "Completed" : "In Progress";
-          const profileStatus = activeSubstep === "Schema Resolver" ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const preprocessStatus = activeSubstep === "Schema Resolver" ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const schemaStatus = activeSubstep === "Schema Resolver" ? "In Progress" : "Pending";
+          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout") ? "Completed" : "In Progress";
+          const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+          const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+          const schemaStatus = activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
+          const exogenousStatus = activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending";
 
           const mergedStageStatuses = {
             ...(calculatedBase.stageStatuses || {}),
@@ -298,7 +327,11 @@ export class IngestionAgentService implements IIngestionAgentService {
             profileData: profileStatus,
             preprocess: preprocessStatus,
             resolveSchema: schemaStatus,
+            exogenousScout: exogenousStatus,
+            ...(calculatedBase.stageStatuses || {}),
           };
+
+          const nodeKey = activeSubstep === "Data Ingestion" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : "exogenousScout";
 
           const fullBaseResult: IngestionAgentRunResult = {
             ...calculatedBase,
@@ -308,8 +341,8 @@ export class IngestionAgentService implements IIngestionAgentService {
             sessionId: threadId,
             requiresApproval: false,
             stageStatuses: mergedStageStatuses,
-            currentNode: (activeSubstep === "Data Inspection" || activeSubstep === "Data Ingestion") ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : "resolveSchema",
-            currentStage: (activeSubstep === "Data Inspection" || activeSubstep === "Data Ingestion") ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : "resolveSchema",
+            currentNode: nodeKey,
+            currentStage: nodeKey,
           };
 
           for await (const thinkingUpdate of this.streamThinking(projectId, pipeline, activeSubstep, fullBaseResult, logs, threadId)) {
@@ -410,7 +443,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             batchedTables: [],
             steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
             stageOutputs: {},
-            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
+            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" }
           },
           config
         );
@@ -641,9 +674,10 @@ export class IngestionAgentService implements IIngestionAgentService {
   private async getAllProjectPipelineThinking(projectId: string, pipeline: string): Promise<Record<string, Array<{ time: string; text: string; done: boolean }>>> {
     const map: Record<string, Array<{ time: string; text: string; done: boolean }>> = {};
     try {
-      const substeps = ["Data Inspection", "Data Ingestion", "Data Profiling", "Schema Resolver"];
+      const substeps = ["Data Inspection", "Data Ingestion", "Data Profiling", "Schema Resolver", "Exogenous Scout", "Feature Engineering"];
       for (const substep of substeps) {
-        const entry = await this.agentThinkingService.getThinking(projectId, pipeline, substep);
+        const entry = await this.agentThinkingService.getThinking(projectId, pipeline, substep)
+          || await this.agentThinkingService.getThinking(projectId, "Feature Engineering", substep);
         if (entry) {
           map[substep] = entry.thinking;
         }

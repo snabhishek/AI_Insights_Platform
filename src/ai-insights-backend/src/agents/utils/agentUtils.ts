@@ -425,7 +425,9 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     inspect: "Data Inspection",
     profileData: "Data Profiling",
     preprocess: "Data Profiling",
-    resolveSchema: "Schema Resolver"
+    resolveSchema: "Schema Resolver",
+    exogenousScout: "Exogenous Scout",
+    exogenous: "Exogenous Scout"
   };
   const substep = substepMap[stepName] || "Data Inspection";
 
@@ -683,9 +685,9 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 }
 
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
-  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress") return "resolveSchema";
+  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("exogenous")) return "resolveSchema";
   if (stageStatuses.preprocess === "Completed" || stageStatuses.preprocess === "In Progress" || stageStatuses.profileData === "Completed" || stageStatuses.profileData === "In Progress") return "profileData";
-  return "inspect";
+  if (stageStatuses.exogenousScout === "Completed" || stageStatuses.exogenous === "Completed") return "exogenousScout";return "inspect";
 }
 
 export function buildMessage(nextNodes: string[], status: string, stageStatuses?: Record<string, string>): string {
@@ -714,7 +716,7 @@ export function buildResultFromGraphState(
 ): any {
   const values = graphState?.values ?? {};
   const nextNodes: string[] = Array.isArray(graphState?.next) ? graphState.next : [];
-  const defaultStatuses = { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" };
+  const defaultStatuses = { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" };
   const stageStatuses = (values.stageStatuses && typeof values.stageStatuses === "object")
     ? values.stageStatuses as Record<string, string>
     : defaultStatuses;
@@ -732,6 +734,7 @@ export function buildResultFromGraphState(
     schemaResolution: (values.schemaResolution && typeof values.schemaResolution === "object") ? values.schemaResolution : {},
     dataProfile: (values.dataProfile && typeof values.dataProfile === "object") ? values.dataProfile : {},
     preprocessing: (values.preprocessing && typeof values.preprocessing === "object") ? values.preprocessing : {},
+    exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
@@ -750,10 +753,13 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     profileData: "profileData",
     preprocess: "profileData",
     resolveSchema: "resolveSchema",
-    "Data Inspection": "inspect",
+    exogenous: "exogenous",
+    exogenousScout: "exogenous",
     "Data Ingestion": "inspect",
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
+    "Exogenous Scout": "exogenous",
+    "Feature Engineering": "exogenous",
   };
   return step ? mapping[step] : undefined;
 }

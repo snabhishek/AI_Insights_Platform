@@ -9,6 +9,7 @@ import { PIPELINE_STEPS } from "./constants";
 import IngestionStepOutput from "./pipeline-outputs/IngestionStepOutput";
 import ProfilingStepOutput from "./pipeline-outputs/ProfilingStepOutput";
 import SchemaResolverStepOutput from "./pipeline-outputs/SchemaResolverStepOutput";
+import ExogenousScoutStepOutput from "./pipeline-outputs/ExogenousScoutStepOutput";
 
 type AlertType = "error" | "success" | "info";
 
@@ -428,6 +429,9 @@ export default function ProjectDetailPage({
           ) : null,
           "Schema Resolver": stageOutputs.resolveSchema ? (
             <SchemaResolverStepOutput resolveSchema={stageOutputs.resolveSchema} />
+          ) : null,
+          "Exogenous Scout": stageOutputs.exogenousScout ? (
+            <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
         };
 
