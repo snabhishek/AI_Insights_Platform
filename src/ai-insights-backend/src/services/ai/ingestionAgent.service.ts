@@ -34,11 +34,6 @@ const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
     "Analyzing internal dataset schemas and domain context...",
     "Searching web for relevant external APIs, public datasets, and economic indicators...",
     "Scouting and ranking exogenous feature candidates by predictive power..."
-  ],
-  "Exogenous Scout": [
-    "Analyzing internal dataset schemas and domain context...",
-    "Searching web for relevant external APIs, public datasets, and economic indicators...",
-    "Scouting and ranking exogenous feature candidates by predictive power..."
   ]
 };
 
@@ -246,16 +241,11 @@ export class IngestionAgentService implements IIngestionAgentService {
             resolveSchema: "Schema Resolver",
             exogenous: "Exogenous Scout",
             exogenousScout: "Exogenous Scout",
-            exogenous: "Exogenous Scout",
-            exogenousScout: "Exogenous Scout",
             "Data Ingestion": "Data Ingestion",
             "Data Profiling": "Data Profiling",
             "Schema Resolver": "Schema Resolver",
             "Exogenous Scout": "Exogenous Scout",
-            "Feature Engineering": "Exogenous Scout"
-            "Schema Resolver": "Schema Resolver",
-            "Exogenous Scout": "Exogenous Scout",
-            "Feature Engineering": "Exogenous Scout"
+            "Feature Engineering": "Exogenous Scout",
           };
           const substep = stepMap[options.step];
           if (substep) {
@@ -317,7 +307,6 @@ export class IngestionAgentService implements IIngestionAgentService {
             preprocess: {},
             schemaResolution: {},
             exogenousScout: {},
-            exogenousScout: {},
             status: "running",
             summary: "Ingestion workflow started",
             steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
@@ -341,11 +330,6 @@ export class IngestionAgentService implements IIngestionAgentService {
           const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
           const schemaStatus = activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
           const exogenousStatus = activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending";
-          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout") ? "Completed" : "In Progress";
-          const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const schemaStatus = activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
-          const exogenousStatus = activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending";
 
           const mergedStageStatuses = {
             ...(calculatedBase.stageStatuses || {}),
@@ -354,11 +338,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             preprocess: preprocessStatus,
             resolveSchema: schemaStatus,
             exogenousScout: exogenousStatus,
-            exogenousScout: exogenousStatus,
-            ...(calculatedBase.stageStatuses || {}),
           };
-
-          const nodeKey = activeSubstep === "Data Ingestion" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : "exogenousScout";
 
           const nodeKey = activeSubstep === "Data Ingestion" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : "exogenousScout";
 
@@ -370,8 +350,6 @@ export class IngestionAgentService implements IIngestionAgentService {
             sessionId: threadId,
             requiresApproval: false,
             stageStatuses: mergedStageStatuses,
-            currentNode: nodeKey,
-            currentStage: nodeKey,
             currentNode: nodeKey,
             currentStage: nodeKey,
           };
@@ -474,7 +452,6 @@ export class IngestionAgentService implements IIngestionAgentService {
             batchedTables: [],
             steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
             stageOutputs: {},
-            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" }
             stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" }
           },
           config
