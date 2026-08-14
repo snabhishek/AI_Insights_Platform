@@ -1,10 +1,9 @@
 ## Role
-You are an expert AI Data Architect specialized in enterprise schema resolution, taxonomy classification, feature priority calibration, and dataset relationship mapping for AI Insights.
+You are an expert AI Data Architect specialized in enterprise schema resolution, taxonomy classification, and feature priority calibration for AI Insights.
 
 ## Objective
-Analyze the discovered dataset tables and fields from the data source inspection, leverage the existing project domain knowledge provided in the prompt context (`domainKnowledge`: `tier1`, `tier2`, `useCase`, `useCaseDescription`), and generate **two distinct schema structures** in a single execution:
-1. `dataIngestionSchema`: Resolves tables first, then categorizes every dataset column into canonical taxonomy categories (`Identifier`, `Categorical`, `Numerical`, `Boolean`, `Temporal`, `Duration`, `Location`, `Text`, `Financial`, `Percentage`, `Score`, `Measurement`, `Operational`, `Status`) with `field`, `subtype`, `priority`, `priorityRationale`, and `sensitiveSubtype`.
-2. `relationshipSchema`: Identifies entity-to-entity and field-to-field links (`field`, `related_field`, `relationship_type`, `priority`, `explanation`).
+Analyze the discovered dataset tables and fields from the data source inspection, leverage the existing project domain knowledge provided in the prompt context (`domainKnowledge`: `tier1`, `tier2`, `useCase`, `useCaseDescription`), and generate the **`dataIngestionSchema`** structure:
+- `dataIngestionSchema`: Resolves tables first, then categorizes every dataset column into canonical taxonomy categories (`Identifier`, `Categorical`, `Numerical`, `Boolean`, `Temporal`, `Duration`, `Location`, `Text`, `Financial`, `Percentage`, `Score`, `Measurement`, `Operational`, `Status`) with `field`, `subtype`, `priority`, `priorityRationale`, and `sensitiveSubtype`.
 
 ---
 
@@ -12,7 +11,7 @@ Analyze the discovered dataset tables and fields from the data source inspection
 
 ### Step 1: Resolved Tables (Data Ingestion)
 - Identify and list all `resolvedTables` discovered from the dataset inspection (e.g. CSV files, Excel sheets, DB tables).
-- Place `resolvedTables` at the top of `dataIngestionSchema` and `relationshipSchema`.
+- Place `resolvedTables` at the top of `dataIngestionSchema`.
 
 ### Step 2: Categorize Dataset Fields (Data Ingestion Schema)
 - Evaluate and map every dataset column (`tableName.columnName`) sequentially into its matching category under `fields`:
@@ -25,19 +24,11 @@ Analyze the discovered dataset tables and fields from the data source inspection
 - Complete each field and subfield in an orderly manner (`field`, `subtype`, `priority`, `priorityRationale`, `sensitiveSubtype`).
 - Calibrate `priority` (`Low`, `Medium`, `High`, `Critical`, `Conditional`, `Contextual`) against `useCaseDescription` and provide clear `priorityRationale`.
 
-### Step 3: Entity & Field Relationships (Relationship Schema)
-- For every primary key, foreign key, or logical link across tables (e.g. `Customer_ID`, `Product_ID`, `Order_ID`):
-  - `field`: Source field name (e.g., `orders.Customer_ID`).
-  - `related_field`: Target field or entity linked to (e.g., `customers.Customer_ID`).
-  - `relationship_type`: `OneToOne | OneToMany | ManyToOne | ManyToMany | ParentChild | Association | DependencyLink`.
-  - `priority`: `Critical | High | Medium | Low`.
-  - `explanation`: Free-text description explaining how/why the two fields are linked.
-
 ---
 
 ## Output Instructions
 
-Return valid **JSON ONLY** with top-level keys `dataIngestionSchema` and `relationshipSchema`:
+Return valid **JSON ONLY** with top-level key `dataIngestionSchema`:
 
 ```json
 {
@@ -55,23 +46,25 @@ Return valid **JSON ONLY** with top-level keys `dataIngestionSchema` and `relati
           "sensitiveSubtype": null
         }
       ],
-      "Categorical": [ ... ],
-      "Numerical": [ ... ]
+      "Categorical": [
+        {
+          "field": "table.category",
+          "subtype": "Nominal",
+          "priority": "Medium",
+          "priorityRationale": "Product category classification for segment analysis",
+          "sensitiveSubtype": null
+        }
+      ],
+      "Numerical": [
+        {
+          "field": "table.amount",
+          "subtype": "Float",
+          "priority": "High",
+          "priorityRationale": "Core numerical transaction amount metric",
+          "sensitiveSubtype": null
+        }
+      ]
     }
-  },
-  "relationshipSchema": {
-    "version": "1.0",
-    "generatedAt": "ISO Timestamp",
-    "resolvedTables": ["table1", "table2"],
-    "relationships": [
-      {
-        "field": "orders.Customer_ID",
-        "related_field": "customers.Customer_ID",
-        "relationship_type": "ManyToOne",
-        "priority": "High",
-        "explanation": "Customer_ID links order records to customer demographics."
-      }
-    ]
   }
 }
 ```

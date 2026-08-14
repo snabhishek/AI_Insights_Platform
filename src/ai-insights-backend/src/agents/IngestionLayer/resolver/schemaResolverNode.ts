@@ -133,7 +133,7 @@ export async function resolveSchema(
 
   const schemaHeader = isProjectSchema
     ? `## Project Field Schema Taxonomy & Updated Domain Knowledge (${path.basename(schemaSourcePath)})`
-    : `## Live Field Schema Taxonomy (Schema.yaml)`;
+    : `## Live Modular Field Schema Taxonomy`;
 
   const prompt = [
     systemPrompt,
@@ -146,7 +146,7 @@ export async function resolveSchema(
 
   const model = getModel();
 
-  await logMilestoneThinking(services, "Schema Resolver", `Resolving DataIngestion and Relationship modular schemas in a single prompt...`);
+  await logMilestoneThinking(services, "Schema Resolver", `Resolving DataIngestion modular schema in a single prompt...`);
   const result = await invokeAgentJson("resolveSchema", model, prompt, fallback, services, {
     traceLabel: "agent:resolveSchema",
   });
@@ -154,7 +154,7 @@ export async function resolveSchema(
   const { mappings: rawMappings, domainKnowledge: extractedDk } = extractResolvedMappings(result, fallbackMappings);
   const resolvedDomainKnowledge = extractedDk || result?.domainKnowledge || fallback.domainKnowledge;
 
-  await logMilestoneThinking(services, "Schema Resolver", `Aligned ${rawMappings.length} structural columns across DataIngestion and Relationship schemas.`);
+  await logMilestoneThinking(services, "Schema Resolver", `Aligned ${rawMappings.length} structural columns in DataIngestion schema.`);
 
   const resolvedDomain = (typeof result?.domain === "string" && result.domain.trim().length > 0)
     ? result.domain.trim()
@@ -170,16 +170,14 @@ export async function resolveSchema(
     const fieldsObj: Record<string, any[]> = {};
     for (const mapping of rawMappings) {
       const topic = mapping.targetTopic || "General";
-      if (topic !== "Relationship") {
-        if (!fieldsObj[topic]) fieldsObj[topic] = [];
-        fieldsObj[topic].push({
-          field: mapping.datasetField,
-          subtype: mapping.subtype || null,
-          priority: mapping.priority || "Medium",
-          priorityRationale: mapping.priorityRationale || null,
-          sensitiveSubtype: mapping.sensitiveSubtype || null,
-        });
-      }
+      if (!fieldsObj[topic]) fieldsObj[topic] = [];
+      fieldsObj[topic].push({
+        field: mapping.datasetField,
+        subtype: mapping.subtype || null,
+        priority: mapping.priority || "Medium",
+        priorityRationale: mapping.priorityRationale || null,
+        sensitiveSubtype: mapping.sensitiveSubtype || null,
+      });
     }
     dataIngestionSchema = {
       version: "1.0",
@@ -189,30 +187,7 @@ export async function resolveSchema(
     };
   }
 
-  // Build/extract relationshipSchema
-  let relationshipSchema = result?.relationshipSchema;
-  if (!relationshipSchema || (!relationshipSchema.relationships && !(relationshipSchema as any).Relationship)) {
-    const rels: any[] = [];
-    for (const mapping of rawMappings) {
-      if (mapping.targetTopic === "Relationship" || mapping.relationship || mapping.relatedField || mapping.related_field) {
-        rels.push({
-          field: mapping.datasetField,
-          related_field: mapping.relatedField || mapping.related_field || mapping.relationship?.relatedField || mapping.relationship?.related_field || null,
-          relationship_type: mapping.relationshipType || mapping.relationship_type || mapping.relationship?.relationshipType || mapping.relationship?.relationship_type || "Association",
-          priority: mapping.priority || "Medium",
-          explanation: mapping.explanation || mapping.relationship?.explanation || "Linked field relationship",
-        });
-      }
-    }
-    relationshipSchema = {
-      version: "1.0",
-      generatedAt: new Date().toISOString(),
-      resolvedTables: resolvedTablesList,
-      relationships: rels,
-    };
-  }
-
-  const modularPayload = { dataIngestionSchema, relationshipSchema };
+  const modularPayload = { dataIngestionSchema };
 
   if (projectWithWs) {
     try {
@@ -222,7 +197,7 @@ export async function resolveSchema(
         modularPayload
       );
       outputYamlPath = saved.dataIngestionPath;
-      console.info(`[resolveSchema] Saved modular schema files for project: DataIngestion -> ${saved.dataIngestionPath}, Relationship -> ${saved.relationshipPath}`);
+      console.info(`[resolveSchema] Saved modular schema file for project: DataIngestion -> ${saved.dataIngestionPath}`);
     } catch (writeErr: any) {
       console.warn(`[resolveSchema] Failed to save modular project schema files:`, writeErr?.message || writeErr);
     }
@@ -236,7 +211,7 @@ export async function resolveSchema(
           modularPayload
         );
         outputYamlPath = saved.dataIngestionPath;
-        console.info(`[resolveSchema] Saved modular schema files for project: DataIngestion -> ${saved.dataIngestionPath}, Relationship -> ${saved.relationshipPath}`);
+        console.info(`[resolveSchema] Saved modular schema file for project: DataIngestion -> ${saved.dataIngestionPath}`);
       }
     } catch (lookupErr: any) {
       console.warn(`[resolveSchema] Failed to lookup project/workspace for ${projectId}:`, lookupErr?.message || lookupErr);
@@ -248,7 +223,6 @@ export async function resolveSchema(
     ...result,
     domain: resolvedDomain,
     dataIngestionSchema,
-    relationshipSchema,
     mappings: rawMappings,
     yamlPath: outputYamlPath,
     schemaPath: outputYamlPath,
@@ -317,12 +291,13 @@ export function extractResolvedMappings(result: any, fallbackMappings: any[]): {
       priority: m.priority || "Medium",
       priorityRationale: m.priorityRationale || null,
       sensitiveSubtype: m.sensitiveSubtype || null,
-      relationship: m.relationship || null,
     }));
     return { mappings, domainKnowledge };
   }
 
-  const fieldsSource = (result.fields && typeof result.fields === "object") ? result.fields : result;
+  const fieldsSource = (result.dataIngestionSchema?.fields && typeof result.dataIngestionSchema.fields === "object")
+    ? result.dataIngestionSchema.fields
+    : ((result.fields && typeof result.fields === "object") ? result.fields : result);
   const extractedMappings: any[] = [];
 
   for (const [categoryName, categoryVal] of Object.entries(fieldsSource)) {
@@ -339,7 +314,7 @@ export function extractResolvedMappings(result: any, fallbackMappings: any[]): {
       continue;
     }
 
-    if (["domain", "strategy", "resolvedtables", "generatedat", "unmappeddatasetfields"].includes(categoryName.toLowerCase())) {
+    if (["domain", "strategy", "resolvedtables", "generatedat", "unmappeddatasetfields", "dataingestionschema"].includes(categoryName.toLowerCase())) {
       continue;
     }
 
@@ -355,10 +330,6 @@ export function extractResolvedMappings(result: any, fallbackMappings: any[]): {
           priority: item.priority || "Medium",
           priorityRationale: item.priorityRationale || null,
           sensitiveSubtype: item.sensitiveSubtype || null,
-          relatedField: item.relatedField || item.related_field || item.relationship?.relatedField || item.relationship?.related_field || null,
-          relationshipType: item.relationshipType || item.relationship_type || item.relationship?.relationshipType || item.relationship?.relationship_type || null,
-          explanation: item.explanation || item.relationship?.explanation || null,
-          relationship: item.relationship || null,
         });
       }
     }
