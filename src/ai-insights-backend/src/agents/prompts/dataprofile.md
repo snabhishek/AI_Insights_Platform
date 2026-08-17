@@ -52,7 +52,6 @@ These four tools are not meant to all be called on every column. After each tool
 1. Do NOT pass raw `rows` to the profiling tools. Instead, pass the connector and sampling parameters:
    - `sampleMethod`: `"stratified"` (or `"random"` fallback if no stratification column is found).
    - `stratifyColumn`: the identified stratifying column.
-   - `sampleSize`: The stratified row count will automatically be fetched as **40% of the table's total row count** by the sampling helper.
 2. Call `contentValueProfile` on each table with the connection/sampling params.
 
 ### Phase 3 — Conditional Follow-Up Profiling

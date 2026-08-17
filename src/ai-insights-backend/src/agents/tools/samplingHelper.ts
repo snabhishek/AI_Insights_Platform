@@ -50,7 +50,7 @@ export async function fetchRowsOnDemand(
     connectionConfig,
     tableName,
     sampleMethod,
-    sampleSize: inputSampleSize,
+    // sampleSize: inputSampleSize,
     seed = 42,
     intervals,
     stratifyColumn,
@@ -109,7 +109,7 @@ export async function fetchRowsOnDemand(
     const totalRowCount = await connectionTester.getRowCount(type, config, tableName);
 
     let rows: SampleRow[] = [];
-    const size = fetchAll ? totalRowCount : Math.min(2000, typeof inputSampleSize === "number" && inputSampleSize > 0 ? inputSampleSize : 100);
+    const size = fetchAll ? totalRowCount : totalRowCount * 20 / 100;
 
     if (method === "interval") {
       const intervalPoints = Array.isArray(intervals) && intervals.length > 0
@@ -136,7 +136,7 @@ export async function fetchRowsOnDemand(
         }
       }
     } else if (method === "stratified") {
-      const stratifiedSize = fetchAll ? totalRowCount : Math.min(500, Math.max(20, Math.ceil(totalRowCount * 0.10)));
+      const stratifiedSize = fetchAll ? totalRowCount : totalRowCount * 0.02;
       if (!stratifyColumn) {
         const result = await connectionTester.getRandomSample(type, config, tableName, stratifiedSize, seed);
         rows = result.rows;
