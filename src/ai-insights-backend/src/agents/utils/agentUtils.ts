@@ -685,9 +685,15 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 }
 
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
-  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("exogenous")) return "resolveSchema";
+  const isExo = stageStatuses.exogenousScout === "Completed" || 
+                stageStatuses.exogenousScout === "In Progress" || 
+                stageStatuses.exogenous === "Completed" || 
+                stageStatuses.exogenous === "In Progress" || 
+                nextNodes.includes("exogenous");
+  if (isExo) return "exogenousScout";
+  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("resolveSchema") || nextNodes.includes("exogenous")) return "resolveSchema";
   if (stageStatuses.preprocess === "Completed" || stageStatuses.preprocess === "In Progress" || stageStatuses.profileData === "Completed" || stageStatuses.profileData === "In Progress") return "profileData";
-  if (stageStatuses.exogenousScout === "Completed" || stageStatuses.exogenous === "Completed") return "exogenousScout";return "inspect";
+  return "inspect";
 }
 
 export function buildMessage(nextNodes: string[], status: string, stageStatuses?: Record<string, string>): string {

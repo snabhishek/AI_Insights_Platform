@@ -19,16 +19,19 @@ import createAIRouter from "./routes/ai";
 import { checkAndCreateDatabase, runMigrations, pool } from "./db";
 import * as connectorsSchema from "./db/connectors";
 import * as agentThinkingSchema from "./db/agentThinking";
-const schema = { ...connectorsSchema, ...agentThinkingSchema };
+import * as agentJobsSchema from "./db/agentJobs";
+const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema };
 import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
 import { AgentThinkingService } from "./services/ai/agentThinking.service";
 // import { AgentController } from "./controllers/agent.controller";
 import { IngestionAgentService } from "./services/ai/ingestionAgent.service";
+import { QueueService } from "./services/queue/queue.service";
 import { AIController } from "./controllers/ai.controller";
 import { PostgresDomainRepository } from "./repositories/domain.repository";
 import { DomainService } from "./services/domain/domain.service";
 import { DomainController } from "./controllers/domain.controller";
 import createDomainRouter from "./routes/domains";
+
 
 dotenv.config();
 
@@ -76,8 +79,10 @@ async function bootstrap() {
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
   connectorController = new ConnectorController(connectorService, connectionTester);
   // agentController = new AgentController(connectorService);
-  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService, agentThinkingService);
+  const queueService = new QueueService(db);
+  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService, agentThinkingService, queueService);
   aiController = new AIController(ingestionAgentService, agentThinkingService);
+
 
   const domainRepository = new PostgresDomainRepository();
   const domainService = new DomainService(domainRepository);

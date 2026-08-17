@@ -5,6 +5,8 @@ import fsSync from "fs";
 import readline from "readline";
 import { Pool } from "pg";
 import * as xlsx from "xlsx";
+import Piscina from "piscina";
+import path from "path";
 import { IConnectionTesterService, TestResult, SampleResult } from "./connectionTester.service.interface";
 import { ConnectorType, ConnectionConfig } from "../../models/connector.types";
 import { IFileService } from "../file/file.service.interface";
@@ -17,8 +19,20 @@ const DEFAULT_PORTS: Record<string, number> = {
   snowflake: 443,
 };
 
+const isTs = __filename.endsWith(".ts");
+const workerPath = path.resolve(__dirname, isTs ? "../ai/workers/dataWorker.ts" : "../ai/workers/dataWorker.js");
+
 export class ConnectionTesterService implements IConnectionTesterService {
+  private workerPool = new Piscina({
+    filename: workerPath,
+    execArgv: isTs ? ["-r", "ts-node/register"] : undefined,
+    minThreads: 2,
+    maxThreads: 8,
+    idleTimeout: 30000,
+  });
+
   constructor(private fileService: IFileService) {}
+
 
   private testTcpConnection(host: string, port: number, timeoutMs = 5000): Promise<TestResult> {
     return new Promise((resolve) => {
@@ -360,38 +374,37 @@ export class ConnectionTesterService implements IConnectionTesterService {
       const fileName = config.fileName;
       if (fileName && this.fileService.fileExists(fileName)) {
         const filePath = this.fileService.getFilePath(fileName);
-        const workbook = xlsx.readFile(filePath);
-        const tablesList = workbook.SheetNames.map((sheetName: string) => {
-          const sheet = workbook.Sheets[sheetName];
-          const ref = sheet["!ref"] || "A1:A1";
-          const range = xlsx.utils.decode_range(ref);
-          const rowCount = range.e.r - range.s.r;
-          return {
-            id: sheetName,
-            name: sheetName,
-            type: "Table",
-            rows: Math.max(0, rowCount),
-          };
-        });
-        return { success: true, type: "file", tables: tablesList };
+        try {
+          const res = await this.workerPool.run({ type: "excel", filePath });
+          return res;
+        } catch (err: any) {
+          console.error(`[ConnectionTester] Excel worker failed:`, err);
+          return { success: false, message: `Failed to parse Excel: ${err.message || err}`, latencyMs: 0 } as any;
+        }
       }
     }
 
     if (["csv", "tsv"].includes(type)) {
       const fileName = config.fileName;
-      let rowCount = 50000;
       if (fileName && this.fileService.fileExists(fileName)) {
-        const content = this.fileService.readTextFile(fileName);
-        rowCount = content.split(/\r?\n/).filter((line) => line.trim().length > 0).length - 1;
+        const filePath = this.fileService.getFilePath(fileName);
+        try {
+          const res = await this.workerPool.run({ type, filePath });
+          return res;
+        } catch (err: any) {
+          console.error(`[ConnectionTester] CSV/TSV worker failed:`, err);
+          return { success: false, message: `Failed to parse CSV/TSV: ${err.message || err}`, latencyMs: 0 } as any;
+        }
       }
       return {
         success: true,
         type: "file",
         tables: [
-          { id: fileName || "file_data", name: fileName || "File Data", type: "Table", rows: Math.max(0, rowCount) }
+          { id: fileName || "file_data", name: fileName || "File Data", type: "Table", rows: 0 }
         ]
       };
     }
+
 
     if (type === "restapi") {
       return {

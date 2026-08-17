@@ -3,13 +3,31 @@
 import React, { useState } from "react";
 import { Badge, SectionHeader } from "./utils";
 
-interface Recommendation {
+interface ExogenousSource {
+  sourceName?: string;
+  category?: string;
+  providerOrUrl?: string;
+  sourceUrl?: string;
+  description?: string;
+  exogenousFactor?: string;
+  affectedColumns?: string[];
+  impactMechanism?: string;
+  extractedContentSummary?: string;
+  joinStrategy?: {
+    datasetField?: string;
+    exogenousKey?: string;
+    joinType?: string;
+    frequency?: string;
+  };
+  featuresToExtract?: string[];
+  expectedImpact?: string;
+  feasibility?: string;
+
+  // Backward compatibility with old schema
   variableName?: string;
   name?: string;
-  category?: string;
   predictivePower?: "HIGH" | "MEDIUM" | "LOW" | string;
   rationale?: string;
-  sourceUrl?: string;
   sourceType?: string;
   granularity?: string;
 }
@@ -18,7 +36,9 @@ interface TableExogenous {
   tableName?: string;
   name?: string;
   summary?: string;
-  recommendations?: Recommendation[];
+  exogenousSources?: ExogenousSource[];
+  recommendations?: ExogenousSource[];
+  featureOpportunities?: string[];
 }
 
 interface ExogenousScoutOutputProps {
@@ -53,7 +73,11 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
   }
 
   const selectedTable = tables[selectedTableIndex] || tables[0];
-  const recommendations = Array.isArray(selectedTable?.recommendations) ? selectedTable.recommendations : [];
+  const recommendations = Array.isArray(selectedTable?.exogenousSources)
+    ? selectedTable.exogenousSources
+    : Array.isArray(selectedTable?.recommendations)
+      ? selectedTable.recommendations
+      : [];
 
   const getPowerVariant = (power?: string) => {
     const norm = (power || "").toUpperCase();
@@ -141,6 +165,20 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
             </div>
           )}
 
+          {/* Table-level Feature Opportunities */}
+          {Array.isArray(selectedTable.featureOpportunities) && selectedTable.featureOpportunities.length > 0 && (
+            <div className="p-4 bg-amber-500/[0.02] border border-amber-500/10 rounded-md text-xs space-y-2">
+              <span className="text-[9px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 block">
+                General Feature Opportunities
+              </span>
+              <ul className="list-disc list-inside space-y-1 text-foreground/80 font-normal">
+                {selectedTable.featureOpportunities.map((op, idx) => (
+                  <li key={idx} className="leading-relaxed">{op}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {/* Recommendations Cards List */}
           <div className="space-y-3">
             <SectionHeader
@@ -156,18 +194,18 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
             ) : (
               <div className="grid gap-3">
                 {recommendations.map((rec, rIdx) => {
-                  const varName = rec.variableName || rec.name || `Variable #${rIdx + 1}`;
+                  const varName = rec.sourceName || rec.variableName || rec.name || `Variable #${rIdx + 1}`;
                   const category = rec.category || "External Signal";
-                  const power = rec.predictivePower || "MEDIUM";
-                  const rationale = rec.rationale || "No rationale provided";
-                  const sourceType = rec.sourceType || "API / Web Dataset";
-                  const granularity = rec.granularity || "Periodic";
+                  const power = rec.feasibility || rec.predictivePower || "MEDIUM";
+                  const rationale = rec.description || rec.rationale || "No description provided";
+                  const sourceType = rec.providerOrUrl || rec.sourceType || "API / Web Dataset";
+                  const granularity = rec.joinStrategy?.frequency || rec.granularity || "Periodic";
                   const url = rec.sourceUrl;
 
                   return (
                     <div
                       key={rIdx}
-                      className="p-4 border border-border/80 bg-background/80 hover:border-indigo-500/50 transition-all rounded-lg space-y-2.5 shadow-sm"
+                      className="p-4 border border-border/80 bg-background/80 hover:border-indigo-500/50 transition-all rounded-lg space-y-3.5 shadow-sm"
                     >
                       <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border/30 pb-2">
                         <div className="flex items-center gap-2 flex-wrap">
@@ -177,14 +215,94 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
                           </span>
                         </div>
                         <div className="flex items-center gap-2">
-                          <span className="text-[10px] text-muted-foreground uppercase font-semibold">Predictive Power:</span>
+                          <span className="text-[10px] text-muted-foreground uppercase font-semibold">Feasibility:</span>
                           <Badge variant={getPowerVariant(power)}>{power}</Badge>
                         </div>
                       </div>
 
                       <p className="text-xs text-foreground/85 leading-relaxed font-normal">{rationale}</p>
 
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground">
+                      {rec.exogenousFactor && (
+                        <div className="text-xs">
+                          <strong className="text-muted-foreground">Exogenous Factor: </strong>
+                          <span className="text-foreground font-semibold">{rec.exogenousFactor}</span>
+                        </div>
+                      )}
+
+                      {Array.isArray(rec.affectedColumns) && rec.affectedColumns.length > 0 && (
+                        <div className="text-xs flex items-center gap-1.5 flex-wrap">
+                          <strong className="text-muted-foreground">Affected Columns:</strong>
+                          <div className="flex flex-wrap gap-1">
+                            {rec.affectedColumns.map((col, cIdx) => (
+                              <span key={cIdx} className="px-1.5 py-0.5 bg-surface-muted border border-border/80 font-mono text-[10px] text-foreground rounded">
+                                {col}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {rec.impactMechanism && (
+                        <div className="text-xs bg-surface-muted/30 border border-border/30 rounded p-2.5 leading-relaxed">
+                          <strong className="text-muted-foreground block mb-0.5">Impact Mechanism</strong>
+                          <span className="text-foreground/90 font-normal">{rec.impactMechanism}</span>
+                        </div>
+                      )}
+
+                      {rec.joinStrategy && (
+                        <div className="text-xs border border-border/40 bg-surface/30 rounded p-2.5 space-y-1.5">
+                          <strong className="text-muted-foreground block text-[10px] uppercase font-bold tracking-wider">Join Strategy</strong>
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                            <div>
+                              <span className="text-muted-foreground block text-[9px] uppercase">Table Field</span>
+                              <span className="font-mono text-foreground font-semibold">{rec.joinStrategy.datasetField || "—"}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-[9px] uppercase">External Key</span>
+                              <span className="font-mono text-foreground font-semibold">{rec.joinStrategy.exogenousKey || "—"}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-[9px] uppercase">Join Type</span>
+                              <span className="capitalize text-foreground font-medium">{rec.joinStrategy.joinType || "—"}</span>
+                            </div>
+                            <div>
+                              <span className="text-muted-foreground block text-[9px] uppercase">Frequency</span>
+                              <span className="capitalize text-foreground font-medium">{rec.joinStrategy.frequency || "—"}</span>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Feature Opportunities from each data source */}
+                      {Array.isArray(rec.featuresToExtract) && rec.featuresToExtract.length > 0 && (
+                        <div className="text-xs bg-indigo-500/[0.02] border border-indigo-500/10 rounded p-2.5 space-y-1.5">
+                          <strong className="text-indigo-600 dark:text-indigo-400 block text-[10px] uppercase font-bold tracking-wider flex items-center gap-1">
+                            ✨ Feature Opportunities to Extract
+                          </strong>
+                          <div className="flex flex-wrap gap-1.5">
+                            {rec.featuresToExtract.map((feat, fIdx) => (
+                              <span key={fIdx} className="px-2 py-1 bg-indigo-500/10 text-indigo-700 dark:text-indigo-300 border border-indigo-500/20 font-mono text-[11px] font-bold rounded-md flex items-center gap-1">
+                                ⚡ {feat}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {rec.expectedImpact && (
+                        <div className="text-xs">
+                          <strong className="text-muted-foreground">Expected Impact: </strong>
+                          <span className="text-foreground/90 font-normal">{rec.expectedImpact}</span>
+                        </div>
+                      )}
+
+                      {rec.extractedContentSummary && (
+                        <div className="text-xs text-muted-foreground italic">
+                          <strong>Insights Extracted:</strong> "{rec.extractedContentSummary}"
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-muted-foreground border-t border-border/30">
                         <div className="flex items-center gap-3 flex-wrap">
                           <span>
                             <strong>Source Type:</strong> {sourceType}

@@ -12,6 +12,8 @@ import {
 } from "../../agents/utils/agentUtils";
 import { WorkflowSessionMeta } from "../../agents/state";
 import { IAgentThinkingService } from "./agentThinking.service.interface";
+import { QueueService } from "../queue/queue.service";
+import { agentJobEvents } from "../queue/queueEvents";
 
 const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Data Ingestion": [
@@ -85,8 +87,10 @@ export class IngestionAgentService implements IIngestionAgentService {
     private connectionTester: ConnectionTesterService,
     private fileService: IFileService,
     private projectService: ProjectService,
-    private agentThinkingService: IAgentThinkingService
+    private agentThinkingService: IAgentThinkingService,
+    private queueService: QueueService
   ) { }
+
 
   async *run(
     connectorId: string[], 
@@ -195,6 +199,14 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStageStatuses.profileData = "Completed";
               currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Running";
+            } else if (substep === "Exogenous Scout" || substep === "exogenous") {
+              currentNode = "exogenousScout";
+              currentStage = "exogenousScout";
+              currentStageStatuses.inspect = "Completed";
+              currentStageStatuses.profileData = "Completed";
+              currentStageStatuses.preprocess = "Completed";
+              currentStageStatuses.resolveSchema = "Completed";
+              currentStageStatuses.exogenousScout = "Running";
             }
 
             const mergedValues = {
@@ -245,7 +257,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             "Data Profiling": "Data Profiling",
             "Schema Resolver": "Schema Resolver",
             "Exogenous Scout": "Exogenous Scout",
-            "Feature Engineering": "Exogenous Scout",
+            "Feature Engineering": "Exogenous Scout"
           };
           const substep = stepMap[options.step];
           if (substep) {
@@ -256,17 +268,12 @@ export class IngestionAgentService implements IIngestionAgentService {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             } else if (substep === "Data Profiling") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             } else if (substep === "Schema Resolver") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-            } else if (substep === "Exogenous Scout") {
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             } else if (substep === "Exogenous Scout") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
@@ -280,14 +287,9 @@ export class IngestionAgentService implements IIngestionAgentService {
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
           } else if (nextNodes.includes("resolveSchema")) {
             activeSubstep = "Schema Resolver";
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-          } else if (nextNodes.includes("exogenous")) {
-            activeSubstep = "Exogenous Scout";
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
           } else if (nextNodes.includes("exogenous")) {
             activeSubstep = "Exogenous Scout";
@@ -340,7 +342,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             exogenousScout: exogenousStatus,
           };
 
-          const nodeKey = activeSubstep === "Data Ingestion" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : "exogenousScout";
+          const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : "exogenousScout";
 
           const fullBaseResult: IngestionAgentRunResult = {
             ...calculatedBase,
@@ -458,8 +460,25 @@ export class IngestionAgentService implements IIngestionAgentService {
         );
       }
 
-      // Execute graph in background task pushing updates to queue
-      (async () => {
+      // 1. Push initial queued status to client immediately
+      queue.push({
+        connectorId,
+        status: "queued",
+        summary: "Workflow task has been queued (Concurrency Limit: 10). Waiting for resources...",
+        sessionId: threadId,
+        requiresApproval: false,
+        stageStatuses: { inspect: "Queued", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" },
+        currentNode: "inspect",
+        currentStage: "inspect",
+        steps: [],
+        inspection: {},
+        schemaResolution: {},
+        dataProfile: {},
+        preprocessing: {},
+      });
+
+      // 2. Define the background task to be run inside the QueueService
+      const executeWorkflowTask = async () => {
         try {
           // Stream updates from initial execution segment
           for await (const chunk of stream) {
@@ -483,7 +502,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             if (options?.projectId) {
               result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
             }
-            queue.push(result);
+            agentJobEvents.emit(`job:update:${threadId}`, result);
           }
 
           // Auto-advance through interrupt gates to run all nodes through to schema resolution unless stopped
@@ -527,7 +546,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               if (options?.projectId) {
                 result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
               }
-              queue.push(result);
+              agentJobEvents.emit(`job:update:${threadId}`, result);
             }
             graphState = await workflow.getState(config);
             if (graphState?.values) {
@@ -556,7 +575,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               await this.projectService.updateAgentState(options.projectId, stoppedValues);
               stoppedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
             }
-            queue.push(stoppedResult);
+            agentJobEvents.emit(`job:update:${threadId}`, stoppedResult);
             return;
           }
 
@@ -592,17 +611,54 @@ export class IngestionAgentService implements IIngestionAgentService {
           if (options?.projectId) {
             result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
           }
-          queue.push(result);
+          agentJobEvents.emit(`job:update:${threadId}`, result);
         } catch (err: any) {
           console.error(`[Workflow] Execution error:`, err?.message || err);
+          throw err;
         } finally {
-          queue.close();
+          agentJobEvents.emit(`job:close:${threadId}`);
         }
-      })();
+      };
 
-      for await (const update of queue) {
-        yield update;
+      // 3. Register the task in the Concurrency/Memory QueueService
+      this.queueService.enqueue(
+        threadId,
+        options?.projectId || "general",
+        connectorId,
+        userPrompt || meta?.userPrompt || "",
+        executeWorkflowTask
+      ).catch((err) => {
+        console.error(`[Workflow] Failed to enqueue job ${threadId}:`, err);
+        queue.push({
+          connectorId,
+          status: "failed",
+          summary: `Enqueue failed: ${err.message || String(err)}`,
+          sessionId: threadId,
+        } as any);
+        queue.close();
+      });
+
+      // 4. Setup listeners to feed queue events into the PushQueue for SSE response stream
+      const onJobUpdate = (result: any) => {
+        queue.push(result);
+      };
+      
+      const onJobClose = () => {
+        queue.close();
+      };
+
+      agentJobEvents.on(`job:update:${threadId}`, onJobUpdate);
+      agentJobEvents.once(`job:close:${threadId}`, onJobClose);
+
+      try {
+        for await (const update of queue) {
+          yield update;
+        }
+      } finally {
+        agentJobEvents.off(`job:update:${threadId}`, onJobUpdate);
+        agentJobEvents.off(`job:close:${threadId}`, onJobClose);
       }
+
     } catch (error: any) {
       console.error(`[Workflow] Run failed:`, error?.message || error);
       if (traceSession) {
