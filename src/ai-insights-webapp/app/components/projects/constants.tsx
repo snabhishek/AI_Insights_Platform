@@ -185,7 +185,7 @@ export const PIPELINE_STEPS: Workflow[] = [
 ];
 
 export const INITIAL_PIPELINE_STATUSES: Record<string, "Not Started"> = {
-  "Data Ingestion": "Not Started",
+  "Data Inspection": "Not Started",
   "Data Profiling": "Not Started",
   "Schema Resolver": "Not Started",
   "Feature Engineering": "Not Started",

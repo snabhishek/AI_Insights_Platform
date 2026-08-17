@@ -186,7 +186,7 @@ export function getMainStepId(stepOrStageId: string | null): string {
 }
 
 function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
-  const s1 = (pipelineStatuses["Data Inspection"] as PipelineStatus) ?? (pipelineStatuses["Data Ingestion"] as PipelineStatus) ?? "Not Started";
+  const s1 = (pipelineStatuses["Data Inspection"] as PipelineStatus) ?? "Not Started";
   const s2 = (pipelineStatuses["Data Profiling"] as PipelineStatus) ?? "Not Started";
   const s3 = (pipelineStatuses["Schema Resolver"] as PipelineStatus) ?? "Not Started";
 

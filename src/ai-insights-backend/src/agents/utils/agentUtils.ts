@@ -685,9 +685,15 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 }
 
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
-  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("exogenous")) return "resolveSchema";
+  const isExo = stageStatuses.exogenousScout === "Completed" || 
+                stageStatuses.exogenousScout === "In Progress" || 
+                stageStatuses.exogenous === "Completed" || 
+                stageStatuses.exogenous === "In Progress" || 
+                nextNodes.includes("exogenous");
+  if (isExo) return "exogenousScout";
+  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("resolveSchema") || nextNodes.includes("exogenous")) return "resolveSchema";
   if (stageStatuses.preprocess === "Completed" || stageStatuses.preprocess === "In Progress" || stageStatuses.profileData === "Completed" || stageStatuses.profileData === "In Progress") return "profileData";
-  if (stageStatuses.exogenousScout === "Completed" || stageStatuses.exogenous === "Completed") return "exogenousScout";return "inspect";
+  return "inspect";
 }
 
 export function buildMessage(nextNodes: string[], status: string, stageStatuses?: Record<string, string>): string {
@@ -717,7 +723,6 @@ export function buildResultFromGraphState(
   const values = graphState?.values ?? {};
   const nextNodes: string[] = Array.isArray(graphState?.next) ? graphState.next : [];
   const defaultStatuses = { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" };
-  const defaultStatuses = { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" };
   const stageStatuses = (values.stageStatuses && typeof values.stageStatuses === "object")
     ? values.stageStatuses as Record<string, string>
     : defaultStatuses;
@@ -735,7 +740,6 @@ export function buildResultFromGraphState(
     schemaResolution: (values.schemaResolution && typeof values.schemaResolution === "object") ? values.schemaResolution : {},
     dataProfile: (values.dataProfile && typeof values.dataProfile === "object") ? values.dataProfile : {},
     preprocessing: (values.preprocessing && typeof values.preprocessing === "object") ? values.preprocessing : {},
-    exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
     exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
@@ -757,13 +761,9 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     resolveSchema: "resolveSchema",
     exogenous: "exogenous",
     exogenousScout: "exogenous",
-    exogenous: "exogenous",
-    exogenousScout: "exogenous",
     "Data Ingestion": "inspect",
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
-    "Exogenous Scout": "exogenous",
-    "Feature Engineering": "exogenous",
     "Exogenous Scout": "exogenous",
     "Feature Engineering": "exogenous",
   };

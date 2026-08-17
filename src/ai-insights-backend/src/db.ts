@@ -143,6 +143,24 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS agent_thinking_proj_pipe_sub_idx ON agent_thinking (project_id, pipeline, substep);
     `);
 
+    // 9. Agent Jobs table
+    await query(`
+      CREATE TABLE IF NOT EXISTS agent_jobs (
+        id VARCHAR(50) PRIMARY KEY,
+        project_id VARCHAR(50) REFERENCES projects(id) ON DELETE CASCADE,
+        connector_id TEXT[] NOT NULL,
+        user_prompt TEXT,
+        status VARCHAR(50) NOT NULL DEFAULT 'queued',
+        error TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+    await query(`
+      CREATE INDEX IF NOT EXISTS agent_jobs_project_id_idx ON agent_jobs (project_id);
+    `);
+
+
     // 7. Seed 18 mock data sources if connectors table is empty
     const connCheck = await query("SELECT COUNT(*) FROM connectors");
     const count = parseInt(connCheck.rows[0].count, 10);

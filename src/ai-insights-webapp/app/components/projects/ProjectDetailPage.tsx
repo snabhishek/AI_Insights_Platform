@@ -421,7 +421,7 @@ export default function ProjectDetailPage({
       </div>
       {(() => {
         const stepOutputs: Record<string, React.ReactNode> = {
-          "Data Ingestion": (stageOutputs.inspect || stageOutputs.inspectNode) ? (
+          "Data Inspection": (stageOutputs.inspect || stageOutputs.inspectNode) ? (
             <IngestionStepOutput inspectOutput={stageOutputs.inspect || stageOutputs.inspectNode} />
           ) : null,
           "Data Profiling": (stageOutputs.profileData || stageOutputs.preprocess) ? (
@@ -434,6 +434,7 @@ export default function ProjectDetailPage({
             <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
         };
+        console.log(stageOutputs)
 
         return (
           <CardModal 

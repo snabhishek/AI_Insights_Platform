@@ -138,7 +138,7 @@ export default function ProjectsPage() {
       else if (v === "Failed") next[label] = "Pending";
       else if (v === "Pending" && next[label] !== "Completed") next[label] = "Pending";
     };
-    mapSingle("inspect", "Data Ingestion");
+    mapSingle("inspect", "Data Inspection");
     mapSingle("resolveSchema", "Schema Resolver");
     mapSingle("exogenousScout", "Exogenous Scout");
     mapSingle("exogenous", "Exogenous Scout");
@@ -171,15 +171,15 @@ export default function ProjectsPage() {
       next["Feature Engineering"] = "In Progress";
     }
 
-    // Feature Engineering stage mapping
-    const exoVal = stageStatuses.exogenousScout || stageStatuses.exogenous;
-    if (exoVal === "Completed") {
-      next["Exogenous Scout"] = "Completed";
-      next["Feature Engineering"] = "Completed";
-    } else if (exoVal === "In Progress" || exoVal === "Retrying") {
-      next["Exogenous Scout"] = "In Progress";
-      next["Feature Engineering"] = "In Progress";
-    }
+    // // Feature Engineering stage mapping
+    // const exoVal = stageStatuses.exogenousScout || stageStatuses.exogenous;
+    // if (exoVal === "Completed") {
+    //   next["Exogenous Scout"] = "Completed";
+    //   next["Feature Engineering"] = "Completed";
+    // } else if (exoVal === "In Progress" || exoVal === "Retrying") {
+    //   next["Exogenous Scout"] = "In Progress";
+    //   next["Feature Engineering"] = "In Progress";
+    // }
 
     return next;
   };
@@ -331,7 +331,7 @@ export default function ProjectsPage() {
       setStageOutputs({});
       setActiveStage("inspect");
       setPipelineStatuses({
-        "Data Ingestion": "In Progress",
+        "Data Inspection": "In Progress",
         "Data Profiling": "Pending",
         "Schema Resolver": "Pending",
         "Feature Engineering": "Not Started",
@@ -355,7 +355,7 @@ export default function ProjectsPage() {
       }
       if (step) {
         const stepMap: Record<string, string> = {
-          "Data Ingestion": "inspect",
+          "Data Inspection": "inspect",
           "Data Profiling": "profileData",
           "Schema Resolver": "resolveSchema",
           "Exogenous Scout": "exogenous",
@@ -459,7 +459,7 @@ export default function ProjectsPage() {
 
   const handleApprove = () => {
     setRequiresApproval(false);
-    const isDataIngestionComplete = pipelineStatuses["Schema Resolver"] === "Completed" || pipelineStatuses["Data Ingestion"] === "Completed";
+    const isDataIngestionComplete = pipelineStatuses["Schema Resolver"] === "Completed" || pipelineStatuses["Data Inspection"] === "Completed";
 
     if (isDataIngestionComplete) {
       setRunStatus("Running");
@@ -467,7 +467,7 @@ export default function ProjectsPage() {
       setWorkflowMessage("Advancing workflow to Feature Engineering stage...");
       setPipelineStatuses((prev) => ({
         ...prev,
-        "Data Ingestion": "Completed",
+        "Data Inspection": "Completed",
         "Data Profiling": "Completed",
         "Schema Resolver": "Completed",
         "Feature Engineering": "In Progress",
@@ -497,7 +497,7 @@ export default function ProjectsPage() {
       resolveSchema: "resolveSchema",
       exogenous: "exogenous",
       exogenousScout: "exogenous",
-      "Data Ingestion": "inspect",
+      "Data Inspection": "inspect",
       "Data Profiling": "profileData",
       "Schema Resolver": "resolveSchema",
       "Exogenous Scout": "exogenous",
@@ -509,7 +509,7 @@ export default function ProjectsPage() {
 
   const handleStageSelect = (stepId: string) => {
     const stageMap: Record<string, string> = {
-      "Data Ingestion": "inspect",
+      "Data Inspection": "inspect",
       "Data Profiling": "profileData",
       "Schema Resolver": "resolveSchema",
       "Exogenous Scout": "exogenousScout",
@@ -530,7 +530,7 @@ export default function ProjectsPage() {
     setStageOutputs({});
     setActiveStage("inspect");
     setPipelineStatuses({
-      "Data Ingestion": "In Progress",
+      "Data Inspection": "In Progress",
       "Data Profiling": "Pending",
       "Schema Resolver": "Pending",
       "Feature Engineering": "Not Started",
