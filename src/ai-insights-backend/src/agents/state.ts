@@ -24,6 +24,7 @@ export interface IngestionServices {
   connectionTester: ConnectionTesterService;
   fileService: IFileService;
   projectService: ProjectService;
+  duckDBService?: any;
   traceHelper: AgentTraceHelper;
   agentThinkingService?: any;
   projectId?: string;
@@ -37,6 +38,10 @@ export const AgentState = Annotation.Root({
     reducer: (left, right) => (typeof right === "string" ? right : left),
     default: () => "",
   }),
+  runTimestamp: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
   status: Annotation<string>,
   summary: Annotation<string>,
   userPrompt: Annotation<string>({
@@ -47,6 +52,9 @@ export const AgentState = Annotation.Root({
   schemaResolution: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   dataProfile: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   preprocessing: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  hierarchyMapper: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  relationshipBuilder: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  formBuilder: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   exogenousScout: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   featureArchitect: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   batchedTables: Annotation<BatchedTableState[]>({
@@ -104,6 +112,7 @@ export const AgentState = Annotation.Root({
           profileData: "Pending",
           preprocess: "Pending",
           resolveSchema: "Pending",
+          hierarchyMapper: "Pending",
           exogenousScout: "Pending",
           featureArchitect: "Pending",
         };
@@ -115,6 +124,7 @@ export const AgentState = Annotation.Root({
       profileData: "Pending",
       preprocess: "Pending",
       resolveSchema: "Pending",
+      hierarchyMapper: "Pending",
       exogenousScout: "Pending",
       featureArchitect: "Pending",
     }),

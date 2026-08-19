@@ -28,7 +28,8 @@ export async function resolveSchema(
   userPrompt: string | undefined, 
   dataProfile: Record<string, unknown> | undefined,
   projectId: string | undefined,
-  services: IngestionServices
+  services: IngestionServices,
+  stateRunTimestamp?: string
 ): Promise<any> {
   const inspectionSources = Array.isArray((inspection as any)?.sources)
     ? (inspection as any).sources
@@ -188,13 +189,15 @@ export async function resolveSchema(
   }
 
   const modularPayload = { dataIngestionSchema };
+  const activeRunTimestamp = (stateRunTimestamp && stateRunTimestamp.trim().length > 0) ? stateRunTimestamp.trim() : generateDateTimeStamp();
 
   if (projectWithWs) {
     try {
       const saved = await saveModularResolvedSchemas(
         projectWithWs.workspaceName,
         projectWithWs.project.name,
-        modularPayload
+        modularPayload,
+        activeRunTimestamp
       );
       outputYamlPath = saved.dataIngestionPath;
       console.info(`[resolveSchema] Saved modular schema file for project: DataIngestion -> ${saved.dataIngestionPath}`);
@@ -208,7 +211,8 @@ export async function resolveSchema(
         const saved = await saveModularResolvedSchemas(
           pWs.workspaceName,
           pWs.project.name,
-          modularPayload
+          modularPayload,
+          activeRunTimestamp
         );
         outputYamlPath = saved.dataIngestionPath;
         console.info(`[resolveSchema] Saved modular schema file for project: DataIngestion -> ${saved.dataIngestionPath}`);
@@ -226,6 +230,7 @@ export async function resolveSchema(
     mappings: rawMappings,
     yamlPath: outputYamlPath,
     schemaPath: outputYamlPath,
+    runTimestamp: activeRunTimestamp,
   };
 }
 
@@ -240,6 +245,8 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
   const inspectionSources = Array.isArray((state.inspection as any)?.sources)
     ? (state.inspection as any).sources
     : [state.inspection];
+  const activeRunTimestamp = (state.runTimestamp && state.runTimestamp.trim().length > 0) ? state.runTimestamp.trim() : generateDateTimeStamp();
+
   const resolvedSources = await Promise.all(validConnectors.map(async (connector) => {
     const inspection = inspectionSources.find((source: any) => source?.connectorId === connector.id) || state.inspection;
     const resolved = await resolveSchema(
@@ -248,7 +255,8 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
       typeof state.userPrompt === "string" ? state.userPrompt : "",
       state.dataProfile,
       (state as any).projectId,
-      services
+      services,
+      activeRunTimestamp
     );
     return {
       connectorId: connector.id,
@@ -266,6 +274,7 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
     )
   );
   return {
+    runTimestamp: activeRunTimestamp,
     schemaResolution: { sources: resolvedSources },
     batchedTables: updatedBatchedTables,
     status: "completed",

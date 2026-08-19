@@ -520,7 +520,8 @@ export interface ModularSchemaPayload {
 export async function saveModularResolvedSchemas(
   workspaceName: string,
   projectName: string,
-  payload: ModularSchemaPayload
+  payload: ModularSchemaPayload,
+  runTimestamp?: string
 ): Promise<{ dataIngestionPath: string }> {
   const packagesDir = getPackagesDir();
   const cleanWsName = sanitizeName(workspaceName);
@@ -529,7 +530,7 @@ export async function saveModularResolvedSchemas(
   const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
 
-  const timestamp = generateDateTimeStamp();
+  const timestamp = (runTimestamp && runTimestamp.trim().length > 0) ? runTimestamp.trim() : generateDateTimeStamp();
   const runFolderName = `${runSlug}-${timestamp}`;
 
   const targetDir = path.resolve(packagesDir, "ProjectFiles", parentFolderName, runFolderName, "Schemas");
@@ -549,6 +550,39 @@ export async function saveModularResolvedSchemas(
   console.info(`[saveModularResolvedSchemas] Saved Data Ingestion schema to ${dataIngestionPath}`);
 
   return { dataIngestionPath };
+}
+
+/**
+ * Saves resolved Relationship Schema output into modular Relationship Schema YAML file inside
+ * packages/ProjectFiles/<Workspace>-<Project>/Schemas/:
+ * <usecasetitle>_relationship_schema_<timestamp>.yaml
+ */
+export async function saveModularRelationshipSchema(
+  workspaceName: string,
+  projectName: string,
+  relationshipSchemaPayload: any,
+  runTimestamp?: string
+): Promise<{ relationshipSchemaPath: string }> {
+  const packagesDir = getPackagesDir();
+  const cleanWsName = sanitizeName(workspaceName);
+  const cleanProjectTitle = sanitizeName(projectName);
+  const parentFolderName = `${cleanWsName}-${cleanProjectTitle}`;
+  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
+  const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
+
+  const timestamp = (runTimestamp && runTimestamp.trim().length > 0) ? runTimestamp.trim() : generateDateTimeStamp();
+  const runFolderName = `${runSlug}-${timestamp}`;
+
+  const targetDir = path.resolve(packagesDir, "ProjectFiles", parentFolderName, runFolderName, "Schemas");
+  await fs.mkdir(targetDir, { recursive: true });
+
+  const relationshipFileName = `${useCaseSlug}_relationship_schema_${timestamp}.yaml`;
+  const relationshipSchemaPath = path.resolve(targetDir, relationshipFileName);
+
+  await fs.writeFile(relationshipSchemaPath, yaml.dump(relationshipSchemaPayload, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
+  console.info(`[saveModularRelationshipSchema] Saved Relationship Schema to ${relationshipSchemaPath}`);
+
+  return { relationshipSchemaPath };
 }
 
 /**

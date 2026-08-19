@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { LocalFileService } from "./services/file/file.service";
+import { DuckDBService } from "./services/duckdb/duckdb.service";
 import { ConnectionTesterService } from "./services/connector/connectionTester.service";
 import { PostgresConnectorRepository } from "./repositories/connector.repository";
 import { PostgresProjectRepository } from "./repositories/project.repository";
@@ -42,7 +43,14 @@ const HOST = process.env.HOST || "0.0.0.0";
 // Enable CORS for frontend workspace
 app.use(
   cors({
-    origin: ["http://localhost:3000", "http://127.0.0.1:3000"],
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like curl, postman) or from any localhost / 127.0.0.1 port
+      if (!origin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
+        callback(null, true);
+      } else {
+        callback(null, true);
+      }
+    },
     methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     credentials: true,
   })
@@ -53,6 +61,7 @@ app.use(express.urlencoded({ limit: "500mb", extended: true }));
 
 let db: any;
 let fileService: LocalFileService;
+let duckDBService: DuckDBService;
 let connectionTester: ConnectionTesterService;
 let connectorRepository: PostgresConnectorRepository;
 let connectorService: ConnectorService;
@@ -67,7 +76,8 @@ async function bootstrap() {
 
   // 3. Construct Dependencies (Dependency Injection)
   fileService = new LocalFileService();
-  connectionTester = new ConnectionTesterService(fileService);
+  duckDBService = new DuckDBService(fileService);
+  connectionTester = new ConnectionTesterService(fileService, duckDBService);
   connectorRepository = new PostgresConnectorRepository(db);
   const workspaceRepository = new PostgresWorkspaceRepository(db);
   const projectRepository = new PostgresProjectRepository(db);
@@ -76,11 +86,11 @@ async function bootstrap() {
   const workspaceController = new WorkspaceController(workspaceService);
   const agentThinkingRepository = new PostgresAgentThinkingRepository(db);
   const agentThinkingService = new AgentThinkingService(agentThinkingRepository);
-  connectorService = new ConnectorService(connectorRepository, fileService, connectionTester);
+  connectorService = new ConnectorService(connectorRepository, fileService, connectionTester, duckDBService);
   connectorController = new ConnectorController(connectorService, connectionTester);
   // agentController = new AgentController(connectorService);
   const queueService = new QueueService(db);
-  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService, agentThinkingService, queueService);
+  ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService, agentThinkingService, queueService, duckDBService);
   aiController = new AIController(ingestionAgentService, agentThinkingService);
 
 
@@ -110,10 +120,12 @@ async function bootstrap() {
     console.log(`[Server] Health check available at http://${HOST}:${PORT}/api/health`);
   });
 
-  // 5. Run database initialization in the background so the API remains reachable
-  void checkAndCreateDatabase().catch((err) => {
-    console.error("[DB] Background database check failed:", err.message || err);
-  });
+  // 5. Run database initialization guard
+  try {
+    await checkAndCreateDatabase();
+  } catch (err: any) {
+    console.error("[DB] Database check failed:", err.message || err);
+  }
 
   // 6. Run programmatic Drizzle migrations
   await runMigrations(db);

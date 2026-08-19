@@ -1,0 +1,39 @@
+export interface FormFieldDefinition {
+  name: string;
+  fieldId?: string;
+  type?: string;
+  controlType?: string;
+  label: string;
+  description?: string;
+  isRequired?: boolean;
+  options?: any[];
+  parentField?: string | null;
+  parentFields?: string[];
+  optionsSource?: "inline" | "api";
+  optionsEndpoint?: string;
+  requiredParentParams?: string[];
+  dependsOn?: string;
+  functionalDependencyRef?: string;
+}
+
+export interface HierarchicalFormSchema {
+  formId?: string;
+  groupName?: string;
+  priority?: "primary" | "secondary";
+  title?: string;
+  description?: string;
+  targetEntity?: string;
+  fields: FormFieldDefinition[];
+  subForms?: HierarchicalFormSchema[];
+  hierarchyMapping?: {
+    parentKey: string;
+    childKey: string;
+  };
+}
+
+export interface FormBuilderOutput {
+  status?: string;
+  summary?: string;
+  forms?: HierarchicalFormSchema[];
+  filterGroups?: HierarchicalFormSchema[];
+}

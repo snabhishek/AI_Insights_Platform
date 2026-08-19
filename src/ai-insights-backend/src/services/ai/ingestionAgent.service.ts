@@ -14,6 +14,7 @@ import { WorkflowSessionMeta } from "../../agents/state";
 import { IAgentThinkingService } from "./agentThinking.service.interface";
 import { QueueService } from "../queue/queue.service";
 import { agentJobEvents } from "../queue/queueEvents";
+import { generateDateTimeStamp } from "../../agents/tools/schemaHelper";
 
 const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Data Ingestion": [
@@ -31,6 +32,19 @@ const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Schema Resolver": [
     "Analyzing target schemas and downstream constraints...",
     "Generating mapping recommendations using LLM semantic alignment..."
+  ],
+  "Hierarchy Mapper": [
+    "Reading Data Ingestion Schema and Domain Knowledge Schema for project...",
+    "Running Relationship Builder to extract functional dependencies and hierarchies...",
+    "Running Form Builder to generate dynamic hierarchical feature forms..."
+  ],
+  "Relationship Builder": [
+    "Analyzing dataset schemas and domain rules for functional dependencies...",
+    "Extracting parent-child key relationships and hierarchical structures..."
+  ],
+  "Form Builder": [
+    "Mapping functional dependencies into structured feature fields...",
+    "Building dynamic hierarchical form schemas..."
   ],
   "Exogenous Scout": [
     "Analyzing internal dataset schemas and domain context...",
@@ -88,7 +102,8 @@ export class IngestionAgentService implements IIngestionAgentService {
     private fileService: IFileService,
     private projectService: ProjectService,
     private agentThinkingService: IAgentThinkingService,
-    private queueService: QueueService
+    private queueService: QueueService,
+    private duckDBService?: any
   ) { }
 
 
@@ -162,6 +177,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         connectionTester: this.connectionTester,
         fileService: this.fileService,
         projectService: this.projectService,
+        duckDBService: this.duckDBService,
         traceHelper: this.traceHelper,
         agentThinkingService: this.agentThinkingService,
         projectId: options?.projectId,
@@ -199,6 +215,14 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStageStatuses.profileData = "Completed";
               currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Running";
+            } else if (substep === "Hierarchy Mapper" || substep === "Relationship Builder" || substep === "Form Builder" || substep === "hierarchyMapper" || substep === "hierarchyMapperNode") {
+              currentNode = "hierarchyMapperNode";
+              currentStage = "hierarchyMapper";
+              currentStageStatuses.inspect = "Completed";
+              currentStageStatuses.profileData = "Completed";
+              currentStageStatuses.preprocess = "Completed";
+              currentStageStatuses.resolveSchema = "Completed";
+              currentStageStatuses.hierarchyMapper = "Running";
             } else if (substep === "Exogenous Scout" || substep === "exogenous") {
               currentNode = "exogenousScout";
               currentStage = "exogenousScout";
@@ -206,6 +230,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStageStatuses.profileData = "Completed";
               currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Completed";
+              currentStageStatuses.hierarchyMapper = "Completed";
               currentStageStatuses.exogenousScout = "Running";
             } else if (substep === "Feature Engineering" || substep === "featureArchitect") {
               currentNode = "featureArchitect";
@@ -233,6 +258,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             resVal.agentThinking = allThinking;
 
             queue.push(resVal);
+            agentJobEvents.emit(`job:update:${threadId}`, resVal);
           } catch (err) {
             console.warn(`[Workflow] Failed to push thinking update:`, err);
           }
@@ -260,12 +286,15 @@ export class IngestionAgentService implements IIngestionAgentService {
             profileData: "Data Profiling",
             preprocess: "Data Profiling",
             resolveSchema: "Schema Resolver",
+            hierarchyMapper: "Hierarchy Mapper",
+            hierarchyMapperNode: "Hierarchy Mapper",
+            "Hierarchy Mapper": "Hierarchy Mapper",
             featureArchitect: "Feature Engineering",
             "Data Ingestion": "Data Ingestion",
             "Data Profiling": "Data Profiling",
             "Schema Resolver": "Schema Resolver",
             "Exogenous Scout": "Exogenous Scout",
-            "Feature Engineering": "Exogenous Scout",
+            "Feature Engineering": "Hierarchy Mapper"
           };
           const substep = stepMap[options.step];
           if (substep) {
@@ -275,15 +304,21 @@ export class IngestionAgentService implements IIngestionAgentService {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Ingestion");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             } else if (substep === "Data Profiling") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             } else if (substep === "Schema Resolver") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+            } else if (substep === "Hierarchy Mapper") {
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             } else if (substep === "Exogenous Scout") {
@@ -300,11 +335,17 @@ export class IngestionAgentService implements IIngestionAgentService {
             activeSubstep = "Data Profiling";
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
           } else if (nextNodes.includes("resolveSchema")) {
             activeSubstep = "Schema Resolver";
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+          } else if (nextNodes.includes("hierarchyMapperNode") || nextNodes.includes("hierarchyMapper")) {
+            activeSubstep = "Hierarchy Mapper";
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
           } else if (nextNodes.includes("exogenous")) {
@@ -323,6 +364,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             connectorId,
             projectId: options.projectId,
             userPrompt: userPrompt ?? "",
+            runTimestamp: generateDateTimeStamp(),
             batchedTables: [],
             inspection: {},
             dataProfile: {},
@@ -347,10 +389,11 @@ export class IngestionAgentService implements IIngestionAgentService {
           const currentGraphState = await workflow.getState(config).catch(() => null);
           const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
 
-          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : "In Progress";
-          const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const schemaStatus = (activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
+          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : "In Progress";
+          const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+          const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+          const schemaStatus = (activeSubstep === "Hierarchy Mapper" || (activeSubstep === "Exogenous Scout") || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
+          const hierarchyStatus = activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Hierarchy Mapper" ? "In Progress" : "Pending");
           const exogenousStatus = activeSubstep === "Feature Engineering" ? "Completed" : (activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending");
           const featureArchitectStatus = activeSubstep === "Feature Engineering" ? "In Progress" : "Pending";
 
@@ -360,11 +403,12 @@ export class IngestionAgentService implements IIngestionAgentService {
             profileData: profileStatus,
             preprocess: preprocessStatus,
             resolveSchema: schemaStatus,
+            hierarchyMapper: hierarchyStatus,
             exogenousScout: exogenousStatus,
             featureArchitect: featureArchitectStatus,
           };
 
-          const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : activeSubstep === "Exogenous Scout" ? "exogenousScout" : "featureArchitect";
+          const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : activeSubstep === "Hierarchy Mapper" ? "hierarchyMapperNode" : activeSubstep === "Exogenous Scout" ? "exogenousScout" : "featureArchitect";
 
           const fullBaseResult: IngestionAgentRunResult = {
             ...calculatedBase,
@@ -761,7 +805,7 @@ export class IngestionAgentService implements IIngestionAgentService {
   private async getAllProjectPipelineThinking(projectId: string, pipeline: string): Promise<Record<string, Array<{ time: string; text: string; done: boolean }>>> {
     const map: Record<string, Array<{ time: string; text: string; done: boolean }>> = {};
     try {
-      const substeps = ["Data Inspection", "Data Ingestion", "Data Profiling", "Schema Resolver", "Exogenous Scout", "Feature Engineering"];
+      const substeps = ["Data Inspection", "Data Ingestion", "Data Profiling", "Schema Resolver", "Hierarchy Mapper", "Relationship Builder", "Form Builder", "Exogenous Scout", "Feature Engineering"];
       for (const substep of substeps) {
         const entry = await this.agentThinkingService.getThinking(projectId, pipeline, substep)
           || await this.agentThinkingService.getThinking(projectId, "Feature Engineering", substep);        

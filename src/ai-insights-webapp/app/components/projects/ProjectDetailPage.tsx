@@ -10,6 +10,7 @@ import IngestionStepOutput from "./pipeline-outputs/IngestionStepOutput";
 import ProfilingStepOutput from "./pipeline-outputs/ProfilingStepOutput";
 import SchemaResolverStepOutput from "./pipeline-outputs/SchemaResolverStepOutput";
 import ExogenousScoutStepOutput from "./pipeline-outputs/ExogenousScoutStepOutput";
+import HierarchyMapperStepOutput from "./pipeline-outputs/HierarchyMapperStepOutput";
 
 type AlertType = "error" | "success" | "info";
 
@@ -432,6 +433,13 @@ export default function ProjectDetailPage({
           ) : null,
           "Exogenous Scout": stageOutputs.exogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
+          ) : null,
+          "Hierarchy Mapper": (stageOutputs.hierarchyMapper || stageOutputs.relationshipBuilder || stageOutputs.formBuilder) ? (
+            <HierarchyMapperStepOutput
+              hierarchyMapper={stageOutputs.hierarchyMapper}
+              relationshipBuilder={stageOutputs.relationshipBuilder}
+              formBuilder={stageOutputs.formBuilder}
+            />
           ) : null,
         };
         console.log(stageOutputs)
