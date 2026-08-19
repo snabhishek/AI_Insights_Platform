@@ -4,11 +4,14 @@ import { IFileService } from "../file/file.service.interface";
 import { IConnectionTesterService } from "./connectionTester.service.interface";
 import { Connector, ConnectorType, ConnectorStatus, ConnectorHealth, ConnectionConfig } from "../../models/connector.types";
 
+import { IDuckDBService } from "../duckdb/duckdb.service.interface";
+
 export class ConnectorService {
   constructor(
     private repository: IConnectorRepository,
     private fileService: IFileService,
-    private connectionTester: IConnectionTesterService
+    private connectionTester: IConnectionTesterService,
+    private duckDBService: IDuckDBService
   ) {}
 
   private formatDate(date: Date): string {
@@ -46,6 +49,15 @@ export class ConnectorService {
     // 1. File upload check:
     if (["excel", "csv", "tsv"].includes(type) && connectionConfig.fileName && connectionConfig.fileContent) {
       await this.fileService.saveFile(connectionConfig.fileName, connectionConfig.fileContent);
+    }
+
+    // Ingest into DuckDB upon connecting file-based data source
+    if (["excel", "csv", "tsv", "restapi"].includes(type)) {
+      try {
+        await this.duckDBService.ingestFileSource(type, connectionConfig);
+      } catch (err: any) {
+        console.warn("[ConnectorService] Failed to ingest file source into DuckDB:", err.message);
+      }
     }
 
     // 2. Database metadata check:

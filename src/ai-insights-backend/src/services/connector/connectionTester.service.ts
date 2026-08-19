@@ -10,6 +10,7 @@ import path from "path";
 import { IConnectionTesterService, TestResult, SampleResult } from "./connectionTester.service.interface";
 import { ConnectorType, ConnectionConfig } from "../../models/connector.types";
 import { IFileService } from "../file/file.service.interface";
+import { IDuckDBService } from "../duckdb/duckdb.service.interface";
 
 const DEFAULT_PORTS: Record<string, number> = {
   postgres: 5432,
@@ -31,8 +32,10 @@ export class ConnectionTesterService implements IConnectionTesterService {
     idleTimeout: 30000,
   });
 
-  constructor(private fileService: IFileService) {}
-
+  constructor(
+    private fileService: IFileService,
+    private duckDBService: IDuckDBService
+  ) {}
 
   private testTcpConnection(host: string, port: number, timeoutMs = 5000): Promise<TestResult> {
     return new Promise((resolve) => {
@@ -370,56 +373,18 @@ export class ConnectionTesterService implements IConnectionTesterService {
       }
     }
 
-    if (type === "excel") {
-      const fileName = config.fileName;
-      if (fileName && this.fileService.fileExists(fileName)) {
-        const filePath = this.fileService.getFilePath(fileName);
-        try {
-          const res = await this.workerPool.run({ type: "excel", filePath });
-          return res;
-        } catch (err: any) {
-          console.error(`[ConnectionTester] Excel worker failed:`, err);
-          return { success: false, message: `Failed to parse Excel: ${err.message || err}`, latencyMs: 0 } as any;
-        }
-      }
-    }
-
-    if (["csv", "tsv"].includes(type)) {
-      const fileName = config.fileName;
-      if (fileName && this.fileService.fileExists(fileName)) {
-        const filePath = this.fileService.getFilePath(fileName);
-        try {
-          const res = await this.workerPool.run({ type, filePath });
-          return res;
-        } catch (err: any) {
-          console.error(`[ConnectionTester] CSV/TSV worker failed:`, err);
-          return { success: false, message: `Failed to parse CSV/TSV: ${err.message || err}`, latencyMs: 0 } as any;
-        }
-      }
-      return {
-        success: true,
-        type: "file",
-        tables: [
-          { id: fileName || "file_data", name: fileName || "File Data", type: "Table", rows: 0 }
-        ]
-      };
-    }
-
-
-    if (type === "restapi") {
-      return {
-        success: true,
-        type: "api",
-        tables: [
-          { id: "api_endpoint", name: "API Endpoint", type: "Endpoint", rows: 1 }
-        ]
-      };
+    if (["excel", "csv", "tsv", "restapi"].includes(type)) {
+      return this.duckDBService.getSchema(type, config);
     }
 
     return { success: true, type: "generic", tables: [] };
   }
 
   async getPreview(type: ConnectorType, config: ConnectionConfig, tableName?: string): Promise<{ success: boolean; headers: string[]; rows: any[] }> {
+    if (["excel", "csv", "tsv", "restapi"].includes(type)) {
+      return this.duckDBService.getPreview(type, config, tableName);
+    }
+
     if (type === "postgres") {
       if (!tableName) {
         throw new Error("Table parameter is required for database previews");
@@ -479,91 +444,14 @@ export class ConnectionTesterService implements IConnectionTesterService {
       return { success: true, headers, rows: dataRows };
     }
 
-    if (type === "excel") {
-      const fileName = config.fileName;
-      if (!fileName) {
-        throw new Error("No file associated with connector");
-      }
-
-      if (!this.fileService.fileExists(fileName)) {
-        return {
-          success: true,
-          headers: ["Column 1", "Column 2", "Column 3", "Column 4", "Column 5"],
-          rows: [
-            { col1: "Fallback row 1", col2: "—", col3: "—", col4: "—", col5: "—" }
-          ]
-        };
-      }
-
-      const filePath = this.fileService.getFilePath(fileName);
-      const workbook = xlsx.readFile(filePath);
-      const sheetName = tableName || workbook.SheetNames[0];
-      const worksheet = workbook.Sheets[sheetName];
-      if (!worksheet) {
-        throw new Error(`Sheet "${sheetName}" not found in workbook`);
-      }
-
-      const jsonRows = xlsx.utils.sheet_to_json(worksheet, { defval: "" }) as any[];
-      if (jsonRows.length === 0) {
-        return { success: true, headers: [], rows: [] };
-      }
-
-      const headers = Object.keys(jsonRows[0]);
-      const rows = jsonRows.slice(0, 5);
-      return { success: true, headers, rows };
-    }
-
-    if (["csv", "tsv"].includes(type)) {
-      const fileName = config.fileName;
-      if (!fileName) {
-        throw new Error("No file associated with connector");
-      }
-
-      if (!this.fileService.fileExists(fileName)) {
-        return {
-          success: true,
-          headers: ["Column 1", "Column 2", "Column 3", "Column 4", "Column 5"],
-          rows: [
-            { col1: "Fallback row 1", col2: "—", col3: "—", col4: "—", col5: "—" }
-          ]
-        };
-      }
-
-      const content = this.fileService.readTextFile(fileName);
-      const delimiter = type === "tsv" ? "\t" : ",";
-      const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
-
-      if (lines.length === 0) {
-        return { success: true, headers: [], rows: [] };
-      }
-
-      const headers = lines[0].split(delimiter).map((h) => h.replace(/^["']|["']$/g, "").trim());
-      const rows = lines.slice(1, 6).map((line) => {
-        const parts = line.split(delimiter).map((p) => p.replace(/^["']|["']$/g, "").trim());
-        const rowObj: Record<string, string> = {};
-        headers.forEach((header, idx) => {
-          rowObj[header] = parts[idx] || "";
-        });
-        return rowObj;
-      });
-
-      return { success: true, headers, rows };
-    }
-
-    if (type === "restapi") {
-      return {
-        success: true,
-        headers: ["Endpoint", "Status", "Latency"],
-        rows: [
-          { endpoint: config.url || "api_endpoint", status: "200 OK", latency: "12ms" }
-        ],
-      };
-    }
-
     return { success: true, headers: [], rows: [] };
   }
 
   async getRowCount(type: ConnectorType, config: ConnectionConfig, tableName: string): Promise<number> {
+    if (["excel", "csv", "tsv", "restapi"].includes(type)) {
+      return this.duckDBService.getRowCount(type, config, tableName);
+    }
+
     if (type === "postgres") {
       const pool = new Pool({
         host: config.host,
@@ -612,38 +500,6 @@ export class ConnectionTesterService implements IConnectionTesterService {
         return res.recordset[0]?.count ?? 0;
       } finally {
         await pool.close();
-      }
-    }
-
-    if (type === "restapi") {
-      return 0;
-    }
-
-    if (type === "excel") {
-      const fileName = config.fileName;
-      if (!fileName || !this.fileService.fileExists(fileName)) return 0;
-      const filePath = this.fileService.getFilePath(fileName);
-      const workbook = xlsx.readFile(filePath);
-      const worksheet = workbook.Sheets[tableName || workbook.SheetNames[0]];
-      if (!worksheet) return 0;
-      const rows = xlsx.utils.sheet_to_json(worksheet, { defval: "" }) as any[];
-      return rows.length;
-    }
-
-    if (["csv", "tsv"].includes(type)) {
-      const fileName = config.fileName;
-      if (!fileName || !this.fileService.fileExists(fileName)) return 0;
-      const filePath = this.fileService.getFilePath(fileName);
-      try {
-        const fileStream = fsSync.createReadStream(filePath, { encoding: "utf8" });
-        const rl = readline.createInterface({ input: fileStream, crlfDelay: Infinity });
-        let count = 0;
-        for await (const line of rl) {
-          if (line.trim().length > 0) count++;
-        }
-        return Math.max(0, count - 1);
-      } catch {
-        return 0;
       }
     }
 
@@ -706,14 +562,13 @@ export class ConnectionTesterService implements IConnectionTesterService {
         const dataRes = await pool.request().query(
           `SELECT * FROM [${tableName}] ORDER BY (SELECT NULL) OFFSET ${offset} ROWS FETCH NEXT ${limit} ROWS ONLY`
         );
-        const headers = dataRes.recordset.length > 0 ? Object.keys(dataRes.recordset[0]) : [];
-        return { success: true, headers, rows: dataRes.recordset, totalRowCount };
+        return { success: true, headers: dataRes.recordset.length > 0 ? Object.keys(dataRes.recordset[0]) : [], rows: dataRes.recordset, totalRowCount };
       } finally {
         await pool.close();
       }
     }
 
-    return this.getFileSlice(type, config, tableName, limit, offset);
+    return this.duckDBService.getSampleWithOffset(type, config, tableName, limit, offset);
   }
 
   async getRandomSample(type: ConnectorType, config: ConnectionConfig, tableName: string, limit: number, seed?: number): Promise<SampleResult> {
@@ -776,14 +631,13 @@ export class ConnectionTesterService implements IConnectionTesterService {
         const dataRes = await pool.request().query(
           `SELECT TOP (${limit}) * FROM [${tableName}] ORDER BY NEWID()`
         );
-        const headers = dataRes.recordset.length > 0 ? Object.keys(dataRes.recordset[0]) : [];
-        return { success: true, headers, rows: dataRes.recordset, totalRowCount };
+        return { success: true, headers: dataRes.recordset.length > 0 ? Object.keys(dataRes.recordset[0]) : [], rows: dataRes.recordset, totalRowCount };
       } finally {
         await pool.close();
       }
     }
 
-    return this.getFileRandomSample(type, config, tableName, limit, seed);
+    return this.duckDBService.getRandomSample(type, config, tableName, limit, seed);
   }
 
   async getStratifiedSample(type: ConnectorType, config: ConnectionConfig, tableName: string, stratifyColumn: string, limitPerGroup: number, seed?: number): Promise<SampleResult> {
@@ -881,7 +735,7 @@ export class ConnectionTesterService implements IConnectionTesterService {
       }
     }
 
-    return this.getFileStratifiedSample(type, config, tableName, stratifyColumn, limitPerGroup, seed);
+    return this.duckDBService.getStratifiedSample(type, config, tableName, stratifyColumn, limitPerGroup, seed);
   }
 
   async executeUpdate(
@@ -975,8 +829,8 @@ export class ConnectionTesterService implements IConnectionTesterService {
     const results: any[] = [];
     if (["postgres", "mysql", "sqlserver"].includes(type)) {
       return this.applyDbCleaningOperations(type, config, tableName, operations);
-    } else if (["excel", "csv", "tsv"].includes(type)) {
-      return this.applyFileCleaningOperations(type, config, tableName, operations);
+    } else if (["excel", "csv", "tsv", "restapi"].includes(type)) {
+      return this.duckDBService.applyCleaningOperations(type, config, tableName, operations);
     }
     return { results };
   }
