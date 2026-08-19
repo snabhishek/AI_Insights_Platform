@@ -87,7 +87,7 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
     return descendants;
   }, []);
 
-  // Fetch options for a field from the backend /api/filter-options endpoint
+  // Fetch options for a field from backend or fallback to inline schema choices
   const fetchOptions = useCallback(
     async (field: FormField, currentValues: Record<string, any>, searchOverride?: string) => {
       const fieldId = field.fieldId;
@@ -109,9 +109,12 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
       try {
         const parents = field.parentFields || (field.parentField ? [field.parentField] : []);
         const parentParamsObj: Record<string, any> = {};
+        let hasParentFilter = false;
+
         parents.forEach((p) => {
-          if (currentValues[p] !== undefined && currentValues[p] !== null) {
+          if (currentValues[p] !== undefined && currentValues[p] !== null && String(currentValues[p]).trim() !== "") {
             parentParamsObj[p] = currentValues[p];
+            hasParentFilter = true;
           }
         });
 
@@ -131,30 +134,39 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
         const url = `${apiBaseUrl}/api/filter-options?${queryParams.toString()}`;
         const response = await fetch(url, { signal: controller.signal });
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        if (fetchSeqRef.current.get(fieldId) !== seq) return;
+
+        if (response.ok) {
+          const data = await response.json();
+          if (data.dateRange) {
+            setDateRanges((prev) => ({ ...prev, [fieldId]: data.dateRange }));
+          }
+          const resolvedValues = Array.isArray(data.values) && data.values.length > 0
+            ? data.values
+            : (field.options || []);
+          setOptionsMap((prev) => ({ ...prev, [fieldId]: resolvedValues }));
+          setFallbackMap((prev) => ({ ...prev, [fieldId]: !hasParentFilter }));
+          setErrorMap((prev) => ({ ...prev, [fieldId]: null }));
+        } else {
+          // If backend response is not OK (e.g. 404 or sourceId not registered), fallback to inline options
+          if (field.controlType === "date_range") {
+            setDateRanges((prev) => ({ ...prev, [fieldId]: { min: "2023-01-01", max: "2026-12-31" } }));
+          }
+          setOptionsMap((prev) => ({ ...prev, [fieldId]: field.options || [] }));
+          setFallbackMap((prev) => ({ ...prev, [fieldId]: !hasParentFilter }));
+          setErrorMap((prev) => ({ ...prev, [fieldId]: null }));
         }
-
-        const data = await response.json();
-
-        // Discard stale response if a newer request was dispatched
-        if (fetchSeqRef.current.get(fieldId) !== seq) {
-          return;
-        }
-
-        if (data.dateRange) {
-          setDateRanges((prev) => ({ ...prev, [fieldId]: data.dateRange }));
-        }
-
-        const resolvedValues = Array.isArray(data.values) ? data.values : [];
-        setOptionsMap((prev) => ({ ...prev, [fieldId]: resolvedValues }));
-        setFallbackMap((prev) => ({ ...prev, [fieldId]: !!data.isIndependentFallback }));
       } catch (err: any) {
-        if (err.name === "AbortError") {
-          return; // Intentionally aborted
+        if (err.name === "AbortError") return;
+        if (fetchSeqRef.current.get(fieldId) !== seq) return;
+
+        // Fallback gracefully to inline options if server fetch fails
+        if (field.controlType === "date_range") {
+          setDateRanges((prev) => ({ ...prev, [fieldId]: { min: "2023-01-01", max: "2026-12-31" } }));
         }
-        console.warn(`[useFilterForm] Fetch options error for ${fieldId}:`, err);
-        setErrorMap((prev) => ({ ...prev, [fieldId]: err.message || "Failed to load options" }));
+        setOptionsMap((prev) => ({ ...prev, [fieldId]: field.options || [] }));
+        setFallbackMap((prev) => ({ ...prev, [fieldId]: true }));
+        setErrorMap((prev) => ({ ...prev, [fieldId]: null }));
       } finally {
         if (fetchSeqRef.current.get(fieldId) === seq) {
           setLoadingMap((prev) => ({ ...prev, [fieldId]: false }));

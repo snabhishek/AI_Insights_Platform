@@ -4,7 +4,7 @@ import React, { useState, useEffect } from "react";
 import FilterForm from "../shared/FilterForm/FilterForm";
 import { FormSchema } from "../../hooks/useFilterForm";
 
-// Default fallback schema if no backend project run schema is loaded yet
+// Default fallback schema
 const SAMPLE_FORM_SCHEMA: FormSchema = {
   sourceId: "demand_forecasting_dataset",
   filterGroups: [
@@ -35,6 +35,7 @@ const SAMPLE_FORM_SCHEMA: FormSchema = {
           parentField: "segment",
           parentFields: ["category", "segment"],
           requiredParentParams: ["category", "segment"],
+          options: ["HP-100", "HP-200", "AC-500", "AC-600", "FN-900"],
         },
       ],
     },
@@ -56,6 +57,7 @@ const SAMPLE_FORM_SCHEMA: FormSchema = {
           controlType: "dropdown",
           parentField: "region",
           parentFields: ["region"],
+          options: ["United States", "Canada", "Germany", "Japan", "Brazil"],
         },
       ],
     },
@@ -129,18 +131,9 @@ export default function ApplicationPage() {
 
   return (
     <main className="min-h-screen bg-background p-6 space-y-6">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-border pb-4">
-        <div>
-          <h1 className="text-xl font-bold text-foreground">
-            Application - Dynamic Filter Form Builder
-          </h1>
-          <p className="text-xs text-muted-foreground mt-1">
-            Schema-driven cascading filter form with live backend option resolution, race safety, and transitive reset.
-          </p>
-        </div>
-
-        {projectsList.length > 0 && (
+      {/* Connector Switcher Header */}
+      {projectsList.length > 0 && (
+        <div className="flex items-center justify-end border-b border-border pb-3">
           <div className="flex items-center gap-2">
             <label className="text-xs text-muted-foreground font-medium">Data Source:</label>
             <select
@@ -151,7 +144,7 @@ export default function ApplicationPage() {
                   sourceId: e.target.value,
                 }))
               }
-              className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary"
+              className="rounded-lg border border-input bg-card px-3 py-1.5 text-xs text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
             >
               {projectsList.map((c) => (
                 <option key={c.id} value={c.id}>
@@ -160,20 +153,13 @@ export default function ApplicationPage() {
               ))}
             </select>
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {/* Main Content Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Dynamic Filter Form */}
         <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-foreground">Active Filter Form</h2>
-            <span className="text-xs text-muted-foreground">
-              Source ID: <code className="font-bold text-primary">{activeSchema.sourceId}</code>
-            </span>
-          </div>
-
           <FilterForm
             schema={activeSchema}
             apiBaseUrl="http://localhost:4000"
