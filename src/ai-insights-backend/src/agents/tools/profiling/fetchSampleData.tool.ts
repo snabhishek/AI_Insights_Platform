@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
 import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
-import { connectionConfigSchema, foreignKeyValuesSchema, parseForeignKeyValues } from "../commonSchemas";
+import { connectionConfigSchema, foreignKeyValuesSchema, parseForeignKeyValues } from "../helpers/commonSchemas";
 
 type SampleRow = Record<string, unknown>;
 

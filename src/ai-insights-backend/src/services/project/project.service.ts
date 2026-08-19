@@ -1,6 +1,6 @@
 import { IProjectRepository } from "../../repositories/project.repository.interface";
 import { Project, ProjectRun, ProjectWithWorkspace } from "../../models/project.types";
-import { deleteProjectSchemaFolder } from "../../agents/tools/schemaHelper";
+import { deleteProjectSchemaFolder } from "../../agents/tools/helpers";
 
 export class ProjectService {
   constructor(private repository: IProjectRepository) {}

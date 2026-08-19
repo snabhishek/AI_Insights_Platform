@@ -1,9 +1,11 @@
 import { RunnableConfig } from "@langchain/core/runnables";
 import { AgentState, IngestionServices } from "../../state";
-import { createFetchSampleDataTool } from "../../tools/profiling/fetchSampleData.tool";
-import { createContentValueProfileTool } from "../../tools/profiling/contentValueProfile.tool";
-import { createCompletenessProfileTool } from "../../tools/profiling/completenessProfile.tool";
-import { createStatisticalProfileTool } from "../../tools/profiling/statisticalProfile.tool";
+import {
+  createFetchSampleDataTool,
+  createContentValueProfileTool,
+  createCompletenessProfileTool,
+  createStatisticalProfileTool
+} from "../../tools/profiling";
 import { 
   getModel, 
   getPromptFromFile, 

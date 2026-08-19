@@ -82,8 +82,8 @@ export function resolvePackageFilePath(filename: string): string {
 }
 
 /**
- * Loads and merges the base modular schema files (Domain.yaml, DataIngestion.yaml, FeatureEngineering.yaml, Relationship.yaml)
- * from the packages/Schemas folder, falling back to static Schema.yaml if present.
+ * Loads and merges the base modular schema files (Domain.yaml, DataIngestion.yaml, FeatureEngineering.yaml)
+ * from the packages/Schemas folder.
  */
 export async function loadFieldSchemaYaml(): Promise<string> {
   const packagesDir = getPackagesDir();
@@ -91,7 +91,7 @@ export async function loadFieldSchemaYaml(): Promise<string> {
   if (fsSync.existsSync(schemasDir)) {
     try {
       const mergedObj: any = { version: "1.0", generatedAt: new Date().toISOString(), fields: {} };
-      const modularFiles = ["Domain.yaml", "DataIngestion.yaml", "FeatureEngineering.yaml", "Relationship.yaml"];
+      const modularFiles = ["Domain.yaml", "DataIngestion.yaml", "FeatureEngineering.yaml"];
       for (const file of modularFiles) {
         const filePath = path.resolve(schemasDir, file);
         if (fsSync.existsSync(filePath)) {
@@ -100,20 +100,11 @@ export async function loadFieldSchemaYaml(): Promise<string> {
           if (parsed.DomainKnowledge) mergedObj.fields.DomainKnowledge = parsed.DomainKnowledge;
           if (parsed.fields) Object.assign(mergedObj.fields, parsed.fields);
           if (parsed.FeatureEngineering) mergedObj.fields.FeatureEngineering = parsed.FeatureEngineering;
-          if (parsed.Relationship) mergedObj.fields.Relationship = parsed.Relationship;
         }
       }
       return yaml.dump(mergedObj, { indent: 2, lineWidth: -1, noRefs: true });
     } catch (err) {
       console.warn(`[loadFieldSchemaYaml] Failed to merge modular schemas at ${schemasDir}:`, err);
-    }
-  }
-  const defaultSchemaPath = resolvePackageFilePath("Schema.yaml");
-  if (fsSync.existsSync(defaultSchemaPath)) {
-    try {
-      return await fs.readFile(defaultSchemaPath, "utf-8");
-    } catch (err) {
-      console.warn(`Failed to read Schema.yaml at ${defaultSchemaPath}:`, err);
     }
   }
   return "";
@@ -320,7 +311,7 @@ export interface ProjectSchemaInput {
  * Creates the project folder inside packages/ProjectFiles/<Workspace>-<Project>/Schemas
  * and updates the Domain.yaml modular schema with domain knowledge from project creation.
  * The Domain file is named `<usecasetitle>_domain_<timestamp>.yaml`.
- * Remaining modular schema templates (DataIngestion.yaml, FeatureEngineering.yaml, Relationship.yaml) are copied into the folder.
+ * Remaining modular schema templates (DataIngestion.yaml, FeatureEngineering.yaml) are copied into the folder.
  * Any legacy single schema file (*_schema_*.yaml) is removed.
  */
 export async function createProjectSchemaFile(
@@ -495,7 +486,7 @@ export async function updateOrCreateProjectSchemaFile(
   for (const mapping of payload.mappings || []) {
     const topic = mapping.targetTopic || "General";
     if (!groupedTopics[topic]) groupedTopics[topic] = [];
-    if (topic !== "Relationship" && topic !== "FeatureEngineering") {
+    if (topic !== "FeatureEngineering") {
       groupedTopics[topic].push({
         field: mapping.datasetField,
         subtype: mapping.subtype || null,
@@ -519,25 +510,19 @@ export interface ModularSchemaPayload {
     resolvedTables?: string[];
     fields?: Record<string, any[]>;
   };
-  relationshipSchema?: {
-    version?: string;
-    generatedAt?: string;
-    resolvedTables?: string[];
-    relationships?: any[];
-  };
 }
 
 /**
- * Saves resolved Schema Resolver output into two distinct modular YAML files inside
+ * Saves resolved Schema Resolver output into modular Data Ingestion YAML file inside
  * packages/ProjectFiles/<Workspace>-<Project>/Schemas/:
- * 1. <usecasetitle>_data_ingestion_<timestamp>.yaml
- * 2. <usecasetitle>_relationship_<timestamp>.yaml
+ * <usecasetitle>_data_ingestion_<timestamp>.yaml
  */
 export async function saveModularResolvedSchemas(
   workspaceName: string,
   projectName: string,
-  payload: ModularSchemaPayload
-): Promise<{ dataIngestionPath: string; relationshipPath: string }> {
+  payload: ModularSchemaPayload,
+  runTimestamp?: string
+): Promise<{ dataIngestionPath: string }> {
   const packagesDir = getPackagesDir();
   const cleanWsName = sanitizeName(workspaceName);
   const cleanProjectTitle = sanitizeName(projectName);
@@ -545,13 +530,13 @@ export async function saveModularResolvedSchemas(
   const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
 
-  const timestamp = generateDateTimeStamp();
+  const timestamp = (runTimestamp && runTimestamp.trim().length > 0) ? runTimestamp.trim() : generateDateTimeStamp();
   const runFolderName = `${runSlug}-${timestamp}`;
 
   const targetDir = path.resolve(packagesDir, "ProjectFiles", parentFolderName, runFolderName, "Schemas");
   await fs.mkdir(targetDir, { recursive: true });
 
-  // 1. Data Ingestion Schema: <usecasetitle>_data_ingestion_<timestamp>.yaml
+  // Data Ingestion Schema: <usecasetitle>_data_ingestion_<timestamp>.yaml
   const dataIngestionFileName = `${useCaseSlug}_data_ingestion_${timestamp}.yaml`;
   const dataIngestionPath = path.resolve(targetDir, dataIngestionFileName);
 
@@ -564,20 +549,73 @@ export async function saveModularResolvedSchemas(
   await fs.writeFile(dataIngestionPath, yaml.dump(diData, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
   console.info(`[saveModularResolvedSchemas] Saved Data Ingestion schema to ${dataIngestionPath}`);
 
-  // 2. Relationship Schema: <usecasetitle>_relationship_<timestamp>.yaml
-  const relationshipFileName = `${useCaseSlug}_relationship_${timestamp}.yaml`;
-  const relationshipPath = path.resolve(targetDir, relationshipFileName);
+  return { dataIngestionPath };
+}
 
-  const relData = {
-    version: payload.relationshipSchema?.version || "1.0",
-    generatedAt: payload.relationshipSchema?.generatedAt || new Date().toISOString(),
-    resolvedTables: payload.relationshipSchema?.resolvedTables || [],
-    Relationship: payload.relationshipSchema?.relationships || (payload.relationshipSchema as any)?.Relationship || []
-  };
-  await fs.writeFile(relationshipPath, yaml.dump(relData, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
-  console.info(`[saveModularResolvedSchemas] Saved Relationship schema to ${relationshipPath}`);
+/**
+ * Saves resolved Relationship Schema output into modular Relationship Schema YAML file inside
+ * packages/ProjectFiles/<Workspace>-<Project>/Schemas/:
+ * <usecasetitle>_relationship_schema_<timestamp>.yaml
+ */
+export async function saveModularRelationshipSchema(
+  workspaceName: string,
+  projectName: string,
+  relationshipSchemaPayload: any,
+  runTimestamp?: string
+): Promise<{ relationshipSchemaPath: string }> {
+  const packagesDir = getPackagesDir();
+  const cleanWsName = sanitizeName(workspaceName);
+  const cleanProjectTitle = sanitizeName(projectName);
+  const parentFolderName = `${cleanWsName}-${cleanProjectTitle}`;
+  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
+  const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
 
-  return { dataIngestionPath, relationshipPath };
+  const timestamp = (runTimestamp && runTimestamp.trim().length > 0) ? runTimestamp.trim() : generateDateTimeStamp();
+  const runFolderName = `${runSlug}-${timestamp}`;
+
+  const targetDir = path.resolve(packagesDir, "ProjectFiles", parentFolderName, runFolderName, "Schemas");
+  await fs.mkdir(targetDir, { recursive: true });
+
+  const relationshipFileName = `${useCaseSlug}_relationship_schema_${timestamp}.yaml`;
+  const relationshipSchemaPath = path.resolve(targetDir, relationshipFileName);
+
+  await fs.writeFile(relationshipSchemaPath, yaml.dump(relationshipSchemaPayload, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
+  console.info(`[saveModularRelationshipSchema] Saved Relationship Schema to ${relationshipSchemaPath}`);
+
+  return { relationshipSchemaPath };
+}
+
+/**
+ * Saves resolved Form Schema output into modular Form Schema YAML file inside
+ * packages/ProjectFiles/<Workspace>-<Project>/<RunFolder>/Schemas/:
+ * <usecasetitle>_form_schema_<timestamp>.yaml
+ */
+export async function saveModularFormSchema(
+  workspaceName: string,
+  projectName: string,
+  formSchemaPayload: any,
+  runTimestamp?: string
+): Promise<{ formSchemaPath: string }> {
+  const packagesDir = getPackagesDir();
+  const cleanWsName = sanitizeName(workspaceName);
+  const cleanProjectTitle = sanitizeName(projectName);
+  const parentFolderName = `${cleanWsName}-${cleanProjectTitle}`;
+  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
+  const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
+
+  const timestamp = (runTimestamp && runTimestamp.trim().length > 0) ? runTimestamp.trim() : generateDateTimeStamp();
+  const runFolderName = `${runSlug}-${timestamp}`;
+
+  const targetDir = path.resolve(packagesDir, "ProjectFiles", parentFolderName, runFolderName, "Schemas");
+  await fs.mkdir(targetDir, { recursive: true });
+
+  const formFileName = `${useCaseSlug}_form_schema_${timestamp}.yaml`;
+  const formSchemaPath = path.resolve(targetDir, formFileName);
+
+  await fs.writeFile(formSchemaPath, yaml.dump(formSchemaPayload, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
+  console.info(`[saveModularFormSchema] Saved Form Schema to ${formSchemaPath}`);
+
+  return { formSchemaPath };
 }
 
 /**

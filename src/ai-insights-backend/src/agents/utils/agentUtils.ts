@@ -426,6 +426,10 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     profileData: "Data Profiling",
     preprocess: "Data Profiling",
     resolveSchema: "Schema Resolver",
+    hierarchyMapper: "Hierarchy Mapper",
+    hierarchyMapperNode: "Hierarchy Mapper",
+    relationshipBuilder: "Hierarchy Mapper",
+    formBuilder: "Hierarchy Mapper",
     exogenousScout: "Exogenous Scout",
     exogenous: "Exogenous Scout"
   };
@@ -483,17 +487,39 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
 }
 
 export function resolvePromptFilePath(filename: string): string {
-  const candidatePaths = [
-    path.resolve(__dirname, "../prompts", filename),
-    path.resolve(process.cwd(), "src/agents/prompts", filename),
-    path.resolve(__dirname, "../../../src/agents/prompts", filename),
+  const baseDirs = [
+    path.resolve(__dirname, "../prompts"),
+    path.resolve(process.cwd(), "src/agents/prompts"),
+    path.resolve(__dirname, "../../../src/agents/prompts"),
   ];
-  for (const candidate of candidatePaths) {
+
+  // 1. Direct path check
+  for (const baseDir of baseDirs) {
+    const candidate = path.resolve(baseDir, filename);
     if (fsSync.existsSync(candidate)) {
       return candidate;
     }
   }
-  return candidatePaths[0];
+
+  // 2. Subfolder check matching basename
+  const basename = path.basename(filename);
+  for (const baseDir of baseDirs) {
+    if (fsSync.existsSync(baseDir)) {
+      try {
+        const subdirs = fsSync.readdirSync(baseDir, { withFileTypes: true });
+        for (const dirent of subdirs) {
+          if (dirent.isDirectory()) {
+            const subCandidate = path.resolve(baseDir, dirent.name, basename);
+            if (fsSync.existsSync(subCandidate)) {
+              return subCandidate;
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  return path.resolve(baseDirs[0], filename);
 }
 
 export async function getInspectionSystemPrompt(): Promise<string> {
@@ -759,13 +785,16 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     profileData: "profileData",
     preprocess: "profileData",
     resolveSchema: "resolveSchema",
+    hierarchyMapper: "hierarchyMapperNode",
+    hierarchyMapperNode: "hierarchyMapperNode",
+    "Hierarchy Mapper": "hierarchyMapperNode",
     exogenous: "exogenous",
     exogenousScout: "exogenous",
     "Data Ingestion": "inspect",
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
     "Exogenous Scout": "exogenous",
-    "Feature Engineering": "exogenous",
+    "Feature Engineering": "hierarchyMapperNode",
   };
   return step ? mapping[step] : undefined;
 }

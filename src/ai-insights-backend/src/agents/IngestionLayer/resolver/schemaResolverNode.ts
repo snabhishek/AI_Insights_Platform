@@ -20,7 +20,7 @@ import {
   getPackagesDir,
   sanitizeName, 
   generateDateTimeStamp 
-} from "../../tools/schemaHelper";
+} from "../../tools/helpers";
 
 export async function resolveSchema(
   connector: any, 
@@ -28,7 +28,8 @@ export async function resolveSchema(
   userPrompt: string | undefined, 
   dataProfile: Record<string, unknown> | undefined,
   projectId: string | undefined,
-  services: IngestionServices
+  services: IngestionServices,
+  stateRunTimestamp?: string
 ): Promise<any> {
   const inspectionSources = Array.isArray((inspection as any)?.sources)
     ? (inspection as any).sources
@@ -133,7 +134,7 @@ export async function resolveSchema(
 
   const schemaHeader = isProjectSchema
     ? `## Project Field Schema Taxonomy & Updated Domain Knowledge (${path.basename(schemaSourcePath)})`
-    : `## Live Field Schema Taxonomy (Schema.yaml)`;
+    : `## Live Modular Field Schema Taxonomy`;
 
   const prompt = [
     systemPrompt,
@@ -146,7 +147,7 @@ export async function resolveSchema(
 
   const model = getModel();
 
-  await logMilestoneThinking(services, "Schema Resolver", `Resolving DataIngestion and Relationship modular schemas in a single prompt...`);
+  await logMilestoneThinking(services, "Schema Resolver", `Resolving DataIngestion modular schema in a single prompt...`);
   const result = await invokeAgentJson("resolveSchema", model, prompt, fallback, services, {
     traceLabel: "agent:resolveSchema",
   });
@@ -154,7 +155,7 @@ export async function resolveSchema(
   const { mappings: rawMappings, domainKnowledge: extractedDk } = extractResolvedMappings(result, fallbackMappings);
   const resolvedDomainKnowledge = extractedDk || result?.domainKnowledge || fallback.domainKnowledge;
 
-  await logMilestoneThinking(services, "Schema Resolver", `Aligned ${rawMappings.length} structural columns across DataIngestion and Relationship schemas.`);
+  await logMilestoneThinking(services, "Schema Resolver", `Aligned ${rawMappings.length} structural columns in DataIngestion schema.`);
 
   const resolvedDomain = (typeof result?.domain === "string" && result.domain.trim().length > 0)
     ? result.domain.trim()
@@ -170,16 +171,14 @@ export async function resolveSchema(
     const fieldsObj: Record<string, any[]> = {};
     for (const mapping of rawMappings) {
       const topic = mapping.targetTopic || "General";
-      if (topic !== "Relationship") {
-        if (!fieldsObj[topic]) fieldsObj[topic] = [];
-        fieldsObj[topic].push({
-          field: mapping.datasetField,
-          subtype: mapping.subtype || null,
-          priority: mapping.priority || "Medium",
-          priorityRationale: mapping.priorityRationale || null,
-          sensitiveSubtype: mapping.sensitiveSubtype || null,
-        });
-      }
+      if (!fieldsObj[topic]) fieldsObj[topic] = [];
+      fieldsObj[topic].push({
+        field: mapping.datasetField,
+        subtype: mapping.subtype || null,
+        priority: mapping.priority || "Medium",
+        priorityRationale: mapping.priorityRationale || null,
+        sensitiveSubtype: mapping.sensitiveSubtype || null,
+      });
     }
     dataIngestionSchema = {
       version: "1.0",
@@ -189,40 +188,19 @@ export async function resolveSchema(
     };
   }
 
-  // Build/extract relationshipSchema
-  let relationshipSchema = result?.relationshipSchema;
-  if (!relationshipSchema || (!relationshipSchema.relationships && !(relationshipSchema as any).Relationship)) {
-    const rels: any[] = [];
-    for (const mapping of rawMappings) {
-      if (mapping.targetTopic === "Relationship" || mapping.relationship || mapping.relatedField || mapping.related_field) {
-        rels.push({
-          field: mapping.datasetField,
-          related_field: mapping.relatedField || mapping.related_field || mapping.relationship?.relatedField || mapping.relationship?.related_field || null,
-          relationship_type: mapping.relationshipType || mapping.relationship_type || mapping.relationship?.relationshipType || mapping.relationship?.relationship_type || "Association",
-          priority: mapping.priority || "Medium",
-          explanation: mapping.explanation || mapping.relationship?.explanation || "Linked field relationship",
-        });
-      }
-    }
-    relationshipSchema = {
-      version: "1.0",
-      generatedAt: new Date().toISOString(),
-      resolvedTables: resolvedTablesList,
-      relationships: rels,
-    };
-  }
-
-  const modularPayload = { dataIngestionSchema, relationshipSchema };
+  const modularPayload = { dataIngestionSchema };
+  const activeRunTimestamp = (stateRunTimestamp && stateRunTimestamp.trim().length > 0) ? stateRunTimestamp.trim() : generateDateTimeStamp();
 
   if (projectWithWs) {
     try {
       const saved = await saveModularResolvedSchemas(
         projectWithWs.workspaceName,
         projectWithWs.project.name,
-        modularPayload
+        modularPayload,
+        activeRunTimestamp
       );
       outputYamlPath = saved.dataIngestionPath;
-      console.info(`[resolveSchema] Saved modular schema files for project: DataIngestion -> ${saved.dataIngestionPath}, Relationship -> ${saved.relationshipPath}`);
+      console.info(`[resolveSchema] Saved modular schema file for project: DataIngestion -> ${saved.dataIngestionPath}`);
     } catch (writeErr: any) {
       console.warn(`[resolveSchema] Failed to save modular project schema files:`, writeErr?.message || writeErr);
     }
@@ -233,10 +211,11 @@ export async function resolveSchema(
         const saved = await saveModularResolvedSchemas(
           pWs.workspaceName,
           pWs.project.name,
-          modularPayload
+          modularPayload,
+          activeRunTimestamp
         );
         outputYamlPath = saved.dataIngestionPath;
-        console.info(`[resolveSchema] Saved modular schema files for project: DataIngestion -> ${saved.dataIngestionPath}, Relationship -> ${saved.relationshipPath}`);
+        console.info(`[resolveSchema] Saved modular schema file for project: DataIngestion -> ${saved.dataIngestionPath}`);
       }
     } catch (lookupErr: any) {
       console.warn(`[resolveSchema] Failed to lookup project/workspace for ${projectId}:`, lookupErr?.message || lookupErr);
@@ -248,10 +227,10 @@ export async function resolveSchema(
     ...result,
     domain: resolvedDomain,
     dataIngestionSchema,
-    relationshipSchema,
     mappings: rawMappings,
     yamlPath: outputYamlPath,
     schemaPath: outputYamlPath,
+    runTimestamp: activeRunTimestamp,
   };
 }
 
@@ -266,6 +245,8 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
   const inspectionSources = Array.isArray((state.inspection as any)?.sources)
     ? (state.inspection as any).sources
     : [state.inspection];
+  const activeRunTimestamp = (state.runTimestamp && state.runTimestamp.trim().length > 0) ? state.runTimestamp.trim() : generateDateTimeStamp();
+
   const resolvedSources = await Promise.all(validConnectors.map(async (connector) => {
     const inspection = inspectionSources.find((source: any) => source?.connectorId === connector.id) || state.inspection;
     const resolved = await resolveSchema(
@@ -274,7 +255,8 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
       typeof state.userPrompt === "string" ? state.userPrompt : "",
       state.dataProfile,
       (state as any).projectId,
-      services
+      services,
+      activeRunTimestamp
     );
     return {
       connectorId: connector.id,
@@ -292,6 +274,7 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
     )
   );
   return {
+    runTimestamp: activeRunTimestamp,
     schemaResolution: { sources: resolvedSources },
     batchedTables: updatedBatchedTables,
     status: "completed",
@@ -317,12 +300,13 @@ export function extractResolvedMappings(result: any, fallbackMappings: any[]): {
       priority: m.priority || "Medium",
       priorityRationale: m.priorityRationale || null,
       sensitiveSubtype: m.sensitiveSubtype || null,
-      relationship: m.relationship || null,
     }));
     return { mappings, domainKnowledge };
   }
 
-  const fieldsSource = (result.fields && typeof result.fields === "object") ? result.fields : result;
+  const fieldsSource = (result.dataIngestionSchema?.fields && typeof result.dataIngestionSchema.fields === "object")
+    ? result.dataIngestionSchema.fields
+    : ((result.fields && typeof result.fields === "object") ? result.fields : result);
   const extractedMappings: any[] = [];
 
   for (const [categoryName, categoryVal] of Object.entries(fieldsSource)) {
@@ -339,7 +323,7 @@ export function extractResolvedMappings(result: any, fallbackMappings: any[]): {
       continue;
     }
 
-    if (["domain", "strategy", "resolvedtables", "generatedat", "unmappeddatasetfields"].includes(categoryName.toLowerCase())) {
+    if (["domain", "strategy", "resolvedtables", "generatedat", "unmappeddatasetfields", "dataingestionschema"].includes(categoryName.toLowerCase())) {
       continue;
     }
 
@@ -355,10 +339,6 @@ export function extractResolvedMappings(result: any, fallbackMappings: any[]): {
           priority: item.priority || "Medium",
           priorityRationale: item.priorityRationale || null,
           sensitiveSubtype: item.sensitiveSubtype || null,
-          relatedField: item.relatedField || item.related_field || item.relationship?.relatedField || item.relationship?.related_field || null,
-          relationshipType: item.relationshipType || item.relationship_type || item.relationship?.relationshipType || item.relationship?.relationship_type || null,
-          explanation: item.explanation || item.relationship?.explanation || null,
-          relationship: item.relationship || null,
         });
       }
     }

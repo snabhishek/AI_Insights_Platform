@@ -534,7 +534,7 @@ export async function checkAndCreateDatabase() {
     }
 
     // Now run schema creation queries and migrations
-    // await initializeDatabaseSchemas();
+    await initializeDatabaseSchemas();
   } catch (err: any) {
     console.error("[DB] Database verification/creation guard failed:", err.message || err);
   } finally {

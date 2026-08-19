@@ -3,7 +3,7 @@ import { z } from "zod";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
 import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
-import { connectionConfigSchema } from "../commonSchemas";
+import { connectionConfigSchema } from "../helpers/commonSchemas";
 import pl from "nodejs-polars";
 
 type SampleRow = Record<string, unknown>;
