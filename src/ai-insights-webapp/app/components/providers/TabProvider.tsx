@@ -2,7 +2,7 @@
 
 import React, { createContext, useContext, useState } from "react";
 
-export type TabType = "projects" | "data-source";
+export type TabType = "projects" | "data-source" | "application";
 
 interface TabContextType {
   activeTab: TabType;
