@@ -5,6 +5,7 @@ export interface GenerateFormsInput {
   relationshipBuilderOutput?: RelationshipSchemaOutput;
   schemaResolution?: Record<string, unknown>;
   userPrompt?: string;
+  sourceId?: string;
 }
 
 export async function generateHierarchicalFormsTool(
@@ -13,6 +14,7 @@ export async function generateHierarchicalFormsTool(
   const relOutput = input.relationshipBuilderOutput;
   const nodes = relOutput?.nodes || [];
   const relationships = relOutput?.relationships || [];
+  const sourceId = input.sourceId || (relOutput as any)?.sourceId;
 
   const filterGroups: HierarchicalFormSchema[] = [];
 
@@ -56,9 +58,7 @@ export async function generateHierarchicalFormsTool(
         controlType,
         parentField: parentFields[0] || null,
         parentFields,
-        optionsSource: node.sampleValues && node.sampleValues.length > 0 ? "inline" : "api",
         options: node.sampleValues && node.sampleValues.length > 0 ? node.sampleValues : undefined,
-        optionsEndpoint: parentFields.length > 0 ? `/api/connectors/filter-options?field=${node.id}` : undefined,
         requiredParentParams: parentFields,
         dependsOn: parentFields[0],
       });
@@ -78,20 +78,24 @@ export async function generateHierarchicalFormsTool(
   }
 
   const rawOutput: FormBuilderOutput = {
+    sourceId,
     status: "OK",
     summary: "",
     forms: filterGroups,
     filterGroups,
   };
 
-  return normalizeAndEnforceFormSchema(rawOutput, relOutput);
+  return normalizeAndEnforceFormSchema(rawOutput, relOutput, sourceId);
 }
 
 export function normalizeAndEnforceFormSchema(
   output: any,
-  relationshipSchema?: RelationshipSchemaOutput
+  relationshipSchema?: RelationshipSchemaOutput,
+  fallbackSourceId?: string
 ): FormBuilderOutput {
   if (!output) return output;
+
+  const resolvedSourceId = output.sourceId || (relationshipSchema as any)?.sourceId || fallbackSourceId;
 
   const rawGroups: any[] = Array.isArray(output.filterGroups)
     ? output.filterGroups
@@ -130,16 +134,17 @@ export function normalizeAndEnforceFormSchema(
         controlType = "dropdown";
       }
 
+      // Explicitly remove legacy optionsSource and optionsEndpoint
+      const { optionsSource, optionsEndpoint, ...cleanField } = field;
+
       return {
-        ...field,
+        ...cleanField,
         fieldId,
         name: fieldId,
         label: field.label || (relNode?.aliasOf?.[0] ? relNode.aliasOf[0].replace(/_/g, " ").toUpperCase() : fieldId),
         controlType,
         parentField: parentFields[0] || field.parentField || null,
         parentFields,
-        optionsSource: field.optionsSource || (field.options && field.options.length > 0 ? "inline" : "api"),
-        optionsEndpoint: parentFields.length > 0 ? `/api/connectors/filter-options?field=${fieldId}` : field.optionsEndpoint,
         requiredParentParams: parentFields,
       };
     });
@@ -151,7 +156,7 @@ export function normalizeAndEnforceFormSchema(
     };
   });
 
-  // Step 4 Fix: Collect zero-edge standalone nodes not yet visited
+  // Collect zero-edge standalone nodes not yet visited
   const standaloneFields: FormFieldDefinition[] = [];
   for (const node of relNodes) {
     if (node.role === "identifier" || visitedNodeIds.has(node.id)) continue;
@@ -169,7 +174,6 @@ export function normalizeAndEnforceFormSchema(
         controlType: isDailyDate ? "date_range" : "dropdown",
         parentField: null,
         parentFields: [],
-        optionsSource: node.sampleValues && node.sampleValues.length > 0 ? "inline" : "api",
         options: node.sampleValues && node.sampleValues.length > 0 ? node.sampleValues : undefined,
       });
     }
@@ -196,6 +200,7 @@ export function normalizeAndEnforceFormSchema(
   const summary = `Generated ${normalizedGroups.length} filter group(s) with ${totalFields} total field(s) from Relationship Schema.`;
 
   return {
+    sourceId: resolvedSourceId,
     status: "OK",
     summary,
     forms: normalizedGroups,

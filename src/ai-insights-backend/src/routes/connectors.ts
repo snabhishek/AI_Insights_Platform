@@ -5,6 +5,7 @@ export default function createConnectorRouter(controller: ConnectorController): 
   const router = Router();
 
   router.get("/", controller.getAll);
+  router.get("/filter-options", controller.getFilterOptions);
   router.post("/test", controller.testConnection);
   router.post("/", controller.add);
   router.get("/:id/schema", controller.getSchema);

@@ -28,14 +28,9 @@ Step 3: Decide each field's control type.
 - If the field is a calendar Year/Quarter/Month/Week/DayOfWeek node: controlType = "dropdown"
 - If the field is a daily date or timestamp (e.g. order_date, transaction_date): controlType = "date_range"
 
-Step 4: Decide each field's options source.
-- If cardinality is 20 or fewer: optionsSource = "inline", and copy the
-  sampleValues (or full value list, if available) from the Relationship
-  Schema node into "options".
-- If cardinality is more than 20: optionsSource = "api", set
-  optionsEndpoint to "/api/connectors/filter-options?field={fieldId}", and set
-  requiredParentParams to the list of this field's ancestor fieldIds in
-  the hierarchy (its parentFields).
+Step 4: Assign options for fields.
+- For fields with sample values (cardinality 20 or fewer), copy the sampleValues from the Relationship Schema node into "options".
+- For fields with large value sets or dynamic values, leave "options" as an empty array `[]` (options will be dynamically resolved using the top-level `sourceId`).
 
 Step 5: Set parent-child links (Support Multi-Parent Dependencies & Standalone Nodes).
 - For each node with active parent relationships, set `parentFields` to an array containing ALL parent field IDs (e.g., `["category", "segment"]` for `product`).
@@ -49,6 +44,7 @@ extra commentary, no markdown, no fields outside this structure:
 ```json
 {
   "version": "1.0",
+  "sourceId": "connector-id",
   "generatedAt": "2026-08-17T10:05:00.000Z",
   "sourceRelationshipSchemaVersion": "1.0",
 
@@ -63,7 +59,6 @@ extra commentary, no markdown, no fields outside this structure:
           "controlType": "dropdown",          // dropdown | multi_select | searchable_dropdown | date_range
           "parentField": null,                 // null means top-level, no cascading dependency
           "parentFields": [],                  // array of parent field IDs
-          "optionsSource": "inline",            // inline | api
           "options": ["Heat Pumps", "AC Units", "Furnaces"]
         },
         {
@@ -72,8 +67,6 @@ extra commentary, no markdown, no fields outside this structure:
           "controlType": "searchable_dropdown",
           "parentField": "category",
           "parentFields": ["category", "segment"], // Array supporting multiple parents
-          "optionsSource": "api",
-          "optionsEndpoint": "/api/connectors/filter-options?field=product",
           "requiredParentParams": ["category", "segment"]
         }
       ]
@@ -88,7 +81,6 @@ extra commentary, no markdown, no fields outside this structure:
           "controlType": "dropdown",
           "parentField": null,
           "parentFields": [],
-          "optionsSource": "inline",
           "options": ["Asia", "EMEA", "NA", "LATAM"]
         },
         {
@@ -97,7 +89,6 @@ extra commentary, no markdown, no fields outside this structure:
           "controlType": "dropdown",
           "parentField": "order_region",
           "parentFields": ["order_region"],
-          "optionsSource": "inline",
           "options": []
         }
       ]
@@ -112,7 +103,6 @@ extra commentary, no markdown, no fields outside this structure:
           "controlType": "dropdown",
           "parentField": null,
           "parentFields": [],
-          "optionsSource": "inline",
           "options": [2023, 2024, 2025, 2026]
         },
         {
@@ -121,7 +111,6 @@ extra commentary, no markdown, no fields outside this structure:
           "controlType": "dropdown",
           "parentField": "order_year",
           "parentFields": ["order_year"],
-          "optionsSource": "inline",
           "options": ["Q1", "Q2", "Q3", "Q4"]
         },
         {
@@ -129,8 +118,7 @@ extra commentary, no markdown, no fields outside this structure:
           "label": "Order Date",
           "controlType": "date_range",
           "parentField": "order_month",
-          "parentFields": ["order_month"],
-          "optionsSource": "api"
+          "parentFields": ["order_month"]
         }
       ]
     },
@@ -144,7 +132,6 @@ extra commentary, no markdown, no fields outside this structure:
           "controlType": "dropdown",
           "parentField": null,
           "parentFields": [],
-          "optionsSource": "inline",
           "options": ["Seasonal", "Flash Sale", "Clearance"]
         }
       ]
@@ -157,11 +144,10 @@ Field meanings, plain English:
 
 | Field | Meaning |
 |---|---|
+| `sourceId` | Unique ID of the backing data source/connector associated with this form schema. |
 | `groupName` | Section heading shown to the user, taken from `businessLabel` in the Relationship Schema. |
 | `controlType` | Defines the type of input to render, such as a **dropdown, multi-select, searchable dropdown, or date_range picker**. |
 | `parentFields` | Array of field IDs that must be selected first to filter the available choices for this field (supports multiple parents). |
-| `optionsSource: "inline"` | The choices are small enough to be included directly, so no additional request is required. |
-| `optionsSource: "api"` | The choices are too large to list directly, so they are fetched live and filtered based on the already selected parent fields. |
 
 RULES YOU MUST NOT BREAK
 - Never include a field that does not appear as a node in the Relationship Schema.

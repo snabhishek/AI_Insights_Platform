@@ -24,18 +24,26 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
   );
 
   const relOutput = (state as any).relationshipBuilder;
+  const sourceId =
+    (state as any).connectorId ||
+    (relOutput as any)?.sourceId ||
+    (state.schemaResolution as any)?.connectorId ||
+    (state as any)?.connector?.id ||
+    "default_source";
 
   // 1. Generate fallback Form Schema from tool logic
   const fallbackResult: FormBuilderOutput = await generateHierarchicalFormsTool({
     relationshipBuilderOutput: relOutput,
     schemaResolution: state.schemaResolution,
     userPrompt: state.userPrompt,
+    sourceId,
   });
 
   // 2. Assemble prompt for LLM Agent
   const prompt = [
     systemPrompt,
     "## Context",
+    `### Source Data ID\n"${sourceId}"`,
     relOutput ? `### Input Relationship Schema\n\`\`\`json\n${JSON.stringify(relOutput, null, 2)}\n\`\`\`` : "",
     `### Discovered Candidate Form Structure\n\`\`\`json\n${JSON.stringify(fallbackResult, null, 2)}\n\`\`\``,
     state.userPrompt ? `### User Request\n${state.userPrompt}` : "",
@@ -47,7 +55,7 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
   await logMilestoneThinking(
     services,
     "Hierarchy Mapper",
-    "Executing LLM reasoning for Form Schema generation (grouping by entityScope, priority ordering, controlType decision, optionsSource selection)..."
+    "Executing LLM reasoning for Form Schema generation (grouping by entityScope, priority ordering, controlType decision)..."
   );
 
   // 3. Invoke LLM Agent with AI trace logging
@@ -65,6 +73,7 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
   const mergedResult: FormBuilderOutput = {
     ...fallbackResult,
     ...agentResult,
+    sourceId: agentResult?.sourceId || fallbackResult.sourceId || sourceId,
     forms: Array.isArray((agentResult as any)?.filterGroups)
       ? (agentResult as any).filterGroups
       : Array.isArray(agentResult?.forms) && agentResult.forms.length > 0
@@ -77,8 +86,8 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
       : fallbackResult.forms,
   };
 
-  // Enforce deterministic rules: parentFields array, calendar date_range overrides, zero-edge standalone nodes, and accurate summary count
-  const finalResult = normalizeAndEnforceFormSchema(mergedResult, relOutput);
+  // Enforce deterministic rules: parentFields array, calendar date_range overrides, zero-edge standalone nodes, top-level sourceId, and accurate summary count
+  const finalResult = normalizeAndEnforceFormSchema(mergedResult, relOutput, sourceId);
 
   // 4. Save Form Schema into Project Folder with timestamped filename
   if (services?.projectService && services?.projectId) {

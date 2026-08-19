@@ -9,8 +9,6 @@ export interface FormFieldDefinition {
   options?: any[];
   parentField?: string | null;
   parentFields?: string[];
-  optionsSource?: "inline" | "api";
-  optionsEndpoint?: string;
   requiredParentParams?: string[];
   dependsOn?: string;
   functionalDependencyRef?: string;
@@ -32,6 +30,7 @@ export interface HierarchicalFormSchema {
 }
 
 export interface FormBuilderOutput {
+  sourceId?: string;
   status?: string;
   summary?: string;
   forms?: HierarchicalFormSchema[];

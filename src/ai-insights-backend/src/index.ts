@@ -32,6 +32,7 @@ import { PostgresDomainRepository } from "./repositories/domain.repository";
 import { DomainService } from "./services/domain/domain.service";
 import { DomainController } from "./controllers/domain.controller";
 import createDomainRouter from "./routes/domains";
+import { SourceRegistryService } from "./services/sourceRegistry/sourceRegistry.service";
 
 
 dotenv.config();
@@ -87,7 +88,8 @@ async function bootstrap() {
   const agentThinkingRepository = new PostgresAgentThinkingRepository(db);
   const agentThinkingService = new AgentThinkingService(agentThinkingRepository);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester, duckDBService);
-  connectorController = new ConnectorController(connectorService, connectionTester);
+  const sourceRegistryService = new SourceRegistryService(connectorRepository, connectionTester);
+  connectorController = new ConnectorController(connectorService, connectionTester, sourceRegistryService);
   // agentController = new AgentController(connectorService);
   const queueService = new QueueService(db);
   ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService, agentThinkingService, queueService, duckDBService);
@@ -99,6 +101,7 @@ async function bootstrap() {
   const domainController = new DomainController(domainService);
 
   // 4. Mount Main routers
+  app.get("/api/filter-options", connectorController.getFilterOptions);
   app.use("/api/connectors", createConnectorRouter(connectorController));
   app.use("/api/domains", createDomainRouter(domainController));
   
