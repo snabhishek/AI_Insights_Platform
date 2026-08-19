@@ -5,6 +5,7 @@ import { profilerNode } from "./IngestionLayer/profiler/profilerNode";
 import { preprocessorNode } from "./IngestionLayer/preprocessor/preprocessorNode";
 import { schemaResolverNode } from "./IngestionLayer/resolver/schemaResolverNode";
 import { exogenousScoutNode } from "./FeatureEngineering/ExogenousScout/exogenousScoutNode";
+import { featureArchitectNode } from "./FeatureEngineering/FeatureArchitect/featureArchitectNode";
 
 export function createAgentGraph(checkpointer: any) {
   const workflow = new StateGraph(AgentState)
@@ -13,12 +14,14 @@ export function createAgentGraph(checkpointer: any) {
     .addNode("preprocess", preprocessorNode)
     .addNode("resolveSchema", schemaResolverNode)
     .addNode("exogenous", exogenousScoutNode)
+    .addNode("featureArchitect", featureArchitectNode)
     .addEdge("__start__", "inspect")
     .addEdge("inspect", "profileData")
     .addEdge("profileData", "preprocess")
     .addEdge("preprocess", "resolveSchema")
     .addEdge("resolveSchema", "exogenous")
-    .addEdge("exogenous", "__end__");
+    .addEdge("exogenous", "featureArchitect")
+    .addEdge("featureArchitect", "__end__");
 
   return workflow.compile({
     checkpointer,

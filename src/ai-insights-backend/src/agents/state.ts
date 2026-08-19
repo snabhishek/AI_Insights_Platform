@@ -48,6 +48,7 @@ export const AgentState = Annotation.Root({
   dataProfile: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   preprocessing: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   exogenousScout: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  featureArchitect: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   batchedTables: Annotation<BatchedTableState[]>({
     reducer: (left = [], right = []) => {
       if (Array.isArray(right) && right.length === 0) {
@@ -103,6 +104,8 @@ export const AgentState = Annotation.Root({
           profileData: "Pending",
           preprocess: "Pending",
           resolveSchema: "Pending",
+          exogenousScout: "Pending",
+          featureArchitect: "Pending",
         };
       }
       return { ...left, ...right };
@@ -113,6 +116,7 @@ export const AgentState = Annotation.Root({
       preprocess: "Pending",
       resolveSchema: "Pending",
       exogenousScout: "Pending",
+      featureArchitect: "Pending",
     }),
   }),
 });

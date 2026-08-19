@@ -207,6 +207,15 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Completed";
               currentStageStatuses.exogenousScout = "Running";
+            } else if (substep === "Feature Engineering" || substep === "featureArchitect") {
+              currentNode = "featureArchitect";
+              currentStage = "featureArchitect";
+              currentStageStatuses.inspect = "Completed";
+              currentStageStatuses.profileData = "Completed";
+              currentStageStatuses.preprocess = "Completed";
+              currentStageStatuses.resolveSchema = "Completed";
+              currentStageStatuses.exogenousScout = "Completed";
+              currentStageStatuses.featureArchitect = "Running";
             }
 
             const mergedValues = {
@@ -253,11 +262,12 @@ export class IngestionAgentService implements IIngestionAgentService {
             resolveSchema: "Schema Resolver",
             exogenous: "Exogenous Scout",
             exogenousScout: "Exogenous Scout",
+            featureArchitect: "Feature Engineering",
             "Data Ingestion": "Data Ingestion",
             "Data Profiling": "Data Profiling",
             "Schema Resolver": "Schema Resolver",
             "Exogenous Scout": "Exogenous Scout",
-            "Feature Engineering": "Exogenous Scout"
+            "Feature Engineering": "Feature Engineering"
           };
           const substep = stepMap[options.step];
           if (substep) {
@@ -268,15 +278,21 @@ export class IngestionAgentService implements IIngestionAgentService {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             } else if (substep === "Data Profiling") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             } else if (substep === "Schema Resolver") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             } else if (substep === "Exogenous Scout") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+            } else if (substep === "Feature Engineering") {
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             }
           }
         } else if (options.action === "approve") {
@@ -287,13 +303,19 @@ export class IngestionAgentService implements IIngestionAgentService {
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
           } else if (nextNodes.includes("resolveSchema")) {
             activeSubstep = "Schema Resolver";
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
           } else if (nextNodes.includes("exogenous")) {
             activeSubstep = "Exogenous Scout";
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+          } else if (nextNodes.includes("featureArchitect")) {
+            activeSubstep = "Feature Engineering";
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
           }
         } else {
           activeSubstep = "Data Inspection";
@@ -313,7 +335,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             summary: "Ingestion workflow started",
             steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
             stageOutputs: {},
-            stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" }
+            stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
           };
           try {
             await this.projectService.updateAgentState(options.projectId, cleanInitialState, userPrompt);
@@ -327,11 +349,12 @@ export class IngestionAgentService implements IIngestionAgentService {
           const currentGraphState = await workflow.getState(config).catch(() => null);
           const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
 
-          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout") ? "Completed" : "In Progress";
-          const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const schemaStatus = activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
-          const exogenousStatus = activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending";
+          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : "In Progress";
+          const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+          const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+          const schemaStatus = (activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
+          const exogenousStatus = activeSubstep === "Feature Engineering" ? "Completed" : (activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending");
+          const featureArchitectStatus = activeSubstep === "Feature Engineering" ? "In Progress" : "Pending";
 
           const mergedStageStatuses = {
             ...(calculatedBase.stageStatuses || {}),
@@ -340,9 +363,10 @@ export class IngestionAgentService implements IIngestionAgentService {
             preprocess: preprocessStatus,
             resolveSchema: schemaStatus,
             exogenousScout: exogenousStatus,
+            featureArchitect: featureArchitectStatus,
           };
 
-          const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : "exogenousScout";
+          const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : activeSubstep === "Exogenous Scout" ? "exogenousScout" : "featureArchitect";
 
           const fullBaseResult: IngestionAgentRunResult = {
             ...calculatedBase,
@@ -454,7 +478,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             batchedTables: [],
             steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
             stageOutputs: {},
-            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" }
+            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
           },
           config
         );
@@ -467,7 +491,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         summary: "Workflow task has been queued (Concurrency Limit: 10). Waiting for resources...",
         sessionId: threadId,
         requiresApproval: false,
-        stageStatuses: { inspect: "Queued", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" },
+        stageStatuses: { inspect: "Queued", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" },
         currentNode: "inspect",
         currentStage: "inspect",
         steps: [],

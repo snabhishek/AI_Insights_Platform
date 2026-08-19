@@ -427,7 +427,8 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     preprocess: "Data Profiling",
     resolveSchema: "Schema Resolver",
     exogenousScout: "Exogenous Scout",
-    exogenous: "Exogenous Scout"
+    exogenous: "Exogenous Scout",
+    featureArchitect: "Feature Engineering"
   };
   const substep = substepMap[stepName] || "Data Inspection";
 
@@ -685,13 +686,18 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 }
 
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
+  const isFeatureArchitect = stageStatuses.featureArchitect === "Completed" ||
+                             stageStatuses.featureArchitect === "In Progress" ||
+                             nextNodes.includes("featureArchitect");
+  if (isFeatureArchitect) return "featureArchitect";
+
   const isExo = stageStatuses.exogenousScout === "Completed" || 
                 stageStatuses.exogenousScout === "In Progress" || 
                 stageStatuses.exogenous === "Completed" || 
                 stageStatuses.exogenous === "In Progress" || 
                 nextNodes.includes("exogenous");
   if (isExo) return "exogenousScout";
-  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("resolveSchema") || nextNodes.includes("exogenous")) return "resolveSchema";
+  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("resolveSchema") || nextNodes.includes("exogenous") || nextNodes.includes("featureArchitect")) return "resolveSchema";
   if (stageStatuses.preprocess === "Completed" || stageStatuses.preprocess === "In Progress" || stageStatuses.profileData === "Completed" || stageStatuses.profileData === "In Progress") return "profileData";
   return "inspect";
 }
@@ -699,6 +705,12 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
 export function buildMessage(nextNodes: string[], status: string, stageStatuses?: Record<string, string>): string {
   if (status === "failed") {
     return "Workflow failed.";
+  }
+  if (status === "completed" || stageStatuses?.featureArchitect === "Completed") {
+    return "Feature Engineering and Data Ingestion completed successfully.";
+  }
+  if (stageStatuses?.featureArchitect === "In Progress") {
+    return "Architecting features (Creation, Transformation, Extraction, Selection)...";
   }
   if (status === "completed" || stageStatuses?.resolveSchema === "Completed") {
     return "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.";
@@ -722,13 +734,22 @@ export function buildResultFromGraphState(
 ): any {
   const values = graphState?.values ?? {};
   const nextNodes: string[] = Array.isArray(graphState?.next) ? graphState.next : [];
-  const defaultStatuses = { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" };
+  const defaultStatuses = { 
+    inspect: "Pending", 
+    profileData: "Pending", 
+    preprocess: "Pending", 
+    resolveSchema: "Pending", 
+    exogenousScout: "Pending",
+    featureArchitect: "Pending"
+  };
   const stageStatuses = (values.stageStatuses && typeof values.stageStatuses === "object")
     ? values.stageStatuses as Record<string, string>
     : defaultStatuses;
   const status = (typeof values.status === "string" && values.status) ? values.status : "running";
+  
   const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
-  const requiresApproval = isIngestionComplete && status !== "failed";
+  const isFeatureArchitectStarted = stageStatuses.featureArchitect && stageStatuses.featureArchitect !== "Pending";
+  const requiresApproval = isIngestionComplete && !isFeatureArchitectStarted && status !== "failed";
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
   return {
@@ -741,10 +762,11 @@ export function buildResultFromGraphState(
     dataProfile: (values.dataProfile && typeof values.dataProfile === "object") ? values.dataProfile : {},
     preprocessing: (values.preprocessing && typeof values.preprocessing === "object") ? values.preprocessing : {},
     exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
+    featureArchitect: (values.featureArchitect && typeof values.featureArchitect === "object") ? values.featureArchitect : {},
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
-    nextStep: isIngestionComplete ? "Feature Engineering" : (nextNodes[0] || "inspect"),
+    nextStep: isIngestionComplete && !isFeatureArchitectStarted ? "Feature Engineering" : (nextNodes[0] || "inspect"),
     currentNode: currentStage,
     currentStage,
     stageOutputs: (values.stageOutputs && typeof values.stageOutputs === "object") ? values.stageOutputs : {},
@@ -761,11 +783,12 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     resolveSchema: "resolveSchema",
     exogenous: "exogenous",
     exogenousScout: "exogenous",
+    featureArchitect: "featureArchitect",
     "Data Ingestion": "inspect",
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
     "Exogenous Scout": "exogenous",
-    "Feature Engineering": "exogenous",
+    "Feature Engineering": "featureArchitect",
   };
   return step ? mapping[step] : undefined;
 }
