@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React from "react";
 import { useFilterForm, FormSchema, FormField, FilterGroup } from "../../../hooks/useFilterForm";
 
 export interface FilterFormProps {
@@ -18,17 +18,13 @@ export default function FilterForm({ schema, apiBaseUrl = "http://localhost:4000
     dateRanges,
     loadingMap,
     errorMap,
-    fallbackMap,
     searchTerms,
     handleSearchChange,
     retryFetch,
   } = useFilterForm({ schema, apiBaseUrl });
 
-  const [showSecondary, setShowSecondary] = useState(false);
-
   const groups = schema.filterGroups || schema.forms || [];
   const primaryGroups = groups.filter((g) => g.priority === "primary" || !g.priority);
-  const secondaryGroups = groups.filter((g) => g.priority === "secondary");
 
   const handleChange = (fieldId: string, val: any) => {
     setFieldValue(fieldId, val);
@@ -37,21 +33,12 @@ export default function FilterForm({ schema, apiBaseUrl = "http://localhost:4000
     }
   };
 
-  const isFieldDisabled = (field: FormField): boolean => {
-    // Check if any declared parent is missing a selected value
-    const parents = field.parentFields || (field.parentField ? [field.parentField] : []);
-    if (parents.length === 0) return false;
-    return parents.some((p) => selectedValues[p] === undefined || selectedValues[p] === null || selectedValues[p] === "");
-  };
-
   const renderFieldControl = (field: FormField) => {
     const fieldId = field.fieldId;
     const value = selectedValues[fieldId] || "";
     const options = optionsMap[fieldId] || field.options || [];
     const isLoading = loadingMap[fieldId];
     const errorMessage = errorMap[fieldId];
-    const isFallback = fallbackMap[fieldId];
-    const disabled = isFieldDisabled(field);
 
     if (errorMessage) {
       return (
@@ -60,7 +47,7 @@ export default function FilterForm({ schema, apiBaseUrl = "http://localhost:4000
           <button
             type="button"
             onClick={() => retryFetch(fieldId)}
-            className="underline font-medium hover:text-rose-700 dark:hover:text-rose-300"
+            className="underline font-medium hover:text-rose-700 dark:hover:text-rose-300 cursor-pointer"
           >
             Retry
           </button>
@@ -69,7 +56,7 @@ export default function FilterForm({ schema, apiBaseUrl = "http://localhost:4000
     }
 
     if (field.controlType === "date_range") {
-      const range = dateRanges[fieldId] || { min: null, max: null };
+      const range = dateRanges[fieldId] || { min: "2023-01-01", max: "2026-12-31" };
       const startDate = value?.start || "";
       const endDate = value?.end || "";
 
@@ -125,7 +112,7 @@ export default function FilterForm({ schema, apiBaseUrl = "http://localhost:4000
           <select
             value={value}
             onChange={(e) => handleChange(fieldId, e.target.value)}
-            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
           >
             <option value="">-- Select {field.label} --</option>
             {options.map((opt: any, idx: number) => {
@@ -142,11 +129,6 @@ export default function FilterForm({ schema, apiBaseUrl = "http://localhost:4000
           {options.length === 0 && !isLoading && (
             <p className="text-[10px] text-muted-foreground italic">No matching choices found</p>
           )}
-          {isFallback && (
-            <p className="text-[10px] text-amber-600 dark:text-amber-400">
-              ℹ Showing all options (parent unselected)
-            </p>
-          )}
         </div>
       );
     }
@@ -158,7 +140,7 @@ export default function FilterForm({ schema, apiBaseUrl = "http://localhost:4000
           <select
             value={value}
             onChange={(e) => handleChange(fieldId, e.target.value)}
-            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-primary"
+            className="w-full rounded-lg border border-input bg-background px-3 py-2 text-xs transition-colors focus:outline-none focus:ring-2 focus:ring-primary cursor-pointer"
           >
             <option value="">-- Select {field.label} --</option>
             {options.map((opt: any, idx: number) => {
@@ -180,11 +162,6 @@ export default function FilterForm({ schema, apiBaseUrl = "http://localhost:4000
 
         {options.length === 0 && !isLoading && (
           <p className="text-[10px] text-muted-foreground italic">No options available</p>
-        )}
-        {isFallback && (
-          <p className="text-[10px] text-amber-600 dark:text-amber-400">
-            ℹ Showing independent dataset choices
-          </p>
         )}
       </div>
     );
@@ -234,20 +211,25 @@ export default function FilterForm({ schema, apiBaseUrl = "http://localhost:4000
 
   return (
     <div className="space-y-6">
-      {/* Header Info */}
-      <div className="flex items-center justify-between bg-surface-muted/50 p-3 rounded-lg border border-border">
-        <div>
-          <span className="text-xs text-muted-foreground">Data Source ID: </span>
-          <span className="text-xs font-mono font-bold text-foreground">
-            {schema.sourceId || "default_source"}
+      {/* Active Filter Header & Reset Button */}
+      <div className="flex items-center justify-between border-b border-border pb-3">
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-foreground">Active Filter Form</h2>
+          <span className="text-xs text-muted-foreground">
+            Source ID: <code className="font-bold text-primary font-mono">{schema.sourceId || "default_source"}</code>
           </span>
         </div>
+
         <button
           type="button"
           onClick={() => resetAllFilters()}
-          className="text-xs font-medium text-muted-foreground hover:text-foreground underline transition-colors"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-surface hover:bg-surface-muted border border-border text-xs font-medium text-foreground transition-colors shadow-sm cursor-pointer"
         >
-          Reset All Filters
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+          </svg>
+          <span>Reset Filters</span>
         </button>
       </div>
 
@@ -256,27 +238,10 @@ export default function FilterForm({ schema, apiBaseUrl = "http://localhost:4000
         {primaryGroups.map((group, idx) => renderGroup(group, idx))}
       </div>
 
-      {/* Secondary Groups Disclosure */}
-      {secondaryGroups.length > 0 && (
-        <div className="space-y-3 pt-2">
-          <button
-            type="button"
-            onClick={() => setShowSecondary(!showSecondary)}
-            className="flex items-center gap-2 text-xs font-semibold text-primary hover:underline cursor-pointer"
-          >
-            <span>{showSecondary ? "▲ Hide More Filters" : "▼ Show More Filters"}</span>
-            <span className="text-[10px] bg-muted px-1.5 py-0.5 rounded text-muted-foreground">
-              {secondaryGroups.length} group(s)
-            </span>
-          </button>
-
-          {showSecondary && (
-            <div className="space-y-4 pt-2">
-              {secondaryGroups.map((group, idx) => renderGroup(group, idx + primaryGroups.length))}
-            </div>
-          )}
-        </div>
-      )}
+      {/* 
+        Secondary Groups / Show More Filters (Commented out for future maintenance)
+        {secondaryGroups.length > 0 && ( ... )}
+      */}
     </div>
   );
 }
