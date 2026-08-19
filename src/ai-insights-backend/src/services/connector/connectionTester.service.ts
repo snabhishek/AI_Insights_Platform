@@ -7,6 +7,8 @@ import { Pool } from "pg";
 import * as xlsx from "xlsx";
 import Piscina from "piscina";
 import path from "path";
+import Piscina from "piscina";
+import path from "path";
 import { IConnectionTesterService, TestResult, SampleResult } from "./connectionTester.service.interface";
 import { ConnectorType, ConnectionConfig } from "../../models/connector.types";
 import { IFileService } from "../file/file.service.interface";
@@ -19,6 +21,9 @@ const DEFAULT_PORTS: Record<string, number> = {
   mongodb: 27017,
   snowflake: 443,
 };
+
+const isTs = __filename.endsWith(".ts");
+const workerPath = path.resolve(__dirname, isTs ? "../ai/workers/dataWorker.ts" : "../ai/workers/dataWorker.js");
 
 const isTs = __filename.endsWith(".ts");
 const workerPath = path.resolve(__dirname, isTs ? "../ai/workers/dataWorker.ts" : "../ai/workers/dataWorker.js");

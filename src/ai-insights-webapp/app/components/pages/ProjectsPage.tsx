@@ -139,6 +139,7 @@ export default function ProjectsPage() {
       else if (v === "Pending" && next[label] !== "Completed") next[label] = "Pending";
     };
     mapSingle("inspect", "Data Inspection");
+    mapSingle("inspect", "Data Inspection");
     mapSingle("resolveSchema", "Schema Resolver");
     mapSingle("exogenousScout", "Exogenous Scout");
     mapSingle("exogenous", "Exogenous Scout");

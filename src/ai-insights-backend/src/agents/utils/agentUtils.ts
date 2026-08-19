@@ -718,6 +718,13 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
                 nextNodes.includes("exogenous");
   if (isExo) return "exogenousScout";
   if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("resolveSchema") || nextNodes.includes("exogenous")) return "resolveSchema";
+  const isExo = stageStatuses.exogenousScout === "Completed" || 
+                stageStatuses.exogenousScout === "In Progress" || 
+                stageStatuses.exogenous === "Completed" || 
+                stageStatuses.exogenous === "In Progress" || 
+                nextNodes.includes("exogenous");
+  if (isExo) return "exogenousScout";
+  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("resolveSchema") || nextNodes.includes("exogenous")) return "resolveSchema";
   if (stageStatuses.preprocess === "Completed" || stageStatuses.preprocess === "In Progress" || stageStatuses.profileData === "Completed" || stageStatuses.profileData === "In Progress") return "profileData";
   return "inspect";
 }
