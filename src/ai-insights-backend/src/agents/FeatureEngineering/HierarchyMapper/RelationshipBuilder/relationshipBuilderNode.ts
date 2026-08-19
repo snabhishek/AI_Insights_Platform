@@ -3,7 +3,7 @@ import { AgentState, IngestionServices, BatchedTableState } from "../../../state
 import { getPromptFromFile, getModel, invokeAgentJson, logMilestoneThinking } from "../../../utils/agentUtils";
 import { analyzeFunctionalDependenciesTool, enforceRelationshipStatusByPurity } from "./relationshipBuilder.tool";
 import { GenericDataConnector } from "./dataConnector";
-import { saveModularRelationshipSchema } from "../../../tools/schemaHelper";
+import { saveModularRelationshipSchema } from "../../../tools/helpers";
 import { RelationshipSchemaOutput } from "./state";
 
 /**

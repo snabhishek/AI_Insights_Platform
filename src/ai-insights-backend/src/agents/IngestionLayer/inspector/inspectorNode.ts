@@ -2,8 +2,7 @@ import { RunnableConfig } from "@langchain/core/runnables";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { AgentState, IngestionServices } from "../../state";
-import { createGetSchemaTool } from "../../tools/getSchema.tool";
-import { createInspectTool } from "../../tools/inspect.tool";
+import { createGetSchemaTool, createInspectTool } from "../../tools/inspection";
 import {
   getModel,
   getInspectionSystemPrompt,

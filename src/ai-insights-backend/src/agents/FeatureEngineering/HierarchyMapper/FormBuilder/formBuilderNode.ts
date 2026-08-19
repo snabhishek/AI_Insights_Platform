@@ -3,6 +3,7 @@ import { AgentState, IngestionServices } from "../../../state";
 import { getPromptFromFile, getModel, invokeAgentJson, logMilestoneThinking } from "../../../utils/agentUtils";
 import { generateHierarchicalFormsTool, normalizeAndEnforceFormSchema } from "./formBuilder.tool";
 import { FormBuilderOutput } from "./state";
+import { saveModularFormSchema } from "../../../tools/helpers";
 
 /**
  * Form Builder Agent Node (Agent 2 of Hierarchy Mapper)
@@ -78,6 +79,18 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
 
   // Enforce deterministic rules: parentFields array, calendar date_range overrides, zero-edge standalone nodes, and accurate summary count
   const finalResult = normalizeAndEnforceFormSchema(mergedResult, relOutput);
+
+  // 4. Save Form Schema into Project Folder with timestamped filename
+  if (services?.projectService && services?.projectId) {
+    try {
+      const proj = await services.projectService.getProjectWithWorkspace(services.projectId);
+      if (proj && proj.project) {
+        await saveModularFormSchema(proj.workspaceName || "DefaultWorkspace", proj.project.name, finalResult, state.runTimestamp);
+      }
+    } catch (err) {
+      console.warn("[formBuilderNode] Warning saving Form Schema to project folder:", err);
+    }
+  }
 
   return {
     formBuilder: finalResult as unknown as Record<string, unknown>,

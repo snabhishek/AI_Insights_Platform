@@ -1,6 +1,6 @@
-import { ConnectionTesterService } from "../../services/connector/connectionTester.service";
-import { ConnectorService } from "../../services/connector/connector.service";
-import { ConnectionConfig, ConnectorType } from "../../models/connector.types";
+import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
+import { ConnectorService } from "../../../services/connector/connector.service";
+import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
 import { parseForeignKeyValues } from "./commonSchemas";
 
 type SampleRow = Record<string, unknown>;
