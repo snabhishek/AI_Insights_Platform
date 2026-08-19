@@ -17,7 +17,15 @@ export async function featureCreationNode(
   };
 
   if (!model) {
-    return { featureCreation: fallback };
+    return {
+      featureCreation: fallback,
+      history: [
+        {
+          worker: "featureCreation",
+          summary: "No model available for Feature Creation",
+        },
+      ],
+    };
   }
 
   const systemPrompt = await getPromptFromFile(
@@ -56,11 +64,23 @@ export async function featureCreationNode(
 
     return {
       featureCreation: result,
+      history: [
+        {
+          worker: "featureCreation",
+          summary: result.summary || "Feature Creation completed successfully",
+        },
+      ],
     };
   } catch (error) {
     console.warn("[featureCreationNode] Execution failed, using fallback", error);
     return {
       featureCreation: fallback,
+      history: [
+        {
+          worker: "featureCreation",
+          summary: "Feature Creation execution failed/fallback triggered",
+        },
+      ],
     };
   }
 }

@@ -17,7 +17,15 @@ export async function featureExtractionNode(
   };
 
   if (!model) {
-    return { featureExtraction: fallback };
+    return {
+      featureExtraction: fallback,
+      history: [
+        {
+          worker: "featureExtraction",
+          summary: "No model available for Feature Extraction",
+        },
+      ],
+    };
   }
 
   const systemPrompt = await getPromptFromFile(
@@ -58,11 +66,23 @@ export async function featureExtractionNode(
 
     return {
       featureExtraction: result,
+      history: [
+        {
+          worker: "featureExtraction",
+          summary: result.summary || "Feature Extraction completed successfully",
+        },
+      ],
     };
   } catch (error) {
     console.warn("[featureExtractionNode] Execution failed, using fallback", error);
     return {
       featureExtraction: fallback,
+      history: [
+        {
+          worker: "featureExtraction",
+          summary: "Feature Extraction execution failed/fallback triggered",
+        },
+      ],
     };
   }
 }

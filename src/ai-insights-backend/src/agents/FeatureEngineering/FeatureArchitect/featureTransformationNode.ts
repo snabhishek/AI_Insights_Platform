@@ -17,7 +17,15 @@ export async function featureTransformationNode(
   };
 
   if (!model) {
-    return { featureTransformation: fallback };
+    return {
+      featureTransformation: fallback,
+      history: [
+        {
+          worker: "featureTransformation",
+          summary: "No model available for Feature Transformation",
+        },
+      ],
+    };
   }
 
   const systemPrompt = await getPromptFromFile(
@@ -57,11 +65,23 @@ export async function featureTransformationNode(
 
     return {
       featureTransformation: result,
+      history: [
+        {
+          worker: "featureTransformation",
+          summary: result.summary || "Feature Transformation completed successfully",
+        },
+      ],
     };
   } catch (error) {
     console.warn("[featureTransformationNode] Execution failed, using fallback", error);
     return {
       featureTransformation: fallback,
+      history: [
+        {
+          worker: "featureTransformation",
+          summary: "Feature Transformation execution failed/fallback triggered",
+        },
+      ],
     };
   }
 }

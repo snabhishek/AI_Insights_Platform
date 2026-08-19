@@ -117,6 +117,16 @@ export const FeatureArchitectAnnotation = Annotation.Root({
     default: () => ({ status: "Pending", summary: "" }),
   }),
 
+  // Supervisor tracking
+  nextWorker: Annotation<string>({
+    reducer: (left, right) => right ?? left,
+    default: () => "",
+  }),
+  history: Annotation<Array<{ worker: string; summary: string }>>({
+    reducer: (left = [], right = []) => [...left, ...right],
+    default: () => [],
+  }),
+
   // Aggregated output of Feature Architect
   finalOutput: Annotation<Record<string, unknown>>({
     reducer: (left, right) => ({ ...left, ...right }),

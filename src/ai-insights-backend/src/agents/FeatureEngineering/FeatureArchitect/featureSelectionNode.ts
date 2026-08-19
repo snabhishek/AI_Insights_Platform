@@ -19,10 +19,12 @@ export async function featureSelectionNode(
   if (!model) {
     return {
       featureSelection: fallback,
-      finalOutput: {
-        status: "failed",
-        summary: "Feature Selection fallback triggered",
-      },
+      history: [
+        {
+          worker: "featureSelection",
+          summary: "No model available for Feature Selection",
+        },
+      ],
     };
   }
 
@@ -63,28 +65,25 @@ export async function featureSelectionNode(
       }
     );
 
-    const finalOutput = {
-      status: "completed",
-      orchestrationDecision: state.orchestrationDecision,
-      featureCreation: state.featureCreation,
-      featureTransformation: state.featureTransformation,
-      featureExtraction: state.featureExtraction,
-      featureSelection: result,
-      summary: "Feature Architecture planning completed successfully with orchestrated tasks.",
-    };
-
     return {
       featureSelection: result,
-      finalOutput,
+      history: [
+        {
+          worker: "featureSelection",
+          summary: result.summary || "Feature Selection completed successfully",
+        },
+      ],
     };
   } catch (error) {
     console.warn("[featureSelectionNode] Execution failed, using fallback", error);
     return {
       featureSelection: fallback,
-      finalOutput: {
-        status: "failed",
-        summary: "Feature Selection execution failed",
-      },
+      history: [
+        {
+          worker: "featureSelection",
+          summary: "Feature Selection execution failed/fallback triggered",
+        },
+      ],
     };
   }
 }
