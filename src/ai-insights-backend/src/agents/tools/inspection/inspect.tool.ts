@@ -2,10 +2,10 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { Pool } from "pg";
 import * as xlsx from "xlsx";
-import { IFileService } from "../../services/file/file.service.interface";
-import { ConnectorService } from "../../services/connector/connector.service";
-import { ConnectionConfig, ConnectorType } from "../../models/connector.types";
-import { connectionConfigSchema } from "./commonSchemas";
+import { IFileService } from "../../../services/file/file.service.interface";
+import { ConnectorService } from "../../../services/connector/connector.service";
+import { ConnectionConfig, ConnectorType } from "../../../models/connector.types";
+import { connectionConfigSchema } from "../helpers/commonSchemas";
 
 type ColumnInfo = {
   name: string;

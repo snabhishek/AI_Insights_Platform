@@ -20,7 +20,7 @@ import {
   getPackagesDir,
   sanitizeName, 
   generateDateTimeStamp 
-} from "../../tools/schemaHelper";
+} from "../../tools/helpers";
 
 export async function resolveSchema(
   connector: any, 

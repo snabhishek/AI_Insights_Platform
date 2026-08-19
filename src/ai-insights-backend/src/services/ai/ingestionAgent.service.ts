@@ -14,7 +14,7 @@ import { WorkflowSessionMeta } from "../../agents/state";
 import { IAgentThinkingService } from "./agentThinking.service.interface";
 import { QueueService } from "../queue/queue.service";
 import { agentJobEvents } from "../queue/queueEvents";
-import { generateDateTimeStamp } from "../../agents/tools/schemaHelper";
+import { generateDateTimeStamp } from "../../agents/tools/helpers";
 
 const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Data Ingestion": [

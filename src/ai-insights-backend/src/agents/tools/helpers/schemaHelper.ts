@@ -586,6 +586,39 @@ export async function saveModularRelationshipSchema(
 }
 
 /**
+ * Saves resolved Form Schema output into modular Form Schema YAML file inside
+ * packages/ProjectFiles/<Workspace>-<Project>/<RunFolder>/Schemas/:
+ * <usecasetitle>_form_schema_<timestamp>.yaml
+ */
+export async function saveModularFormSchema(
+  workspaceName: string,
+  projectName: string,
+  formSchemaPayload: any,
+  runTimestamp?: string
+): Promise<{ formSchemaPath: string }> {
+  const packagesDir = getPackagesDir();
+  const cleanWsName = sanitizeName(workspaceName);
+  const cleanProjectTitle = sanitizeName(projectName);
+  const parentFolderName = `${cleanWsName}-${cleanProjectTitle}`;
+  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
+  const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
+
+  const timestamp = (runTimestamp && runTimestamp.trim().length > 0) ? runTimestamp.trim() : generateDateTimeStamp();
+  const runFolderName = `${runSlug}-${timestamp}`;
+
+  const targetDir = path.resolve(packagesDir, "ProjectFiles", parentFolderName, runFolderName, "Schemas");
+  await fs.mkdir(targetDir, { recursive: true });
+
+  const formFileName = `${useCaseSlug}_form_schema_${timestamp}.yaml`;
+  const formSchemaPath = path.resolve(targetDir, formFileName);
+
+  await fs.writeFile(formSchemaPath, yaml.dump(formSchemaPayload, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
+  console.info(`[saveModularFormSchema] Saved Form Schema to ${formSchemaPath}`);
+
+  return { formSchemaPath };
+}
+
+/**
  * Sanitizes a string for use in folder and file names.
  */
 export function sanitizeName(name: string): string {
