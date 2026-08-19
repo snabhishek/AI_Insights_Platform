@@ -1,12 +1,14 @@
 import { Request, Response } from "express";
 import { ConnectorService } from "../services/connector/connector.service";
 import { IConnectionTesterService } from "../services/connector/connectionTester.service.interface";
+import { ISourceRegistryService } from "../services/sourceRegistry/sourceRegistry.service.interface";
 import { ConnectorStatus, ConnectorHealth } from "../models/connector.types";
 
 export class ConnectorController {
   constructor(
     private connectorService: ConnectorService,
-    private connectionTester: IConnectionTesterService
+    private connectionTester: IConnectionTesterService,
+    private sourceRegistry?: ISourceRegistryService
   ) {}
 
   getAll = async (req: Request, res: Response): Promise<void> => {
@@ -265,6 +267,70 @@ export class ConnectorController {
       res.json(updated);
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message || "Failed to update connector" });
+    }
+  };
+
+  getFilterOptions = async (req: Request, res: Response): Promise<void> => {
+    const sourceId = (req.query.sourceId as string) || (req.query.schemaId as string) || (req.query.connectorId as string);
+    const fieldId = (req.query.fieldId as string) || (req.query.field as string);
+    const tableName = req.query.table as string | undefined;
+    const search = req.query.search as string | undefined;
+    const controlType = req.query.controlType as string | undefined;
+
+    if (!sourceId || !fieldId) {
+      res.status(400).json({ success: false, message: "Missing required query parameters (sourceId, fieldId)" });
+      return;
+    }
+
+    if (!this.sourceRegistry) {
+      res.status(500).json({ success: false, message: "SourceRegistryService is not wired" });
+      return;
+    }
+
+    try {
+      let parentParams: Record<string, unknown> | undefined;
+      if (typeof req.query.parents === "string") {
+        try {
+          parentParams = JSON.parse(req.query.parents);
+        } catch {
+          // ignore invalid json
+        }
+      }
+
+      let parentFields: string[] | undefined;
+      if (typeof req.query.parentFields === "string") {
+        try {
+          parentFields = JSON.parse(req.query.parentFields);
+        } catch {
+          parentFields = req.query.parentFields.split(",").map((s) => s.trim()).filter(Boolean);
+        }
+      } else if (Array.isArray(req.query.parentFields)) {
+        parentFields = req.query.parentFields as string[];
+      }
+
+      // Also collect any dynamic query parameters that match parent parameters directly (e.g. ?category=Heat+Pumps)
+      const reservedKeys = new Set(["sourceId", "schemaId", "connectorId", "fieldId", "field", "table", "search", "controlType", "parents", "parentFields", "limit"]);
+      const queryParentParams: Record<string, unknown> = { ...(parentParams || {}) };
+
+      for (const [key, val] of Object.entries(req.query)) {
+        if (!reservedKeys.has(key) && val !== undefined && val !== null && String(val).trim() !== "") {
+          queryParentParams[key] = val;
+        }
+      }
+
+      const result = await this.sourceRegistry.fetchFilterOptions({
+        sourceId,
+        fieldId,
+        tableName,
+        parentParams: queryParentParams,
+        parentFields,
+        search,
+        controlType,
+        limit: req.query.limit ? Number(req.query.limit) : 50,
+      });
+      res.json(result);
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || "Failed to fetch filter options" });
     }
   };
 }

@@ -139,9 +139,8 @@ export default function ProjectsPage() {
       else if (v === "Pending" && next[label] !== "Completed") next[label] = "Pending";
     };
     mapSingle("inspect", "Data Inspection");
+    mapSingle("inspect", "Data Inspection");
     mapSingle("resolveSchema", "Schema Resolver");
-    mapSingle("exogenousScout", "Exogenous Scout");
-    mapSingle("exogenous", "Exogenous Scout");
     mapSingle("exogenousScout", "Exogenous Scout");
     mapSingle("exogenous", "Exogenous Scout");
 
@@ -161,25 +160,23 @@ export default function ProjectsPage() {
       }
     }
 
+    mapSingle("hierarchyMapper", "Hierarchy Mapper");
+    mapSingle("relationshipBuilder", "Hierarchy Mapper");
+    mapSingle("formBuilder", "Hierarchy Mapper");
+
     // Feature Engineering stage mapping
+    const hmVal = stageStatuses.hierarchyMapper || stageStatuses.relationshipBuilder;
     const exoVal = stageStatuses.exogenousScout || stageStatuses.exogenous;
-    if (exoVal === "Completed") {
+    if (hmVal === "Completed" && exoVal === "Completed") {
+      next["Hierarchy Mapper"] = "Completed";
       next["Exogenous Scout"] = "Completed";
       next["Feature Engineering"] = "Completed";
-    } else if (exoVal === "In Progress" || exoVal === "Retrying") {
-      next["Exogenous Scout"] = "In Progress";
+    } else if (hmVal === "Completed") {
+      next["Hierarchy Mapper"] = "Completed";
+      next["Feature Engineering"] = "In Progress";
+    } else if (hmVal === "In Progress" || exoVal === "In Progress" || hmVal === "Retrying" || exoVal === "Retrying") {
       next["Feature Engineering"] = "In Progress";
     }
-
-    // // Feature Engineering stage mapping
-    // const exoVal = stageStatuses.exogenousScout || stageStatuses.exogenous;
-    // if (exoVal === "Completed") {
-    //   next["Exogenous Scout"] = "Completed";
-    //   next["Feature Engineering"] = "Completed";
-    // } else if (exoVal === "In Progress" || exoVal === "Retrying") {
-    //   next["Exogenous Scout"] = "In Progress";
-    //   next["Feature Engineering"] = "In Progress";
-    // }
 
     return next;
   };

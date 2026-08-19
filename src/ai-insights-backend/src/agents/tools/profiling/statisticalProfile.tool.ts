@@ -1,10 +1,10 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import pl from "nodejs-polars";
-import { fetchRowsOnDemand } from "../samplingHelper";
+import { fetchRowsOnDemand } from "../helpers/samplingHelper";
 import { ConnectionTesterService } from "../../../services/connector/connectionTester.service";
 import { ConnectorService } from "../../../services/connector/connector.service";
-import { connectionConfigSchema, foreignKeyValuesSchema, parseColumnTypes } from "../commonSchemas";
+import { connectionConfigSchema, foreignKeyValuesSchema, parseColumnTypes } from "../helpers/commonSchemas";
 
 type SampleRow = Record<string, unknown>;
 

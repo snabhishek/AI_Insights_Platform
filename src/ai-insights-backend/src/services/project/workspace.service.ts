@@ -3,7 +3,7 @@ import { IWorkspaceRepository } from "../../repositories/workspace.repository.in
 import { IProjectRepository } from "../../repositories/project.repository.interface";
 import { Workspace, CreateProjectDto, UpdateProjectDto } from "../../models/workspace.types";
 import { Project, ProjectRun } from "../../models/project.types";
-import { createProjectSchemaFile, deleteProjectSchemaFolder } from "../../agents/tools/schemaHelper";
+import { createProjectSchemaFile, deleteProjectSchemaFolder } from "../../agents/tools/helpers";
 
 export type ServiceResult<T> =
   | { success: true; data: T }
