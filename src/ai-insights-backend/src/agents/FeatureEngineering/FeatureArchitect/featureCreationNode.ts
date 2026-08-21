@@ -2,6 +2,8 @@ import { RunnableConfig } from "@langchain/core/runnables";
 import { IngestionServices } from "../../state";
 import { getModel, invokeAgentJson, getPromptFromFile, logMilestoneThinking } from "../../utils/agentUtils";
 import { FeatureArchitectAnnotation, FeatureCreationOutput } from "./state";
+import { createGetTableColumnsAndProfileTool } from "../../tools";
+
 
 export async function featureCreationNode(
   state: typeof FeatureArchitectAnnotation.State,
@@ -50,6 +52,8 @@ export async function featureCreationNode(
   ].join("\n\n");
 
   try {
+    const getTableColumnsAndProfileTool = createGetTableColumnsAndProfileTool(state.inspector, state.dataProfile);
+
     const result = await invokeAgentJson<FeatureCreationOutput>(
       "featureArchitect",
       model,
@@ -59,6 +63,7 @@ export async function featureCreationNode(
       {
         systemPrompt,
         traceLabel: "featureArchitect:featureCreation",
+        tools: [getTableColumnsAndProfileTool],
       }
     );
 

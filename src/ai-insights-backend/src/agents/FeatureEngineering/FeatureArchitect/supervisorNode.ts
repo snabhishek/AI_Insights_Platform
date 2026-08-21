@@ -2,6 +2,8 @@ import { RunnableConfig } from "@langchain/core/runnables";
 import { IngestionServices } from "../../state";
 import { getModel, invokeAgentJson, getPromptFromFile, logMilestoneThinking } from "../../utils/agentUtils";
 import { FeatureArchitectAnnotation } from "./state";
+import { createGetTableNamesTool, createGetTableColumnsAndProfileTool } from "../../tools";
+
 
 interface SupervisorOutput extends Record<string, unknown> {
   status: string;
@@ -9,6 +11,11 @@ interface SupervisorOutput extends Record<string, unknown> {
   rationale: string;
   orchestrationDecision?: {
     summary: string;
+    problemType: string;
+    targetColumn: string;
+    predictionEntity: string;
+    timeColumn?: string;
+    leakageColumns?: string[];
     decisions: any[];
   };
 }
@@ -41,11 +48,58 @@ export async function supervisorNode(
     "You are an expert AI Feature Engineering Supervisor Agent."
   );
 
+  const historyWorkers = state.history.map((h) => h.worker);
+
+  // 1. Deterministic code execution routing to programRectifier
+  if (
+    state.featureCreation?.pythonCode &&
+    !historyWorkers.includes("featureCreation_executed") &&
+    !historyWorkers.includes("featureCreation_executed_failed")
+  ) {
+    return { nextWorker: "programRectifier" };
+  }
+  if (
+    state.featureTransformation?.pythonCode &&
+    !historyWorkers.includes("featureTransformation_executed") &&
+    !historyWorkers.includes("featureTransformation_executed_failed")
+  ) {
+    return { nextWorker: "programRectifier" };
+  }
+  if (
+    state.buildDataset?.pythonCode &&
+    !historyWorkers.includes("buildDataset_executed") &&
+    !historyWorkers.includes("buildDataset_executed_failed")
+  ) {
+    return { nextWorker: "programRectifier" };
+  }
+  if (
+    state.dataValidation?.pythonCode &&
+    !historyWorkers.includes("dataValidation_executed") &&
+    !historyWorkers.includes("dataValidation_executed_failed")
+  ) {
+    return { nextWorker: "programRectifier" };
+  }
+  if (
+    state.featureExtraction?.pythonCode &&
+    !historyWorkers.includes("featureExtraction_executed") &&
+    !historyWorkers.includes("featureExtraction_executed_failed")
+  ) {
+    return { nextWorker: "programRectifier" };
+  }
+  if (
+    state.featureSelection?.pythonCode &&
+    !historyWorkers.includes("featureSelection_executed") &&
+    !historyWorkers.includes("featureSelection_executed_failed")
+  ) {
+    return { nextWorker: "programRectifier" };
+  }
+
+  // 2. Otherwise, check state progression to call workers or finish
   if (services) {
     await logMilestoneThinking(
       services,
       "Feature Engineering",
-      `Supervisor is evaluating the next step. Completed steps history: [${state.history.map((h) => h.worker).join(" -> ") || "none"}]`
+      `Supervisor is planning next agent tasks. Executed workers history: [${historyWorkers.join(" -> ") || "none"}]`
     );
   }
 
@@ -58,6 +112,9 @@ export async function supervisorNode(
   ].join("\n\n");
 
   try {
+    const getTableNamesTool = createGetTableNamesTool(state.batchedTables);
+    const getTableColumnsAndProfileTool = createGetTableColumnsAndProfileTool(state.inspector, state.dataProfile);
+
     const result = await invokeAgentJson<SupervisorOutput>(
       "featureArchitect",
       model,
@@ -67,6 +124,7 @@ export async function supervisorNode(
       {
         systemPrompt,
         traceLabel: "featureArchitect:supervisor",
+        tools: [getTableNamesTool, getTableColumnsAndProfileTool],
       }
     );
 
@@ -76,7 +134,7 @@ export async function supervisorNode(
       await logMilestoneThinking(
         services,
         "Feature Engineering",
-        `Supervisor chose next step: "${safeNextWorker}". Rationale: ${result.rationale || "None"}`
+        `Supervisor scheduled task: "${safeNextWorker}". Rationale: ${result.rationale || "None"}`
       );
     }
 
@@ -86,9 +144,11 @@ export async function supervisorNode(
         orchestrationDecision: state.orchestrationDecision,
         featureCreation: state.featureCreation,
         featureTransformation: state.featureTransformation,
+        buildDataset: state.buildDataset,
+        dataValidation: state.dataValidation,
         featureExtraction: state.featureExtraction,
         featureSelection: state.featureSelection,
-        summary: "Feature Architecture planning completed successfully under supervisor control.",
+        summary: "Feature Architecture planning and execution completed successfully under supervisor control.",
       };
       return {
         nextWorker: safeNextWorker,
@@ -96,20 +156,24 @@ export async function supervisorNode(
       };
     }
 
+    const updates: Record<string, any> = {
+      nextWorker: safeNextWorker,
+    };
+
     if (result.orchestrationDecision) {
-      return {
-        nextWorker: safeNextWorker,
-        orchestrationDecision: {
-          status: "OK",
-          summary: result.orchestrationDecision.summary,
-          decisions: result.orchestrationDecision.decisions,
-        },
+      updates.orchestrationDecision = {
+        status: "OK",
+        summary: result.orchestrationDecision.summary || "",
+        problemType: result.orchestrationDecision.problemType || "",
+        targetColumn: result.orchestrationDecision.targetColumn || "",
+        predictionEntity: result.orchestrationDecision.predictionEntity || "",
+        timeColumn: result.orchestrationDecision.timeColumn || "",
+        leakageColumns: result.orchestrationDecision.leakageColumns || [],
+        decisions: result.orchestrationDecision.decisions || [],
       };
     }
 
-    return {
-      nextWorker: safeNextWorker,
-    };
+    return updates;
   } catch (error) {
     console.warn("[supervisorNode] Execution failed, using fallback", error);
     return {

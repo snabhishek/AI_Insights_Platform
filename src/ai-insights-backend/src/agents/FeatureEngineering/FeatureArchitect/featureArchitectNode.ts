@@ -21,8 +21,12 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
     {
       batchedTables: state.batchedTables,
       inspector: state.inspection, // Pass state.inspection as inspector input
+      dataProfile: state.dataProfile, // Pass state.dataProfile
       userPrompt: state.userPrompt, // Pass userPrompt from main state
+      connectorId: state.connectorId, // Pass connectorId from main state
+      runTimestamp: state.runTimestamp, // Pass runTimestamp from main state
     },
+
     {
       configurable: { services },
     }

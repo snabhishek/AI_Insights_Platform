@@ -12,6 +12,20 @@ const duckdb = require("duckdb");
 export class DuckDBService implements IDuckDBService {
   private dbStorageDir: string;
 
+  /**
+   * Per-file connection pool.  Each entry holds the native duckdb.Database
+   * handle, a connection, a reference count of in-flight operations, and an
+   * optional idle-close timer.  While refCount > 0 the handle stays open.
+   * When refCount drops to 0 we schedule a delayed close (IDLE_TIMEOUT_MS)
+   * so that back-to-back operations reuse the same handle instead of
+   * fighting over the OS file lock.
+   */
+  private pool = new Map<
+    string,
+    { db: any; conn: any; refCount: number; idleTimer: ReturnType<typeof setTimeout> | null }
+  >();
+  private static readonly IDLE_TIMEOUT_MS = 5_000;
+
   constructor(private fileService: IFileService) {
     this.dbStorageDir = path.join(process.cwd(), "uploads", "duckdb");
     if (!fs.existsSync(this.dbStorageDir)) {
@@ -19,12 +33,54 @@ export class DuckDBService implements IDuckDBService {
     }
   }
 
-  private getDuckDbPath(fileName: string): string {
+  // ─── path helpers ──────────────────────────────────────────────────
+
+  getDuckDbPath(fileName: string): string {
     const safeName = fileName.replace(/[^a-zA-Z0-9_-]/g, "_");
     return path.join(this.dbStorageDir, `${safeName}.duckdb`);
   }
 
-  private async getDbConnection(dbPath: string): Promise<{ db: any; conn: any }> {
+  // ─── pooled connection management ──────────────────────────────────
+
+  private async acquireConnection(dbPath: string): Promise<{ db: any; conn: any }> {
+    const existing = this.pool.get(dbPath);
+    if (existing) {
+      // Cancel any pending idle-close timer
+      if (existing.idleTimer) {
+        clearTimeout(existing.idleTimer);
+        existing.idleTimer = null;
+      }
+      existing.refCount++;
+      return { db: existing.db, conn: existing.conn };
+    }
+
+    // Open a fresh handle
+    const { db, conn } = await this.openDatabase(dbPath);
+    this.pool.set(dbPath, { db, conn, refCount: 1, idleTimer: null });
+    return { db, conn };
+  }
+
+  private releaseConnection(dbPath: string): void {
+    const entry = this.pool.get(dbPath);
+    if (!entry) return;
+
+    entry.refCount = Math.max(0, entry.refCount - 1);
+
+    if (entry.refCount === 0) {
+      // Schedule a delayed close so rapid successive calls reuse the handle
+      entry.idleTimer = setTimeout(() => {
+        const current = this.pool.get(dbPath);
+        if (current && current.refCount === 0) {
+          this.pool.delete(dbPath);
+          this.closeDatabase(current.db, current.conn).catch((err) =>
+            console.warn("[DuckDB] deferred close error:", err)
+          );
+        }
+      }, DuckDBService.IDLE_TIMEOUT_MS);
+    }
+  }
+
+  private async openDatabase(dbPath: string): Promise<{ db: any; conn: any }> {
     return new Promise((resolve, reject) => {
       const db = new duckdb.Database(dbPath, (err: Error | null) => {
         if (err) return reject(err);
@@ -33,6 +89,40 @@ export class DuckDBService implements IDuckDBService {
       });
     });
   }
+
+  /**
+   * Properly awaits DuckDB's async close callbacks so the OS file lock is
+   * actually released before the promise resolves.
+   */
+  private async closeDatabase(db: any, conn: any): Promise<void> {
+    return new Promise<void>((resolve) => {
+      const closeDb = () => {
+        if (db && db.close) {
+          db.close((err: Error | null) => {
+            if (err) console.warn("[DuckDB] db.close error:", err.message);
+            resolve();
+          });
+        } else {
+          resolve();
+        }
+      };
+
+      try {
+        if (conn && conn.close) {
+          conn.close((err: Error | null) => {
+            if (err) console.warn("[DuckDB] conn.close error:", err.message);
+            closeDb();
+          });
+        } else {
+          closeDb();
+        }
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  // ─── low-level SQL helpers (use pooled connection) ─────────────────
 
   private async query<T = any>(conn: any, sql: string, params: any[] = []): Promise<T[]> {
     return new Promise((resolve, reject) => {
@@ -52,16 +142,35 @@ export class DuckDBService implements IDuckDBService {
     });
   }
 
-  private async closeConn(db: any, conn: any): Promise<void> {
-    return new Promise((resolve) => {
-      try {
-        if (conn && conn.close) conn.close();
-        if (db && db.close) db.close();
-      } catch {
-        // ignore close errors
-      }
-      resolve();
-    });
+  // ─── public query API (connection-pool aware) ──────────────────────
+
+  async runQuery<T = any>(dbPath: string, sql: string, params: any[] = []): Promise<T[]> {
+    const { conn } = await this.acquireConnection(dbPath);
+    try {
+      return await this.query<T>(conn, sql, params);
+    } finally {
+      this.releaseConnection(dbPath);
+    }
+  }
+
+  async runExec(dbPath: string, sql: string): Promise<void> {
+    const { conn } = await this.acquireConnection(dbPath);
+    try {
+      await this.exec(conn, sql);
+    } finally {
+      this.releaseConnection(dbPath);
+    }
+  }
+
+  // ─── private convenience: acquire, run, release ────────────────────
+
+  private async withConnection<R>(dbPath: string, fn: (conn: any) => Promise<R>): Promise<R> {
+    const { conn } = await this.acquireConnection(dbPath);
+    try {
+      return await fn(conn);
+    } finally {
+      this.releaseConnection(dbPath);
+    }
   }
 
   private sanitizeIdentifier(name: string): string {
@@ -83,9 +192,8 @@ export class DuckDBService implements IDuckDBService {
     if (!filePath) return;
 
     const dbPath = this.getDuckDbPath(fileName);
-    const { db, conn } = await this.getDbConnection(dbPath);
 
-    try {
+    await this.withConnection(dbPath, async (conn) => {
       if (["csv", "tsv"].includes(type)) {
         const tableName = this.sanitizeIdentifier(fileName);
         const delim = type === "tsv" ? "\\t" : ",";
@@ -131,9 +239,7 @@ export class DuckDBService implements IDuckDBService {
           `INSERT INTO "${tableName}" VALUES ('${config.url || "api_endpoint"}', '200 OK', '12ms')`
         );
       }
-    } finally {
-      await this.closeConn(db, conn);
-    }
+    });
   }
 
   private async ensureIngested(type: ConnectorType, config: ConnectionConfig): Promise<string | null> {
@@ -165,8 +271,7 @@ export class DuckDBService implements IDuckDBService {
       };
     }
 
-    const { db, conn } = await this.getDbConnection(dbPath);
-    try {
+    return this.withConnection(dbPath, async (conn) => {
       const tablesRes = await this.query(
         conn,
         `SELECT table_name as name FROM information_schema.tables WHERE table_schema = 'main'`
@@ -201,9 +306,7 @@ export class DuckDBService implements IDuckDBService {
       }
 
       return { success: true, type: type === "restapi" ? "api" : "file", tables: tablesList };
-    } finally {
-      await this.closeConn(db, conn);
-    }
+    });
   }
 
   async getPreview(
@@ -225,8 +328,7 @@ export class DuckDBService implements IDuckDBService {
       };
     }
 
-    const { db, conn } = await this.getDbConnection(dbPath);
-    try {
+    return this.withConnection(dbPath, async (conn) => {
       const targetTable = tableName || fileName;
       const safeTable = this.sanitizeIdentifier(targetTable);
 
@@ -247,9 +349,7 @@ export class DuckDBService implements IDuckDBService {
 
       const headers = Object.keys(rows[0]);
       return { success: true, headers, rows };
-    } finally {
-      await this.closeConn(db, conn);
-    }
+    });
   }
 
   async getRowCount(type: ConnectorType, config: ConnectionConfig, tableName: string): Promise<number> {
@@ -259,17 +359,16 @@ export class DuckDBService implements IDuckDBService {
     const dbPath = await this.ensureIngested(type, config);
     if (!dbPath || !fs.existsSync(dbPath)) return 0;
 
-    const { db, conn } = await this.getDbConnection(dbPath);
-    try {
+    return this.withConnection(dbPath, async (conn) => {
       const targetTable = tableName || fileName;
       const safeTable = this.sanitizeIdentifier(targetTable);
-      const res = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${safeTable}"`);
-      return res[0]?.count ?? 0;
-    } catch {
-      return 0;
-    } finally {
-      await this.closeConn(db, conn);
-    }
+      try {
+        const res = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${safeTable}"`);
+        return res[0]?.count ?? 0;
+      } catch {
+        return 0;
+      }
+    });
   }
 
   async getSampleWithOffset(
@@ -285,23 +384,22 @@ export class DuckDBService implements IDuckDBService {
     const dbPath = await this.ensureIngested(type, config);
     if (!dbPath || !fs.existsSync(dbPath)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
 
-    const { db, conn } = await this.getDbConnection(dbPath);
-    try {
+    return this.withConnection(dbPath, async (conn) => {
       const targetTable = tableName || fileName;
       const safeTable = this.sanitizeIdentifier(targetTable);
 
-      const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${safeTable}"`);
-      const totalRowCount = countRes[0]?.count ?? 0;
+      try {
+        const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${safeTable}"`);
+        const totalRowCount = countRes[0]?.count ?? 0;
 
-      const rows = await this.query(conn, `SELECT * FROM "${safeTable}" LIMIT ${limit} OFFSET ${offset}`);
-      const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+        const rows = await this.query(conn, `SELECT * FROM "${safeTable}" LIMIT ${limit} OFFSET ${offset}`);
+        const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
 
-      return { success: true, headers, rows, totalRowCount };
-    } catch {
-      return { success: false, headers: [], rows: [], totalRowCount: 0 };
-    } finally {
-      await this.closeConn(db, conn);
-    }
+        return { success: true, headers, rows, totalRowCount };
+      } catch {
+        return { success: false, headers: [], rows: [], totalRowCount: 0 } as SampleResult;
+      }
+    });
   }
 
   async getRandomSample(
@@ -317,28 +415,27 @@ export class DuckDBService implements IDuckDBService {
     const dbPath = await this.ensureIngested(type, config);
     if (!dbPath || !fs.existsSync(dbPath)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
 
-    const { db, conn } = await this.getDbConnection(dbPath);
-    try {
+    return this.withConnection(dbPath, async (conn) => {
       const targetTable = tableName || fileName;
       const safeTable = this.sanitizeIdentifier(targetTable);
 
-      const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${safeTable}"`);
-      const totalRowCount = countRes[0]?.count ?? 0;
+      try {
+        const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${safeTable}"`);
+        const totalRowCount = countRes[0]?.count ?? 0;
 
-      if (typeof seed === "number") {
-        const normalizedSeed = (Math.abs(seed % 1000) / 1000).toFixed(4);
-        await this.exec(conn, `SELECT setseed(${normalizedSeed})`);
+        if (typeof seed === "number") {
+          const normalizedSeed = (Math.abs(seed % 1000) / 1000).toFixed(4);
+          await this.exec(conn, `SELECT setseed(${normalizedSeed})`);
+        }
+
+        const rows = await this.query(conn, `SELECT * FROM "${safeTable}" ORDER BY random() LIMIT ${limit}`);
+        const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+
+        return { success: true, headers, rows, totalRowCount };
+      } catch {
+        return { success: false, headers: [], rows: [], totalRowCount: 0 } as SampleResult;
       }
-
-      const rows = await this.query(conn, `SELECT * FROM "${safeTable}" ORDER BY random() LIMIT ${limit}`);
-      const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
-
-      return { success: true, headers, rows, totalRowCount };
-    } catch {
-      return { success: false, headers: [], rows: [], totalRowCount: 0 };
-    } finally {
-      await this.closeConn(db, conn);
-    }
+    });
   }
 
   async getStratifiedSample(
@@ -355,47 +452,46 @@ export class DuckDBService implements IDuckDBService {
     const dbPath = await this.ensureIngested(type, config);
     if (!dbPath || !fs.existsSync(dbPath)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
 
-    const { db, conn } = await this.getDbConnection(dbPath);
-    try {
+    return this.withConnection(dbPath, async (conn) => {
       const targetTable = tableName || fileName;
       const safeTable = this.sanitizeIdentifier(targetTable);
       const safeStratCol = this.sanitizeIdentifier(stratifyColumn);
 
-      const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${safeTable}"`);
-      const totalRowCount = countRes[0]?.count ?? 0;
+      try {
+        const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${safeTable}"`);
+        const totalRowCount = countRes[0]?.count ?? 0;
 
-      if (typeof seed === "number") {
-        const normalizedSeed = (Math.abs(seed % 1000) / 1000).toFixed(4);
-        await this.exec(conn, `SELECT setseed(${normalizedSeed})`);
+        if (typeof seed === "number") {
+          const normalizedSeed = (Math.abs(seed % 1000) / 1000).toFixed(4);
+          await this.exec(conn, `SELECT setseed(${normalizedSeed})`);
+        }
+
+        const querySql = `
+          SELECT * FROM (
+            SELECT *, ROW_NUMBER() OVER (PARTITION BY "${safeStratCol}" ORDER BY random()) as _rn
+            FROM "${safeTable}"
+          ) sub WHERE _rn <= ${limitPerGroup}
+        `;
+
+        const rawRows = await this.query(conn, querySql);
+        const headers = rawRows.length > 0 ? Object.keys(rawRows[0]).filter((h) => h !== "_rn") : [];
+        const rows = rawRows.map((row) => {
+          const { _rn, ...rest } = row;
+          return rest;
+        });
+
+        const groups = Array.from(new Set(rows.map((r) => String(r[stratifyColumn] ?? "null"))));
+        return {
+          success: true,
+          headers,
+          rows,
+          totalRowCount,
+          metadata: { stratifyColumn, groups, groupCount: groups.length },
+        };
+      } catch {
+        return { success: false, headers: [], rows: [], totalRowCount: 0 } as SampleResult;
       }
-
-      const querySql = `
-        SELECT * FROM (
-          SELECT *, ROW_NUMBER() OVER (PARTITION BY "${safeStratCol}" ORDER BY random()) as _rn
-          FROM "${safeTable}"
-        ) sub WHERE _rn <= ${limitPerGroup}
-      `;
-
-      const rawRows = await this.query(conn, querySql);
-      const headers = rawRows.length > 0 ? Object.keys(rawRows[0]).filter((h) => h !== "_rn") : [];
-      const rows = rawRows.map((row) => {
-        const { _rn, ...rest } = row;
-        return rest;
-      });
-
-      const groups = Array.from(new Set(rows.map((r) => String(r[stratifyColumn] ?? "null"))));
-      return {
-        success: true,
-        headers,
-        rows,
-        totalRowCount,
-        metadata: { stratifyColumn, groups, groupCount: groups.length },
-      };
-    } catch {
-      return { success: false, headers: [], rows: [], totalRowCount: 0 };
-    } finally {
-      await this.closeConn(db, conn);
-    }
+    });
   }
 
   async applyCleaningOperations(
@@ -414,12 +510,11 @@ export class DuckDBService implements IDuckDBService {
       return { results: operations.map((op) => ({ columnName: op.columnName, method: op.method, success: false, rowsAffected: 0, details: "File not found" })) };
     }
 
-    const { db, conn } = await this.getDbConnection(dbPath);
-    const results: any[] = [];
-    const targetTable = tableName || fileName;
-    const qTableName = `"${this.sanitizeIdentifier(targetTable)}"`;
+    return this.withConnection(dbPath, async (conn) => {
+      const results: any[] = [];
+      const targetTable = tableName || fileName;
+      const qTableName = `"${this.sanitizeIdentifier(targetTable)}"`;
 
-    try {
       for (const op of operations) {
         const col = op.columnName;
         const method = op.method;
@@ -482,10 +577,8 @@ export class DuckDBService implements IDuckDBService {
           await this.exec(conn, `COPY ${qTableName} TO '${normPath}' (HEADER, DELIMITER '\t')`);
         }
       }
-    } finally {
-      await this.closeConn(db, conn);
-    }
 
-    return { results };
+      return { results };
+    });
   }
 }

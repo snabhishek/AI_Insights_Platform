@@ -4,19 +4,15 @@ import { BatchedTableState } from "../../state";
 export interface OrchestrationDecisionOutput extends Record<string, unknown> {
   status: string;
   summary: string;
+  problemType?: string;
+  targetColumn?: string;
+  predictionEntity?: string;
+  timeColumn?: string;
+  leakageColumns?: string[];
   decisions?: Array<{
     tableName: string;
-    featureCreationTargets: Array<{
-      columnNames: string[];
-      proposedFeatureName: string;
-      technique: string;
-      rationale: string;
-    }>;
-    featureTransformationTargets: Array<{
-      columnName: string;
-      technique: string;
-      rationale: string;
-    }>;
+    confidence: string;
+    rationale: string;
   }>;
 }
 
@@ -32,6 +28,8 @@ export interface FeatureCreationOutput extends Record<string, unknown> {
       description: string;
     }>;
   }>;
+  pythonCode?: string;
+  yamlLineage?: string;
 }
 
 export interface FeatureTransformationOutput extends Record<string, unknown> {
@@ -45,6 +43,27 @@ export interface FeatureTransformationOutput extends Record<string, unknown> {
       description: string;
     }>;
   }>;
+  pythonCode?: string;
+  yamlLineage?: string;
+}
+
+export interface BuildDatasetOutput extends Record<string, unknown> {
+  status: string;
+  summary: string;
+  pythonCode?: string;
+  yamlLineage?: string;
+}
+
+export interface DataValidationOutput extends Record<string, unknown> {
+  status: string;
+  summary: string;
+  pythonCode?: string;
+  yamlLineage?: string;
+  validationReport?: {
+    nullRates: Record<string, number>;
+    anomalies: string[];
+    leakageFound: boolean;
+  };
 }
 
 export interface FeatureExtractionOutput extends Record<string, unknown> {
@@ -59,6 +78,8 @@ export interface FeatureExtractionOutput extends Record<string, unknown> {
       rationale: string;
     }>;
   }>;
+  pythonCode?: string;
+  yamlLineage?: string;
 }
 
 export interface FeatureSelectionOutput extends Record<string, unknown> {
@@ -73,6 +94,8 @@ export interface FeatureSelectionOutput extends Record<string, unknown> {
       rationale: string;
     }>;
   }>;
+  pythonCode?: string;
+  yamlLineage?: string;
 }
 
 /**
@@ -88,7 +111,20 @@ export const FeatureArchitectAnnotation = Annotation.Root({
     reducer: (left, right) => right ?? left,
     default: () => ({}),
   }),
+  dataProfile: Annotation<Record<string, unknown>>({
+    reducer: (left, right) => right ?? left,
+    default: () => ({}),
+  }),
+
   userPrompt: Annotation<string>({
+    reducer: (left, right) => right ?? left,
+    default: () => "",
+  }),
+  connectorId: Annotation<string[]>({
+    reducer: (left, right) => right ?? left,
+    default: () => [],
+  }),
+  runTimestamp: Annotation<string>({
     reducer: (left, right) => right ?? left,
     default: () => "",
   }),
@@ -105,6 +141,14 @@ export const FeatureArchitectAnnotation = Annotation.Root({
     default: () => ({ status: "Pending", summary: "" }),
   }),
   featureTransformation: Annotation<FeatureTransformationOutput>({
+    reducer: (left, right) => right ?? left,
+    default: () => ({ status: "Pending", summary: "" }),
+  }),
+  buildDataset: Annotation<BuildDatasetOutput>({
+    reducer: (left, right) => right ?? left,
+    default: () => ({ status: "Pending", summary: "" }),
+  }),
+  dataValidation: Annotation<DataValidationOutput>({
     reducer: (left, right) => right ?? left,
     default: () => ({ status: "Pending", summary: "" }),
   }),
@@ -125,6 +169,10 @@ export const FeatureArchitectAnnotation = Annotation.Root({
   history: Annotation<Array<{ worker: string; summary: string }>>({
     reducer: (left = [], right = []) => [...left, ...right],
     default: () => [],
+  }),
+  currentExecutionLogs: Annotation<string>({
+    reducer: (left, right) => right ?? left,
+    default: () => "",
   }),
 
   // Aggregated output of Feature Architect

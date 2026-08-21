@@ -7,3 +7,5 @@ export * from "./search";
 export * from "./preprocessing";
 export * from "./profiling";
 export * from "./helpers";
+export * from "./featureArchitect/featureArchitect.tools";
+

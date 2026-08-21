@@ -232,9 +232,9 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStageStatuses.resolveSchema = "Completed";
               currentStageStatuses.hierarchyMapper = "Completed";
               currentStageStatuses.exogenousScout = "Running";
-            } else if (substep === "Feature Engineering" || substep === "featureArchitect") {
-              currentNode = "featureArchitect";
-              currentStage = "featureArchitect";
+            } else if (substep === "Feature Engineering" || substep === "featureArchitect" || substep === "featureArchitectNode") {
+              currentNode = "featureArchitectNode";
+              currentStage = "featureArchitectNode";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
               currentStageStatuses.preprocess = "Completed";
@@ -352,7 +352,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             activeSubstep = "Exogenous Scout";
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
-          } else if (nextNodes.includes("featureArchitect")) {
+          } else if (nextNodes.includes("featureArchitectNode") || nextNodes.includes("featureArchitect")) {
             activeSubstep = "Feature Engineering";
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
           }
@@ -408,7 +408,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             featureArchitect: featureArchitectStatus,
           };
 
-          const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : activeSubstep === "Hierarchy Mapper" ? "hierarchyMapperNode" : activeSubstep === "Exogenous Scout" ? "exogenousScout" : "featureArchitect";
+          const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : activeSubstep === "Hierarchy Mapper" ? "hierarchyMapperNode" : activeSubstep === "Exogenous Scout" ? "exogenousScout" : "featureArchitectNode";
 
           const fullBaseResult: IngestionAgentRunResult = {
             ...calculatedBase,

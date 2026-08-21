@@ -12,19 +12,19 @@ export function createAgentGraph(checkpointer: any) {
   const workflow = new StateGraph(AgentState)
     .addNode("inspect", inspectorNode)
     .addNode("profileData", profilerNode)
-    .addNode("preprocess", preprocessorNode)
+    // .addNode("preprocess", preprocessorNode)
     .addNode("resolveSchema", schemaResolverNode)
     .addNode("hierarchyMapperNode", hierarchyMapperNode)
     .addNode("exogenous", exogenousScoutNode)
-    .addNode("featureArchitect", featureArchitectNode)
+    .addNode("featureArchitectNode", featureArchitectNode)
     .addEdge("__start__", "inspect")
     .addEdge("inspect", "profileData")
-    .addEdge("profileData", "preprocess")
-    .addEdge("preprocess", "resolveSchema")
+    // .addEdge("profileData", "preprocess")
+    .addEdge("profileData", "resolveSchema")
     .addEdge("resolveSchema", "hierarchyMapperNode")
     .addEdge("hierarchyMapperNode", "exogenous")
-    .addEdge("exogenous", "featureArchitect")
-    .addEdge("featureArchitect", "__end__");
+    .addEdge("exogenous", "featureArchitectNode")
+    .addEdge("featureArchitectNode", "__end__");
 
   return workflow.compile({
     checkpointer,

@@ -211,7 +211,7 @@ export async function profilerNode(state: typeof AgentState.State, config?: Runn
     state.batchedTables,
     buildBatchedTableState(
       (state.batchedTables || []).map((table) => table.tableName),
-      "profileData",
+      "profileData",  
       "profiled",
       "Table data profile completed"
     )

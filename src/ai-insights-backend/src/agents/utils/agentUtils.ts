@@ -432,7 +432,8 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     formBuilder: "Hierarchy Mapper",
     exogenousScout: "Exogenous Scout",
     exogenous: "Exogenous Scout",
-    featureArchitect: "Feature Engineering"
+    featureArchitect: "Feature Engineering",
+    featureArchitectNode: "Feature Engineering",
   };
   const substep = substepMap[stepName] || "Data Inspection";
 
@@ -714,7 +715,7 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
   const isFeatureArchitect = stageStatuses.featureArchitect === "Completed" ||
                              stageStatuses.featureArchitect === "In Progress" ||
-                             nextNodes.includes("featureArchitect");
+                             nextNodes.includes("featureArchitectNode");
   if (isFeatureArchitect) return "featureArchitect";
 
   const isExo = stageStatuses.exogenousScout === "Completed" || 
@@ -723,7 +724,7 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
                 stageStatuses.exogenous === "In Progress" || 
                 nextNodes.includes("exogenous");
   if (isExo) return "exogenousScout";
-  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("resolveSchema") || nextNodes.includes("exogenous") || nextNodes.includes("featureArchitect")) return "resolveSchema";
+  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("resolveSchema") || nextNodes.includes("exogenous") || nextNodes.includes("featureArchitectNode")) return "resolveSchema";
   if (stageStatuses.preprocess === "Completed" || stageStatuses.preprocess === "In Progress" || stageStatuses.profileData === "Completed" || stageStatuses.profileData === "In Progress") return "profileData";
   return "inspect";
 }
@@ -812,13 +813,13 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     "Hierarchy Mapper": "hierarchyMapperNode",
     exogenous: "exogenous",
     exogenousScout: "exogenous",
-    featureArchitect: "featureArchitect",
+    featureArchitect: "featureArchitectNode",
     "Data Ingestion": "inspect",
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
     "Exogenous Scout": "exogenous",
     "Feature Engineering": "hierarchyMapperNode",
-    "Feature Architect": "featureArchitect",
+    "Feature Architect": "featureArchitectNode",
   };
   return step ? mapping[step] : undefined;
 }
