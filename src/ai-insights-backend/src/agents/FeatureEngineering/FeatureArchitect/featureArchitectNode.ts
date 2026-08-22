@@ -29,6 +29,7 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
 
     {
       configurable: { services },
+      recursionLimit: 100,
     }
   );
 

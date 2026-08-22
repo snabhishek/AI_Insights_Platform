@@ -1,6 +1,8 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { executePythonScript } from "../helpers/pythonExecutor";
+import * as path from "path";
+import * as fs from "fs";
 
 /**
  * Tool to read all table names from the batchedTables state.
@@ -126,3 +128,112 @@ export const createRunPythonScriptTool = (
       }),
     }
   );
+
+/**
+ * The canonical list of pipeline regions in order.
+ * Used to validate region names and build the template.
+ */
+const PIPELINE_REGIONS = [
+  "SHARED_IMPORTS",
+  "FEATURE_CREATION",
+  "FEATURE_TRANSFORMATION",
+  "BUILD_DATASET",
+  "DATA_VALIDATION",
+  "FEATURE_EXTRACTION",
+  "FEATURE_SELECTION",
+] as const;
+
+type PipelineRegion = typeof PIPELINE_REGIONS[number];
+
+/**
+ * Returns the start/end line indices (0-indexed, inclusive) of a named region within a script.
+ * Returns null if the region markers are not found.
+ */
+function findRegionBounds(
+  lines: string[],
+  region: PipelineRegion
+): { startLine: number; endLine: number } | null {
+  const startMarker = `# -- REGION: ${region} START --`;
+  const endMarker = `# -- REGION: ${region} END --`;
+  const startLine = lines.findIndex((l) => l.trim() === startMarker);
+  const endLine = lines.findIndex((l) => l.trim() === endMarker);
+  if (startLine === -1 || endLine === -1 || endLine <= startLine) {
+    return null;
+  }
+  return { startLine, endLine };
+}
+
+/**
+ * Creates the canonical empty pipeline script template with all region markers
+ * and the unified sequential runner at the bottom.
+ */
+export function makePipelineTemplate(scriptName: string): string {
+  const regions = PIPELINE_REGIONS.map((region) =>
+    [
+      `# ${region.charAt(0) + region.slice(1).toLowerCase().replace(/_/g, " ")} region`,
+      `# -- REGION: ${region} START --`,
+      `# -- REGION: ${region} END --`,
+      "",
+    ].join("\n")
+  );
+
+  const runner = [
+    "# Pipeline Runner - Executes all stages sequentially",
+    "# -- PIPELINE_RUNNER START --",
+    "if __name__ == '__main__':",
+    "    import argparse",
+    "    import os",
+    "    import sys",
+    "",
+    "    parser = argparse.ArgumentParser(description='Feature engineering pipeline runner')",
+    "    parser.add_argument('--db-path', type=str, required=True, help='Path to directory with CSV/data files')",
+    "    parser.add_argument('--split', type=str, default='train', choices=['train', 'val', 'test'])",
+    "    parser.add_argument('--out-dir', type=str, default=None, help='Directory to save/load transformers and outputs')",
+    "    parser.add_argument('--output-path', type=str, default=None, help='Output path for final dataset (Parquet)')",
+    "    parser.add_argument('--metadata-path', type=str, default=None, help='Path to save metadata YAML')",
+    "    parser.add_argument('--features-path', type=str, default=None, help='Path to features parquet/CSV')",
+    "    args, _ = parser.parse_known_args()",
+    "    db_path = args.db_path",
+    "    split = args.split",
+    "    out_dir = args.out_dir or db_path",
+    "    output_path = args.output_path or os.path.join(out_dir, 'dataset.parquet')",
+    "    metadata_path = args.metadata_path or os.path.join(out_dir, 'metadata.yaml')",
+    "    features_path = args.features_path or os.path.join(out_dir, 'order_features.parquet')",
+    "",
+    "    if 'main_feature_creation' in dir():",
+    "        print('=== [1/6] Running Feature Creation ===')",
+    "        main_feature_creation(['--db-path', db_path])",
+    "",
+    "    if 'main_feature_transformation' in dir():",
+    "        print('=== [2/6] Running Feature Transformation ===')",
+    "        main_feature_transformation(['--db-path', db_path, '--split', split, '--out-dir', out_dir])",
+    "",
+    "    if 'main_build_dataset' in dir():",
+    "        print('=== [3/6] Running Build Dataset ===')",
+    "        main_build_dataset(['--db-path', db_path, '--output-path', output_path, '--metadata-path', metadata_path])",
+    "",
+    "    if 'main_data_validation' in dir():",
+    "        print('=== [4/6] Running Data Validation ===')",
+    "        main_data_validation(['--db-path', db_path, '--output-path', os.path.join(out_dir, 'validation_report.json')])",
+    "",
+    "    if 'main_feature_extraction' in dir():",
+    "        print('=== [5/6] Running Feature Extraction ===')",
+    "        main_feature_extraction(['--db-path', db_path])",
+    "",
+    "    if 'main_feature_selection' in dir():",
+    "        print('=== [6/6] Running Feature Selection ===')",
+    "        main_feature_selection(['--db-path', db_path, '--features-path', output_path, '--output-path', os.path.join(out_dir, 'selected_features.parquet')])",
+    "",
+    "    print('=== Pipeline Execution Complete ===')",
+    "# -- PIPELINE_RUNNER END --",
+  ].join("\n");
+
+  return [
+    `# Aggregated feature engineering script: ${scriptName}`,
+    "",
+    ...regions,
+    runner,
+  ].join("\n");
+}
+
+

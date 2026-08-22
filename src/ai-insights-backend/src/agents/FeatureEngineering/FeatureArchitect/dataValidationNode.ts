@@ -1,7 +1,11 @@
 import { RunnableConfig } from "@langchain/core/runnables";
 import { IngestionServices } from "../../state";
 import { getModel, invokeAgentJson, getPromptFromFile, logMilestoneThinking } from "../../utils/agentUtils";
+import { validateWithRetry } from "../../validator/validatorNode";
 import { FeatureArchitectAnnotation, DataValidationOutput } from "./state";
+import * as path from "path";
+import * as fs from "fs";
+import { getMcpFilesystemTools, getSandboxDirectory, makePipelineTemplate } from "../../tools";
 
 export async function dataValidationNode(
   state: typeof FeatureArchitectAnnotation.State,
@@ -32,25 +36,51 @@ export async function dataValidationNode(
     );
   }
 
+  const sandboxDir = getSandboxDirectory(services?.projectId, state.runTimestamp);
+  const scriptName = state.aggregatedScriptPath || "aggregated_feature_pipeline.py";
+  const scriptPath = path.join(sandboxDir, scriptName);
+  if (!fs.existsSync(scriptPath)) {
+    fs.writeFileSync(scriptPath, makePipelineTemplate(scriptName), "utf-8");
+  }
+
   const userMessage = [
     "Generate data validation script to audit the baseline dataset.",
     `User Requirements: ${state.userPrompt || "None provided"}`,
-    `Selected Tables: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
+    `Tables List: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
     `Orchestrator Decisions: ${JSON.stringify(state.orchestrationDecision)}`,
     `Assembled Dataset Script: ${state.buildDataset.pythonCode || ""}`,
+    `Target Pipeline File: ${scriptPath}`,
+    `Region to Edit: DATA_VALIDATION`,
+    "Action Required:",
+    `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the exact region markers and line structure.`,
+    `2. Use MCP tool 'edit_file' (or 'write_file') to write/insert your data validation code into the DATA_VALIDATION region in '${scriptPath}'.`,
+    "3. Return the final JSON summary.",
   ].join("\n\n");
 
   try {
-    const result = await invokeAgentJson<DataValidationOutput>(
-      "featureArchitect",
-      model,
-      userMessage,
+    const fsTools = await getMcpFilesystemTools({
+      projectId: services?.projectId,
+      runTimestamp: state.runTimestamp,
+    });
+
+    const result = await validateWithRetry<DataValidationOutput>(
+      "dataValidation",
+      async () =>
+        await invokeAgentJson<DataValidationOutput>(
+          "featureArchitect",
+          model,
+          userMessage,
+          fallback,
+          services,
+          {
+            systemPrompt,
+            traceLabel: "featureArchitect:dataValidation",
+            tools: [...fsTools],
+            recursionLimit: 100,
+          }
+        ),
       fallback,
-      services,
-      {
-        systemPrompt,
-        traceLabel: "featureArchitect:dataValidation",
-      }
+      services
     );
 
     return {

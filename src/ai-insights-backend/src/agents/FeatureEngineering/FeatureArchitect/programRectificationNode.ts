@@ -1,8 +1,13 @@
-  import { RunnableConfig } from "@langchain/core/runnables";
+import { RunnableConfig } from "@langchain/core/runnables";
 import { IngestionServices } from "../../state";
 import { getModel, invokeAgentJson, getPromptFromFile, logMilestoneThinking } from "../../utils/agentUtils";
+import { validateWithRetry } from "../../validator/validatorNode";
 import { FeatureArchitectAnnotation } from "./state";
 import { executePythonScript } from "../../tools/helpers/pythonExecutor";
+import * as fs from "fs";
+import * as path from "path";
+import { getMcpFilesystemTools, getSandboxDirectory, makePipelineTemplate } from "../../tools";
+
 
 interface RectifierOutput extends Record<string, unknown> {
   status: string;
@@ -22,51 +27,52 @@ export async function programRectificationNode(
   }
 
   // 1. Detect which script to run and correct
-  let scriptName = "";
-  let code = "";
+  let region = "";
+  let fragment = "";
   let historyKey = "";
   let stateField = "";
+  const aggregatedName = state.aggregatedScriptPath || "aggregated_feature_pipeline.py";
 
   const historyWorkers = state.history.map((h) => h.worker);
 
   if (state.featureCreation?.pythonCode && !historyWorkers.includes("featureCreation_executed")) {
-    scriptName = "feature_creation.py";
-    code = state.featureCreation.pythonCode;
+    region = "FEATURE_CREATION";
+    fragment = state.featureCreation.pythonCode || "";
     historyKey = "featureCreation_executed";
     stateField = "featureCreation";
   } else if (
     state.featureTransformation?.pythonCode &&
     !historyWorkers.includes("featureTransformation_executed")
   ) {
-    scriptName = "feature_transformation.py";
-    code = state.featureTransformation.pythonCode;
+    region = "FEATURE_TRANSFORMATION";
+    fragment = state.featureTransformation.pythonCode || "";
     historyKey = "featureTransformation_executed";
     stateField = "featureTransformation";
   } else if (state.buildDataset?.pythonCode && !historyWorkers.includes("buildDataset_executed")) {
-    scriptName = "build_dataset.py";
-    code = state.buildDataset.pythonCode;
+    region = "BUILD_DATASET";
+    fragment = state.buildDataset.pythonCode || "";
     historyKey = "buildDataset_executed";
     stateField = "buildDataset";
   } else if (state.dataValidation?.pythonCode && !historyWorkers.includes("dataValidation_executed")) {
-    scriptName = "validate_dataset.py";
-    code = state.dataValidation.pythonCode;
+    region = "DATA_VALIDATION";
+    fragment = state.dataValidation.pythonCode || "";
     historyKey = "dataValidation_executed";
     stateField = "dataValidation";
   } else if (state.featureExtraction?.pythonCode && !historyWorkers.includes("featureExtraction_executed")) {
-    scriptName = "feature_extraction.py";
-    code = state.featureExtraction.pythonCode;
+    region = "FEATURE_EXTRACTION";
+    fragment = state.featureExtraction.pythonCode || "";
     historyKey = "featureExtraction_executed";
     stateField = "featureExtraction";
   } else if (state.featureSelection?.pythonCode && !historyWorkers.includes("featureSelection_executed")) {
-    scriptName = "feature_selection.py";
-    code = state.featureSelection.pythonCode;
+    region = "FEATURE_SELECTION";
+    fragment = state.featureSelection.pythonCode || "";
     historyKey = "featureSelection_executed";
     stateField = "featureSelection";
   }
 
-  if (!scriptName) {
+  if (!region) {
     if (services) {
-      await logMilestoneThinking(services, "Feature Engineering", "No script found that requires execution.");
+      await logMilestoneThinking(services, "Feature Engineering", "No script fragment found that requires execution.");
     }
     return {};
   }
@@ -75,13 +81,64 @@ export async function programRectificationNode(
     await logMilestoneThinking(
       services,
       "Feature Engineering",
-      `Executing and validating script "${scriptName}"...`
+      `Executing and validating aggregated script "${aggregatedName}" region ${region}...`
     );
   }
 
   let attempt = 0;
   const maxAttempts = 3;
-  let currentCode = code;
+  // Build or update aggregated script content
+  const baseDir = path.join(
+    process.cwd(),
+    "uploads",
+    "projects",
+    services.projectId || "default",
+    "runs",
+    state.runTimestamp || "default"
+  );
+  const scriptPath = path.join(baseDir, aggregatedName);
+  let aggregated = "";
+  if (fs.existsSync(scriptPath)) {
+    aggregated = fs.readFileSync(scriptPath, "utf-8");
+  } else {
+    aggregated = state.aggregatedScript || "";
+  }
+  if (!aggregated || aggregated.trim() === "") {
+    aggregated = makePipelineTemplate(aggregatedName);
+    fs.mkdirSync(baseDir, { recursive: true });
+    fs.writeFileSync(scriptPath, aggregated, "utf-8");
+  }
+
+  // Acquire a simple lock (record ownership in state) to indicate we are modifying the script
+  const lockOwner = `programRectifier:${historyKey}`;
+  const lockTimestamp = new Date().toISOString();
+
+  // If another process holds the lock, skip execution for now
+  if (state.scriptLockOwner && state.scriptLockOwner !== "" && state.scriptLockOwner !== lockOwner) {
+    if (services) {
+      await logMilestoneThinking(
+        services,
+        "Feature Engineering",
+        `Aggregated script is locked by ${state.scriptLockOwner}; skipping execution of region ${region}.`
+      );
+    }
+
+    return {
+      history: [
+        {
+          worker: `${historyKey}_skipped_locked`,
+          summary: `Skipped executing region ${region} because aggregated script locked by ${state.scriptLockOwner}`,
+        },
+      ],
+    };
+  }
+
+  // Re-read the script from disk to get the up-to-date version
+  if (fs.existsSync(scriptPath)) {
+    aggregated = fs.readFileSync(scriptPath, "utf-8");
+  }
+
+  let currentCode = aggregated;
   let success = false;
   let lastStdout = "";
   let lastStderr = "";
@@ -92,12 +149,12 @@ export async function programRectificationNode(
       await logMilestoneThinking(
         services,
         "Feature Engineering",
-        `Running "${scriptName}" (Attempt ${attempt}/${maxAttempts})...`
+        `Running aggregated script "${aggregatedName}" (Attempt ${attempt}/${maxAttempts})...`
       );
     }
 
     const res = await executePythonScript(
-      scriptName,
+      aggregatedName,
       currentCode,
       services.projectId || "default",
       state.runTimestamp || "default",
@@ -114,7 +171,7 @@ export async function programRectificationNode(
         await logMilestoneThinking(
           services,
           "Feature Engineering",
-          `Script "${scriptName}" ran successfully.`
+          `Aggregated script "${aggregatedName}" ran successfully for region ${region}.`
         );
       }
       break;
@@ -126,7 +183,7 @@ export async function programRectificationNode(
         await logMilestoneThinking(
           services,
           "Feature Engineering",
-          `Script "${scriptName}" failed. Asking Program Rectifier to fix code errors...`
+          `Aggregated script "${aggregatedName}" failed for region ${region}. Asking Program Rectifier to fix code errors...`
         );
       }
 
@@ -136,14 +193,19 @@ export async function programRectificationNode(
       );
 
       const userMessage = [
-        `The Python script "${scriptName}" failed during execution.`,
+        `The aggregated Python script "${aggregatedName}" (region ${region}) failed during execution.`,
         `--- Original Code ---`,
         currentCode,
         `--- Execution Stderr/Traceback ---`,
         lastStderr,
         `--- Execution Stdout ---`,
         lastStdout,
-        `Please rectify the errors, ensuring compatibility with CLI connection arguments, and output the corrected script.`,
+        `Target Pipeline File: ${scriptPath}`,
+        `Region with Error: ${region}`,
+        "Action Required:",
+        `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the code around the failure.`,
+        `2. Use MCP tool 'edit_file' (or 'write_file') to apply your fix directly to '${scriptPath}'.`,
+        "3. Return the final JSON summary with explanation.",
       ].join("\n\n");
 
       const fallback: RectifierOutput = {
@@ -153,20 +215,35 @@ export async function programRectificationNode(
       };
 
       try {
-        const rectifierResult = await invokeAgentJson<RectifierOutput>(
-          "featureArchitect",
-          model,
-          userMessage,
+        const fsTools = await getMcpFilesystemTools({
+          projectId: services.projectId,
+          runTimestamp: state.runTimestamp,
+        });
+
+        const rectifierResult = await validateWithRetry<RectifierOutput>(
+          "programRectifier",
+          async () =>
+            await invokeAgentJson<RectifierOutput>(
+              "featureArchitect",
+              model,
+              userMessage,
+              fallback,
+              services,
+              {
+                systemPrompt,
+                traceLabel: "featureArchitect:rectifier",
+                tools: [...fsTools],
+                recursionLimit: 100,
+              }
+            ),
           fallback,
-          services,
-          {
-            systemPrompt,
-            traceLabel: "featureArchitect:rectifier",
-          }
+          services
         );
 
-        if (rectifierResult.rectifiedCode) {
-          currentCode = rectifierResult.rectifiedCode;
+        // Re-read the updated script from disk after rectifier tool execution
+        if (fs.existsSync(scriptPath)) {
+          currentCode = fs.readFileSync(scriptPath, "utf-8");
+          aggregated = currentCode;
         }
       } catch (err) {
         console.warn("[programRectificationNode] Rectifier call failed", err);
@@ -182,15 +259,21 @@ export async function programRectificationNode(
     targetStateUpdate[stateField] = {
       ...(state as any)[stateField],
       status: "Success",
-      pythonCode: currentCode,
+      pythonCode: fragment,
     };
+
+    // persist aggregated script and release lock
+    targetStateUpdate.aggregatedScript = currentCode;
+    targetStateUpdate.scriptLockOwner = "";
+    targetStateUpdate.scriptLockTimestamp = "";
+
     return {
       ...targetStateUpdate,
       currentExecutionLogs: currentLogs,
       history: [
         {
           worker: historyKey,
-          summary: `Successfully executed and verified "${scriptName}" after ${attempt} attempt(s).`,
+          summary: `Successfully executed and verified aggregated script "${aggregatedName}" after ${attempt} attempt(s).`,
         },
       ],
     };
@@ -198,15 +281,21 @@ export async function programRectificationNode(
     targetStateUpdate[stateField] = {
       ...(state as any)[stateField],
       status: "Failed",
-      pythonCode: currentCode,
+      pythonCode: fragment,
     };
+
+    // persist aggregated script and release lock
+    targetStateUpdate.aggregatedScript = currentCode;
+    targetStateUpdate.scriptLockOwner = "";
+    targetStateUpdate.scriptLockTimestamp = "";
+
     return {
       ...targetStateUpdate,
       currentExecutionLogs: currentLogs,
       history: [
         {
           worker: `${historyKey}_failed`,
-          summary: `Failed executing "${scriptName}" after ${attempt} attempt(s). Stderr: ${lastStderr}`,
+          summary: `Failed executing aggregated script "${aggregatedName}" after ${attempt} attempt(s). Stderr: ${lastStderr}`,
         },
       ],
     };

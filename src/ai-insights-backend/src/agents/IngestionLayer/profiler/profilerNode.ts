@@ -6,7 +6,7 @@ import {
   createCompletenessProfileTool,
   createStatisticalProfileTool
 } from "../../tools/profiling";
-import { 
+import {
   getModel, 
   getPromptFromFile, 
   invokeAgentJson,
@@ -14,6 +14,7 @@ import {
   buildBatchedTableState,
   logMilestoneThinking
 } from "../../utils/agentUtils";
+import { validateWithRetry } from "../../validator/validatorNode";
 
 export async function profileData(connector: any, inspection: Record<string, unknown>, services: IngestionServices): Promise<any> {
   const model = getModel();
@@ -128,17 +129,23 @@ export async function profileData(connector: any, inspection: Record<string, unk
 
   try {
     await logMilestoneThinking(services, "Data Profiling", `Running sample data ingestion and completeness analysis on tables: [${tableNames.join(", ")}]...`);
-    const result = await invokeAgentJson(
+    const result = await validateWithRetry(
       "profileData",
-      model,
-      userMessage,
+      async () =>
+        await invokeAgentJson(
+          "profileData",
+          model,
+          userMessage,
+          fallback,
+          services,
+          {
+            systemPrompt,
+            traceLabel: "agent:profileData",
+            tools: profilingTools
+          }
+        ),
       fallback,
-      services,
-      {
-        systemPrompt,
-        traceLabel: "agent:profileData",
-        tools: profilingTools
-      }
+      services
     );
     await logMilestoneThinking(services, "Data Profiling", `Data profiling successfully completed for ${tableNames.length} tables.`);
 

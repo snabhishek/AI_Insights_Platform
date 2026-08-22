@@ -107,7 +107,7 @@ export async function supervisorNode(
     "Analyze the schema, user requirements, and history to choose the next feature engineering worker node.",
     `User Requirements: ${state.userPrompt || "None provided"}`,
     `Selected Tables: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
-    `Inspector details: ${JSON.stringify(state.inspector)}`,
+    // `Inspector details: ${JSON.stringify(state.inspector)}`,
     `Execution History: ${JSON.stringify(state.history)}`,
   ].join("\n\n");
 
@@ -125,6 +125,7 @@ export async function supervisorNode(
         systemPrompt,
         traceLabel: "featureArchitect:supervisor",
         tools: [getTableNamesTool, getTableColumnsAndProfileTool],
+        recursionLimit: 100,
       }
     );
 

@@ -175,6 +175,24 @@ export const FeatureArchitectAnnotation = Annotation.Root({
     default: () => "",
   }),
 
+  // Aggregated script and locking for single-file workflow
+  aggregatedScriptPath: Annotation<string>({
+    reducer: (left, right) => right ?? left,
+    default: () => "aggregated_feature_pipeline.py",
+  }),
+  aggregatedScript: Annotation<string>({
+    reducer: (left, right) => right ?? left,
+    default: () => "",
+  }),
+  scriptLockOwner: Annotation<string>({
+    reducer: (left, right) => right ?? left,
+    default: () => "",
+  }),
+  scriptLockTimestamp: Annotation<string>({
+    reducer: (left, right) => right ?? left,
+    default: () => "",
+  }),
+
   // Aggregated output of Feature Architect
   finalOutput: Annotation<Record<string, unknown>>({
     reducer: (left, right) => ({ ...left, ...right }),
