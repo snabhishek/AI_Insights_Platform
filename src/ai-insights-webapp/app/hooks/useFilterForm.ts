@@ -121,6 +121,8 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
         const queryParams = new URLSearchParams();
         queryParams.set("sourceId", sourceId);
         queryParams.set("fieldId", fieldId);
+        if ((field as any).columnName) queryParams.set("columnName", (field as any).columnName);
+        if ((field as any).tableName) queryParams.set("table", (field as any).tableName);
         if (field.controlType) queryParams.set("controlType", field.controlType);
         if (parents.length > 0) queryParams.set("parentFields", JSON.stringify(parents));
         if (Object.keys(parentParamsObj).length > 0) {
@@ -131,7 +133,8 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
           queryParams.set("search", activeSearch.trim());
         }
 
-        const url = `${apiBaseUrl}/api/filter-options?${queryParams.toString()}`;
+        const resolvedApiBase = (apiBaseUrl || "http://127.0.0.1:4000").replace(/\/api\/?$/, "");
+        const url = `${resolvedApiBase}/api/filter-options?${queryParams.toString()}`;
         const response = await fetch(url, { signal: controller.signal });
 
         if (fetchSeqRef.current.get(fieldId) !== seq) return;
@@ -173,10 +176,10 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
         }
       }
     },
-    [schema, apiBaseUrl, searchTerms]
+    [schema?.sourceId, apiBaseUrl, searchTerms]
   );
 
-  // Initial fetch for all fields when schema mounts
+  // Initial fetch for all fields when schema mounts or updates
   useEffect(() => {
     if (!schema) return;
     const groups = schema.filterGroups || schema.forms || [];
@@ -265,5 +268,6 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
     searchTerms,
     handleSearchChange,
     retryFetch,
+    fetchOptions,
   };
 }

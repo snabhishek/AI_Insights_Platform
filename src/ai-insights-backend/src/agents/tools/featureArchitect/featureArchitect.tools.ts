@@ -130,6 +130,36 @@ export const createRunPythonScriptTool = (
   );
 
 /**
+ * Tool to retrieve split boundaries, entity keys, time columns, and leakage definitions.
+ */
+export const createGetSplitBoundariesTool = (
+  orchestrationDecision: Record<string, any>,
+  dataProfileState?: Record<string, any>
+) =>
+  tool(
+    async () => {
+      return {
+        success: true,
+        problemType: orchestrationDecision?.problemType || "classification",
+        targetColumn: orchestrationDecision?.targetColumn || "",
+        predictionEntity: orchestrationDecision?.predictionEntity || "",
+        timeColumn: orchestrationDecision?.timeColumn || null,
+        leakageColumns: orchestrationDecision?.leakageColumns || [],
+        splits: {
+          trainRatio: 0.7,
+          valRatio: 0.15,
+          testRatio: 0.15,
+        },
+      };
+    },
+    {
+      name: "getSplitBoundaries",
+      description: "Get dataset split boundaries, prediction entity, time column, and known leakage column definitions.",
+      schema: z.object({}),
+    }
+  );
+
+/**
  * The canonical list of pipeline regions in order.
  * Used to validate region names and build the template.
  */
@@ -141,6 +171,7 @@ const PIPELINE_REGIONS = [
   "DATA_VALIDATION",
   "FEATURE_EXTRACTION",
   "FEATURE_SELECTION",
+  "FEATURE_VALIDATION",
 ] as const;
 
 type PipelineRegion = typeof PIPELINE_REGIONS[number];
@@ -192,6 +223,7 @@ export function makePipelineTemplate(scriptName: string): string {
     "    parser.add_argument('--output-path', type=str, default=None, help='Output path for final dataset (Parquet)')",
     "    parser.add_argument('--metadata-path', type=str, default=None, help='Path to save metadata YAML')",
     "    parser.add_argument('--features-path', type=str, default=None, help='Path to features parquet/CSV')",
+    "    parser.add_argument('--report-path', type=str, default=None, help='Path to validation report JSON')",
     "    args, _ = parser.parse_known_args()",
     "    db_path = args.db_path",
     "    split = args.split",
@@ -199,30 +231,35 @@ export function makePipelineTemplate(scriptName: string): string {
     "    output_path = args.output_path or os.path.join(out_dir, 'dataset.parquet')",
     "    metadata_path = args.metadata_path or os.path.join(out_dir, 'metadata.yaml')",
     "    features_path = args.features_path or os.path.join(out_dir, 'order_features.parquet')",
+    "    report_path = args.report_path or os.path.join(out_dir, 'feature_validation_report.json')",
     "",
     "    if 'main_feature_creation' in dir():",
-    "        print('=== [1/6] Running Feature Creation ===')",
+    "        print('=== [1/7] Running Feature Creation ===')",
     "        main_feature_creation(['--db-path', db_path])",
     "",
     "    if 'main_feature_transformation' in dir():",
-    "        print('=== [2/6] Running Feature Transformation ===')",
+    "        print('=== [2/7] Running Feature Transformation ===')",
     "        main_feature_transformation(['--db-path', db_path, '--split', split, '--out-dir', out_dir])",
     "",
     "    if 'main_build_dataset' in dir():",
-    "        print('=== [3/6] Running Build Dataset ===')",
+    "        print('=== [3/7] Running Build Dataset ===')",
     "        main_build_dataset(['--db-path', db_path, '--output-path', output_path, '--metadata-path', metadata_path])",
     "",
     "    if 'main_data_validation' in dir():",
-    "        print('=== [4/6] Running Data Validation ===')",
+    "        print('=== [4/7] Running Data Validation ===')",
     "        main_data_validation(['--db-path', db_path, '--output-path', os.path.join(out_dir, 'validation_report.json')])",
     "",
     "    if 'main_feature_extraction' in dir():",
-    "        print('=== [5/6] Running Feature Extraction ===')",
+    "        print('=== [5/7] Running Feature Extraction ===')",
     "        main_feature_extraction(['--db-path', db_path])",
     "",
     "    if 'main_feature_selection' in dir():",
-    "        print('=== [6/6] Running Feature Selection ===')",
+    "        print('=== [6/7] Running Feature Selection ===')",
     "        main_feature_selection(['--db-path', db_path, '--features-path', output_path, '--output-path', os.path.join(out_dir, 'selected_features.parquet')])",
+    "",
+    "    if 'main_feature_validation' in dir():",
+    "        print('=== [7/7] Running Feature Validation ===')",
+    "        main_feature_validation(['--db-path', db_path, '--features-path', os.path.join(out_dir, 'selected_features.parquet'), '--output-path', os.path.join(out_dir, 'validated_features.parquet'), '--report-path', report_path])",
     "",
     "    print('=== Pipeline Execution Complete ===')",
     "# -- PIPELINE_RUNNER END --",

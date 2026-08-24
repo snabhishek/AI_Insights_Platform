@@ -7,6 +7,7 @@ import { buildDatasetNode } from "./buildDatasetNode";
 import { dataValidationNode } from "./dataValidationNode";
 import { featureExtractionNode } from "./featureExtractionNode";
 import { featureSelectionNode } from "./featureSelectionNode";
+import { featureValidatorNode } from "../FeatureValidator/featureValidatorNode";
 import { programRectificationNode } from "./programRectificationNode";
 
 /**
@@ -32,6 +33,9 @@ function routeSupervisor(state: typeof FeatureArchitectAnnotation.State) {
   if (choice === "featureSelection") {
     return "featureSelection";
   }
+  if (choice === "featureValidator") {
+    return "featureValidator";
+  }
   if (choice === "programRectifier") {
     return "programRectifier";
   }
@@ -51,6 +55,7 @@ export function createFeatureArchitectGraph() {
     .addNode("dataValidationNode", dataValidationNode)
     .addNode("featureExtractionNode", featureExtractionNode)
     .addNode("featureSelectionNode", featureSelectionNode)
+    .addNode("featureValidatorNode", featureValidatorNode)
     .addNode("programRectificationNode", programRectificationNode)
 
     // Start at the supervisor
@@ -64,6 +69,7 @@ export function createFeatureArchitectGraph() {
       dataValidation: "dataValidationNode",
       featureExtraction: "featureExtractionNode",
       featureSelection: "featureSelectionNode",
+      featureValidator: "featureValidatorNode",
       programRectifier: "programRectificationNode",
       finish: "__end__",
     })
@@ -75,6 +81,7 @@ export function createFeatureArchitectGraph() {
     .addEdge("dataValidationNode", "supervisorNode")
     .addEdge("featureExtractionNode", "supervisorNode")
     .addEdge("featureSelectionNode", "supervisorNode")
+    .addEdge("featureValidatorNode", "supervisorNode")
     .addEdge("programRectificationNode", "supervisorNode")
 
     .compile();

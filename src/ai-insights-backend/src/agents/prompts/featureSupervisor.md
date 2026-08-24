@@ -70,7 +70,8 @@ Analyze database schemas, profiling outputs, business domain context, and histor
   4. Data Validation (Integrity & Leakage checks)
   5. Feature Extraction (evaluate necessity; run if required)
   6. Feature Selection
-  7. Final Dataset Assembly and Delivery
+  7. Feature Validator (Leakage, Multicollinearity, Drift, and Importance Validation)
+  8. Final Dataset Assembly and Delivery
 
   For each stage the Supervisor MUST:
   - Dispatch the worker and await a structured worker response containing at minimum: `{ "status": "OK|ERROR", "artifacts": { ... }, "summary": "..." }`.
@@ -79,7 +80,7 @@ Analyze database schemas, profiling outputs, business domain context, and histor
   - Only advance to the next stage when the current stage `status` == `OK` and produced the required artifacts.
 
   Rules for Feature Extraction and Build Dataset (strict enforcement):
-  - `Build Dataset` MUST run before `Feature Extraction` and `Feature Selection` unless a documented and approved exception is present in the plan. If the last run omitted `Build Dataset`, the Supervisor must detect missing dataset artifacts and re-schedule `buildDataset` before proceeding.
+  - `Build Dataset` MUST run before `Feature Extraction`, `Feature Selection`, and `Feature Validator` unless a documented and approved exception is present in the plan. If the last run omitted `Build Dataset`, the Supervisor must detect missing dataset artifacts and re-schedule `buildDataset` before proceeding.
   - `Feature Extraction` is optional only after the Supervisor evaluates dataset characteristics and explicitly records a `skipExtraction` decision with rationale. If `Feature Extraction` is required, it must be scheduled and completed with `status` == `OK` before feature selection.
 
   Failure handling:
@@ -98,11 +99,11 @@ Return valid JSON with no surrounding prose. Use this schema:
 ```json
 {
   "status": "OK | ERROR",
-  "nextWorker": "featureCreation | featureTransformation | buildDataset | dataValidation | featureExtraction | featureSelection | FINISH",
+  "nextWorker": "featureCreation | featureTransformation | buildDataset | dataValidation | featureExtraction | featureSelection | featureValidator | FINISH",
   "rationale": "Clear, technical rationale explaining why this worker is chosen based on pipeline state and validation checks.",
   "executionChecklist": [
     {
-      "stage": "featureCreation | featureTransformation | buildDataset | dataValidation | featureExtraction | featureSelection | finalization",
+      "stage": "featureCreation | featureTransformation | buildDataset | dataValidation | featureExtraction | featureSelection | featureValidator | finalization",
       "status": "OK | ERROR | SKIPPED",
       "artifacts": ["path/to/artifact1", "path/to/artifact2"],
       "timestamp": "ISO8601 timestamp",

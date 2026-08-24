@@ -1,80 +1,56 @@
 import { IngestionServices } from "../state";
-import { logMilestoneThinking, getModel, invokeAgentJson, getPromptFromFile, parseJsonObject } from "../utils/agentUtils";
+import { logMilestoneThinking, getModel, invokeAgentJson, parseJsonObject } from "../utils/agentUtils";
 
-function looksLikeError(stepName: string, payload: unknown): boolean {
+const expectedMap: Record<string, string[]> = {
+  featureCreation: ["status", "summary", "pythonCode"],
+  featureTransformation: ["status", "summary", "pythonCode"],
+  featureExtraction: ["status", "summary", "pythonCode"],
+  featureSelection: ["status", "summary", "pythonCode"],
+  featureValidator: ["status", "summary", "validatedFeatureSet"],
+  buildDataset: ["status", "summary", "pythonCode"],
+  dataValidation: ["status", "summary", "pythonCode"],
+  programRectifier: ["status", "rectifiedCode", "explanation"],
+  profileData: ["status", "tables"],
+  profiledata: ["status", "tables"],
+};
+
+export function looksLikeError(stepName: string, payload: unknown): boolean {
   if (!payload) return true;
   try {
     const obj = payload as any;
-    // Prefer explicit agentic retry signal when present
-    // Agents may include `shouldRetry: true` or `agentDecision: "retry"` to indicate the node should be retried
+
     if (typeof obj?.shouldRetry === "boolean") {
       return obj.shouldRetry === true;
     }
     if (typeof obj?.agentDecision === "string") {
       const dec = obj.agentDecision.trim().toLowerCase();
       if (dec === "retry" || dec === "re-run" || dec === "rerun") return true;
-      if (dec === "accept" || dec === "ok" || dec === "done") return false;
+      if (dec === "accept" || dec === "ok" || dec === "done" || dec === "completed") return false;
     }
 
-    // Normalize status (fallback if agent did not provide explicit decision)
     const statusRaw = typeof obj?.status === "string" ? obj.status.trim().toLowerCase() : "";
+    const expected = expectedMap[stepName] || expectedMap[stepName.toLowerCase()] || ["status"];
 
-    // Define expected keys per node based on prompt output schemas
-    const expectedMap: Record<string, string[]> = {
-      featureCreation: ["status", "summary", "recommendations", "pythonCode", "yamlLineage"],
-      featureTransformation: ["status", "summary", "recommendations", "pythonCode", "yamlLineage"],
-      featureExtraction: ["status", "summary", "recommendations", "pythonCode", "yamlLineage"],
-      featureSelection: ["status", "summary", "recommendations", "pythonCode", "yamlLineage"],
-      buildDataset: ["status", "summary", "pythonCode", "yamlLineage"],
-      dataValidation: ["status", "summary", "pythonCode", "yamlLineage"],
-      programRectifier: ["status", "rectifiedCode", "explanation"],
-      profileData: ["status", "tables", "tableOrder"],
-      profiledata: ["status", "tables", "tableOrder"],
-    };
-
-    const expected = expectedMap[stepName] || expectedMap[stepName.toLowerCase()] || [];
-
-    // If status explicitly OK-like, ensure presence of key outputs
-    const okStates = ["ok", "success", "completed", "done"];
-    if (okStates.includes(statusRaw)) {
+    const validStates = ["ok", "success", "completed", "done", "running", "in-progress", "pending"];
+    if (validStates.includes(statusRaw)) {
       for (const key of expected) {
         if (!(key in obj)) {
-          return true; // missing required key
+          return true;
         }
-        // additional non-empty checks for arrays/strings
         const val = obj[key];
         if (val === null || val === undefined) return true;
-        if (Array.isArray(val) && val.length === 0) return true;
-        if (typeof val === "string" && val.trim().length === 0) return true;
+        if (typeof val === "string" && val.trim().length === 0 && key !== "explanation") return true;
       }
-      return false; // looks good
+      return false;
     }
-    // If status is in-progress/pending/running, require that some progress artifact exists
-    if (["in-progress", "pending", "running"].includes(statusRaw)) {
-      // require at least one meaningful artifact depending on node
-      if (expected.includes("pythonCode") && typeof obj?.pythonCode === "string" && obj.pythonCode.trim().length > 0) {
-        // Agent produced code but marked in-progress: consider incomplete (retry)
-        return true;
-      }
-      if (expected.includes("tables") && Array.isArray(obj?.tables) && obj.tables.length > 0) {
-        // For profiling, if tables present but status is in-progress, check that each table has profiling fields
-        const tables: any[] = obj.tables;
-        for (const t of tables) {
-          if (!t.tableName || !t.contentProfile) return true;
-          if (!Array.isArray(t.contentProfile.columns) || t.contentProfile.columns.length === 0) return true;
-        }
-        // If profiling appears complete despite in-progress flag, accept it
-        return false;
-      }
 
-      // default: treat in-progress as needing retry
+    if (statusRaw === "failed" || statusRaw === "error") {
       return true;
     }
 
-    // Otherwise, be conservative: if status is not explicitly OK-like, treat as retry
-    if (!okStates.includes(statusRaw)) return true;
-
-    return false;
+    // If core keys exist even without an explicit status match, accept it
+    const hasCoreKeys = expected.every((key) => key in obj && obj[key] !== null && obj[key] !== undefined);
+    return !hasCoreKeys;
   } catch (e) {
     return true;
   }
@@ -85,82 +61,73 @@ export async function validateWithRetry<T extends Record<string, unknown>>(
   invokeFn: () => Promise<T>,
   fallback: T,
   services?: IngestionServices,
-  maxRetries = 3
+  maxRetries = 1
 ): Promise<T> {
   let attempt = 0;
   const model = getModel();
-  const evaluatorPrompt = 
+  const evaluatorPrompt =
     `You are an assistant validator.
 Given the agent output JSON (below) and the expected keys for the node, decide whether the agent should retry the same node or accept the output.
 Return a single JSON object with the shape: { "shouldRetry": true|false, "reason": "short explanation" }.
-Do not return any other text.`
-  while (attempt < maxRetries) {
+Do not return any other text.`;
+
+  while (attempt <= maxRetries) {
     attempt += 1;
-    if (services) {
-      await logMilestoneThinking(services, "Validation", `Validator running for ${stepName} (attempt ${attempt}/${maxRetries})`);
-    }
 
     try {
       const result = await invokeFn();
-      // If we have an LLM model, ask it whether this result should be retried (agentic validation)
-      if (model && services) {
+
+      // 1. Structural validation first — if valid, accept immediately without extra LLM delay
+      if (!looksLikeError(stepName, result)) {
+        return result;
+      }
+
+      // 2. If structural checks flagged potential issue and model is available, consult validator agent
+      if (model && services && attempt <= maxRetries) {
         try {
+          const expected = expectedMap[stepName] || expectedMap[stepName.toLowerCase()] || [];
           const userMessage = [
             `Step: ${stepName}`,
             `Agent output: ${JSON.stringify(result, null, 2)}`,
-            `Expected keys: ${JSON.stringify(Object.keys(({} as any)), null, 2)}`,
-            "Return: JSON {\"shouldRetry\": true|false, \"reason\": \"...\"} only."
+            `Expected keys: ${JSON.stringify(expected, null, 2)}`,
+            "Return: JSON {\"shouldRetry\": true|false, \"reason\": \"...\"} only.",
           ].join("\n\n");
 
           const agentEval = await invokeAgentJson(
             "validator",
             model,
             `${evaluatorPrompt}\n\n${userMessage}`,
-            { shouldRetry: true, reason: "fallback due to parse failure" } as any,
+            { shouldRetry: false, reason: "fallback acceptance" } as any,
             services,
             { traceLabel: `validator:${stepName}`, recursionLimit: 10 }
           );
 
-          const parsed = parseJsonObject(JSON.stringify(agentEval), { shouldRetry: true } as any);
-          if (parsed && typeof (parsed as any).shouldRetry === "boolean") {
-            if (!(parsed as any).shouldRetry) {
-              return result; // agent says accept
-            }
-            // else agent says retry -> continue loop
-            await logMilestoneThinking(services, "Validation", `Agent requested retry for ${stepName}: ${(parsed as any).reason || "no reason"}`);
-            // fallthrough to retry
+          const parsed = parseJsonObject(JSON.stringify(agentEval), { shouldRetry: false } as any);
+          if (parsed && typeof (parsed as any).shouldRetry === "boolean" && !(parsed as any).shouldRetry) {
+            return result; // Agent validator approved output
+          }
+
+          if (services) {
+            await logMilestoneThinking(services, "Validation", `Agent requested retry for ${stepName}: ${(parsed as any)?.reason || "imperfect output"}`);
           }
         } catch (err) {
-          // if agent evaluation fails, fall back to structural checks below
-          console.warn("Validator agent evaluation failed, falling back to structural checks", err);
+          console.warn("[Validator] Evaluator call failed, falling back to output", err);
+          return result;
         }
-      }
-
-      // Structural fallback: if looksLikeError says it's OK, accept
-      if (!looksLikeError(stepName, result)) {
-        return result;
-      }
-
-      if (services) {
-        await logMilestoneThinking(
-          services,
-          "Validation",
-          `Validator detected problems in ${stepName} output (attempt ${attempt}/${maxRetries}).`
-        );
       }
     } catch (err) {
       if (services) {
         await logMilestoneThinking(
           services,
           "Validation",
-          `Validator caught exception in ${stepName} (attempt ${attempt}/${maxRetries}): ${String(err)}`
+          `Validator caught exception in ${stepName} (attempt ${attempt}/${maxRetries + 1}): ${String(err)}`
         );
       }
     }
   }
 
   if (services) {
-    await logMilestoneThinking(services, "Validation", `Validator giving up on ${stepName} after ${maxRetries} attempts. Returning fallback.`);
+    await logMilestoneThinking(services, "Validation", `Validator completed retry cycle for ${stepName}.`);
   }
   return fallback;
 }

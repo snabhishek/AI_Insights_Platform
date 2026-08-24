@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npm run db:generate && npx nodemon --exec node --max-old-space-size=8192 -r ts-node/register src/index.ts",
+    "dev": "npm run db:generate && npx nodemon --config nodemon.json",
     "build": "npm run db:generate && npx tsc",
     "start": "node --max-old-space-size=8192 dist/index.js",
     "db:generate": "npx drizzle-kit generate"

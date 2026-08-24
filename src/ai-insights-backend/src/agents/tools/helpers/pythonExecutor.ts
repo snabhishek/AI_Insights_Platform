@@ -1,6 +1,7 @@
 import Docker from "dockerode";
 import fs from "fs";
 import path from "path";
+import { exec } from "child_process";
 import { IngestionServices } from "../../state";
 
 export interface ExecutionResult {
@@ -9,6 +10,17 @@ export interface ExecutionResult {
   stderr: string;
 }
 
+interface ContainerSession {
+  container: Docker.Container;
+  name: string;
+  projectId: string;
+  runTimestamp: string;
+  installedPackages: Set<string>;
+  createdAt: number;
+}
+
+const activeRunContainers = new Map<string, ContainerSession>();
+
 const IMPORT_TO_PACKAGE: Record<string, string> = {
   sklearn: "scikit-learn",
   cv2: "opencv-python",
@@ -16,6 +28,7 @@ const IMPORT_TO_PACKAGE: Record<string, string> = {
   yaml: "PyYAML",
   torch: "torch",
   transformers: "transformers",
+  statsmodels: "statsmodels",
 };
 
 const ALLOWLIST = new Set([
@@ -36,6 +49,7 @@ const ALLOWLIST = new Set([
   "duckdb",
   "pyyaml",
   "scikit-image",
+  "statsmodels",
 ]);
 
 /**
@@ -64,7 +78,6 @@ export function parseRequiredPackages(code: string): string[] {
 
 /**
  * Helper to demux Docker's multiplexed stream buffer into stdout and stderr.
- * Docker headers are 8 bytes: [1-byte stream type, 3-bytes padding, 4-bytes frame length].
  */
 function demuxDockerLogs(buffer: Buffer): { stdout: string; stderr: string } {
   let stdout = "";
@@ -92,6 +105,106 @@ function demuxDockerLogs(buffer: Buffer): { stdout: string; stderr: string } {
 }
 
 /**
+ * Creates a platform-aware Docker instance.
+ * On Windows, connects to the Docker Desktop named pipe '//./pipe/docker_engine'.
+ */
+export function getDockerClient(): Docker {
+  if (process.env.DOCKER_HOST) {
+    return new Docker();
+  }
+  if (process.platform === "win32") {
+    const winPipes = ["//./pipe/docker_engine", "//./pipe/docker_desktop_engine"];
+    for (const pipe of winPipes) {
+      if (fs.existsSync(pipe)) {
+        return new Docker({ socketPath: pipe });
+      }
+    }
+    return new Docker({ socketPath: "//./pipe/docker_engine" });
+  }
+  return new Docker({ socketPath: "/var/run/docker.sock" });
+}
+
+/**
+ * Checks if Docker daemon is responsive.
+ */
+async function isDockerRunning(docker: Docker): Promise<boolean> {
+  try {
+    await docker.ping();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Automatically launches Docker Desktop if not currently running and waits for it to be ready.
+ */
+async function ensureDockerDaemon(docker: Docker): Promise<boolean> {
+  if (await isDockerRunning(docker)) {
+    return true;
+  }
+
+  if (process.platform === "win32") {
+    const possiblePaths = [
+      "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
+      "C:\\Program Files (x86)\\Docker\\Docker\\Docker Desktop.exe",
+      path.join(process.env.LOCALAPPDATA || "", "Programs\\Docker\\Docker\\Docker Desktop.exe"),
+    ];
+
+    const exePath = possiblePaths.find((p) => fs.existsSync(p));
+    if (exePath) {
+      console.info(`[DockerExecutor] Docker daemon not responding. Launching Docker Desktop from: ${exePath}`);
+      try {
+        exec(`start "" "${exePath}"`);
+      } catch (e: any) {
+        console.warn(`[DockerExecutor] Failed to launch Docker Desktop:`, e.message);
+      }
+
+      // Poll for up to 30 seconds for Docker daemon to become responsive
+      const start = Date.now();
+      while (Date.now() - start < 30000) {
+        await new Promise((r) => setTimeout(r, 2000));
+        if (await isDockerRunning(docker)) {
+          console.info("[DockerExecutor] Docker Desktop is now running and responsive!");
+          return true;
+        }
+      }
+    }
+  }
+
+  return false;
+}
+
+/**
+ * Cleans up any stale orphaned containers from prior runs.
+ */
+async function cleanupStaleContainers(docker: Docker): Promise<void> {
+  try {
+    const activeNames = new Set(Array.from(activeRunContainers.values()).map((s) => s.name));
+    const allContainers = await docker.listContainers({ all: true });
+    for (const c of allContainers) {
+      const matchName = (c.Names || []).find(
+        (name) =>
+          (name.includes("ai-insights-exec-") || name.includes("ai-insights-feature-arch-executor-")) &&
+          !activeNames.has(name.replace(/^\//, ""))
+      );
+      if (matchName) {
+        try {
+          const cont = docker.getContainer(c.Id);
+          if (c.State === "running") {
+            await cont.stop({ t: 1 });
+          }
+          await cont.remove({ force: true });
+          console.info(`[DockerExecutor] Cleaned up leftover container: ${c.Names?.[0] || c.Id}`);
+        } catch (_) {}
+      }
+    }
+  } catch (err: any) {
+    console.warn("[DockerExecutor] Failed to list containers for stale cleanup:", err.message);
+  }
+}
+
+/**
  * Pulls the specified Docker image if it is not already available locally.
  */
 async function ensureImage(docker: Docker, image: string): Promise<void> {
@@ -111,6 +224,11 @@ async function ensureImage(docker: Docker, image: string): Promise<void> {
   }
 }
 
+/**
+ * Executes a Python script inside a managed Docker container session.
+ * Reuses the existing container across Feature Architect workers, Program Rectifier, and Feature Validator,
+ * and preserves installed Python packages and environment state.
+ */
 export async function executePythonScript(
   scriptName: string,
   code: string,
@@ -159,143 +277,119 @@ export async function executePythonScript(
       const config = connector.connectionConfig;
 
       if (["excel", "csv", "tsv"].includes(type) && config.fileName) {
-        // For CSV-like connectors, the Python scripts expect a directory containing CSV files.
-        // Mount the repo-level uploads directory into the container at /workspace/uploads and pass that path.
         const containerDbPath = `/workspace/uploads`;
         args.push(`--db-path "${containerDbPath}"`);
       } else if (type === "postgres") {
-        // Pass connection details; omit a generic --db-type flag to avoid unrecognized-arg errors
         if (config.host) args.push(`--host "${config.host}"`);
         if (config.port) args.push(`--port "${config.port}"`);
         if (config.username) args.push(`--username "${config.username}"`);
         if (config.password) args.push(`--password "${config.password}"`);
         if (config.database) args.push(`--database "${config.database}"`);
       } else if (type === "mysql") {
-        // Pass connection details; omit generic --db-type
         if (config.host) args.push(`--host "${config.host}"`);
         if (config.port) args.push(`--port "${config.port}"`);
         if (config.username) args.push(`--username "${config.username}"`);
         if (config.password) args.push(`--password "${config.password}"`);
         if (config.database) args.push(`--database "${config.database}"`);
       } else if (type === "restapi") {
-        // Pass API URL; scripts can interpret this as needed
         if (config.url) args.push(`--url "${config.url}"`);
       }
     }
   }
 
-  // Detect and resolve package dependencies
-  const packagesToInstall = parseRequiredPackages(code);
+  const docker = getDockerClient();
+  const isAvailable = await ensureDockerDaemon(docker);
+  if (!isAvailable) {
+    return {
+      success: false,
+      stdout: "",
+      stderr: "Docker daemon is not running and could not be started automatically. Please ensure Docker Desktop is running.",
+    };
+  }
+
+  const sessionKey = `${projectId || "default"}__${runTimestamp || "default"}`;
+  let session = activeRunContainers.get(sessionKey);
+
+  // Check if existing session container is still alive and running
+  if (session) {
+    try {
+      const inspect = await session.container.inspect();
+      if (!inspect?.State?.Running) {
+        activeRunContainers.delete(sessionKey);
+        session = undefined;
+      }
+    } catch {
+      activeRunContainers.delete(sessionKey);
+      session = undefined;
+    }
+  }
+
+  const imageName = "python:3.12-slim";
+
+  // Create container if not already running for this run session
+  if (!session) {
+    await cleanupStaleContainers(docker);
+    await ensureImage(docker, imageName);
+
+    const safeProj = (projectId || "default").replace(/[^a-zA-Z0-9_-]/g, "_");
+    const containerName = `ai-insights-exec-${safeProj}-${Date.now().toString(36)}`;
+
+    console.info(`[DockerExecutor] Creating container session [${containerName}] for run [${runTimestamp}]`);
+    const container = (await docker.createContainer({
+      name: containerName,
+      Image: imageName,
+      Cmd: ["sh", "-c", "sleep infinity"],
+      WorkingDir: "/workspace",
+      HostConfig: {
+        Binds: [
+          `${normRunDir}:/workspace`,
+          `${normDuckDbDir}:/workspace/duckdb`,
+          `${normUploadsDir}:/workspace/uploads`,
+        ],
+        Memory: 2 * 1024 * 1024 * 1024, // 2GB memory limit
+        NanoCpus: 2 * 1000000000, // 2 CPU cores limit
+        AutoRemove: false,
+      },
+    }) as unknown) as Docker.Container;
+
+    await container.start();
+    session = {
+      container,
+      name: containerName,
+      projectId: projectId || "default",
+      runTimestamp: runTimestamp || "default",
+      installedPackages: new Set<string>(),
+      createdAt: Date.now(),
+    };
+    activeRunContainers.set(sessionKey, session);
+  } else {
+    console.info(`[DockerExecutor] Reusing existing container session [${session.name}] for run [${runTimestamp}]`);
+  }
+
+  // Detect and install required packages that haven't been installed yet
+  const requiredPackages = parseRequiredPackages(code);
+  const packagesToInstall = requiredPackages.filter((pkg) => !session!.installedPackages.has(pkg));
 
   let scriptExecCmd = `python "${scriptName}" ${args.join(" ")}`;
   if (packagesToInstall.length > 0) {
-    // Add flags to suppress root-user warning and pip version check noise when running as root inside container
     const pipFlags = "--no-cache-dir --disable-pip-version-check --root-user-action=ignore";
     scriptExecCmd = `pip install ${pipFlags} ${packagesToInstall.join(" ")} && ${scriptExecCmd}`;
+    for (const pkg of packagesToInstall) {
+      session.installedPackages.add(pkg);
+    }
   }
 
-  const docker = new Docker();
-  const imageName = "python:3.12-slim";
-
   try {
-    // 1. Ensure image is pulled
-    await ensureImage(docker, imageName);
-
-    // 2. Use a stable container name per project so it can be reused
-    const containerName = `ai-insights-feature-arch-executor-${projectId || "default"}`;
-
-    // Try to find an existing container with this name
-    const allContainers = await docker.listContainers({ all: true });
-    let containerInfo = allContainers.find((c) => (c.Names || []).some((n) => n === `/${containerName}`));
-    let container: Docker.Container;
-
-    if (!containerInfo) {
-      // Create persistent long-running container
-      // cast to any then to Docker.Container to satisfy typings
-      container = (await docker.createContainer({
-        name: containerName,
-        Image: imageName,
-        Cmd: ["sh", "-c", "sleep infinity"],
-        WorkingDir: "/workspace",
-        HostConfig: {
-          Binds: [
-            `${normRunDir}:/workspace`,
-            `${normDuckDbDir}:/workspace/duckdb`,
-            `${normUploadsDir}:/workspace/uploads`,
-          ],
-          Memory: 2 * 1024 * 1024 * 1024, // 2GB limit
-          NanoCpus: 2 * 1000000000, // 2 CPUs limit
-        },
-      }) as unknown) as Docker.Container;
-
-      await container.start();
-    } else {
-      container = docker.getContainer(containerInfo.Id! as string);
-      // Inspect existing container to see if it has the uploads bind; if not, remove and recreate
-      try {
-        const info = await container.inspect();
-        const binds: string[] = (info.HostConfig && (info.HostConfig as any).Binds) || [];
-        const expectedBind = `${normUploadsDir}:/workspace/uploads`;
-        if (!binds.includes(expectedBind)) {
-          try {
-            // Stop and remove the old container so we can recreate with correct binds
-            if (info.State && info.State.Running) {
-              await container.stop({ t: 1 });
-            }
-            await container.remove();
-            containerInfo = undefined as any;
-          } catch (e) {
-            // ignore removal errors and proceed to try exec; fall back to existing container
-            console.warn("[DockerExecutor] Failed to replace existing container with updated binds", e);
-          }
-        }
-      } catch (e) {
-        // if inspect fails, proceed to use the container as-is
-        console.warn("[DockerExecutor] Failed to inspect existing container", e);
-      }
-
-      if (!containerInfo) {
-        // recreate container with proper binds
-        container = (await docker.createContainer({
-          name: containerName,
-          Image: imageName,
-          Cmd: ["sh", "-c", "sleep infinity"],
-          WorkingDir: "/workspace",
-          HostConfig: {
-            Binds: [
-              `${normRunDir}:/workspace`,
-              `${normDuckDbDir}:/workspace/duckdb`,
-              `${normUploadsDir}:/workspace/uploads`,
-            ],
-            Memory: 2 * 1024 * 1024 * 1024,
-            NanoCpus: 2 * 1000000000,
-          },
-        }) as unknown) as Docker.Container;
-
-        await container.start();
-      } else {
-        // Start container if it's not running
-        if (containerInfo.State !== "running") {
-          try {
-            await container.start();
-          } catch (e) {
-            // ignore start errors and continue to try exec
-          }
-        }
-      }
-    }
-
-    // 3. Execute the command inside the running container via exec
-    const exec = await container.exec({
+    console.info(`[DockerExecutor] Running script [${scriptName}] inside container [${session.name}]`);
+    const execInstance = await session.container.exec({
       Cmd: ["sh", "-c", scriptExecCmd],
       AttachStdout: true,
       AttachStderr: true,
       WorkingDir: "/workspace",
     });
 
-    const stream = await exec.start({ hijack: true, stdin: false });
+    const stream = await execInstance.start({ hijack: true, stdin: false });
 
-    // Collect output
     const chunks: Buffer[] = [];
     await new Promise<void>((resolve, reject) => {
       stream.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
@@ -306,22 +400,11 @@ export async function executePythonScript(
     const logsBuffer = Buffer.concat(chunks);
     const { stdout, stderr } = demuxDockerLogs(logsBuffer);
 
-    // 4. Inspect exec exit code
     let exitCode = 0;
     try {
-      const inspectRes = await exec.inspect();
+      const inspectRes = await execInstance.inspect();
       exitCode = inspectRes.ExitCode ?? 0;
-    } catch (e) {
-      // ignore
-    }
-
-    // Do NOT remove the container or volumes; keep persistent for future runs
-    try {
-      // stop the container to free resources but keep it available for reuse
-      await container.stop({ t: 1 });
-    } catch (e) {
-      // ignore stop errors
-    }
+    } catch (_) {}
 
     return {
       success: exitCode === 0,
@@ -329,11 +412,45 @@ export async function executePythonScript(
       stderr,
     };
   } catch (error) {
-    console.error("[DockerExecutor] Failed running container", error);
+    console.error(`[DockerExecutor] Execution failed in container [${session.name}]`, error);
     return {
       success: false,
       stdout: "",
-      stderr: `Docker SDK execution error: ${error instanceof Error ? error.message : String(error)}`,
+      stderr: `Docker execution error: ${error instanceof Error ? error.message : String(error)}`,
     };
   }
+}
+
+/**
+ * Explicitly cleans up and deletes the container session for a specific run when the stage completes.
+ */
+export async function cleanupRunContainer(projectId: string, runTimestamp: string): Promise<void> {
+  const sessionKey = `${projectId || "default"}__${runTimestamp || "default"}`;
+  const session = activeRunContainers.get(sessionKey);
+
+  if (session) {
+    try {
+      console.info(`[DockerExecutor] Cleaning up container session [${session.name}] for project [${projectId}]`);
+      await session.container.stop({ t: 1 }).catch(() => {});
+      await session.container.remove({ force: true }).catch(() => {});
+      activeRunContainers.delete(sessionKey);
+      console.info(`[DockerExecutor] Successfully deleted container [${session.name}]`);
+    } catch (err: any) {
+      console.warn(`[DockerExecutor] Error removing container [${session.name}]:`, err.message);
+    }
+  }
+}
+
+/**
+ * Cleans up all active container sessions.
+ */
+export async function cleanupAllRunContainers(): Promise<void> {
+  for (const [key, session] of activeRunContainers.entries()) {
+    try {
+      await session.container.stop({ t: 1 }).catch(() => {});
+      await session.container.remove({ force: true }).catch(() => {});
+      console.info(`[DockerExecutor] Cleaned up container [${session.name}]`);
+    } catch (_) {}
+  }
+  activeRunContainers.clear();
 }

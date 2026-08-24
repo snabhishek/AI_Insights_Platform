@@ -1,0 +1,32 @@
+{
+  "verbose": true,
+  "watch": [
+    "src"
+  ],
+  "ext": "ts",
+  "ignore": [
+    "uploads/**",
+    "uploads/*",
+    "uploads",
+    "**/uploads/**",
+    "src/packages/**",
+    "src/packages/ProjectFiles/**",
+    "**/ProjectFiles/**",
+    "**/*.duckdb*",
+    "**/*.parquet",
+    "**/*.py",
+    "**/*.csv",
+    "**/*.tsv",
+    "**/*.xlsx",
+    "**/*.yaml",
+    "**/*.yml",
+    "**/*.json",
+    "**/*.md",
+    "node_modules/**",
+    "dist/**",
+    ".git/**",
+    "drizzle/**"
+  ],
+  "exec": "node --max-old-space-size=8192 -r ts-node/register src/index.ts",
+  "delay": "2000"
+}

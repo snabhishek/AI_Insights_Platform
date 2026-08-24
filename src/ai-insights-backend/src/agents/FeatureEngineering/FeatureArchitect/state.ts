@@ -98,6 +98,58 @@ export interface FeatureSelectionOutput extends Record<string, unknown> {
   yamlLineage?: string;
 }
 
+export interface FeatureValidatorOutput extends Record<string, unknown> {
+  status: string;
+  summary: string;
+  leakageReport?: {
+    leakyFeatures: Array<{
+      featureName: string;
+      reason: string;
+      metricScore?: number;
+      action: "dropped" | "flagged";
+    }>;
+    leakageFound: boolean;
+  };
+  multicollinearityReport?: {
+    highVifFeatures: Array<{
+      featureName: string;
+      vifScore: number;
+      action: "dropped" | "kept";
+    }>;
+    highCorrelationPairs: Array<{
+      feature1: string;
+      feature2: string;
+      correlation: number;
+      droppedFeature: string;
+      rationale: string;
+    }>;
+  };
+  driftReport?: {
+    driftedFeatures: Array<{
+      featureName: string;
+      psiScore: number;
+      pValue?: number;
+      status: "drift_detected" | "stable";
+    }>;
+  };
+  importanceRanking?: Array<{
+    featureName: string;
+    importanceScore: number;
+    rank: number;
+  }>;
+  validatedFeatureSet?: {
+    kept: string[];
+    dropped: Array<{
+      featureName: string;
+      reason: "leakage" | "multicollinearity" | "low_importance";
+    }>;
+    totalKept: number;
+    totalDropped: number;
+  };
+  pythonCode?: string;
+  yamlLineage?: string;
+}
+
 /**
  * Feature Architect LangGraph State Annotation Schema
  */
@@ -157,6 +209,10 @@ export const FeatureArchitectAnnotation = Annotation.Root({
     default: () => ({ status: "Pending", summary: "" }),
   }),
   featureSelection: Annotation<FeatureSelectionOutput>({
+    reducer: (left, right) => right ?? left,
+    default: () => ({ status: "Pending", summary: "" }),
+  }),
+  featureValidator: Annotation<FeatureValidatorOutput>({
     reducer: (left, right) => right ?? left,
     default: () => ({ status: "Pending", summary: "" }),
   }),

@@ -430,10 +430,21 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     hierarchyMapperNode: "Hierarchy Mapper",
     relationshipBuilder: "Hierarchy Mapper",
     formBuilder: "Hierarchy Mapper",
+    featureSupervisor: "Feature Architect",
+    "featureArchitect:supervisor": "Feature Architect",
+    featureCreation: "Feature Architect",
+    featureTransformation: "Feature Architect",
+    buildDataset: "Feature Architect",
+    dataValidation: "Feature Architect",
+    featureExtraction: "Feature Architect",
+    featureSelection: "Feature Architect",
+    programRectifier: "Feature Architect",
+    featureArchitect: "Feature Architect",
+    featureArchitectNode: "Feature Architect",
+    featureValidator: "Feature Validator",
+    featureValidatorNode: "Feature Validator",
     exogenousScout: "Exogenous Scout",
     exogenous: "Exogenous Scout",
-    featureArchitect: "Feature Engineering",
-    featureArchitectNode: "Feature Engineering",
   };
   const substep = substepMap[stepName] || "Data Inspection";
 
@@ -713,19 +724,27 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 }
 
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
-  const isFeatureArchitect = stageStatuses.featureArchitect === "Completed" ||
-                             stageStatuses.featureArchitect === "In Progress" ||
+  const isRunningOrDone = (v?: string) => v === "Completed" || v === "In Progress" || v === "Running";
+
+  const isExo = isRunningOrDone(stageStatuses.exogenousScout) || 
+                isRunningOrDone(stageStatuses.exogenous) || 
+                nextNodes.includes("exogenous");
+  if (isExo) return "exogenousScout";
+
+  const isFeatureValidator = isRunningOrDone(stageStatuses.featureValidator) ||
+                             nextNodes.includes("featureValidatorNode");
+  if (isFeatureValidator) return "featureValidator";
+
+  const isFeatureArchitect = isRunningOrDone(stageStatuses.featureArchitect) ||
                              nextNodes.includes("featureArchitectNode");
   if (isFeatureArchitect) return "featureArchitect";
 
-  const isExo = stageStatuses.exogenousScout === "Completed" || 
-                stageStatuses.exogenousScout === "In Progress" || 
-                stageStatuses.exogenous === "Completed" || 
-                stageStatuses.exogenous === "In Progress" || 
-                nextNodes.includes("exogenous");
-  if (isExo) return "exogenousScout";
-  if (stageStatuses.resolveSchema === "Completed" || stageStatuses.resolveSchema === "In Progress" || nextNodes.includes("resolveSchema") || nextNodes.includes("exogenous") || nextNodes.includes("featureArchitectNode")) return "resolveSchema";
-  if (stageStatuses.preprocess === "Completed" || stageStatuses.preprocess === "In Progress" || stageStatuses.profileData === "Completed" || stageStatuses.profileData === "In Progress") return "profileData";
+  const isHierarchy = isRunningOrDone(stageStatuses.hierarchyMapper) ||
+                      nextNodes.includes("hierarchyMapperNode");
+  if (isHierarchy) return "hierarchyMapperNode";
+
+  if (isRunningOrDone(stageStatuses.resolveSchema) || nextNodes.includes("resolveSchema")) return "resolveSchema";
+  if (isRunningOrDone(stageStatuses.preprocess) || isRunningOrDone(stageStatuses.profileData)) return "profileData";
   return "inspect";
 }
 
@@ -733,22 +752,34 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
   if (status === "failed") {
     return "Workflow failed.";
   }
-  if (status === "completed" || stageStatuses?.featureArchitect === "Completed") {
+  const isRunning = (v?: string) => v === "In Progress" || v === "Running" || v === "Retrying";
+  const isCompleted = (v?: string) => v === "Completed" || v === "Success";
+
+  if (status === "completed" || isCompleted(stageStatuses?.exogenousScout)) {
     return "Feature Engineering and Data Ingestion completed successfully.";
   }
-  if (stageStatuses?.featureArchitect === "In Progress") {
+  if (isRunning(stageStatuses?.exogenousScout) || isRunning(stageStatuses?.exogenous)) {
+    return "Scouting and ranking exogenous variables and external signals...";
+  }
+  if (isRunning(stageStatuses?.featureValidator)) {
+    return "Auditing features for leakage, multicollinearity, and drift, ranking importances...";
+  }
+  if (isRunning(stageStatuses?.featureArchitect)) {
     return "Architecting features (Creation, Transformation, Extraction, Selection)...";
   }
-  if (status === "completed" || stageStatuses?.resolveSchema === "Completed") {
+  if (isRunning(stageStatuses?.hierarchyMapper)) {
+    return "Discovering dimensional hierarchies and entity relationships...";
+  }
+  if (isCompleted(stageStatuses?.resolveSchema)) {
     return "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.";
   }
-  if (stageStatuses?.resolveSchema === "In Progress") {
+  if (isRunning(stageStatuses?.resolveSchema)) {
     return "Resolving schema mappings...";
   }
-  if (stageStatuses?.profileData === "In Progress" || stageStatuses?.preprocess === "In Progress") {
+  if (isRunning(stageStatuses?.profileData) || isRunning(stageStatuses?.preprocess)) {
     return "Running data profiling and preprocessing...";
   }
-  if (stageStatuses?.inspect === "In Progress") {
+  if (isRunning(stageStatuses?.inspect)) {
     return "Inspecting data sources...";
   }
   return "Data Ingestion workflow is running...";
@@ -766,8 +797,10 @@ export function buildResultFromGraphState(
     profileData: "Pending", 
     preprocess: "Pending", 
     resolveSchema: "Pending", 
-    exogenousScout: "Pending",
-    featureArchitect: "Pending"
+    hierarchyMapper: "Pending",
+    featureArchitect: "Pending",
+    featureValidator: "Pending",
+    exogenousScout: "Pending"
   };
   const stageStatuses = (values.stageStatuses && typeof values.stageStatuses === "object")
     ? values.stageStatuses as Record<string, string>
@@ -775,8 +808,8 @@ export function buildResultFromGraphState(
   const status = (typeof values.status === "string" && values.status) ? values.status : "running";
   
   const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
-  const isFeatureArchitectStarted = stageStatuses.featureArchitect && stageStatuses.featureArchitect !== "Pending";
-  const requiresApproval = isIngestionComplete && !isFeatureArchitectStarted && status !== "failed";
+  const isFeatureEngineeringStarted = stageStatuses.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending";
+  const requiresApproval = isIngestionComplete && !isFeatureEngineeringStarted && status !== "failed";
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
   return {
@@ -788,12 +821,14 @@ export function buildResultFromGraphState(
     schemaResolution: (values.schemaResolution && typeof values.schemaResolution === "object") ? values.schemaResolution : {},
     dataProfile: (values.dataProfile && typeof values.dataProfile === "object") ? values.dataProfile : {},
     preprocessing: (values.preprocessing && typeof values.preprocessing === "object") ? values.preprocessing : {},
-    exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
+    hierarchyMapper: (values.hierarchyMapper && typeof values.hierarchyMapper === "object") ? values.hierarchyMapper : {},
     featureArchitect: (values.featureArchitect && typeof values.featureArchitect === "object") ? values.featureArchitect : {},
+    featureValidator: (values.featureValidator && typeof values.featureValidator === "object") ? values.featureValidator : {},
+    exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
-    nextStep: isIngestionComplete && !isFeatureArchitectStarted ? "Feature Engineering" : (nextNodes[0] || "inspect"),
+    nextStep: isIngestionComplete && !isFeatureEngineeringStarted ? "Feature Engineering" : (nextNodes[0] || "inspect"),
     currentNode: currentStage,
     currentStage,
     stageOutputs: (values.stageOutputs && typeof values.stageOutputs === "object") ? values.stageOutputs : {},
@@ -811,15 +846,19 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     hierarchyMapper: "hierarchyMapperNode",
     hierarchyMapperNode: "hierarchyMapperNode",
     "Hierarchy Mapper": "hierarchyMapperNode",
+    featureArchitect: "featureArchitectNode",
+    featureArchitectNode: "featureArchitectNode",
+    "Feature Architect": "featureArchitectNode",
+    featureValidator: "featureArchitectNode",
+    featureValidatorNode: "featureArchitectNode",
+    "Feature Validator": "featureArchitectNode",
     exogenous: "exogenous",
     exogenousScout: "exogenous",
-    featureArchitect: "featureArchitectNode",
+    "Exogenous Scout": "exogenous",
     "Data Ingestion": "inspect",
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
-    "Exogenous Scout": "exogenous",
     "Feature Engineering": "hierarchyMapperNode",
-    "Feature Architect": "featureArchitectNode",
   };
   return step ? mapping[step] : undefined;
 }

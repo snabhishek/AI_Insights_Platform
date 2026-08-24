@@ -30,8 +30,8 @@ const NODE_ORDER = [
   "profileData",
   "resolveSchema",
   "hierarchyMapperNode",
-  "exogenous",
   "featureArchitectNode",
+  "exogenous",
 ] as const;
 
 function getPredecessorNode(targetNode: string): string | null {

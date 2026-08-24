@@ -22,14 +22,15 @@ Step 2: Order groups by priority.
 Groups containing at least one "primary" relationship should be listed
 before groups that are entirely "secondary."
 
-Step 3: Decide each field's control type.
-- If cardinality is 20 or fewer: controlType = "dropdown"
-- If cardinality is more than 20: controlType = "searchable_dropdown"
+Step 3: Decide each field's control type & maintain exact column name.
+- CRITICAL: "fieldId" and "name" MUST match the exact physical column name from the Relationship Schema (e.g. "carrier_name", "state", "order_date"). Do NOT prefix with entityScope or alter casing.
+- If cardinality is 50 or fewer: controlType = "dropdown"
+- If cardinality is more than 50: controlType = "searchable_dropdown"
 - If the field is a calendar Year/Quarter/Month/Week/DayOfWeek node: controlType = "dropdown"
 - If the field is a daily date or timestamp (e.g. order_date, transaction_date): controlType = "date_range"
 
 Step 4: Assign options for fields.
-- For fields with sample values (cardinality 20 or fewer), copy the sampleValues from the Relationship Schema node into "options".
+- CRITICAL: Copy the real "sampleValues" array from the Relationship Schema node directly into "options".
 - For fields with large value sets or dynamic values, leave "options" as an empty array `[]` (options will be dynamically resolved using the top-level `sourceId`).
 
 Step 5: Set parent-child links (Support Multi-Parent Dependencies & Standalone Nodes).

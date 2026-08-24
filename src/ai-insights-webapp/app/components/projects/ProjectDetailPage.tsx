@@ -11,6 +11,8 @@ import ProfilingStepOutput from "./pipeline-outputs/ProfilingStepOutput";
 import SchemaResolverStepOutput from "./pipeline-outputs/SchemaResolverStepOutput";
 import ExogenousScoutStepOutput from "./pipeline-outputs/ExogenousScoutStepOutput";
 import HierarchyMapperStepOutput from "./pipeline-outputs/HierarchyMapperStepOutput";
+import FeatureArchitectStepOutput from "./pipeline-outputs/FeatureArchitectStepOutput";
+import FeatureValidatorStepOutput from "./pipeline-outputs/FeatureValidatorStepOutput";
 
 type AlertType = "error" | "success" | "info";
 
@@ -431,15 +433,23 @@ export default function ProjectDetailPage({
           "Schema Resolver": stageOutputs.resolveSchema ? (
             <SchemaResolverStepOutput resolveSchema={stageOutputs.resolveSchema} />
           ) : null,
-          "Exogenous Scout": stageOutputs.exogenousScout ? (
-            <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
-          ) : null,
           "Hierarchy Mapper": (stageOutputs.hierarchyMapper || stageOutputs.relationshipBuilder || stageOutputs.formBuilder) ? (
             <HierarchyMapperStepOutput
               hierarchyMapper={stageOutputs.hierarchyMapper}
               relationshipBuilder={stageOutputs.relationshipBuilder}
               formBuilder={stageOutputs.formBuilder}
             />
+          ) : null,
+          "Feature Architect": stageOutputs.featureArchitect ? (
+            <FeatureArchitectStepOutput featureArchitect={stageOutputs.featureArchitect} />
+          ) : null,
+          "Feature Validator": (stageOutputs.featureValidator || (stageOutputs.featureArchitect as any)?.featureValidator) ? (
+            <FeatureValidatorStepOutput
+              featureValidator={stageOutputs.featureValidator || (stageOutputs.featureArchitect as any)?.featureValidator}
+            />
+          ) : null,
+          "Exogenous Scout": stageOutputs.exogenousScout ? (
+            <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
         };
         console.log(stageOutputs)

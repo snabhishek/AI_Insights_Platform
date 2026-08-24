@@ -129,17 +129,29 @@ export default function ProjectsPage() {
     const next = { ...(currentStatuses || INITIAL_PIPELINE_STATUSES) } as PipelineStatuses;
     if (!stageStatuses) return next;
 
+    const isCompleted = (v?: string) => v === "Completed" || v === "completed" || v === "Success" || v === "success" || v === "ok" || v === "done";
+    const isRunning = (v?: string) => v === "In Progress" || v === "in_progress" || v === "in-progress" || v === "Running" || v === "running" || v === "Retrying" || v === "retrying";
+
     // Single-node stages
     const mapSingle = (node: string, label: string) => {
       const v = stageStatuses[node];
       if (!v) return;
-      if (v === "Completed") next[label] = "Completed";
-      else if (v === "Retrying" || v === "In Progress") next[label] = "In Progress";
-      else if (v === "Failed") next[label] = "Pending";
-      else if (v === "Pending" && next[label] !== "Completed") next[label] = "Pending";
+      if (isCompleted(v)) next[label] = "Completed";
+      else if (isRunning(v)) next[label] = "In Progress";
+      else if (v === "Failed" || v === "failed") next[label] = "Pending";
+      else if ((v === "Pending" || v === "pending") && next[label] !== "Completed") next[label] = "Pending";
     };
+
     mapSingle("inspect", "Data Inspection");
     mapSingle("resolveSchema", "Schema Resolver");
+    mapSingle("hierarchyMapper", "Hierarchy Mapper");
+    mapSingle("hierarchyMapperNode", "Hierarchy Mapper");
+    mapSingle("relationshipBuilder", "Hierarchy Mapper");
+    mapSingle("formBuilder", "Hierarchy Mapper");
+    mapSingle("featureArchitect", "Feature Architect");
+    mapSingle("featureArchitectNode", "Feature Architect");
+    mapSingle("featureValidator", "Feature Validator");
+    mapSingle("featureValidatorNode", "Feature Validator");
     mapSingle("exogenousScout", "Exogenous Scout");
     mapSingle("exogenous", "Exogenous Scout");
 
@@ -147,33 +159,23 @@ export default function ProjectsPage() {
     const profileVal = stageStatuses.profileData;
     const preprocessVal = stageStatuses.preprocess;
     if (profileVal || preprocessVal) {
-      const vals = [profileVal, preprocessVal].filter(Boolean);
-      const isAnyRunning = vals.some((v) => v === "In Progress" || v === "Retrying");
-      const allCompleted = profileVal === "Completed" && preprocessVal === "Completed";
-      const anyCompleted = profileVal === "Completed" || preprocessVal === "Completed";
-
-      if (allCompleted) {
+      if (isCompleted(profileVal) || isCompleted(preprocessVal)) {
         next["Data Profiling"] = "Completed";
-      } else if (isAnyRunning || anyCompleted) {
+      } else if (isRunning(profileVal) || isRunning(preprocessVal)) {
         next["Data Profiling"] = "In Progress";
       }
     }
 
-    mapSingle("hierarchyMapper", "Hierarchy Mapper");
-    mapSingle("relationshipBuilder", "Hierarchy Mapper");
-    mapSingle("formBuilder", "Hierarchy Mapper");
-
-    // Feature Engineering stage mapping
-    const hmVal = stageStatuses.hierarchyMapper || stageStatuses.relationshipBuilder;
+    // Feature Engineering composite status
+    const hmVal = stageStatuses.hierarchyMapper || stageStatuses.hierarchyMapperNode || stageStatuses.relationshipBuilder;
+    const faVal = stageStatuses.featureArchitect || stageStatuses.featureArchitectNode;
+    const fvVal = stageStatuses.featureValidator || stageStatuses.featureValidatorNode;
     const exoVal = stageStatuses.exogenousScout || stageStatuses.exogenous;
-    if (hmVal === "Completed" && exoVal === "Completed") {
-      next["Hierarchy Mapper"] = "Completed";
-      next["Exogenous Scout"] = "Completed";
+
+    const feSteps = [hmVal, faVal, fvVal, exoVal].filter(Boolean);
+    if (feSteps.length > 0 && feSteps.every((v) => isCompleted(v))) {
       next["Feature Engineering"] = "Completed";
-    } else if (hmVal === "Completed") {
-      next["Hierarchy Mapper"] = "Completed";
-      next["Feature Engineering"] = "In Progress";
-    } else if (hmVal === "In Progress" || exoVal === "In Progress" || hmVal === "Retrying" || exoVal === "Retrying") {
+    } else if (feSteps.some((v) => isRunning(v) || isCompleted(v))) {
       next["Feature Engineering"] = "In Progress";
     }
 
@@ -354,8 +356,11 @@ export default function ProjectsPage() {
           "Data Inspection": "inspect",
           "Data Profiling": "profileData",
           "Schema Resolver": "resolveSchema",
+          "Hierarchy Mapper": "hierarchyMapperNode",
+          "Feature Architect": "featureArchitectNode",
+          "Feature Validator": "featureArchitectNode",
           "Exogenous Scout": "exogenous",
-          "Feature Engineering": "exogenous",
+          "Feature Engineering": "hierarchyMapperNode",
         };
         payload.step = stepMap[step] || step;
       }
@@ -455,34 +460,18 @@ export default function ProjectsPage() {
 
   const handleApprove = () => {
     setRequiresApproval(false);
-    const isDataIngestionComplete = pipelineStatuses["Schema Resolver"] === "Completed" || pipelineStatuses["Data Inspection"] === "Completed";
+    setRunStatus("Running");
+    setActiveStage("Feature Engineering");
+    setWorkflowMessage("Advancing workflow to Feature Engineering stage...");
+    setPipelineStatuses((prev) => ({
+      ...prev,
+      "Data Inspection": "Completed",
+      "Data Profiling": "Completed",
+      "Schema Resolver": "Completed",
+      "Feature Engineering": "In Progress",
+    }));
 
-    if (isDataIngestionComplete) {
-      setRunStatus("Running");
-      setActiveStage("Feature Engineering");
-      setWorkflowMessage("Advancing workflow to Feature Engineering stage...");
-      setPipelineStatuses((prev) => ({
-        ...prev,
-        "Data Inspection": "Completed",
-        "Data Profiling": "Completed",
-        "Schema Resolver": "Completed",
-        "Feature Engineering": "In Progress",
-      }));
-      if (selectedProject?.id) {
-        void updateProject(selectedProject.id, {
-          agentState: {
-            ...(selectedProject.agentState as Record<string, any> || {}),
-            requiresApproval: false,
-            activeStage: "Feature Engineering",
-            status: "completed",
-            message: "Data Ingestion approved; advancing to Feature Engineering stage",
-          },
-        });
-      }
-    } else {
-      setRunStatus("Running");
-      void runWorkflow("approve");
-    }
+    void runWorkflow("approve", "Feature Engineering");
   };
 
   const handleRetry = (step?: string) => {

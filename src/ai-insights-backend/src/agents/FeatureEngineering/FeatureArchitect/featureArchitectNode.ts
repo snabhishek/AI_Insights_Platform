@@ -2,6 +2,7 @@ import { RunnableConfig } from "@langchain/core/runnables";
 import { AgentState, IngestionServices } from "../../state";
 import { logMilestoneThinking } from "../../utils/agentUtils";
 import { createFeatureArchitectGraph } from "./graph";
+import { cleanupRunContainer } from "../../tools/helpers/pythonExecutor";
 
 export async function featureArchitectNode(state: typeof AgentState.State, config?: RunnableConfig) {
   const services = config?.configurable?.services as IngestionServices;
@@ -15,44 +16,56 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
     "Feature Architect Agent is starting feature engineering design workflow..."
   );
 
-  // 1. Invoke the compiled Feature Architect subgraph
-  const architectGraph = createFeatureArchitectGraph();
-  const graphResult = await architectGraph.invoke(
-    {
-      batchedTables: state.batchedTables,
-      inspector: state.inspection, // Pass state.inspection as inspector input
-      dataProfile: state.dataProfile, // Pass state.dataProfile
-      userPrompt: state.userPrompt, // Pass userPrompt from main state
-      connectorId: state.connectorId, // Pass connectorId from main state
-      runTimestamp: state.runTimestamp, // Pass runTimestamp from main state
-    },
-
-    {
-      configurable: { services },
-      recursionLimit: 100,
-    }
-  );
-
-  const finalOutput = graphResult.finalOutput || {};
-
-  await logMilestoneThinking(
-    services,
-    "Feature Engineering",
-    "Feature Architect Agent design workflow completed successfully."
-  );
-
-  return {
-    featureArchitect: finalOutput,
-    status: "completed",
-    summary: "Feature Engineering completed successfully",
-    steps: [
+  try {
+    // 1. Invoke the compiled Feature Architect subgraph
+    const architectGraph = createFeatureArchitectGraph();
+    const graphResult = await architectGraph.invoke(
       {
-        name: "Feature Engineering",
-        status: "completed",
-        summary: "Architected feature creation, transformation, extraction, and selection.",
+        batchedTables: state.batchedTables,
+        inspector: state.inspection,
+        dataProfile: state.dataProfile,
+        userPrompt: state.userPrompt,
+        connectorId: state.connectorId,
+        runTimestamp: state.runTimestamp,
       },
-    ],
-    stageOutputs: { featureArchitect: finalOutput },
-    stageStatuses: { featureArchitect: "Completed" },
-  };
+      {
+        configurable: { services },
+        recursionLimit: 100,
+      }
+    );
+
+    const finalOutput = graphResult.finalOutput || {};
+    const featureValidatorOutput = finalOutput.featureValidator || graphResult.featureValidator || {};
+
+    await logMilestoneThinking(
+      services,
+      "Feature Engineering",
+      "Feature Architect & Validator workflow completed successfully."
+    );
+
+    return {
+      featureArchitect: finalOutput,
+      featureValidator: featureValidatorOutput,
+      status: "running",
+      summary: "Feature Engineering completed successfully",
+      steps: [
+        {
+          name: "Feature Engineering",
+          status: "completed",
+          summary: "Architected and validated feature creation, transformation, extraction, and selection.",
+        },
+      ],
+      stageOutputs: { 
+        featureArchitect: finalOutput,
+        featureValidator: featureValidatorOutput,
+      },
+      stageStatuses: { 
+        featureArchitect: "Completed",
+        featureValidator: "Completed",
+      },
+    };
+  } finally {
+    // Clean up container session upon completing the entire Feature Engineering stage
+    await cleanupRunContainer(services?.projectId || "", state.runTimestamp || "");
+  }
 }

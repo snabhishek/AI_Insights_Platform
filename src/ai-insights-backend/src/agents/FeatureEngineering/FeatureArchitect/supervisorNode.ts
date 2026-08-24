@@ -93,6 +93,13 @@ export async function supervisorNode(
   ) {
     return { nextWorker: "programRectifier" };
   }
+  if (
+    state.featureValidator?.pythonCode &&
+    !historyWorkers.includes("featureValidator_executed") &&
+    !historyWorkers.includes("featureValidator_executed_failed")
+  ) {
+    return { nextWorker: "programRectifier" };
+  }
 
   // 2. Otherwise, check state progression to call workers or finish
   if (services) {
@@ -116,7 +123,7 @@ export async function supervisorNode(
     const getTableColumnsAndProfileTool = createGetTableColumnsAndProfileTool(state.inspector, state.dataProfile);
 
     const result = await invokeAgentJson<SupervisorOutput>(
-      "featureArchitect",
+      "featureSupervisor",
       model,
       userMessage,
       fallback,
@@ -149,6 +156,7 @@ export async function supervisorNode(
         dataValidation: state.dataValidation,
         featureExtraction: state.featureExtraction,
         featureSelection: state.featureSelection,
+        featureValidator: state.featureValidator,
         summary: "Feature Architecture planning and execution completed successfully under supervisor control.",
       };
       return {

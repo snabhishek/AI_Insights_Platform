@@ -68,6 +68,11 @@ export async function programRectificationNode(
     fragment = state.featureSelection.pythonCode || "";
     historyKey = "featureSelection_executed";
     stateField = "featureSelection";
+  } else if (state.featureValidator?.pythonCode && !historyWorkers.includes("featureValidator_executed")) {
+    region = "FEATURE_VALIDATION";
+    fragment = state.featureValidator.pythonCode || "";
+    historyKey = "featureValidator_executed";
+    stateField = "featureValidator";
   }
 
   if (!region) {
@@ -177,7 +182,24 @@ export async function programRectificationNode(
       break;
     }
 
-    // If failed and model is available, attempt rectification
+    // Check if error is an environment issue rather than code syntax/runtime
+    const isEnvError =
+      lastStderr.includes("Docker daemon is not running") ||
+      lastStderr.includes("Docker SDK execution error") ||
+      lastStderr.includes("connect ECONNREFUSED");
+
+    if (isEnvError) {
+      if (services) {
+        await logMilestoneThinking(
+          services,
+          "Feature Engineering",
+          `Docker environment unavailable for live execution. Pipeline code for region ${region} preserved to disk.`
+        );
+      }
+      break;
+    }
+
+    // If failed due to code error and model is available, attempt rectification
     if (model) {
       if (services) {
         await logMilestoneThinking(
@@ -220,24 +242,18 @@ export async function programRectificationNode(
           runTimestamp: state.runTimestamp,
         });
 
-        const rectifierResult = await validateWithRetry<RectifierOutput>(
-          "programRectifier",
-          async () =>
-            await invokeAgentJson<RectifierOutput>(
-              "featureArchitect",
-              model,
-              userMessage,
-              fallback,
-              services,
-              {
-                systemPrompt,
-                traceLabel: "featureArchitect:rectifier",
-                tools: [...fsTools],
-                recursionLimit: 100,
-              }
-            ),
+        await invokeAgentJson<RectifierOutput>(
+          "featureArchitect",
+          model,
+          userMessage,
           fallback,
-          services
+          services,
+          {
+            systemPrompt,
+            traceLabel: "featureArchitect:rectifier",
+            tools: [...fsTools],
+            recursionLimit: 100,
+          }
         );
 
         // Re-read the updated script from disk after rectifier tool execution
