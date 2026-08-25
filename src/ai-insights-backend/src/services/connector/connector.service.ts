@@ -84,12 +84,8 @@ export class ConnectorService {
     } else if (type === "excel") {
       try {
         if (connectionConfig.fileName) {
-          if (this.fileService.fileExists(connectionConfig.fileName)) {
-            const schema = await this.connectionTester.getSchema(type, connectionConfig);
-            tables = schema.tables.length;
-          } else {
-            tables = 1;
-          }
+          const schema = await this.duckDBService.getSchema(type, connectionConfig);
+          tables = schema.tables.length;
         } else {
           tables = 1;
         }

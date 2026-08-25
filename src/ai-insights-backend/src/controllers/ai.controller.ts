@@ -52,8 +52,9 @@ export class AIController {
       step?: string;
       projectId?: string;
     };
-    // AI model calls with batched inspection can take several minutes
-    req.setTimeout(300000);
+    // Disable socket timeouts for long-running AI workflow SSE streaming
+    req.setTimeout(0);
+    res.setTimeout(0);
 
     if (!connectorId || !Array.isArray(connectorId) || connectorId.length === 0) {
       res.status(400).json({ success: false, message: "connectorId is required" });
@@ -72,7 +73,7 @@ export class AIController {
       if (!res.writableEnded) {
         res.write(": keep-alive\n\n");
       }
-    }, 15000);
+    }, 10000);
 
     try {
       const stream = this.ingestionAgentService.run(connectorId, userPrompt ?? prompt ?? "", {

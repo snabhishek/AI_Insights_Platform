@@ -202,11 +202,28 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
   return "Not Started";
 }
 
+const FEATURE_ENGINEERING_SUBSTEPS = [
+  "Hierarchy Mapper",
+  "Feature Architect",
+  "Feature Validator",
+  "Exogenous Scout",
+] as const;
+
 function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
-  const status = (pipelineStatuses["Exogenous Scout"] || pipelineStatuses["Feature Engineering"]) as PipelineStatus ?? "Not Started";
-  if (status === "Completed") return "Completed";
-  if (status === "In Progress") return "In Progress";
-  if (status === "Pending") return "Pending";
+  const s1 = (pipelineStatuses["Hierarchy Mapper"] as PipelineStatus) ?? "Not Started";
+  const s2 = (pipelineStatuses["Feature Architect"] as PipelineStatus) ?? "Not Started";
+  const s3 = (pipelineStatuses["Feature Validator"] as PipelineStatus) ?? "Not Started";
+  const s4 = (pipelineStatuses["Exogenous Scout"] as PipelineStatus) ?? "Not Started";
+
+  if (s1 === "Completed" && s2 === "Completed" && s3 === "Completed" && s4 === "Completed") {
+    return "Completed";
+  }
+  if ([s1, s2, s3, s4].some((s) => s === "In Progress" || s === "Completed")) {
+    return "In Progress";
+  }
+  if ([s1, s2, s3, s4].some((s) => s === "Pending")) {
+    return "Pending";
+  }
   return "Not Started";
 }
 

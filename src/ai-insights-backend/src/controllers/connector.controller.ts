@@ -309,7 +309,22 @@ export class ConnectorController {
       }
 
       // Also collect any dynamic query parameters that match parent parameters directly (e.g. ?category=Heat+Pumps)
-      const reservedKeys = new Set(["sourceId", "schemaId", "connectorId", "fieldId", "field", "table", "search", "controlType", "parents", "parentFields", "limit"]);
+      const reservedKeys = new Set([
+        "sourceId",
+        "schemaId",
+        "connectorId",
+        "fieldId",
+        "field",
+        "table",
+        "tableName",
+        "columnName",
+        "column",
+        "search",
+        "controlType",
+        "parents",
+        "parentFields",
+        "limit",
+      ]);
       const queryParentParams: Record<string, unknown> = { ...(parentParams || {}) };
 
       for (const [key, val] of Object.entries(req.query)) {

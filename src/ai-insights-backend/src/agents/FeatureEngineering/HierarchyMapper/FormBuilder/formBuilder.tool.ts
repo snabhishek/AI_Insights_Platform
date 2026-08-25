@@ -50,10 +50,14 @@ export async function generateHierarchicalFormsTool(
         ? "searchable_dropdown"
         : "dropdown";
 
+      const colName = node.columnName || node.aliasOf?.[0] || node.id;
+
       fields.push({
-        name: node.id,
-        fieldId: node.id,
-        label: node.aliasOf && node.aliasOf[0] ? node.aliasOf[0].replace(/_/g, " ").toUpperCase() : node.id,
+        name: colName,
+        fieldId: colName,
+        columnName: colName,
+        tableName: node.tableName,
+        label: node.aliasOf && node.aliasOf[0] ? node.aliasOf[0].replace(/_/g, " ").toUpperCase() : colName,
         description: `Filter field in ${entityScope} (Role: ${node.role})`,
         controlType,
         parentField: parentFields[0] || null,
@@ -112,13 +116,17 @@ export function normalizeAndEnforceFormSchema(
   const normalizedGroups = rawGroups.map((group: any) => {
     const rawFields = Array.isArray(group.fields) ? group.fields : [];
     const normalizedFields = rawFields.map((field: any) => {
-      const fieldId = field.fieldId || field.name || field.id;
+      const fieldId = field.columnName || field.fieldId || field.name || field.id;
       visitedNodeIds.add(fieldId);
 
-      const relNode = relNodes.find((n) => n.id === fieldId);
+      const relNode = relNodes.find(
+        (n) => n.id === fieldId || n.columnName === fieldId || (n.aliasOf && n.aliasOf.includes(fieldId))
+      );
 
       // Collect all parent relationships
-      const activeParentRels = rels.filter((r) => r.child === fieldId && r.status !== "rejected");
+      const activeParentRels = rels.filter(
+        (r) => (r.child === fieldId || (relNode && r.child === relNode.id)) && r.status !== "rejected"
+      );
       const parentFields: string[] = Array.isArray(field.parentFields) && field.parentFields.length > 0
         ? field.parentFields
         : activeParentRels.map((r) => r.parent);
@@ -137,15 +145,23 @@ export function normalizeAndEnforceFormSchema(
       // Explicitly remove legacy optionsSource and optionsEndpoint
       const { optionsSource, optionsEndpoint, ...cleanField } = field;
 
+      const resolvedOptions =
+        Array.isArray(field.options) && field.options.length > 0
+          ? field.options
+          : (relNode?.sampleValues && relNode.sampleValues.length > 0 ? relNode.sampleValues : undefined);
+
       return {
         ...cleanField,
         fieldId,
         name: fieldId,
+        columnName: field.columnName || relNode?.columnName || fieldId,
+        tableName: field.tableName || relNode?.tableName,
         label: field.label || (relNode?.aliasOf?.[0] ? relNode.aliasOf[0].replace(/_/g, " ").toUpperCase() : fieldId),
         controlType,
         parentField: parentFields[0] || field.parentField || null,
         parentFields,
         requiredParentParams: parentFields,
+        options: resolvedOptions,
       };
     });
 
@@ -159,17 +175,21 @@ export function normalizeAndEnforceFormSchema(
   // Collect zero-edge standalone nodes not yet visited
   const standaloneFields: FormFieldDefinition[] = [];
   for (const node of relNodes) {
-    if (node.role === "identifier" || visitedNodeIds.has(node.id)) continue;
+    const colName = node.columnName || node.aliasOf?.[0] || node.id;
+    if (node.role === "identifier" || visitedNodeIds.has(node.id) || visitedNodeIds.has(colName)) continue;
 
     const hasEdges = rels.some((r) => r.parent === node.id || r.child === node.id);
     if (!hasEdges) {
       visitedNodeIds.add(node.id);
-      const isDailyDate = /date|timestamp/i.test(node.id) && !/year|quarter|month|week|dayofweek/i.test(node.id);
+      visitedNodeIds.add(colName);
+      const isDailyDate = /date|timestamp/i.test(colName) && !/year|quarter|month|week|dayofweek/i.test(colName);
 
       standaloneFields.push({
-        fieldId: node.id,
-        name: node.id,
-        label: node.aliasOf && node.aliasOf[0] ? node.aliasOf[0].replace(/_/g, " ").toUpperCase() : node.id,
+        fieldId: colName,
+        name: colName,
+        columnName: colName,
+        tableName: node.tableName,
+        label: node.aliasOf && node.aliasOf[0] ? node.aliasOf[0].replace(/_/g, " ").toUpperCase() : colName,
         description: `Standalone feature filter (Role: ${node.role})`,
         controlType: isDailyDate ? "date_range" : "dropdown",
         parentField: null,

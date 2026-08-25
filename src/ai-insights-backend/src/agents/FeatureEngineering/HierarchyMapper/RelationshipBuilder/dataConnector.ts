@@ -61,47 +61,36 @@ export class GenericDataConnector implements IGenericDataConnector {
 
     try {
       if (this.duckDBService) {
-        // Run aggregation query via DuckDB for file/API/DB sources
-        const dbPath = (this.duckDBService as any).getDuckDbPath
-          ? (this.duckDBService as any).getDuckDbPath(this.connectionConfig.fileName || table)
-          : null;
-
-        if (dbPath && (this.duckDBService as any).getDbConnection) {
-          const { db, conn } = await (this.duckDBService as any).getDbConnection(dbPath);
-          try {
-            const sql = `
-              WITH ParentChildFreq AS (
-                SELECT 
-                  "${safeParent}" AS p_val,
-                  "${safeChild}" AS c_val,
-                  COUNT(*) AS freq
-                FROM "${table}"
-                WHERE "${safeParent}" IS NOT NULL AND "${safeChild}" IS NOT NULL
-                GROUP BY "${safeParent}", "${safeChild}"
-              ),
-              ParentMaxFreq AS (
-                SELECT
-                  p_val,
-                  MAX(freq) AS max_freq,
-                  SUM(freq) AS parent_total
-                FROM ParentChildFreq
-                GROUP BY p_val
-              )
-              SELECT
-                COALESCE(SUM(max_freq), 0) AS max_matching_rows,
-                COALESCE(SUM(parent_total), 0) AS total_rows
-              FROM ParentMaxFreq
-            `;
-            const rows = await (this.duckDBService as any).query(conn, sql);
-            if (rows && rows.length > 0) {
-              const maxMatching = Number(rows[0].max_matching_rows || 0);
-              const total = Number(rows[0].total_rows || 0);
-              sampleSize = total;
-              purity = total > 0 ? Number((maxMatching / total).toFixed(4)) : 1.0;
-            }
-          } finally {
-            await (this.duckDBService as any).closeConn(db, conn);
-          }
+        const dbPath = this.duckDBService.getDuckDbPath(this.connectionConfig.fileName || table);
+        const sql = `
+          WITH ParentChildFreq AS (
+            SELECT 
+              "${safeParent}" AS p_val,
+              "${safeChild}" AS c_val,
+              COUNT(*) AS freq
+            FROM "${table}"
+            WHERE "${safeParent}" IS NOT NULL AND "${safeChild}" IS NOT NULL
+            GROUP BY "${safeParent}", "${safeChild}"
+          ),
+          ParentMaxFreq AS (
+            SELECT
+              p_val,
+              MAX(freq) AS max_freq,
+              SUM(freq) AS parent_total
+            FROM ParentChildFreq
+            GROUP BY p_val
+          )
+          SELECT
+            COALESCE(SUM(max_freq), 0) AS max_matching_rows,
+            COALESCE(SUM(parent_total), 0) AS total_rows
+          FROM ParentMaxFreq
+        `;
+        const rows = await this.duckDBService.runQuery(dbPath, sql);
+        if (rows && rows.length > 0) {
+          const maxMatching = Number(rows[0].max_matching_rows || 0);
+          const total = Number(rows[0].total_rows || 0);
+          sampleSize = total;
+          purity = total > 0 ? Number((maxMatching / total).toFixed(4)) : 1.0;
         }
       }
     } catch (error) {
@@ -125,25 +114,15 @@ export class GenericDataConnector implements IGenericDataConnector {
 
     try {
       if (this.duckDBService) {
-        const dbPath = (this.duckDBService as any).getDuckDbPath
-          ? (this.duckDBService as any).getDuckDbPath(this.connectionConfig.fileName || table)
-          : null;
-
-        if (dbPath && (this.duckDBService as any).getDbConnection) {
-          const { db, conn } = await (this.duckDBService as any).getDbConnection(dbPath);
-          try {
-            const sql = `
-              SELECT DISTINCT "${safeField}" AS val
-              FROM "${table}"
-              WHERE "${safeField}" IS NOT NULL
-              LIMIT ${limit}
-            `;
-            const rows = await (this.duckDBService as any).query(conn, sql);
-            return rows.map((r: any) => String(r.val)).filter(Boolean);
-          } finally {
-            await (this.duckDBService as any).closeConn(db, conn);
-          }
-        }
+        const dbPath = this.duckDBService.getDuckDbPath(this.connectionConfig.fileName || table);
+        const sql = `
+          SELECT DISTINCT "${safeField}" AS val
+          FROM "${table}"
+          WHERE "${safeField}" IS NOT NULL
+          LIMIT ${limit}
+        `;
+        const rows = await this.duckDBService.runQuery(dbPath, sql);
+        return rows.map((r: any) => String(r.val)).filter(Boolean);
       }
     } catch (error) {
       console.warn(`[GenericDataConnector] getValueSet query error for ${field}:`, error);
@@ -162,25 +141,15 @@ export class GenericDataConnector implements IGenericDataConnector {
 
     try {
       if (this.duckDBService) {
-        const dbPath = (this.duckDBService as any).getDuckDbPath
-          ? (this.duckDBService as any).getDuckDbPath(this.connectionConfig.fileName || table)
-          : null;
-
-        if (dbPath && (this.duckDBService as any).getDbConnection) {
-          const { db, conn } = await (this.duckDBService as any).getDbConnection(dbPath);
-          try {
-            const sql = `
-              SELECT COUNT(DISTINCT "${safeField}") AS cnt
-              FROM "${table}"
-              WHERE "${safeField}" IS NOT NULL
-            `;
-            const rows = await (this.duckDBService as any).query(conn, sql);
-            if (rows && rows.length > 0) {
-              return Number(rows[0].cnt || 0);
-            }
-          } finally {
-            await (this.duckDBService as any).closeConn(db, conn);
-          }
+        const dbPath = this.duckDBService.getDuckDbPath(this.connectionConfig.fileName || table);
+        const sql = `
+          SELECT COUNT(DISTINCT "${safeField}") AS cnt
+          FROM "${table}"
+          WHERE "${safeField}" IS NOT NULL
+        `;
+        const rows = await this.duckDBService.runQuery(dbPath, sql);
+        if (rows && rows.length > 0) {
+          return Number(rows[0].cnt || 0);
         }
       }
     } catch (error) {

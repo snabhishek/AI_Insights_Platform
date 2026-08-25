@@ -1,6 +1,8 @@
 export interface FormFieldDefinition {
   name: string;
   fieldId?: string;
+  columnName?: string;
+  tableName?: string;
   type?: string;
   controlType?: string;
   label: string;

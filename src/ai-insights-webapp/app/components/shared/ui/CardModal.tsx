@@ -98,36 +98,38 @@ export default function CardModal({
     const cardPipeline = workflowCard?.title || workflowCard?.id || "Data Ingestion";
     const stepIdChanged = lastStepIdRef.current !== activeStep.id;
 
-    if (activeStepStatus === "Completed" && projectId) {
-      fetchAgentThinkingApi(projectId, cardPipeline, activeStep.id)
-        .then((res) => {
-          if (res.success && res.data?.thinking && res.data.thinking.length > 0) {
-            setThinkingLogs(res.data.thinking);
-          } else {
-            return fetchAgentThinkingApi(projectId, "Data Ingestion", activeStep.id).then((fallbackRes) => {
-              if (fallbackRes.success && fallbackRes.data?.thinking) {
-                setThinkingLogs(fallbackRes.data.thinking);
-              } else {
-                setThinkingLogs([]);
-              }
-            });
-          }
-        })
-        .catch((err) => {
-          console.error("Failed to fetch agent thinking:", err);
-          setThinkingLogs([]);
-        });
-      
-      if (stepIdChanged) {
-        lastStepIdRef.current = activeStep.id;
+    const loadThinking = async () => {
+      if (!projectId) return;
+      try {
+        const res = await fetchAgentThinkingApi(projectId, cardPipeline, activeStep.id);
+        if (res.success && res.data?.thinking && res.data.thinking.length > 0) {
+          setThinkingLogs(res.data.thinking);
+          return;
+        }
+        const feRes = await fetchAgentThinkingApi(projectId, "Feature Engineering", activeStep.id);
+        if (feRes.success && feRes.data?.thinking && feRes.data.thinking.length > 0) {
+          setThinkingLogs(feRes.data.thinking);
+          return;
+        }
+        const diRes = await fetchAgentThinkingApi(projectId, "Data Ingestion", activeStep.id);
+        if (diRes.success && diRes.data?.thinking && diRes.data.thinking.length > 0) {
+          setThinkingLogs(diRes.data.thinking);
+          return;
+        }
+      } catch (err) {
+        console.warn("Failed to fetch agent thinking:", err);
       }
-    } else {
-      const streamed = agentState?.agentThinking?.[activeStep.id] || [];
-      setThinkingLogs(streamed);
+    };
 
-      if (stepIdChanged) {
-        lastStepIdRef.current = activeStep.id;
-      }
+    const streamed = agentState?.agentThinking?.[activeStep.id] || [];
+    if (streamed.length > 0) {
+      setThinkingLogs(streamed);
+    } else {
+      loadThinking();
+    }
+
+    if (stepIdChanged) {
+      lastStepIdRef.current = activeStep.id;
     }
   }, [activeStep?.id, activeStepStatus, isOpen, projectId, agentState?.agentThinking, workflowCard?.id, workflowCard?.title]);
 

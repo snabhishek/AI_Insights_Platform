@@ -1,3 +1,6 @@
+import { setupTimestampedLogging } from "./utils/logger";
+setupTimestampedLogging();
+
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -91,7 +94,7 @@ async function bootstrap() {
   const agentThinkingRepository = new PostgresAgentThinkingRepository(db);
   const agentThinkingService = new AgentThinkingService(agentThinkingRepository);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester, duckDBService);
-  const sourceRegistryService = new SourceRegistryService(connectorRepository, connectionTester);
+  const sourceRegistryService = new SourceRegistryService(connectorRepository, connectionTester, duckDBService);
   connectorController = new ConnectorController(connectorService, connectionTester, sourceRegistryService);
   // agentController = new AgentController(connectorService);
   const queueService = new QueueService(db);

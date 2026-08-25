@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "npm run db:generate && npx nodemon --exec node --max-old-space-size=8192 -r ts-node/register src/index.ts",
+    "dev": "npm run db:generate && npx nodemon --config nodemon.json",
     "build": "npm run db:generate && npx tsc",
     "start": "node --max-old-space-size=8192 dist/index.js",
     "db:generate": "npx drizzle-kit generate"
@@ -12,10 +12,14 @@
     "@langchain/community": "^1.1.29",
     "@langchain/google-genai": "^2.2.0",
     "@langchain/langgraph": "^1.4.7",
+    "@langchain/mcp-adapters": "^1.1.4",
     "@langchain/openai": "^1.5.5",
     "@langchain/tavily": "^1.2.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/server-filesystem": "^2026.7.10",
     "cheerio": "^1.2.0",
     "cors": "^2.8.5",
+    "dockerode": "^5.0.1",
     "dotenv": "^16.5.0",
     "drizzle-orm": "^0.45.2",
     "duck-duck-scrape": "^2.2.7",
@@ -35,6 +39,7 @@
   },
   "devDependencies": {
     "@types/cors": "^2.8.18",
+    "@types/dockerode": "^4.0.1",
     "@types/express": "^5.0.0",
     "@types/js-yaml": "^4.0.9",
     "@types/node": "^22.15.0",
