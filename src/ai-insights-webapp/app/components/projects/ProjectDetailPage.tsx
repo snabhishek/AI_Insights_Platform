@@ -451,6 +451,13 @@ export default function ProjectDetailPage({
           "Exogenous Scout": stageOutputs.exogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
+          "Hierarchy Mapper": (stageOutputs.hierarchyMapper || stageOutputs.relationshipBuilder || stageOutputs.formBuilder) ? (
+            <HierarchyMapperStepOutput
+              hierarchyMapper={stageOutputs.hierarchyMapper}
+              relationshipBuilder={stageOutputs.relationshipBuilder}
+              formBuilder={stageOutputs.formBuilder}
+            />
+          ) : null,
         };
         console.log(stageOutputs)
 

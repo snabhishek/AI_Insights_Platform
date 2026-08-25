@@ -133,6 +133,7 @@ export class SourceRegistryService implements ISourceRegistryService {
   async fetchFilterOptions(query: FilterOptionsQuery): Promise<FilterOptionsResult> {
     const { sourceId, fieldId, tableName, parentParams, parentFields = [], search, controlType, limit = 50 } = query;
 
+    // Security check identifiers against allowlist regex
     const cleanFieldId = this.validateIdentifier(fieldId, "fieldId");
     const targetTable = tableName
       ? this.validateIdentifier(tableName, "tableName")
@@ -166,6 +167,7 @@ export class SourceRegistryService implements ISourceRegistryService {
         }
       }
 
+      // User instruction: "If no values for parent fields, Consider the subfield as Independent field"
       if (activeParentFilters.length === 0) {
         isIndependentFallback = true;
       }
@@ -351,6 +353,24 @@ export class SourceRegistryService implements ISourceRegistryService {
           dateRange: { min, max },
           isIndependentFallback,
         };
+      }
+
+      // 2. Handling for dropdown and searchable_dropdown
+      const sample = await this.connectionTesterService.getSampleWithOffset(
+        source.type,
+        source.connectionConfig,
+        cleanTable,
+        limit * 10,
+        0
+      );
+
+      let rows = sample.rows || [];
+
+      // Apply parent filtering if active
+      if (activeParentFilters.length > 0) {
+        rows = rows.filter((row) =>
+          activeParentFilters.every((pf) => String(row[pf.col]).toLowerCase() === String(pf.val).toLowerCase())
+        );
       }
 
       // Apply case-insensitive search term matching if present

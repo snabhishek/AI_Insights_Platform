@@ -143,6 +143,7 @@ export default function ProjectsPage() {
     };
 
     mapSingle("inspect", "Data Inspection");
+    mapSingle("inspect", "Data Inspection");
     mapSingle("resolveSchema", "Schema Resolver");
     mapSingle("hierarchyMapper", "Hierarchy Mapper");
     mapSingle("hierarchyMapperNode", "Hierarchy Mapper");

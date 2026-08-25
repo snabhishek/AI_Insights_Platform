@@ -239,6 +239,20 @@ export class DuckDBService implements IDuckDBService {
     } finally {
       this.releaseConnection(dbPath);
     }
+  private async closeConn(db: any, conn: any): Promise<void> {
+    return new Promise((resolve) => {
+      try {
+        if (conn && conn.close) conn.close();
+        if (db && db.close) db.close();
+      } catch {
+        // ignore close errors
+      }
+      resolve();
+    });
+  }
+
+  private sanitizeIdentifier(name: string): string {
+    return name.replace(/"/g, '""');
   }
 
   private resolveFilePath(fileName?: string): string | null {
@@ -550,6 +564,9 @@ export class DuckDBService implements IDuckDBService {
           `INSERT INTO "${tableName}" VALUES ('${config.url || "api_endpoint"}', '200 OK', '12ms')`
         );
       });
+      }
+    } finally {
+      await this.closeConn(db, conn);
     }
   }
 
@@ -668,6 +685,9 @@ export class DuckDBService implements IDuckDBService {
 
       return { success: true, type: type === "restapi" ? "api" : "file", tables: tablesList };
     });
+    } finally {
+      await this.closeConn(db, conn);
+    }
   }
 
   async getPreview(
@@ -711,6 +731,9 @@ export class DuckDBService implements IDuckDBService {
       const headers = Object.keys(rows[0]);
       return { success: true, headers, rows };
     });
+    } finally {
+      await this.closeConn(db, conn);
+    }
   }
 
   async getRowCount(type: ConnectorType, config: ConnectionConfig, tableName: string): Promise<number> {
