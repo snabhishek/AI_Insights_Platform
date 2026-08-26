@@ -116,20 +116,22 @@ export async function analyzeFunctionalDependenciesTool(
   const aliasMap = new Map<string, string[]>(); // canonicalId -> [colNames]
 
   for (const cand of candidates) {
-    const canonicalId = `${cand.entityScope}_${cand.originalName}`.toLowerCase().replace(/[^a-z0-9_]/g, "_");
+    const colId = cand.originalName;
     
-    // Check cardinality if connector is provided
+    // Check cardinality and real sample values if connector is provided
     let cardinality = 0;
     let sampleValues: string[] = [];
     if (connector) {
       cardinality = await connector.getFieldCardinality(cand.originalName, cand.tableName);
-      if (cardinality > 0 && cardinality <= 20) {
-        sampleValues = await connector.getValueSet(cand.originalName, 5, cand.tableName);
+      if (cardinality > 0 && cardinality <= 50) {
+        sampleValues = await connector.getValueSet(cand.originalName, 10, cand.tableName);
       }
     }
 
     nodes.push({
-      id: canonicalId,
+      id: colId,
+      columnName: cand.originalName,
+      tableName: cand.tableName,
       aliasOf: [cand.originalName],
       role: cand.role,
       entityScope: cand.entityScope,

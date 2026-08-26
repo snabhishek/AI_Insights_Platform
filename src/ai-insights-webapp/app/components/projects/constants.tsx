@@ -78,7 +78,7 @@ export const PIPELINE_STEPS: Workflow[] = [
       {
         id: "Hierarchy Mapper",
         title: "Hierarchy Mapper",
-        description: "Discovers dimensional hierarchies and builds and builds the queryable filter graph",
+        description: "Discovers dimensional hierarchies and builds the queryable filter graph",
         metric: "HierarchyMapper",
         color: "green",
         icon: (
@@ -104,6 +104,19 @@ export const PIPELINE_STEPS: Workflow[] = [
         ),
       },
       {
+        id: "Feature Validator",
+        title: "Feature Validator",
+        description: "Audits features for leakage, multicollinearity, drift, and importance",
+        metric: "FeatureValidator",
+        color: "teal",
+        icon: (
+          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M9 11l3 3L22 4" />
+            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+          </svg>
+        ),
+      },
+      {
         id: "Exogenous Scout",
         title: "Exogenous Scout",
         description: "Scouts and ranks external signals by predictive power",
@@ -111,25 +124,9 @@ export const PIPELINE_STEPS: Workflow[] = [
         color: "purple",
         icon: (
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="7" height="9" rx="1" />
-            <rect x="14" y="3" width="7" height="5" rx="1" />
-            <rect x="14" y="12" width="7" height="9" rx="1" />
-            <rect x="3" y="16" width="7" height="5" rx="1" />
-          </svg>
-        ),
-      },
-      {
-        id: "Feature Validator",
-        title: "Feature Validator",
-        description: "Validates the quality of generated features and identifies potential issues",
-        metric: "FeatureValidator",
-        color: "purple",
-        icon: (
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="7" height="9" rx="1" />
-            <rect x="14" y="3" width="7" height="5" rx="1" />
-            <rect x="14" y="12" width="7" height="9" rx="1" />
-            <rect x="3" y="16" width="7" height="5" rx="1" />
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+            <path d="M11 8a3 3 0 0 0-3 3" />
           </svg>
         ),
       },

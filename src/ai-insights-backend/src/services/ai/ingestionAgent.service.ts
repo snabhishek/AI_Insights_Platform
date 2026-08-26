@@ -50,6 +50,24 @@ const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
     "Analyzing internal dataset schemas and domain context...",
     "Searching web for relevant external APIs, public datasets, and economic indicators...",
     "Scouting and ranking exogenous feature candidates by predictive power..."
+  ],
+  "Feature Architect": [
+    "Analyzing table relationships and candidate features...",
+    "Generating feature creation and transformation pipeline code...",
+    "Assembling unified feature matrix and performing data validation...",
+    "Executing feature extraction and selection algorithms in sandbox..."
+  ],
+  "Feature Validator": [
+    "Auditing feature matrix for target leakage and temporal violations...",
+    "Computing Variance Inflation Factors (VIF) and correlation matrices for multicollinearity...",
+    "Assessing population stability index (PSI) for feature drift...",
+    "Computing permutation importance rankings and emitting validated feature set..."
+  ],
+  "Feature Engineering": [
+    "Discovering domain hierarchies and functional dependencies...",
+    "Architecting and transforming candidate features...",
+    "Validating features for leakage, multicollinearity, and drift...",
+    "Scouting exogenous variables and external dataset signals..."
   ]
 };
 
@@ -130,8 +148,11 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       // Resolve or create the thread ID
       const isNewRun = !options?.action;
-      let threadId: string = isNewRun ? "" : (options?.sessionId ?? "");
-      let meta = threadId ? this.sessionMeta.get(threadId) : undefined;
+      let threadId: string = options?.sessionId || (isNewRun ? `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : "");
+      if (!threadId) {
+        threadId = `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      }
+      let meta = this.sessionMeta.get(threadId);
 
       if (isNewRun) {
         this.checkpointer = new MemorySaver();
@@ -147,8 +168,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         }
       }
 
-      if (isNewRun || !meta) {
-        threadId = `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      if (!meta) {
         meta = { threadId, connectorId, userPrompt: userPrompt ?? "", projectId: options?.projectId };
         this.sessionMeta.set(threadId, meta);
       } else if (options?.projectId && !meta.projectId) {
@@ -196,25 +216,25 @@ export class IngestionAgentService implements IIngestionAgentService {
             if (substep === "Data Inspection" || substep === "Data Ingestion" || substep === "inspect") {
               currentNode = "inspect";
               currentStage = "inspect";
-              currentStageStatuses.inspect = "Running";
+              currentStageStatuses.inspect = "In Progress";
             } else if (substep === "Data Profiling" || substep === "profileData") {
               currentNode = "profileData";
               currentStage = "profileData";
               currentStageStatuses.inspect = "Completed";
-              currentStageStatuses.profileData = "Running";
+              currentStageStatuses.profileData = "In Progress";
             } else if (substep === "preprocess") {
               currentNode = "preprocess";
               currentStage = "preprocess";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
-              currentStageStatuses.preprocess = "Running";
+              currentStageStatuses.preprocess = "In Progress";
             } else if (substep === "Schema Resolver" || substep === "resolveSchema") {
               currentNode = "resolveSchema";
               currentStage = "resolveSchema";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
               currentStageStatuses.preprocess = "Completed";
-              currentStageStatuses.resolveSchema = "Running";
+              currentStageStatuses.resolveSchema = "In Progress";
             } else if (substep === "Hierarchy Mapper" || substep === "Relationship Builder" || substep === "Form Builder" || substep === "hierarchyMapper" || substep === "hierarchyMapperNode") {
               currentNode = "hierarchyMapperNode";
               currentStage = "hierarchyMapper";
@@ -222,7 +242,39 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStageStatuses.profileData = "Completed";
               currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Completed";
-              currentStageStatuses.hierarchyMapper = "Running";
+              currentStageStatuses.hierarchyMapper = "In Progress";
+            } else if (
+              substep === "Feature Architect" ||
+              substep === "Feature Engineering" ||
+              substep === "featureArchitect" ||
+              substep === "featureArchitectNode" ||
+              substep === "featureSupervisor" ||
+              substep === "featureCreation" ||
+              substep === "featureTransformation" ||
+              substep === "buildDataset" ||
+              substep === "dataValidation" ||
+              substep === "featureExtraction" ||
+              substep === "featureSelection" ||
+              substep === "programRectifier"
+            ) {
+              currentNode = "featureArchitectNode";
+              currentStage = "featureArchitect";
+              currentStageStatuses.inspect = "Completed";
+              currentStageStatuses.profileData = "Completed";
+              currentStageStatuses.preprocess = "Completed";
+              currentStageStatuses.resolveSchema = "Completed";
+              currentStageStatuses.hierarchyMapper = "Completed";
+              currentStageStatuses.featureArchitect = "In Progress";
+            } else if (substep === "Feature Validator" || substep === "featureValidator" || substep === "featureValidatorNode") {
+              currentNode = "featureArchitectNode";
+              currentStage = "featureValidator";
+              currentStageStatuses.inspect = "Completed";
+              currentStageStatuses.profileData = "Completed";
+              currentStageStatuses.preprocess = "Completed";
+              currentStageStatuses.resolveSchema = "Completed";
+              currentStageStatuses.hierarchyMapper = "Completed";
+              currentStageStatuses.featureArchitect = "Completed";
+              currentStageStatuses.featureValidator = "In Progress";
             } else if (substep === "Exogenous Scout" || substep === "exogenous") {
               currentNode = "exogenousScout";
               currentStage = "exogenousScout";
@@ -231,7 +283,9 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Completed";
               currentStageStatuses.hierarchyMapper = "Completed";
-              currentStageStatuses.exogenousScout = "Running";
+              currentStageStatuses.featureArchitect = "Completed";
+              currentStageStatuses.featureValidator = "Completed";
+              currentStageStatuses.exogenousScout = "In Progress";
             }
 
             const mergedValues = {
@@ -280,12 +334,18 @@ export class IngestionAgentService implements IIngestionAgentService {
             hierarchyMapper: "Hierarchy Mapper",
             hierarchyMapperNode: "Hierarchy Mapper",
             "Hierarchy Mapper": "Hierarchy Mapper",
+            featureArchitect: "Feature Architect",
+            featureArchitectNode: "Feature Architect",
+            "Feature Architect": "Feature Architect",
+            featureValidator: "Feature Validator",
+            featureValidatorNode: "Feature Validator",
+            "Feature Validator": "Feature Validator",
             exogenous: "Exogenous Scout",
             exogenousScout: "Exogenous Scout",
+            "Exogenous Scout": "Exogenous Scout",
             "Data Ingestion": "Data Ingestion",
             "Data Profiling": "Data Profiling",
             "Schema Resolver": "Schema Resolver",
-            "Exogenous Scout": "Exogenous Scout",
             "Feature Engineering": "Hierarchy Mapper"
           };
           const substep = stepMap[options.step];
@@ -297,21 +357,43 @@ export class IngestionAgentService implements IIngestionAgentService {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             } else if (substep === "Data Profiling") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             } else if (substep === "Schema Resolver") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
             } else if (substep === "Hierarchy Mapper") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+            } else if (substep === "Feature Architect") {
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+            } else if (substep === "Feature Validator") {
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             } else if (substep === "Exogenous Scout") {
               await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+            } else if (substep === "Feature Engineering") {
+              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
             }
           }
         } else if (options.action === "approve") {
@@ -322,16 +404,30 @@ export class IngestionAgentService implements IIngestionAgentService {
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
           } else if (nextNodes.includes("resolveSchema")) {
             activeSubstep = "Schema Resolver";
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
           } else if (nextNodes.includes("hierarchyMapperNode") || nextNodes.includes("hierarchyMapper")) {
             activeSubstep = "Hierarchy Mapper";
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+          } else if (nextNodes.includes("featureArchitectNode") || nextNodes.includes("featureArchitect")) {
+            activeSubstep = "Feature Architect";
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
           } else if (nextNodes.includes("exogenous")) {
             activeSubstep = "Exogenous Scout";
             await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
@@ -350,12 +446,24 @@ export class IngestionAgentService implements IIngestionAgentService {
             dataProfile: {},
             preprocess: {},
             schemaResolution: {},
+            hierarchyMapper: {},
+            featureArchitect: {},
+            featureValidator: {},
             exogenousScout: {},
             status: "running",
             summary: "Ingestion workflow started",
             steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
             stageOutputs: {},
-            stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" }
+            stageStatuses: { 
+              inspect: "In Progress", 
+              profileData: "Pending", 
+              preprocess: "Pending", 
+              resolveSchema: "Pending", 
+              hierarchyMapper: "Pending",
+              featureArchitect: "Pending",
+              featureValidator: "Pending",
+              exogenousScout: "Pending" 
+            }
           };
           try {
             await this.projectService.updateAgentState(options.projectId, cleanInitialState, userPrompt);
@@ -369,11 +477,13 @@ export class IngestionAgentService implements IIngestionAgentService {
           const currentGraphState = await workflow.getState(config).catch(() => null);
           const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
 
-          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Exogenous Scout") ? "Completed" : "In Progress";
-          const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const schemaStatus = (activeSubstep === "Hierarchy Mapper" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
-          const hierarchyStatus = activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Hierarchy Mapper" ? "In Progress" : "Pending");
+          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : "In Progress";
+          const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+          const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+          const schemaStatus = (activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || (activeSubstep === "Exogenous Scout") || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
+          const hierarchyStatus = (activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Hierarchy Mapper" ? "In Progress" : "Pending");
+          const featureArchitectStatus = (activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Feature Architect" || activeSubstep === "Feature Engineering" ? "In Progress" : "Pending");
+          const featureValidatorStatus = activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Feature Validator" ? "In Progress" : "Pending");
           const exogenousStatus = activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending";
 
           const mergedStageStatuses = {
@@ -383,10 +493,12 @@ export class IngestionAgentService implements IIngestionAgentService {
             preprocess: preprocessStatus,
             resolveSchema: schemaStatus,
             hierarchyMapper: hierarchyStatus,
+            featureArchitect: featureArchitectStatus,
+            featureValidator: featureValidatorStatus,
             exogenousScout: exogenousStatus,
           };
 
-          const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : activeSubstep === "Hierarchy Mapper" ? "hierarchyMapperNode" : "exogenousScout";
+          const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : activeSubstep === "Hierarchy Mapper" ? "hierarchyMapperNode" : activeSubstep === "Feature Architect" ? "featureArchitectNode" : activeSubstep === "Feature Validator" ? "featureArchitectNode" : "exogenousScout";
 
           const fullBaseResult: IngestionAgentRunResult = {
             ...calculatedBase,
@@ -480,7 +592,61 @@ export class IngestionAgentService implements IIngestionAgentService {
       } else if (options?.action === "approve") {
         // Approve: resume from the current interrupt
         console.info(`[Workflow] Approve — resuming thread ${threadId}`);
-        stream = await workflow.stream(null, config);
+
+        let graphState = await workflow.getState(config).catch(() => null);
+        let hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+
+        // If checkpointer has no state (e.g. server restart or fresh MemorySaver instance),
+        // restore state from project's persisted agentState in PostgreSQL!
+        if (!hasState && options?.projectId) {
+          try {
+            const project = await this.projectService.getById(options.projectId);
+            const savedAgentState = project?.agentState as any;
+            if (savedAgentState && (savedAgentState.schemaResolution || savedAgentState.stageOutputs)) {
+              console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
+
+              const predecessorNode = "resolveSchema";
+              const restoredState = {
+                ...savedAgentState,
+                connectorId,
+                projectId: options.projectId,
+                userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
+                status: "running",
+                summary: "Advancing to Feature Engineering",
+              };
+
+              await workflow.updateState(config, restoredState, predecessorNode);
+              graphState = await workflow.getState(config).catch(() => null);
+              hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+              console.info(`[Workflow] Restored graph state. Next node to execute: [${graphState?.next?.join(", ")}]`);
+            }
+          } catch (restoreErr: any) {
+            console.warn(`[Workflow] Failed to restore state from project:`, restoreErr?.message);
+          }
+        }
+
+        if (hasState) {
+          stream = await workflow.stream(null, config);
+        } else {
+          console.warn(`[Workflow] No next node or checkpoint found for approve. Initializing state from resolveSchema.`);
+          const fallbackState = { 
+            connectorId, 
+            projectId: options?.projectId ?? "", 
+            userPrompt: userPrompt ?? "", 
+            status: "running", 
+            summary: "Resuming workflow at Feature Engineering",
+            inspection: {},
+            dataProfile: {},
+            schemaResolution: {},
+            preprocessing: {},
+            batchedTables: [],
+            steps: [],
+            stageOutputs: {},
+            stageStatuses: { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "In Progress", featureArchitect: "Pending", exogenousScout: "Pending" }
+          };
+          await workflow.updateState(config, fallbackState, "resolveSchema");
+          stream = await workflow.stream(null, config);
+        }
       } else {
         // New workflow: first invocation / re-run
         console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);
@@ -498,7 +664,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             batchedTables: [],
             steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
             stageOutputs: {},
-            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" }
+            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
           },
           config
         );
@@ -511,7 +677,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         summary: "Workflow task has been queued (Concurrency Limit: 10). Waiting for resources...",
         sessionId: threadId,
         requiresApproval: false,
-        stageStatuses: { inspect: "Queued", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending" },
+        stageStatuses: { inspect: "Queued", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" },
         currentNode: "inspect",
         currentStage: "inspect",
         steps: [],
@@ -524,13 +690,49 @@ export class IngestionAgentService implements IIngestionAgentService {
       // 2. Define the background task to be run inside the QueueService
       const executeWorkflowTask = async () => {
         try {
+          const updateNodeStatuses = (nodeName: string, statuses: Record<string, string>): Record<string, string> => {
+            const updated = { ...statuses };
+            if (nodeName === "inspect") {
+              updated.inspect = "Completed";
+              if (!updated.profileData || updated.profileData === "Pending") {
+                updated.profileData = "In Progress";
+              }
+            } else if (nodeName === "profileData") {
+              updated.inspect = "Completed";
+              updated.profileData = "Completed";
+              if (!updated.resolveSchema || updated.resolveSchema === "Pending") {
+                updated.resolveSchema = "In Progress";
+              }
+            } else if (nodeName === "resolveSchema") {
+              updated.inspect = "Completed";
+              updated.profileData = "Completed";
+              updated.resolveSchema = "Completed";
+            } else if (nodeName === "hierarchyMapperNode" || nodeName === "hierarchyMapper") {
+              updated.hierarchyMapper = "Completed";
+              if (!updated.featureArchitect || updated.featureArchitect === "Pending") {
+                updated.featureArchitect = "In Progress";
+              }
+            } else if (nodeName === "featureArchitectNode" || nodeName === "featureArchitect") {
+              updated.featureArchitect = "Completed";
+              updated.featureValidator = "Completed";
+              if (!updated.exogenousScout || updated.exogenousScout === "Pending") {
+                updated.exogenousScout = "In Progress";
+              }
+            } else if (nodeName === "exogenous" || nodeName === "exogenousScout") {
+              updated.exogenousScout = "Completed";
+            }
+            return updated;
+          };
+
           // Stream updates from initial execution segment
           for await (const chunk of stream) {
             if (this.stoppedSessions.has(threadId)) break;
 
             const completedNodes = Object.keys(chunk || {});
+            let currentStatuses = { ...(latestGraphStateValues.stageStatuses || {}) };
             for (const nodeName of completedNodes) {
               console.info(`[Workflow] Node [${nodeName}] completed`);
+              currentStatuses = updateNodeStatuses(nodeName, currentStatuses);
             }
 
             const graphState = await workflow.getState(config);
@@ -539,17 +741,19 @@ export class IngestionAgentService implements IIngestionAgentService {
                 ...latestGraphStateValues,
                 ...graphState.values,
                 stageOutputs: { ...(latestGraphStateValues.stageOutputs || {}), ...(graphState.values.stageOutputs || {}) },
-                stageStatuses: { ...(latestGraphStateValues.stageStatuses || {}), ...(graphState.values.stageStatuses || {}) }
+                stageStatuses: { ...currentStatuses, ...(graphState.values.stageStatuses || {}) }
               };
+            } else {
+              latestGraphStateValues.stageStatuses = currentStatuses;
             }
-            const result = buildResultFromGraphState(graphState, threadId, connectorId);
+            const result = buildResultFromGraphState({ values: latestGraphStateValues, next: graphState?.next }, threadId, connectorId);
             if (options?.projectId) {
               result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
             }
             agentJobEvents.emit(`job:update:${threadId}`, result);
           }
 
-          // Auto-advance through interrupt gates to run all nodes through to schema resolution unless stopped
+          // Check if workflow reached an approval gate between pipeline stages
           let graphState = await workflow.getState(config);
           if (graphState?.values) {
             latestGraphStateValues = {
@@ -559,6 +763,34 @@ export class IngestionAgentService implements IIngestionAgentService {
               stageStatuses: { ...(latestGraphStateValues.stageStatuses || {}), ...(graphState.values.stageStatuses || {}) }
             };
           }
+
+          const isAtApprovalGate =
+            Array.isArray(graphState?.next) &&
+            graphState.next.includes("hierarchyMapperNode") &&
+            options?.action !== "approve";
+
+          if (isAtApprovalGate) {
+            console.info(`[Workflow] Reached Stage 1 (Data Ingestion) completion. Pausing for user approval before Feature Engineering.`);
+            const pausedValues = {
+              ...latestGraphStateValues,
+              status: "paused",
+              requiresApproval: true,
+              summary: "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.",
+              message: "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.",
+            };
+            latestGraphStateValues = pausedValues;
+            const pausedResult = buildResultFromGraphState({ values: pausedValues, next: graphState?.next }, threadId, connectorId);
+            pausedResult.status = "paused";
+            pausedResult.requiresApproval = true;
+            pausedResult.nextStep = "Feature Engineering";
+            if (options?.projectId) {
+              await this.projectService.updateAgentState(options.projectId, pausedValues);
+              pausedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+            }
+            agentJobEvents.emit(`job:update:${threadId}`, pausedResult);
+            return;
+          }
+
           while (
             Array.isArray(graphState?.next) &&
             graphState.next.length > 0 &&
@@ -573,8 +805,10 @@ export class IngestionAgentService implements IIngestionAgentService {
               if (this.stoppedSessions.has(threadId)) break;
 
               const completedNodes = Object.keys(chunk || {});
+              let currentStatuses = { ...(latestGraphStateValues.stageStatuses || {}) };
               for (const nodeName of completedNodes) {
                 console.info(`[Workflow] Node [${nodeName}] completed`);
+                currentStatuses = updateNodeStatuses(nodeName, currentStatuses);
               }
 
               const currentGraphState = await workflow.getState(config);
@@ -583,10 +817,12 @@ export class IngestionAgentService implements IIngestionAgentService {
                   ...latestGraphStateValues,
                   ...currentGraphState.values,
                   stageOutputs: { ...(latestGraphStateValues.stageOutputs || {}), ...(currentGraphState.values.stageOutputs || {}) },
-                  stageStatuses: { ...(latestGraphStateValues.stageStatuses || {}), ...(currentGraphState.values.stageStatuses || {}) }
+                  stageStatuses: { ...currentStatuses, ...(currentGraphState.values.stageStatuses || {}) }
                 };
+              } else {
+                latestGraphStateValues.stageStatuses = currentStatuses;
               }
-              const result = buildResultFromGraphState(currentGraphState, threadId, connectorId);
+              const result = buildResultFromGraphState({ values: latestGraphStateValues, next: currentGraphState?.next }, threadId, connectorId);
               if (options?.projectId) {
                 result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
               }
@@ -783,13 +1019,67 @@ export class IngestionAgentService implements IIngestionAgentService {
   private async getAllProjectPipelineThinking(projectId: string, pipeline: string): Promise<Record<string, Array<{ time: string; text: string; done: boolean }>>> {
     const map: Record<string, Array<{ time: string; text: string; done: boolean }>> = {};
     try {
-      const substeps = ["Data Inspection", "Data Ingestion", "Data Profiling", "Schema Resolver", "Hierarchy Mapper", "Relationship Builder", "Form Builder", "Exogenous Scout", "Feature Engineering"];
-      for (const substep of substeps) {
-        const entry = await this.agentThinkingService.getThinking(projectId, pipeline, substep)
-          || await this.agentThinkingService.getThinking(projectId, "Feature Engineering", substep);        
-        if (entry) {
+      const allSubsteps = [
+        "Data Inspection",
+        "Data Ingestion",
+        "Data Profiling",
+        "Schema Resolver",
+        "Hierarchy Mapper",
+        "Relationship Builder",
+        "Form Builder",
+        "Feature Architect",
+        "Feature Validator",
+        "Exogenous Scout",
+        "Feature Engineering",
+        "featureSupervisor",
+        "featureCreation",
+        "featureTransformation",
+        "buildDataset",
+        "dataValidation",
+        "featureExtraction",
+        "featureSelection",
+        "programRectifier",
+      ];
+
+      for (const substep of allSubsteps) {
+        const entry =
+          (await this.agentThinkingService.getThinking(projectId, "Feature Engineering", substep)) ||
+          (await this.agentThinkingService.getThinking(projectId, "Data Ingestion", substep)) ||
+          (await this.agentThinkingService.getThinking(projectId, pipeline, substep));
+
+        if (entry && Array.isArray(entry.thinking) && entry.thinking.length > 0) {
           map[substep] = entry.thinking;
         }
+      }
+
+      // Aggregate sub-worker thinking logs into canonical "Feature Architect" step
+      const faWorkers = [
+        "featureSupervisor",
+        "featureCreation",
+        "featureTransformation",
+        "buildDataset",
+        "dataValidation",
+        "featureExtraction",
+        "featureSelection",
+        "programRectifier",
+        "Feature Engineering",
+      ];
+      const aggregatedFaLogs: Array<{ time: string; text: string; done: boolean }> = [
+        ...(map["Feature Architect"] || []),
+      ];
+
+      for (const w of faWorkers) {
+        if (map[w] && Array.isArray(map[w])) {
+          for (const item of map[w]) {
+            if (!aggregatedFaLogs.some((l) => l.text === item.text)) {
+              aggregatedFaLogs.push(item);
+            }
+          }
+        }
+      }
+
+      if (aggregatedFaLogs.length > 0) {
+        map["Feature Architect"] = aggregatedFaLogs;
       }
     } catch (err) {
       console.warn("Failed to retrieve agent thinking logs:", err);
