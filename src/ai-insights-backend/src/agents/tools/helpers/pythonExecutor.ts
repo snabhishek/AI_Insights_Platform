@@ -252,7 +252,7 @@ export async function executePythonScript(
   const scriptPath = path.join(baseDir, scriptName);
   fs.writeFileSync(scriptPath, code, "utf-8");
 
-  const duckDbDir = path.join(process.cwd(), "uploads", "duckdb");
+  const duckDbDir = path.join(process.cwd(), "Projects");
   if (!fs.existsSync(duckDbDir)) {
     fs.mkdirSync(duckDbDir, { recursive: true });
   }

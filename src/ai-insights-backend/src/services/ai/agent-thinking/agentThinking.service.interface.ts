@@ -1,4 +1,4 @@
-import { AgentThinking, ThinkingLog } from "../../models/agentThinking.types";
+import { AgentThinking, ThinkingLog } from "../../../models/agentThinking.types";
 
 export interface IAgentThinkingService {
   getThinking(projectId: string, pipeline: string, substep: string): Promise<AgentThinking | undefined>;

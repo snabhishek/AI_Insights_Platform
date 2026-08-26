@@ -23,6 +23,10 @@ coverage/
 # Runtime & personalized project files
 ProjectFiles/
 **/ProjectFiles/
+Projects/
+projects/
+**/Projects/
+**/projects/
 uploads/
 drizzle/
 specs/

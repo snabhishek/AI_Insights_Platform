@@ -22,6 +22,8 @@ export interface FilterOptionsQuery {
   sourceId: string;
   fieldId: string;
   tableName?: string;
+  projectId?: string;
+  projectName?: string;
   parentParams?: Record<string, unknown>;
   parentFields?: string[];
   search?: string;

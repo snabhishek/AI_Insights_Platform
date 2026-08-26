@@ -271,7 +271,9 @@ export class ConnectorController {
   };
 
   getFilterOptions = async (req: Request, res: Response): Promise<void> => {
-    const sourceId = (req.query.sourceId as string) || (req.query.schemaId as string) || (req.query.connectorId as string);
+    const projectName = (req.query.projectName as string) || (req.query.project_name as string);
+    const projectId = (req.query.projectId as string) || (req.query.project as string);
+    const sourceId = (req.query.sourceId as string) || (req.query.schemaId as string) || (req.query.connectorId as string) || projectId;
     const fieldId = (req.query.fieldId as string) || (req.query.field as string);
     const tableName = req.query.table as string | undefined;
     const search = req.query.search as string | undefined;
@@ -311,6 +313,10 @@ export class ConnectorController {
       // Also collect any dynamic query parameters that match parent parameters directly (e.g. ?category=Heat+Pumps)
       const reservedKeys = new Set([
         "sourceId",
+        "projectId",
+        "project",
+        "projectName",
+        "project_name",
         "schemaId",
         "connectorId",
         "fieldId",
@@ -337,6 +343,8 @@ export class ConnectorController {
         sourceId,
         fieldId,
         tableName,
+        projectId,
+        projectName,
         parentParams: queryParentParams,
         parentFields,
         search,
