@@ -346,7 +346,6 @@ export class IngestionAgentService implements IIngestionAgentService {
             "Data Ingestion": "Data Ingestion",
             "Data Profiling": "Data Profiling",
             "Schema Resolver": "Schema Resolver",
-            "Exogenous Scout": "Exogenous Scout",
             "Feature Engineering": "Hierarchy Mapper"
           };
           const substep = stepMap[options.step];

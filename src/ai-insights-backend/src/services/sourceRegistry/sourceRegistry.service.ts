@@ -355,23 +355,7 @@ export class SourceRegistryService implements ISourceRegistryService {
         };
       }
 
-      // 2. Handling for dropdown and searchable_dropdown
-      const sample = await this.connectionTesterService.getSampleWithOffset(
-        source.type,
-        source.connectionConfig,
-        cleanTable,
-        limit * 10,
-        0
-      );
-
-      let rows = sample.rows || [];
-
-      // Apply parent filtering if active
-      if (activeParentFilters.length > 0) {
-        rows = rows.filter((row) =>
-          activeParentFilters.every((pf) => String(row[pf.col]).toLowerCase() === String(pf.val).toLowerCase())
-        );
-      }
+      // Handling for dropdown and searchable_dropdown
 
       // Apply case-insensitive search term matching if present
       if (search && typeof search === "string" && search.trim().length > 0) {
