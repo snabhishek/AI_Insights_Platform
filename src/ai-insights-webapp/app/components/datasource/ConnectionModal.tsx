@@ -131,7 +131,7 @@ export default function ConnectionModal({
         account,
         url,
         fileName,
-        fileContent,
+        fileContent: ["excel", "csv", "tsv"].includes(type) ? undefined : fileContent,
       };
       const result = await testConnection(type, config);
       setTesting(false);

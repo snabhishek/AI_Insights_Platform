@@ -1,5 +1,7 @@
 export interface RelationshipNode {
-  id: string; // Canonical ID (e.g., "product", "order_country")
+  id: string; // Canonical / Column ID (e.g., "carrier_name", "order_country")
+  columnName?: string; // Exact physical database column name
+  tableName?: string; // Originating database/file table name
   aliasOf: string[]; // Original columns merged into this node
   role: "identifier" | "categorical" | "location" | "temporal";
   entityScope: string; // Entity group (e.g. "product", "customer", "order")

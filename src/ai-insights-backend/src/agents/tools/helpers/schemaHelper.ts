@@ -45,17 +45,17 @@ export interface ResolvedSchemaPayload {
  */
 export function getPackagesDir(): string {
   const candidateDirs = [
-    path.resolve(__dirname, "../../../../../packages"),
+    path.resolve(process.cwd(), "../../packages"),
+    path.resolve(process.cwd(), "uploads/packages"),
     path.resolve(process.cwd(), "../packages"),
-    path.resolve(process.cwd(), "src/packages"),
-    path.resolve(__dirname, "../../../packages"),
+    path.resolve(__dirname, "../../../../../packages"),
   ];
   for (const dir of candidateDirs) {
     if (fsSync.existsSync(dir)) {
       return dir;
     }
   }
-  return candidateDirs[0];
+  return candidateDirs[1]; // default to uploads/packages
 }
 
 /**

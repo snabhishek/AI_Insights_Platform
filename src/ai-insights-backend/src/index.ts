@@ -1,3 +1,6 @@
+import { setupTimestampedLogging } from "./utils/logger";
+setupTimestampedLogging();
+
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
@@ -22,13 +25,10 @@ import * as connectorsSchema from "./db/connectors";
 import * as agentThinkingSchema from "./db/agentThinking";
 import * as agentJobsSchema from "./db/agentJobs";
 const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema };
-import * as agentJobsSchema from "./db/agentJobs";
-const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema };
 import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
 import { AgentThinkingService } from "./services/ai/agentThinking.service";
 // import { AgentController } from "./controllers/agent.controller";
 import { IngestionAgentService } from "./services/ai/ingestionAgent.service";
-import { QueueService } from "./services/queue/queue.service";
 import { QueueService } from "./services/queue/queue.service";
 import { AIController } from "./controllers/ai.controller";
 import { PostgresDomainRepository } from "./repositories/domain.repository";
@@ -91,7 +91,7 @@ async function bootstrap() {
   const agentThinkingRepository = new PostgresAgentThinkingRepository(db);
   const agentThinkingService = new AgentThinkingService(agentThinkingRepository);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester, duckDBService);
-  const sourceRegistryService = new SourceRegistryService(connectorRepository, connectionTester);
+  const sourceRegistryService = new SourceRegistryService(connectorRepository, connectionTester, duckDBService);
   connectorController = new ConnectorController(connectorService, connectionTester, sourceRegistryService);
   // agentController = new AgentController(connectorService);
   const queueService = new QueueService(db);

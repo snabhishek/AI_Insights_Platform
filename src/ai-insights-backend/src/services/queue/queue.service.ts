@@ -22,16 +22,26 @@ export class QueueService {
   }
 
   async enqueue(jobId: string, projectId: string, connectorId: string[], userPrompt: string, runFn: () => Promise<any>): Promise<void> {
-    // 1. Save job with 'queued' status in database
-    await this.db.insert(agentJobs).values({
-      id: jobId,
-      projectId,
-      connectorId,
-      userPrompt,
-      status: "queued",
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    });
+    // 1. Save job with 'queued' status in database (upsert to handle approval & retry on same session)
+    await this.db
+      .insert(agentJobs)
+      .values({
+        id: jobId,
+        projectId,
+        connectorId,
+        userPrompt,
+        status: "queued",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      })
+      .onConflictDoUpdate({
+        target: agentJobs.id,
+        set: {
+          status: "queued",
+          updatedAt: new Date(),
+          userPrompt,
+        },
+      });
 
     // 2. Add to local queue array
     this.pending.push({ jobId, projectId, runFn });
