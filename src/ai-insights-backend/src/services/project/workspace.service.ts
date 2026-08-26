@@ -1,18 +1,22 @@
 import { v4 as uuidv4 } from "uuid";
 import { IWorkspaceRepository } from "../../repositories/workspace.repository.interface";
 import { IProjectRepository } from "../../repositories/project.repository.interface";
+import { IConnectorRepository } from "../../repositories/connector.repository.interface";
+import { IDuckDBService, ProjectSourceInput } from "../duckdb/duckdb.service.interface";
 import { Workspace, CreateProjectDto, UpdateProjectDto } from "../../models/workspace.types";
 import { Project, ProjectRun } from "../../models/project.types";
 import { createProjectSchemaFile, deleteProjectSchemaFolder } from "../../agents/tools/helpers";
 
 export type ServiceResult<T> =
   | { success: true; data: T }
-  | { success: false; reason: "NOT_FOUND" | "FORBIDDEN" | "DUPLICATE" | "WORKSPACE_NOT_FOUND"; message: string };
+  | { success: false; reason: "NOT_FOUND" | "FORBIDDEN" | "DUPLICATE" | "WORKSPACE_NOT_FOUND" | "BAD_REQUEST"; message: string };
 
 export class WorkspaceService {
   constructor(
     private workspaceRepository: IWorkspaceRepository,
-    private projectRepository: IProjectRepository
+    private projectRepository: IProjectRepository,
+    private connectorRepository?: IConnectorRepository,
+    private duckDBService?: IDuckDBService
   ) {}
 
   async getAllWorkspaces(): Promise<Workspace[]> {
@@ -59,6 +63,9 @@ export class WorkspaceService {
       const projects = await this.projectRepository.getByWorkspaceId(id);
       for (const p of projects) {
         await deleteProjectSchemaFolder(ws.name, p.name);
+        if (this.duckDBService) {
+          await this.duckDBService.deleteProjectFolder(p.name);
+        }
       }
     } catch (e: any) {
       console.warn(`[workspaceService] Failed to clean up project folders during workspace deletion:`, e?.message || e);
@@ -83,6 +90,14 @@ export class WorkspaceService {
 
     const name = projectData.name.trim();
     const dataSources = projectData.dataSources || [];
+
+    if (!Array.isArray(dataSources) || dataSources.length === 0) {
+      return {
+        success: false,
+        reason: "BAD_REQUEST",
+        message: "Data source connectivity is required. Please select at least one data source to create a project.",
+      };
+    }
 
     const existingProjects = await this.projectRepository.getByWorkspaceId(workspaceId);
     const areSourceArraysEqual = (arr1: string[], arr2: string[]) => {
@@ -123,6 +138,7 @@ export class WorkspaceService {
 
     const created = await this.projectRepository.createProject(newProject);
     if (created) {
+      // 1. Create project schema YAML
       try {
         await createProjectSchemaFile(ws.name, {
           name: newProject.name,
@@ -132,6 +148,28 @@ export class WorkspaceService {
         });
       } catch (schemaErr: any) {
         console.warn(`[workspaceService] Failed to create project schema YAML file:`, schemaErr?.message || schemaErr);
+      }
+
+      // 2. Ingest connected data sources into DuckDB under Projects/<projectName>/
+      if (this.duckDBService && this.connectorRepository && dataSources.length > 0) {
+        try {
+          const projectSourceInputs: ProjectSourceInput[] = [];
+          for (const dsId of dataSources) {
+            const conn = await this.connectorRepository.getById(dsId);
+            if (conn) {
+              projectSourceInputs.push({
+                type: conn.type,
+                config: conn.connectionConfig,
+                name: conn.name,
+              });
+            }
+          }
+          if (projectSourceInputs.length > 0) {
+            await this.duckDBService.ingestProjectSources(newProject.name, projectSourceInputs);
+          }
+        } catch (ingestErr: any) {
+          console.warn(`[workspaceService] Warning during project DuckDB source ingestion:`, ingestErr?.message || ingestErr);
+        }
       }
     }
     return { success: true, data: created };
@@ -206,6 +244,14 @@ export class WorkspaceService {
         );
       } catch (folderErr: any) {
         console.warn(`[workspaceService] Failed to delete project schema folder for ${pid}:`, folderErr?.message || folderErr);
+      }
+
+      if (this.duckDBService && projectWithWs.project.name) {
+        try {
+          await this.duckDBService.deleteProjectFolder(projectWithWs.project.name);
+        } catch (duckDbCleanErr: any) {
+          console.warn(`[workspaceService] Failed to delete project DuckDB folder for ${pid}:`, duckDbCleanErr?.message || duckDbCleanErr);
+        }
       }
     }
 

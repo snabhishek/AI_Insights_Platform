@@ -36,7 +36,10 @@ export async function hierarchyMapperNode(state: typeof AgentState.State, config
     formBuilder: formResult.formBuilder,
   };
 
+  const activeRunTimestamp = state.runTimestamp || (services as any)?.runTimestamp || "";
+
   return {
+    runTimestamp: activeRunTimestamp,
     hierarchyMapper: combinedOutput as Record<string, unknown>,
     relationshipBuilder: relResult.relationshipBuilder as unknown as Record<string, unknown>,
     formBuilder: formResult.formBuilder as unknown as Record<string, unknown>,

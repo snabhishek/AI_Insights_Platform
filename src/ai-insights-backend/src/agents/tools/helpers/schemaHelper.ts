@@ -513,6 +513,49 @@ export interface ModularSchemaPayload {
 }
 
 /**
+ * Ensures the project run folder exists inside packages/ProjectFiles/<Workspace>-<Project>/<RunSlug>-<Timestamp>/Schemas/
+ * and copies any domain knowledge schema from the parent project directory into the run folder so all schemas are unified.
+ */
+export async function ensureProjectRunFolder(
+  workspaceName: string,
+  projectName: string,
+  runTimestamp: string
+): Promise<string> {
+  const packagesDir = getPackagesDir();
+  const cleanWsName = sanitizeName(workspaceName);
+  const cleanProjectTitle = sanitizeName(projectName);
+  const parentFolderName = `${cleanWsName}-${cleanProjectTitle}`;
+  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
+  const timestamp = (runTimestamp && runTimestamp.trim().length > 0) ? runTimestamp.trim() : generateDateTimeStamp();
+  const runFolderName = `${runSlug}-${timestamp}`;
+
+  const runSchemasDir = path.resolve(packagesDir, "ProjectFiles", parentFolderName, runFolderName, "Schemas");
+  await fs.mkdir(runSchemasDir, { recursive: true });
+
+  // Copy domain YAML from parent project schemas if exists
+  const parentSchemasDir = path.resolve(packagesDir, "ProjectFiles", parentFolderName, "Schemas");
+  if (fsSync.existsSync(parentSchemasDir)) {
+    try {
+      const files = await fs.readdir(parentSchemasDir);
+      for (const file of files) {
+        if (file.includes("_domain_") && (file.endsWith(".yaml") || file.endsWith(".yml"))) {
+          const srcFile = path.resolve(parentSchemasDir, file);
+          const destFile = path.resolve(runSchemasDir, file);
+          if (!fsSync.existsSync(destFile)) {
+            await fs.copyFile(srcFile, destFile);
+            console.info(`[ensureProjectRunFolder] Copied domain schema ${file} into run folder ${runFolderName}`);
+          }
+        }
+      }
+    } catch (copyErr) {
+      console.warn(`[ensureProjectRunFolder] Warning copying domain schema:`, copyErr);
+    }
+  }
+
+  return runSchemasDir;
+}
+
+/**
  * Saves resolved Schema Resolver output into modular Data Ingestion YAML file inside
  * packages/ProjectFiles/<Workspace>-<Project>/Schemas/:
  * <usecasetitle>_data_ingestion_<timestamp>.yaml

@@ -51,15 +51,6 @@ export class ConnectorService {
       await this.fileService.saveFile(connectionConfig.fileName, connectionConfig.fileContent);
     }
 
-    // Ingest into DuckDB upon connecting file-based data source
-    if (["excel", "csv", "tsv", "restapi"].includes(type)) {
-      try {
-        await this.duckDBService.ingestFileSource(type, connectionConfig);
-      } catch (err: any) {
-        console.warn("[ConnectorService] Failed to ingest file source into DuckDB:", err.message);
-      }
-    }
-
     // 2. Database metadata check:
     if (type === "postgres" && connectionConfig.host && connectionConfig.database) {
       try {
