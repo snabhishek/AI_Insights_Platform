@@ -1,9 +1,13 @@
 import { IProjectRepository } from "../../repositories/project.repository.interface";
 import { Project, ProjectRun, ProjectWithWorkspace } from "../../models/project.types";
 import { deleteProjectSchemaFolder } from "../../agents/tools/helpers";
+import { IDuckDBService } from "../duckdb/duckdb.service.interface";
 
 export class ProjectService {
-  constructor(private repository: IProjectRepository) {}
+  constructor(
+    private repository: IProjectRepository,
+    private duckDBService?: IDuckDBService
+  ) {}
 
   async getById(id: string): Promise<Project | undefined> {
     return this.repository.getById(id);
@@ -38,6 +42,9 @@ export class ProjectService {
       const pWs = await this.repository.getProjectWithWorkspace(id);
       if (pWs && pWs.project && pWs.workspaceName) {
         await deleteProjectSchemaFolder(pWs.workspaceName, pWs.project.name);
+        if (this.duckDBService) {
+          await this.duckDBService.deleteProjectFolder(pWs.project.name);
+        }
       }
     } catch (e: any) {
       console.warn(`[projectService] Failed to delete project schema folder for ${id}:`, e?.message || e);

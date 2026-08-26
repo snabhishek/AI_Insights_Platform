@@ -21,6 +21,8 @@ export interface FilterGroup {
 
 export interface FormSchema {
   sourceId?: string;
+  projectId?: string;
+  projectName?: string;
   filterGroups?: FilterGroup[];
   forms?: FilterGroup[];
 }
@@ -120,6 +122,8 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
 
         const queryParams = new URLSearchParams();
         queryParams.set("sourceId", sourceId);
+        if (schema?.projectId) queryParams.set("projectId", schema.projectId);
+        if (schema?.projectName) queryParams.set("projectName", schema.projectName);
         queryParams.set("fieldId", fieldId);
         if ((field as any).columnName) queryParams.set("columnName", (field as any).columnName);
         if ((field as any).tableName) queryParams.set("table", (field as any).tableName);

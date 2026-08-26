@@ -245,7 +245,11 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
   const inspectionSources = Array.isArray((state.inspection as any)?.sources)
     ? (state.inspection as any).sources
     : [state.inspection];
-  const activeRunTimestamp = (state.runTimestamp && state.runTimestamp.trim().length > 0) ? state.runTimestamp.trim() : generateDateTimeStamp();
+  const activeRunTimestamp = (state.runTimestamp && state.runTimestamp.trim().length > 0)
+    ? state.runTimestamp.trim()
+    : ((services as any)?.runTimestamp && String((services as any).runTimestamp).trim().length > 0
+        ? String((services as any).runTimestamp).trim()
+        : generateDateTimeStamp());
 
   const resolvedSources = await Promise.all(validConnectors.map(async (connector) => {
     const inspection = inspectionSources.find((source: any) => source?.connectorId === connector.id) || state.inspection;

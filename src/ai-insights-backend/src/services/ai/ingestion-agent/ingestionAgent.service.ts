@@ -1,20 +1,20 @@
 import { MemorySaver } from "@langchain/langgraph";
-import { ConnectorService } from "../connector/connector.service";
-import { ConnectionTesterService } from "../connector/connectionTester.service";
+import { ConnectorService } from "../../connector/connector.service";
+import { ConnectionTesterService } from "../../connector/connectionTester.service";
 import { IIngestionAgentService, IngestionAgentRunResult } from "./ingestionAgent.service.interface";
-import { IFileService } from "../file/file.service.interface";
-import { ProjectService } from "../project/project.service";
-import { createAgentGraph } from "../../agents/graph";
-import { 
-  AgentTraceHelper, 
-  buildResultFromGraphState, 
-  mapRetryStepToInterruptNode 
-} from "../../agents/utils/agentUtils";
-import { WorkflowSessionMeta } from "../../agents/state";
-import { IAgentThinkingService } from "./agentThinking.service.interface";
-import { QueueService } from "../queue/queue.service";
-import { agentJobEvents } from "../queue/queueEvents";
-import { generateDateTimeStamp } from "../../agents/tools/helpers";
+import { IFileService } from "../../file/file.service.interface";
+import { ProjectService } from "../../project/project.service";
+import { createAgentGraph } from "../../../agents/graph";
+import {
+  AgentTraceHelper,
+  buildResultFromGraphState,
+  mapRetryStepToInterruptNode
+} from "../../../agents/utils/agentUtils";
+import { WorkflowSessionMeta } from "../../../agents/state";
+import { IAgentThinkingService } from "../agent-thinking/agentThinking.service.interface";
+import { QueueService } from "../../queue/queue.service";
+import { agentJobEvents } from "../../queue/queueEvents";
+import { generateDateTimeStamp, ensureProjectRunFolder } from "../../../agents/tools/helpers";
 
 const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Data Ingestion": [
@@ -126,8 +126,8 @@ export class IngestionAgentService implements IIngestionAgentService {
 
 
   async *run(
-    connectorId: string[], 
-    userPrompt?: string, 
+    connectorId: string[],
+    userPrompt?: string,
     options?: { sessionId?: string; action?: "approve" | "retry"; step?: string; projectId?: string }
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
     const traceSession = await this.traceHelper.createTraceSession();
@@ -164,7 +164,7 @@ export class IngestionAgentService implements IIngestionAgentService {
           }
         }
         if (typeof global.gc === "function") {
-          try { global.gc(); } catch {}
+          try { global.gc(); } catch { }
         }
       }
 
@@ -191,6 +191,34 @@ export class IngestionAgentService implements IIngestionAgentService {
         stageStatuses: { inspect: "Running", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
       };
 
+      let savedAgentState: any = null;
+      let pWs: any = null;
+      if (options?.projectId) {
+        try {
+          pWs = await this.projectService.getProjectWithWorkspace(options.projectId);
+          savedAgentState = pWs?.project?.agentState;
+        } catch (e) {
+          console.warn("[Workflow] Failed to lookup project with workspace:", e);
+        }
+      }
+
+      // Determine the single unified runTimestamp for this execution
+      const activeRunTimestamp =
+        options?.action === "approve" ||
+        options?.action === "retry" ||
+        (options?.step && options.step !== "Data Inspection" && options.step !== "inspect")
+          ? savedAgentState?.runTimestamp || generateDateTimeStamp()
+          : generateDateTimeStamp();
+
+      // Ensure the unified project run folder exists before workflow execution begins
+      if (pWs && pWs.project && pWs.workspaceName) {
+        try {
+          await ensureProjectRunFolder(pWs.workspaceName, pWs.project.name, activeRunTimestamp);
+        } catch (folderErr) {
+          console.warn("[Workflow] Warning ensuring project run folder:", folderErr);
+        }
+      }
+
       // Populate services dependencies context to pass inside LangGraph config
       const services = {
         connectorService: this.connectorService,
@@ -202,6 +230,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         agentThinkingService: this.agentThinkingService,
         projectId: options?.projectId,
         pipeline: "Data Ingestion",
+        runTimestamp: activeRunTimestamp,
         onThinkingUpdate: async (substep: string) => {
           if (this.stoppedSessions.has(threadId)) return;
           try {
@@ -310,8 +339,8 @@ export class IngestionAgentService implements IIngestionAgentService {
         },
       };
 
-      const config = { 
-        configurable: { 
+      const config = {
+        configurable: {
           thread_id: threadId,
           services,
         },
@@ -440,7 +469,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             connectorId,
             projectId: options.projectId,
             userPrompt: userPrompt ?? "",
-            runTimestamp: generateDateTimeStamp(),
+            runTimestamp: activeRunTimestamp,
             batchedTables: [],
             inspection: {},
             dataProfile: {},
@@ -454,15 +483,15 @@ export class IngestionAgentService implements IIngestionAgentService {
             summary: "Ingestion workflow started",
             steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
             stageOutputs: {},
-            stageStatuses: { 
-              inspect: "In Progress", 
-              profileData: "Pending", 
-              preprocess: "Pending", 
-              resolveSchema: "Pending", 
+            stageStatuses: {
+              inspect: "In Progress",
+              profileData: "Pending",
+              preprocess: "Pending",
+              resolveSchema: "Pending",
               hierarchyMapper: "Pending",
               featureArchitect: "Pending",
               featureValidator: "Pending",
-              exogenousScout: "Pending" 
+              exogenousScout: "Pending"
             }
           };
           try {
@@ -530,8 +559,8 @@ export class IngestionAgentService implements IIngestionAgentService {
           threadId = `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
           meta = { threadId, connectorId, userPrompt: userPrompt ?? meta.userPrompt ?? "", projectId: options?.projectId };
           this.sessionMeta.set(threadId, meta);
-          const freshConfig = { 
-            configurable: { 
+          const freshConfig = {
+            configurable: {
               thread_id: threadId,
               services,
             },
@@ -541,11 +570,11 @@ export class IngestionAgentService implements IIngestionAgentService {
             await this.agentThinkingService.clearProjectPipelineThinking(options.projectId, pipeline);
           }
           stream = await workflow.stream(
-            { 
-              connectorId, 
-              projectId: options?.projectId ?? "", 
-              userPrompt: meta.userPrompt, 
-              status: "queued", 
+            {
+              connectorId,
+              projectId: options?.projectId ?? "",
+              userPrompt: meta.userPrompt,
+              status: "queued",
               summary: "Retrying from inspect",
               inspection: {},
               dataProfile: {},
@@ -575,9 +604,9 @@ export class IngestionAgentService implements IIngestionAgentService {
 
           if (retryCheckpointId) {
             console.info(`[Workflow] Retrying from checkpoint ${retryCheckpointId}`);
-            const retryConfig = { 
-              configurable: { 
-                thread_id: threadId, 
+            const retryConfig = {
+              configurable: {
+                thread_id: threadId,
                 checkpoint_id: retryCheckpointId,
                 services,
               },
@@ -611,6 +640,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 connectorId,
                 projectId: options.projectId,
                 userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
+                runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
                 status: "running",
                 summary: "Advancing to Feature Engineering",
               };
@@ -629,11 +659,12 @@ export class IngestionAgentService implements IIngestionAgentService {
           stream = await workflow.stream(null, config);
         } else {
           console.warn(`[Workflow] No next node or checkpoint found for approve. Initializing state from resolveSchema.`);
-          const fallbackState = { 
-            connectorId, 
-            projectId: options?.projectId ?? "", 
-            userPrompt: userPrompt ?? "", 
-            status: "running", 
+          const fallbackState = {
+            connectorId,
+            projectId: options?.projectId ?? "",
+            userPrompt: userPrompt ?? "",
+            runTimestamp: activeRunTimestamp,
+            status: "running",
             summary: "Resuming workflow at Feature Engineering",
             inspection: {},
             dataProfile: {},
@@ -651,11 +682,12 @@ export class IngestionAgentService implements IIngestionAgentService {
         // New workflow: first invocation / re-run
         console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);
         stream = await workflow.stream(
-          { 
-            connectorId, 
-            projectId: options?.projectId ?? "", 
-            userPrompt: userPrompt ?? "", 
-            status: "queued", 
+          {
+            connectorId,
+            projectId: options?.projectId ?? "",
+            userPrompt: userPrompt ?? "",
+            runTimestamp: activeRunTimestamp,
+            status: "queued",
             summary: "Ingestion workflow started",
             inspection: {},
             dataProfile: {},
@@ -840,7 +872,7 @@ export class IngestionAgentService implements IIngestionAgentService {
           }
 
           console.info(`[Workflow] State after invoke — next: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}], status: ${graphState?.values?.status || "unknown"}`);
-          
+
           if (this.stoppedSessions.has(threadId)) {
             const stoppedValues = {
               ...(graphState?.values || {}),
@@ -868,8 +900,8 @@ export class IngestionAgentService implements IIngestionAgentService {
           if (options?.projectId) {
             try {
               await this.projectService.updateAgentState(
-                options.projectId, 
-                graphState?.values ?? {}, 
+                options.projectId,
+                graphState?.values ?? {},
                 userPrompt ?? meta.userPrompt
               );
             } catch (persistError: any) {
@@ -922,7 +954,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       const onJobUpdate = (result: any) => {
         queue.push(result);
       };
-      
+
       const onJobClose = () => {
         queue.close();
       };
@@ -945,7 +977,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         await this.traceHelper.appendTraceEntry("workflow:error", "error", {
           connectorId,
           error: error?.message || String(error),
-        }).catch(() => {});
+        }).catch(() => { });
       }
       throw error;
     } finally {
@@ -962,7 +994,7 @@ export class IngestionAgentService implements IIngestionAgentService {
     threadId?: string
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
     const thinkingLogs: Array<{ time: string; text: string; done: boolean }> = [];
-    
+
     // Delete existing thinking for this substep first
     await this.agentThinkingService.deleteThinking(projectId, pipeline, substep);
 
@@ -974,12 +1006,12 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       const now = new Date();
       const timeStr = now.toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" });
-      
+
       // Mark previous logs as done
       for (const log of thinkingLogs) {
         log.done = true;
       }
-      
+
       // Add current log as not done
       thinkingLogs.push({
         time: timeStr,
@@ -1007,7 +1039,7 @@ export class IngestionAgentService implements IIngestionAgentService {
     if (thinkingLogs.length > 0) {
       thinkingLogs[thinkingLogs.length - 1].done = true;
       await this.agentThinkingService.saveThinking(projectId, pipeline, substep, thinkingLogs);
-      
+
       const allThinking = await this.getAllProjectPipelineThinking(projectId, pipeline);
       yield {
         ...baseResult,
@@ -1103,11 +1135,11 @@ export class IngestionAgentService implements IIngestionAgentService {
         projectService: this.projectService,
         traceHelper: this.traceHelper,
       };
-      const config = { 
-        configurable: { 
+      const config = {
+        configurable: {
           thread_id: sessionId,
           services,
-        } 
+        }
       };
       const graphState = await workflow.getState(config);
 
@@ -1136,7 +1168,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             status: "failed",
             summary: "Workflow stopped by user",
           });
-        } catch (_) {}
+        } catch (_) { }
       }
       return { success: true, message: "Workflow stopped" };
     }

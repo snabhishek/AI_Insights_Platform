@@ -52,6 +52,11 @@ export class PostgresProjectRepository implements IProjectRepository {
     return project;
   }
 
+  async getAll(): Promise<Project[]> {
+    const res = await this.db.select().from(schema.projects).orderBy(desc(schema.projects.createdAt));
+    return res.map((row) => this.mapRowToProject(row));
+  }
+
   async getProjectWithWorkspace(id: string): Promise<ProjectWithWorkspace | undefined> {
     const res = await this.db.select({
       project: schema.projects,
