@@ -128,7 +128,7 @@ export class IngestionAgentService implements IIngestionAgentService {
   async *run(
     connectorId: string[],
     userPrompt?: string,
-    options?: { sessionId?: string; action?: "approve" | "retry"; step?: string; projectId?: string }
+    options?: { sessionId?: string; action?: "approve" | "retry" | "resume"; step?: string; projectId?: string }
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
     const traceSession = await this.traceHelper.createTraceSession();
     const runStartedAt = new Date().toISOString();
@@ -678,6 +678,62 @@ export class IngestionAgentService implements IIngestionAgentService {
           await workflow.updateState(config, fallbackState, "resolveSchema");
           stream = await workflow.stream(null, config);
         }
+      } else if (options?.action === "resume") {
+        // Resume: continue from the paused phase (mid-execution checkpoint)
+        console.info(`[Workflow] Resume — continuing from thread ${threadId} at phase ${options.step}`);
+
+        let graphState = await workflow.getState(config).catch(() => null);
+        let hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+
+        // If checkpointer has no state, restore from project's persisted agentState
+        if (!hasState && options?.projectId) {
+          try {
+            const project = await this.projectService.getById(options.projectId);
+            const savedAgentState = project?.agentState as any;
+            if (savedAgentState && savedAgentState.stageOutputs) {
+              console.info(`[Workflow] Restoring graph checkpointer state from project database for resume on thread ${threadId}`);
+
+              // Determine the predecessor node based on the step we're resuming from
+              const predecessorNodeMap: Record<string, string> = {
+                "inspect": "inspect",
+                "profileData": "inspect",
+                "preprocess": "profileData",
+                "resolveSchema": "resolveSchema",
+                "hierarchyMapperNode": "resolveSchema",
+                "hierarchyMapper": "resolveSchema",
+                "featureArchitectNode": "hierarchyMapperNode",
+                "featureArchitect": "hierarchyMapperNode",
+                "featureValidator": "featureArchitectNode",
+                "exogenousScout": "featureArchitectNode",
+                "exogenous": "featureArchitectNode",
+              };
+              const predecessorNode = predecessorNodeMap[options.step || "inspect"] || "resolveSchema";
+
+              const restoredState = {
+                ...savedAgentState,
+                connectorId,
+                projectId: options.projectId,
+                userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
+                runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
+                status: "running",
+                summary: `Resuming from ${options.step || "current"} phase`,
+              };
+
+              await workflow.updateState(config, restoredState, predecessorNode);
+              graphState = await workflow.getState(config).catch(() => null);
+              hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+              console.info(`[Workflow] Resume state restored. Next nodes: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}]`);
+            }
+          } catch (e) {
+            console.warn("[Workflow] Failed to restore resume state from database:", e);
+          }
+        }
+
+        if (!hasState) {
+          console.warn(`[Workflow] No state available for resume on thread ${threadId}. Resuming from current position.`);
+        }
+        
+        stream = await workflow.stream(null, config);
       } else {
         // New workflow: first invocation / re-run
         console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);
