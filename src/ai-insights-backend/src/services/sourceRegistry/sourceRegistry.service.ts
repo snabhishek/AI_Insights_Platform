@@ -9,7 +9,7 @@ import {
 } from "./sourceRegistry.service.interface";
 import { IConnectorRepository } from "../../repositories/connector.repository.interface";
 import { IConnectionTesterService } from "../connector/connectionTester.service.interface";
-import { IDuckDBService, ProjectSourceInput } from "../duckdb/duckdb.service.interface";
+import { IDuckDBService } from "../duckdb/duckdb.service.interface";
 import { IProjectRepository } from "../../repositories/project.repository.interface";
 import { ConnectorType } from "../../models/connector.types";
 import { Project } from "../../models/project.types";
@@ -18,7 +18,6 @@ const IDENTIFIER_REGEX = /^[a-zA-Z0-9_\-\. ]+$/;
 
 export class SourceRegistryService implements ISourceRegistryService {
   private inMemoryRegistry = new Map<string, SourceRegistryEntry>();
-  private projectIngestionPromises = new Map<string, Promise<void>>();
 
   constructor(
     private connectorRepository: IConnectorRepository,
@@ -148,19 +147,17 @@ export class SourceRegistryService implements ISourceRegistryService {
   }
 
   /**
-   * Resolves the target Project record strictly from project repository using projectId, projectName, or sourceId.
+   * Resolves the target Project record from project repository using projectId, projectName, or sourceId.
    */
   private async resolveProject(projectId?: string, projectName?: string, sourceId?: string): Promise<Project | undefined> {
     if (!this.projectRepository) return undefined;
 
     try {
-      // 1. Lookup by projectId (e.g. "proj-123")
       if (projectId) {
         const byId = await this.projectRepository.getById(projectId);
         if (byId) return byId;
       }
 
-      // 2. Lookup by projectName or projectId matching name
       const allProjects = await this.projectRepository.getAll();
 
       if (projectName) {
@@ -175,7 +172,6 @@ export class SourceRegistryService implements ISourceRegistryService {
         if (byNameOrId) return byNameOrId;
       }
 
-      // 3. Lookup by attached sourceId
       if (sourceId) {
         const bySource = allProjects.find(
           (p) => Array.isArray(p.dataSources) && p.dataSources.includes(sourceId)
@@ -187,47 +183,6 @@ export class SourceRegistryService implements ISourceRegistryService {
     }
 
     return undefined;
-  }
-
-  /**
-   * Discovers candidate DuckDB database file paths strictly isolated to the given project.
-   * NEVER scans unrelated project directories.
-   */
-  private getCandidateDbPaths(projectName?: string, sourceId?: string): string[] {
-    const paths: string[] = [];
-    const projectsRoot = path.join(process.cwd(), "Projects");
-
-    if (projectName) {
-      const safeProject = projectName.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const projDir = path.join(projectsRoot, safeProject);
-      const masterDb = path.join(projDir, `${safeProject}.duckdb`);
-      if (fs.existsSync(masterDb)) {
-        paths.push(masterDb);
-      }
-      if (fs.existsSync(projDir)) {
-        try {
-          const files = fs.readdirSync(projDir).filter((f) => f.endsWith(".duckdb"));
-          for (const f of files) {
-            const p = path.join(projDir, f);
-            if (!paths.includes(p)) paths.push(p);
-          }
-        } catch {}
-      }
-    }
-
-    // If sourceId directly matches a project folder or database file
-    if (paths.length === 0 && sourceId) {
-      const safeSource = sourceId.replace(/[^a-zA-Z0-9_-]/g, "_");
-      const sourceProjDir = path.join(projectsRoot, safeSource);
-      const sourceMasterDb = path.join(sourceProjDir, `${safeSource}.duckdb`);
-      if (fs.existsSync(sourceMasterDb)) paths.push(sourceMasterDb);
-
-      const flatSourceDb = path.join(projectsRoot, `${safeSource}.duckdb`);
-      if (fs.existsSync(flatSourceDb)) paths.push(flatSourceDb);
-    }
-
-    // STRICT ISOLATION: Return ONLY database paths for this specific project or source.
-    return paths;
   }
 
   async fetchFilterOptions(query: FilterOptionsQuery): Promise<FilterOptionsResult> {
@@ -269,200 +224,164 @@ export class SourceRegistryService implements ISourceRegistryService {
       }
     }
 
-    // Helper to find matching column name in list of column names
-    const matchColumn = (colNames: string[], target: string): string | null => {
-      const clean = target.toLowerCase().replace(/[^a-z0-9]/g, "");
-      const exact = colNames.find((c) => c.toLowerCase() === target.toLowerCase());
-      if (exact) return exact;
-      const norm = colNames.find((c) => c.toLowerCase().replace(/[^a-z0-9]/g, "") === clean);
-      if (norm) return norm;
-      const nameMatch = colNames.find((c) => {
-        const cClean = c.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return cClean === `${clean}name` || cClean === `name${clean}`;
-      });
-      if (nameMatch) return nameMatch;
-      const sub = colNames.find((c) => {
-        const cClean = c.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return cClean.includes(clean) || clean.includes(cClean);
-      });
-      if (sub) return sub;
-      return null;
-    };
-
-    // ─── 1. Resolve Target Project & On-Demand Ingestion ──────────────────
-    const targetProject = await this.resolveProject(projectId, projectName, sourceId);
-    const effectiveProjectName = targetProject?.name || projectName || (projectId && !projectId.startsWith("proj-") ? projectId : undefined);
-
-    if (targetProject && this.duckDBService) {
-      const masterDb = this.duckDBService.getProjectDuckDbPath(targetProject.name);
-      if (!fs.existsSync(masterDb) && Array.isArray(targetProject.dataSources) && targetProject.dataSources.length > 0) {
-        const projKey = (targetProject.id || targetProject.name).toLowerCase();
-        let inFlight = this.projectIngestionPromises.get(projKey);
-
-        if (!inFlight) {
-          inFlight = (async () => {
-            try {
-              console.info(`[SourceRegistryService] Auto-ingesting sources into DuckDB for project "${targetProject.name}" on-demand...`);
-              const projectSourceInputs: ProjectSourceInput[] = [];
-              for (const dsId of targetProject.dataSources) {
-                const conn = await this.connectorRepository.getById(dsId);
-                if (conn) {
-                  projectSourceInputs.push({
-                    type: conn.type,
-                    config: conn.connectionConfig,
-                    name: conn.name,
-                  });
-                }
-              }
-              if (projectSourceInputs.length > 0) {
-                await this.duckDBService!.ingestProjectSources(targetProject.name, projectSourceInputs);
-              }
-            } catch (ingestErr) {
-              console.warn(`[SourceRegistryService] Auto-ingestion warning for "${targetProject.name}":`, ingestErr);
-            } finally {
-              this.projectIngestionPromises.delete(projKey);
-            }
-          })();
-
-          this.projectIngestionPromises.set(projKey, inFlight);
-        }
-
-        // Wait for the single in-flight ingestion to finish before querying
-        await inFlight;
-      }
-    }
-
-    // ─── 2. DuckDB Query Strictly Isolated to the Target Project ─────────
-    if (this.duckDBService) {
-      const candidatePaths = this.getCandidateDbPaths(effectiveProjectName, sourceId);
-
-      for (const dbPath of candidatePaths) {
+    try {
+      // 1. Direct DuckDB Query Pushdown for High-Performance File Sources
+      if (this.duckDBService && (!source || ["csv", "tsv", "excel"].includes(source.type))) {
         try {
-          // 1. Discover available tables in this specific project DuckDB file
-          const tableList = await this.duckDBService.runQuery(dbPath, "SHOW TABLES");
-          const availableTables: string[] = (tableList || []).map((t: any) => Object.values(t)[0] as string);
-          if (availableTables.length === 0) continue;
+          const rawFile = targetTable || source?.connectionConfig?.fileName || cleanTable;
 
-          // 2. Identify the table that actually contains the requested column
-          let matchingTable: string | null = null;
-          let matchedColumn: string | null = null;
-          let tableColNames: string[] = [];
+          // 1.1 Attempt to find exact or fuzzy column location across DuckDB databases
+          const colLocation = await this.duckDBService.findColumnLocation(
+            cleanFieldId,
+            targetTable || source?.connectionConfig?.fileName
+          );
 
-          // If targetTable is provided and exists in this db, check it first
-          if (targetTable) {
-            const exactTable = availableTables.find(
-              (t) =>
-                t.toLowerCase() === targetTable.toLowerCase() ||
-                t.toLowerCase() === targetTable.replace(/[^a-zA-Z0-9_]/g, "_").toLowerCase()
-            );
-            if (exactTable) {
-              const cols = await this.duckDBService.runQuery(dbPath, `DESCRIBE "${exactTable.replace(/"/g, '""')}"`);
-              const colNames = (cols || []).map((c: any) => c.column_name);
-              const foundCol = matchColumn(colNames, cleanFieldId);
-              if (foundCol) {
-                matchingTable = exactTable;
-                matchedColumn = foundCol;
-                tableColNames = colNames;
+          const dbPath = colLocation ? colLocation.dbPath : this.duckDBService.getDuckDbPath(rawFile);
+
+          // Discover actual table name in DuckDB
+          let actualTable = colLocation
+            ? colLocation.tableName
+            : path.basename(rawFile, path.extname(rawFile)).replace(/[^a-zA-Z0-9_-]/g, "_");
+          let colNames: string[] = colLocation ? colLocation.colNames : [];
+
+          if (!colNames || colNames.length === 0) {
+            try {
+              const tableList = await this.duckDBService.runQuery(dbPath, "SHOW TABLES");
+              if (tableList && tableList.length > 0) {
+                const availableTables = tableList.map((t: any) => Object.values(t)[0] as string);
+                const found = availableTables.find(
+                  (t) =>
+                    t.toLowerCase() === actualTable.toLowerCase() ||
+                    t.toLowerCase() === `${actualTable.toLowerCase()}.csv` ||
+                    t.toLowerCase().replace(/[^a-z0-9]/g, "") === actualTable.toLowerCase().replace(/[^a-z0-9]/g, "")
+                );
+                if (found) {
+                  actualTable = found;
+                } else {
+                  actualTable = availableTables[0];
+                }
               }
+            } catch {}
+
+            // Inspect actual columns
+            try {
+              const cols = await this.duckDBService.runQuery(dbPath, `DESCRIBE "${actualTable.replace(/"/g, '""')}"`);
+              colNames = (cols || []).map((c: any) => c.column_name);
+            } catch {}
+          }
+
+          const findBestColumn = (target: string): string | null => {
+            const clean = target.toLowerCase().replace(/[^a-z0-9]/g, "");
+            const exact = colNames.find((c) => c.toLowerCase() === target.toLowerCase());
+            if (exact) return exact;
+            const norm = colNames.find((c) => c.toLowerCase().replace(/[^a-z0-9]/g, "") === clean);
+            if (norm) return norm;
+            const nameMatch = colNames.find((c) => {
+              const cClean = c.toLowerCase().replace(/[^a-z0-9]/g, "");
+              return cClean === `${clean}name` || cClean === `name${clean}`;
+            });
+            if (nameMatch) return nameMatch;
+            const sub = colNames.find((c) => {
+              const cClean = c.toLowerCase().replace(/[^a-z0-9]/g, "");
+              return cClean.includes(clean) || clean.includes(cClean);
+            });
+            if (sub) return sub;
+            return null;
+          };
+
+          const matchedCol = colLocation?.columnName || findBestColumn(cleanFieldId) || cleanFieldId;
+          const safeCol = matchedCol.replace(/"/g, '""');
+          const dateCols = colNames.filter((c) => /date|time|timestamp/i.test(c));
+          const primaryDateCol = dateCols.find((c) => /order/i.test(c)) || dateCols[0] || "Order_Date";
+
+          let valExpr = `"${safeCol}"`;
+
+          const targetLower = cleanFieldId.toLowerCase();
+          const isDirectMatch = findBestColumn(cleanFieldId) && !/year|quarter|month|week|day/i.test(cleanFieldId);
+          if (!isDirectMatch && dateCols.length > 0) {
+            if (targetLower.includes("year")) {
+              valExpr = `CAST(EXTRACT(YEAR FROM "${primaryDateCol.replace(/"/g, '""')}") AS VARCHAR)`;
+            } else if (targetLower.includes("quarter")) {
+              valExpr = `'Q' || CAST(EXTRACT(QUARTER FROM "${primaryDateCol.replace(/"/g, '""')}") AS VARCHAR)`;
+            } else if (targetLower.includes("month")) {
+              valExpr = `strftime('%B', "${primaryDateCol.replace(/"/g, '""')}")`;
             }
           }
 
-          // If not found in targetTable, scan across available tables in this project database
-          if (!matchingTable) {
-            for (const tbl of availableTables) {
-              try {
-                const cols = await this.duckDBService.runQuery(dbPath, `DESCRIBE "${tbl.replace(/"/g, '""')}"`);
-                const colNames = (cols || []).map((c: any) => c.column_name);
-                const foundCol = matchColumn(colNames, cleanFieldId);
-                if (foundCol) {
-                  matchingTable = tbl;
-                  matchedColumn = foundCol;
-                  tableColNames = colNames;
-                  break;
-                }
-              } catch {}
-            }
-          }
-
-          // If a table containing the requested column was found, query it!
-          if (matchingTable && matchedColumn) {
-            const actualTable = matchingTable;
-            const safeCol = matchedColumn.replace(/"/g, '""');
-
-            // Handle date_range controlType
-            if (controlType === "date_range") {
-              const minMaxSql = `
-                SELECT 
-                  MIN(CAST("${safeCol}" AS VARCHAR)) AS min_val, 
-                  MAX(CAST("${safeCol}" AS VARCHAR)) AS max_val,
-                  COUNT(DISTINCT "${safeCol}") AS total_cnt
-                FROM "${actualTable.replace(/"/g, '""')}"
-                WHERE "${safeCol}" IS NOT NULL AND TRIM(CAST("${safeCol}" AS VARCHAR)) != ''
-              `;
-              const stats = await this.duckDBService.runQuery(dbPath, minMaxSql);
-              if (stats && stats.length > 0) {
-                return {
-                  success: true,
-                  sourceId,
-                  fieldId: cleanFieldId,
-                  values: [],
-                  totalCount: Number(stats[0].total_cnt || 0),
-                  dateRange: { min: stats[0].min_val || null, max: stats[0].max_val || null },
-                  isIndependentFallback,
-                };
-              }
-            }
-
-            // Handle dropdown / searchable_dropdown
-            let valExpr = `"${safeCol}"`;
-            let filterSql = `WHERE ${valExpr} IS NOT NULL AND TRIM(CAST(${valExpr} AS VARCHAR)) != ''`;
-            const params: any[] = [];
-
-            // Apply parent parameter filters if present on this table
-            if (activeParentFilters.length > 0) {
-              for (const pf of activeParentFilters) {
-                const matchedPCol = matchColumn(tableColNames, pf.col);
-                if (matchedPCol) {
-                  const safePCol = matchedPCol.replace(/"/g, '""');
-                  filterSql += ` AND CAST("${safePCol}" AS VARCHAR) = ?`;
-                  params.push(String(pf.val));
-                }
-              }
-            }
-
-            if (search && search.trim()) {
-              filterSql += ` AND LOWER(CAST(${valExpr} AS VARCHAR)) LIKE ?`;
-              params.push(`%${search.trim().toLowerCase()}%`);
-            }
-
-            const distinctSql = `
-              SELECT DISTINCT ${valExpr} AS val
+          if (controlType === "date_range") {
+            const dateCol = (findBestColumn(cleanFieldId) || primaryDateCol).replace(/"/g, '""');
+            const minMaxSql = `
+              SELECT 
+                MIN(CAST("${dateCol}" AS VARCHAR)) AS min_val, 
+                MAX(CAST("${dateCol}" AS VARCHAR)) AS max_val,
+                COUNT(DISTINCT "${dateCol}") AS total_cnt
               FROM "${actualTable.replace(/"/g, '""')}"
-              ${filterSql}
-              ORDER BY val ASC
-              LIMIT ${limit}
+              WHERE "${dateCol}" IS NOT NULL AND TRIM(CAST("${dateCol}" AS VARCHAR)) != ''
             `;
-
-            const rows = await this.duckDBService.runQuery(dbPath, distinctSql, params);
-            if (rows && rows.length > 0) {
-              const values = rows.map((r: any) => r.val).filter((v: any) => v !== undefined && v !== null);
+            const stats = await this.duckDBService.runQuery(dbPath, minMaxSql);
+            if (stats && stats.length > 0) {
               return {
                 success: true,
                 sourceId,
                 fieldId: cleanFieldId,
-                values,
-                totalCount: values.length,
+                values: [],
+                totalCount: Number(stats[0].total_cnt || 0),
+                dateRange: { min: stats[0].min_val || null, max: stats[0].max_val || null },
                 isIndependentFallback,
               };
             }
           }
+
+          // Handle dropdown / searchable_dropdown
+          let filterSql = `WHERE ${valExpr} IS NOT NULL AND TRIM(CAST(${valExpr} AS VARCHAR)) != ''`;
+          const params: any[] = [];
+
+          // Apply parent parameter filters if present on this table
+          if (activeParentFilters.length > 0) {
+            for (const pf of activeParentFilters) {
+              const matchedPCol = findBestColumn(pf.col);
+              if (matchedPCol) {
+                const safePCol = matchedPCol.replace(/"/g, '""');
+                filterSql += ` AND CAST("${safePCol}" AS VARCHAR) = ?`;
+                params.push(String(pf.val));
+              }
+            }
+          }
+
+          if (search && search.trim()) {
+            filterSql += ` AND LOWER(CAST(${valExpr} AS VARCHAR)) LIKE ?`;
+            params.push(`%${search.trim().toLowerCase()}%`);
+          }
+
+          const distinctSql = `
+            SELECT DISTINCT ${valExpr} AS val
+            FROM "${actualTable.replace(/"/g, '""')}"
+            ${filterSql}
+            ORDER BY val ASC
+            LIMIT ${limit}
+          `;
+
+          const rows = await this.duckDBService.runQuery(dbPath, distinctSql, params);
+          if (rows && rows.length > 0) {
+            const values = rows.map((r: any) => r.val).filter((v: any) => v !== undefined && v !== null);
+            return {
+              success: true,
+              sourceId,
+              fieldId: cleanFieldId,
+              values,
+              totalCount: values.length,
+              isIndependentFallback,
+            };
+          }
         } catch (duckDbErr: any) {
-          console.warn(`[SourceRegistryService] DuckDB query warning on ${dbPath} for "${cleanFieldId}":`, duckDbErr?.message || duckDbErr);
+          console.warn(`[SourceRegistryService] DuckDB query warning for "${cleanFieldId}":`, duckDbErr?.message || duckDbErr);
         }
       }
+    } catch (err: any) {
+      console.warn(`[SourceRegistryService] Direct query pushdown failed for "${cleanFieldId}":`, err?.message || err);
     }
 
-    // ─── 3. Source-Specific Fallback (ONLY for this specific connector's raw file) ────
+    // ─── 2. Source-Specific Fallback via ConnectionTester ────
     if (source && source.connectionConfig?.fileName) {
       try {
         const sample = await this.connectionTesterService.getSampleWithOffset(

@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 import MessageModal from "../shared/ui/MessageModal";
 import ConfirmationModal from "../shared/ui/ConfirmationModal";
 import CreateWorkspaceModal from "../shared/ui/CreateWorkspaceModal";
+import ToastNotification, { ToastItem } from "../shared/ui/ToastNotification";
 
 export interface ConnectionConfig {
   host?: string;
@@ -89,7 +90,9 @@ interface AppContextType {
   userProfile: UserProfile;
   updateUserProfile: (profile: Partial<UserProfile>) => void;
   testConnection: (type: DataSource["type"], config: ConnectionConfig) => Promise<{ success: boolean; message: string; latencyMs: number }>;
-  showAlert: (config: { title: string; message: string; type: "success" | "error" | "info"; logs?: string }) => void;
+  showToast: (config: { title: string; message: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
+  showNotification: (config: { title: string; message: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
+  showAlert: (config: { title: string; message: string; type: "success" | "error" | "info" | "warning"; logs?: string }) => void;
   showConfirm: (config: { title: string; message: string; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
   openCreateWorkspace: () => void;
 }
@@ -133,7 +136,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
 
-  // Message Modal state
+  // Toast Notification state (top-right modern shared notification)
+  const [toasts, setToasts] = useState<ToastItem[]>([]);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
+
+  const showToast = useCallback(
+    (config: {
+      title: string;
+      message: string;
+      type?: "success" | "error" | "info" | "warning";
+      duration?: number;
+    }) => {
+      const id = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const newToast: ToastItem = {
+        id,
+        title: config.title,
+        message: config.message,
+        type: config.type || "info",
+        duration: config.duration || 4500,
+      };
+      setToasts((prev) => [...prev.slice(-4), newToast]);
+    },
+    []
+  );
+
+  // Message Modal state (for full diagnostic logs)
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertConfig, setAlertConfig] = useState<{
     title: string;
@@ -155,10 +185,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // Create Workspace Modal state
   const [createWsOpen, setCreateWsOpen] = useState(false);
 
-  const showAlert = (config: typeof alertConfig) => {
-    setAlertConfig(config);
-    setAlertOpen(true);
-  };
+  const showAlert = useCallback(
+    (config: {
+      title: string;
+      message: string;
+      type?: "success" | "error" | "info" | "warning";
+      logs?: string;
+    }) => {
+      // If diagnostic logs are provided, render full MessageModal
+      if (config.logs) {
+        setAlertConfig({
+          title: config.title,
+          message: config.message,
+          type: config.type === "warning" ? "info" : (config.type || "info"),
+          logs: config.logs,
+        });
+        setAlertOpen(true);
+      } else {
+        // Standard notification: display shared top-right modern toast
+        showToast({
+          title: config.title,
+          message: config.message,
+          type: config.type || "info",
+        });
+      }
+    },
+    [showToast]
+  );
 
   const showConfirm = (config: typeof confirmConfig) => {
     setConfirmConfig(config);
@@ -373,9 +426,9 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const newSource = await res.json();
         setDataSources((prev) => [newSource, ...prev]);
-        showAlert({
-          title: "Connection Succeeded",
-          message: `Data source "${name}" connected successfully. Discovered assets have been cataloged.`,
+        showToast({
+          title: "Successfully Connected",
+          message: `Data source "${name}" connected successfully.`,
           type: "success",
         });
       } else {
@@ -384,7 +437,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err: any) {
       console.error(err);
-      showAlert({ title: "Connection Failed", message: err.message || "Could not register connector config.", type: "error" });
+      showToast({
+        title: "Connection Failed",
+        message: err.message || "Could not register connector config.",
+        type: "error",
+      });
     }
   };
 
@@ -536,12 +593,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         userProfile,
         updateUserProfile,
         testConnection,
+        showToast,
+        showNotification: showToast,
         showAlert,
         showConfirm,
         openCreateWorkspace: () => setCreateWsOpen(true),
       }}
     >
       {children}
+
+      <ToastNotification toasts={toasts} onDismiss={dismissToast} />
 
       <MessageModal
         isOpen={alertOpen}
