@@ -1,6 +1,6 @@
-import { IAgentThinkingRepository } from "../../repositories/agentThinking.repository.interface";
+import { IAgentThinkingRepository } from "../../../repositories/agentThinking.repository.interface";
 import { IAgentThinkingService } from "./agentThinking.service.interface";
-import { AgentThinking, ThinkingLog } from "../../models/agentThinking.types";
+import { AgentThinking, ThinkingLog } from "../../../models/agentThinking.types";
 
 export class AgentThinkingService implements IAgentThinkingService {
   constructor(private agentThinkingRepository: IAgentThinkingRepository) {}

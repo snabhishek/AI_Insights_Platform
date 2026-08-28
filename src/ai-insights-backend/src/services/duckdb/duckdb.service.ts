@@ -1,7 +1,7 @@
 import fs from "fs";
 import path from "path";
 import * as xlsx from "xlsx";
-import { IDuckDBService } from "./duckdb.service.interface";
+import { IDuckDBService, ProjectSourceInput } from "./duckdb.service.interface";
 import { IFileService } from "../file/file.service.interface";
 import { ConnectorType, ConnectionConfig } from "../../models/connector.types";
 import { SampleResult } from "../connector/connectionTester.service.interface";
@@ -13,18 +13,27 @@ export class DuckDBService implements IDuckDBService {
   private dbStorageDir: string;
 
   /**
-   * Per-file connection pool. Each entry holds the native duckdb.Database
-   * handle, a connection, a reference count of in-flight operations, and an
-   * optional idle-close timer.
+   * Database pool caching open duckdb.Database instances per file path.
+   * Concurrency safety: Connections are opened per query (`db.connect()`)
+   * and closed immediately in `finally` blocks.
    */
   private pool = new Map<
     string,
-    { db: any; conn: any; refCount: number; idleTimer: ReturnType<typeof setTimeout> | null }
+    { db: any; refCount: number; idleTimer: ReturnType<typeof setTimeout> | null; openPromise?: Promise<any> | null }
   >();
+  private openingPromises = new Map<string, Promise<any>>();
+  private ingestionPromises = new Map<string, Promise<string>>();
   private static readonly IDLE_TIMEOUT_MS = 5_000;
 
+  private schemaCache: {
+    timestamp: number;
+    columns: Map<string, Array<{ dbPath: string; tableName: string; columnName: string; colNames: string[] }>>;
+    tables: Map<string, Array<{ dbPath: string; tableName: string; colNames: string[] }>>;
+  } | null = null;
+  private static readonly SCHEMA_CACHE_TTL_MS = 30_000;
+
   constructor(private fileService: IFileService) {
-    this.dbStorageDir = path.join(process.cwd(), "uploads", "duckdb");
+    this.dbStorageDir = path.join(process.cwd(), "Projects");
     if (!fs.existsSync(this.dbStorageDir)) {
       fs.mkdirSync(this.dbStorageDir, { recursive: true });
     }
@@ -40,97 +49,352 @@ export class DuckDBService implements IDuckDBService {
     return name.replace(/"/g, '""');
   }
 
+  private sanitizeTableName(name: string): string {
+    const base = path.basename(name, path.extname(name));
+    return base.replace(/[^a-zA-Z0-9_]/g, "_");
+  }
+
   /**
-   * Resolves the primary DuckDB path for a file or sheet.
-   * If a sheetName is provided, checks for folder-based sheet storage: uploads/duckdb/<fileName>/<sheetName>.duckdb.
+   * Resolves project directory path inside Projects/
    */
-  getDuckDbPath(fileName: string, sheetName?: string): string {
+  public getProjectPath(projectName: string): string {
+    const safeProject = this.sanitizeFileName(projectName);
+    return path.join(this.dbStorageDir, safeProject);
+  }
+
+  /**
+   * Resolves the master DuckDB database path for a project.
+   */
+  public getProjectDuckDbPath(projectName: string): string {
+    const safeProject = this.sanitizeFileName(projectName);
+    return path.join(this.dbStorageDir, safeProject, `${safeProject}.duckdb`);
+  }
+
+  /**
+   * Resolves the primary DuckDB path for a file, sheet, or project.
+   */
+  getDuckDbPath(fileName: string, sheetName?: string, projectName?: string): string {
+    if (!fileName) {
+      return path.join(this.dbStorageDir, "default.duckdb");
+    }
+
+    if (path.isAbsolute(fileName) && fs.existsSync(fileName)) {
+      return fileName;
+    }
+
     const safeFile = this.sanitizeFileName(fileName);
-    if (sheetName) {
-      const safeSheet = this.sanitizeFileName(sheetName);
-      const sheetDbPath = path.join(this.dbStorageDir, safeFile, `${safeSheet}.duckdb`);
-      if (fs.existsSync(sheetDbPath)) {
-        return sheetDbPath;
-      }
+
+    if (projectName) {
+      const projectDir = this.getProjectPath(projectName);
+      const specificDb = path.join(projectDir, `${safeFile}.duckdb`);
+      if (fs.existsSync(specificDb)) return specificDb;
+      const masterDb = this.getProjectDuckDbPath(projectName);
+      if (fs.existsSync(masterDb)) return masterDb;
     }
 
-    const folderPath = path.join(this.dbStorageDir, safeFile);
-    if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
-      const masterPath = path.join(folderPath, "_master.duckdb");
-      if (fs.existsSync(masterPath)) {
-        return masterPath;
-      }
-      const sheetFiles = fs.readdirSync(folderPath).filter((f) => f.endsWith(".duckdb") && !f.startsWith("_temp"));
-      if (sheetFiles.length > 0) {
-        return path.join(folderPath, sheetFiles[0]);
-      }
+    // Check across all subdirectories in Projects/ (e.g. Projects/Demand_Forecasting/carrier_forecast_dataset_xls.duckdb)
+    if (fs.existsSync(this.dbStorageDir)) {
+      try {
+        const subDirs = fs.readdirSync(this.dbStorageDir, { withFileTypes: true }).filter((d) => d.isDirectory());
+        for (const subDir of subDirs) {
+          const dirPath = path.join(this.dbStorageDir, subDir.name);
+          const directInSub = path.join(dirPath, `${safeFile}.duckdb`);
+          if (fs.existsSync(directInSub)) return directInSub;
+
+          const filesInSub = fs.readdirSync(dirPath).filter((f) => f.endsWith(".duckdb"));
+          const matchInSub = filesInSub.find((f) => {
+            const base = path.basename(f, ".duckdb").toLowerCase();
+            return (
+              base === safeFile.toLowerCase() ||
+              base.startsWith(`${safeFile.toLowerCase()}_`) ||
+              safeFile.toLowerCase().startsWith(base) ||
+              base.replace(/[^a-z0-9]/g, "") === safeFile.toLowerCase().replace(/[^a-z0-9]/g, "")
+            );
+          });
+          if (matchInSub) return path.join(dirPath, matchInSub);
+        }
+      } catch {}
     }
 
-    return path.join(this.dbStorageDir, `${safeFile}.duckdb`);
+    // Check uploads/duckdb directory
+    const uploadsDuckDb = path.join(process.cwd(), "uploads", "duckdb");
+    if (fs.existsSync(uploadsDuckDb)) {
+      try {
+        const directUpload = path.join(uploadsDuckDb, `${safeFile}.duckdb`);
+        if (fs.existsSync(directUpload)) return directUpload;
+
+        const subDirs = fs.readdirSync(uploadsDuckDb, { withFileTypes: true }).filter((d) => d.isDirectory());
+        for (const subDir of subDirs) {
+          const dirPath = path.join(uploadsDuckDb, subDir.name);
+          const directInSub = path.join(dirPath, `${safeFile}.duckdb`);
+          if (fs.existsSync(directInSub)) return directInSub;
+        }
+      } catch {}
+    }
+
+    // Direct match in Projects/
+    const directPath = path.join(this.dbStorageDir, `${safeFile}.duckdb`);
+    if (fs.existsSync(directPath)) {
+      return directPath;
+    }
+
+    return directPath;
   }
 
   /**
    * Resolves the target database path for a given table name and file name.
    */
-  private getDbPathForTarget(fileName: string, tableName?: string): string {
-    const safeFile = this.sanitizeFileName(fileName);
-    const folderPath = path.join(this.dbStorageDir, safeFile);
-
-    // If multi-sheet / multi-file folder exists
-    if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
+  private getDbPathForTarget(fileName: string, tableName?: string, projectName?: string): string {
+    if (projectName) {
+      const projMaster = this.getProjectDuckDbPath(projectName);
+      if (fs.existsSync(projMaster)) return projMaster;
+      const projectDir = this.getProjectPath(projectName);
       if (tableName) {
         const safeTable = this.sanitizeFileName(tableName);
-        const directSheetDb = path.join(folderPath, `${safeTable}.duckdb`);
+        const directSheetDb = path.join(projectDir, `${safeTable}.duckdb`);
         if (fs.existsSync(directSheetDb)) {
           return directSheetDb;
         }
 
         // Case-insensitive search for sheet .duckdb
         try {
-          const files = fs.readdirSync(folderPath).filter((f) => f.endsWith(".duckdb"));
-          const match = files.find((f) => path.basename(f, ".duckdb").toLowerCase() === tableName.toLowerCase() || path.basename(f, ".duckdb").toLowerCase() === safeTable.toLowerCase());
+          const files = fs.readdirSync(projectDir).filter((f) => f.endsWith(".duckdb"));
+          const match = files.find(
+            (f) =>
+              path.basename(f, ".duckdb").toLowerCase() === tableName.toLowerCase() ||
+              path.basename(f, ".duckdb").toLowerCase() === safeTable.toLowerCase()
+          );
           if (match) {
-            return path.join(folderPath, match);
+            return path.join(projectDir, match);
           }
         } catch {}
       }
 
       // Check master db
-      const masterPath = path.join(folderPath, "_master.duckdb");
+      const masterPath = path.join(projectDir, "_master.duckdb");
       if (fs.existsSync(masterPath)) {
         return masterPath;
       }
 
       // Return first sheet db
-      const sheetFiles = fs.readdirSync(folderPath).filter((f) => f.endsWith(".duckdb"));
+      const sheetFiles = fs.readdirSync(projectDir).filter((f) => f.endsWith(".duckdb"));
       if (sheetFiles.length > 0) {
-        return path.join(folderPath, sheetFiles[0]);
+        return path.join(projectDir, sheetFiles[0]);
       }
     }
 
     // Default to single file database
-    return path.join(this.dbStorageDir, `${safeFile}.duckdb`);
+    return this.getDuckDbPath(fileName);
   }
 
-  // ─── pooled connection management ──────────────────────────────────
+  // ─── cross-database column location discovery ─────────────────────
 
-  private async acquireConnection(dbPath: string): Promise<{ db: any; conn: any }> {
-    const existing = this.pool.get(dbPath);
-    if (existing) {
-      if (existing.idleTimer) {
-        clearTimeout(existing.idleTimer);
-        existing.idleTimer = null;
-      }
-      existing.refCount++;
-      return { db: existing.db, conn: existing.conn };
+  async findColumnLocation(
+    fieldId: string,
+    preferredTable?: string
+  ): Promise<{ dbPath: string; tableName: string; columnName: string; colNames: string[] } | null> {
+    const now = Date.now();
+    if (!this.schemaCache || now - this.schemaCache.timestamp > DuckDBService.SCHEMA_CACHE_TTL_MS) {
+      await this.refreshSchemaIndex();
     }
 
-    const { db, conn } = await this.openDatabase(dbPath);
-    this.pool.set(dbPath, { db, conn, refCount: 1, idleTimer: null });
-    return { db, conn };
+    const clean = fieldId.toLowerCase().replace(/[^a-z0-9]/g, "");
+    const cleanPreferred = preferredTable ? preferredTable.toLowerCase().replace(/[^a-z0-9]/g, "") : "";
+
+    const candidates = this.schemaCache?.columns.get(clean) || [];
+
+    // 1. If exact / normalized column matches exist
+    if (candidates.length > 0) {
+      if (cleanPreferred) {
+        const preferredMatch = candidates.find((c) => {
+          const tNorm = c.tableName.toLowerCase().replace(/[^a-z0-9]/g, "");
+          const fNorm = path.basename(c.dbPath).toLowerCase().replace(/[^a-z0-9]/g, "");
+          return tNorm.includes(cleanPreferred) || cleanPreferred.includes(tNorm) || fNorm.includes(cleanPreferred);
+        });
+        if (preferredMatch) return preferredMatch;
+      }
+      return candidates[0];
+    }
+
+    // 2. Fuzzy search across all indexed columns
+    if (this.schemaCache) {
+      for (const [colKey, list] of this.schemaCache.columns.entries()) {
+        const isFuzzy =
+          colKey === `${clean}name` ||
+          colKey === `name${clean}` ||
+          colKey.includes(clean) ||
+          clean.includes(colKey);
+        if (isFuzzy && list.length > 0) {
+          if (cleanPreferred) {
+            const preferred = list.find((c) => {
+              const tNorm = c.tableName.toLowerCase().replace(/[^a-z0-9]/g, "");
+              const fNorm = path.basename(c.dbPath).toLowerCase().replace(/[^a-z0-9]/g, "");
+              return tNorm.includes(cleanPreferred) || cleanPreferred.includes(tNorm) || fNorm.includes(cleanPreferred);
+            });
+            if (preferred) return preferred;
+          }
+          return list[0];
+        }
+      }
+
+      // 3. If preferredTable exists in indexed tables, find the table and corresponding column
+      if (cleanPreferred && this.schemaCache.tables.has(cleanPreferred)) {
+        const tableList = this.schemaCache.tables.get(cleanPreferred)!;
+        const tbl = tableList[0];
+        const dateCol = tbl.colNames.find((c) => /date|time|timestamp/i.test(c)) || tbl.colNames[0];
+        return { dbPath: tbl.dbPath, tableName: tbl.tableName, columnName: dateCol, colNames: tbl.colNames };
+      }
+
+      // 4. Fuzzy table match on preferredTable
+      if (cleanPreferred) {
+        for (const [tblKey, list] of this.schemaCache.tables.entries()) {
+          if (tblKey.includes(cleanPreferred) || cleanPreferred.includes(tblKey)) {
+            const tbl = list[0];
+            const dateCol = tbl.colNames.find((c) => /date|time|timestamp/i.test(c)) || tbl.colNames[0];
+            return { dbPath: tbl.dbPath, tableName: tbl.tableName, columnName: dateCol, colNames: tbl.colNames };
+          }
+        }
+      }
+
+      // 5. If fieldId is a temporal derivative (year, quarter, month), locate any table with a date column
+      const isTemporal = /year|quarter|month|week|day/i.test(fieldId);
+      if (isTemporal) {
+        for (const [_, list] of this.schemaCache.tables.entries()) {
+          for (const tbl of list) {
+            const dateCol = tbl.colNames.find((c) => /date|time|timestamp/i.test(c));
+            if (dateCol) {
+              return { dbPath: tbl.dbPath, tableName: tbl.tableName, columnName: dateCol, colNames: tbl.colNames };
+            }
+          }
+        }
+      }
+    }
+
+    return null;
   }
 
-  private releaseConnection(dbPath: string): void {
+  private async refreshSchemaIndex(): Promise<void> {
+    const colMap = new Map<string, Array<{ dbPath: string; tableName: string; columnName: string; colNames: string[] }>>();
+    const tableMap = new Map<string, Array<{ dbPath: string; tableName: string; colNames: string[] }>>();
+    const searchDirs = [this.dbStorageDir, path.join(process.cwd(), "uploads", "duckdb")].filter((d) => fs.existsSync(d));
+
+    const dbFiles: string[] = [];
+    for (const sDir of searchDirs) {
+      try {
+        const entries = fs.readdirSync(sDir, { withFileTypes: true });
+        for (const entry of entries) {
+          if (entry.isFile() && entry.name.endsWith(".duckdb") && !entry.name.startsWith("_temp")) {
+            dbFiles.push(path.join(sDir, entry.name));
+          } else if (entry.isDirectory()) {
+            const subDir = path.join(sDir, entry.name);
+            try {
+              const subFiles = fs.readdirSync(subDir).filter((f) => f.endsWith(".duckdb") && !f.startsWith("_temp"));
+              for (const sf of subFiles) {
+                dbFiles.push(path.join(subDir, sf));
+              }
+            } catch {}
+          }
+        }
+      } catch {}
+    }
+
+    for (const dbPath of dbFiles) {
+      try {
+        const tables = await this.runQuery(dbPath, "SHOW TABLES");
+        if (!tables || tables.length === 0) continue;
+
+        for (const t of tables) {
+          const tableName = Object.values(t)[0] as string;
+          try {
+            const cols = await this.runQuery(dbPath, `DESCRIBE "${tableName.replace(/"/g, '""')}"`);
+            const colNames: string[] = (cols || []).map((c: any) => c.column_name);
+            if (colNames.length === 0) continue;
+
+            const cleanTable = tableName.toLowerCase().replace(/[^a-z0-9]/g, "");
+            if (!tableMap.has(cleanTable)) tableMap.set(cleanTable, []);
+            tableMap.get(cleanTable)!.push({ dbPath, tableName, colNames });
+
+            for (const col of colNames) {
+              const clean = col.toLowerCase().replace(/[^a-z0-9]/g, "");
+              if (!colMap.has(clean)) {
+                colMap.set(clean, []);
+              }
+              colMap.get(clean)!.push({ dbPath, tableName, columnName: col, colNames });
+            }
+          } catch {}
+        }
+      } catch {}
+    }
+
+    this.schemaCache = { timestamp: Date.now(), columns: colMap, tables: tableMap };
+  }
+
+  // ─── pooled database management (Isolated Connections) ─────────────
+
+  private async acquireConnection(dbPath: string, readOnly = true): Promise<{ db: any; conn: any }> {
+    let entry = this.pool.get(dbPath);
+    if (entry) {
+      if (entry.idleTimer) {
+        clearTimeout(entry.idleTimer);
+        entry.idleTimer = null;
+      }
+      if (entry.openPromise) {
+        await entry.openPromise;
+      }
+      entry.refCount++;
+      const conn = entry.db.connect();
+      return { db: entry.db, conn };
+    }
+
+    let resolveOpen: (db: any) => void;
+    let rejectOpen: (err: any) => void;
+    const openPromise = new Promise((resolve, reject) => {
+      resolveOpen = resolve;
+      rejectOpen = reject;
+    });
+
+    const newEntry: {
+      db: any;
+      refCount: number;
+      idleTimer: ReturnType<typeof setTimeout> | null;
+      openPromise: Promise<any> | null;
+    } = { db: null as any, refCount: 1, idleTimer: null, openPromise };
+    this.pool.set(dbPath, newEntry);
+
+    // Retry loop for Windows file lock transient errors
+    let lastErr: any = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const db = await this.openDatabase(dbPath, readOnly);
+        newEntry.db = db;
+        newEntry.openPromise = null;
+        resolveOpen!(db);
+        const conn = db.connect();
+        return { db, conn };
+      } catch (err: any) {
+        lastErr = err;
+        if (attempt < 3 && err?.message && err.message.includes("used by another process")) {
+          await new Promise((res) => setTimeout(res, 100 * attempt));
+        } else {
+          break;
+        }
+      }
+    }
+
+    this.pool.delete(dbPath);
+    rejectOpen!(lastErr);
+    throw lastErr;
+  }
+
+  private releaseConnection(dbPath: string, conn?: any): void {
+    if (conn && conn.close) {
+      try {
+        conn.close((err: Error | null) => {
+          if (err) console.warn("[DuckDB] conn.close error:", err.message);
+        });
+      } catch {}
+    }
+
     const entry = this.pool.get(dbPath);
     if (!entry) return;
 
@@ -141,54 +405,38 @@ export class DuckDBService implements IDuckDBService {
         const current = this.pool.get(dbPath);
         if (current && current.refCount === 0) {
           this.pool.delete(dbPath);
-          this.closeDatabase(current.db, current.conn).catch((err) =>
-            console.warn("[DuckDB] deferred close error:", err)
-          );
+          if (current.db && current.db.close) {
+            current.db.close((err: Error | null) => {
+              if (err) console.warn("[DuckDB] db.close error:", err.message);
+            });
+          }
         }
       }, DuckDBService.IDLE_TIMEOUT_MS);
     }
   }
 
-  private async openDatabase(dbPath: string): Promise<{ db: any; conn: any }> {
+  private async openDatabase(dbPath: string, readOnly = false): Promise<any> {
     const dir = path.dirname(dbPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
     }
 
     return new Promise((resolve, reject) => {
-      const db = new duckdb.Database(dbPath, (err: Error | null) => {
-        if (err) return reject(err);
-        const conn = db.connect();
-        resolve({ db, conn });
-      });
-    });
-  }
-
-  private async closeDatabase(db: any, conn: any): Promise<void> {
-    return new Promise<void>((resolve) => {
-      const closeDb = () => {
-        if (db && db.close) {
-          db.close((err: Error | null) => {
-            if (err) console.warn("[DuckDB] db.close error:", err.message);
-            resolve();
-          });
-        } else {
-          resolve();
-        }
-      };
-
-      try {
-        if (conn && conn.close) {
-          conn.close((err: Error | null) => {
-            if (err) console.warn("[DuckDB] conn.close error:", err.message);
-            closeDb();
-          });
-        } else {
-          closeDb();
-        }
-      } catch {
-        resolve();
+      if (dbPath === ":memory:") {
+        const db = new duckdb.Database(":memory:", (err: Error | null) => {
+          if (err) return reject(err);
+          resolve(db);
+        });
+        return;
       }
+
+      const fileExists = fs.existsSync(dbPath);
+      const effectiveMode = fileExists && readOnly ? duckdb.OPEN_READONLY : duckdb.OPEN_READWRITE;
+
+      const db = new duckdb.Database(dbPath, effectiveMode, (err: Error | null) => {
+        if (err) return reject(err);
+        resolve(db);
+      });
     });
   }
 
@@ -212,44 +460,51 @@ export class DuckDBService implements IDuckDBService {
     });
   }
 
-  // ─── public query API ──────────────────────────────────────────────
+  // ─── public query API & connection execution ─────────────────────
 
-  async runQuery<T = any>(dbPath: string, sql: string, params: any[] = []): Promise<T[]> {
-    const { conn } = await this.acquireConnection(dbPath);
-    try {
-      return await this.query<T>(conn, sql, params);
-    } finally {
-      this.releaseConnection(dbPath);
-    }
-  }
-
-  async runExec(dbPath: string, sql: string): Promise<void> {
-    const { conn } = await this.acquireConnection(dbPath);
-    try {
-      await this.exec(conn, sql);
-    } finally {
-      this.releaseConnection(dbPath);
-    }
-  }
-
-  private async withConnection<R>(dbPath: string, fn: (conn: any) => Promise<R>): Promise<R> {
-    const { conn } = await this.acquireConnection(dbPath);
+  private async withConnection<R>(dbPath: string, fn: (conn: any) => Promise<R>, readOnly = true): Promise<R> {
+    const { conn } = await this.acquireConnection(dbPath, readOnly);
     try {
       return await fn(conn);
     } finally {
-      this.releaseConnection(dbPath);
+      this.releaseConnection(dbPath, conn);
     }
   }
 
-  private async closeConn(db: any, conn: any): Promise<void> {
+  async runQuery<T = any>(dbPath: string, sql: string, params: any[] = []): Promise<T[]> {
+    return this.withConnection(
+      dbPath,
+      async (conn) => {
+        return this.query<T>(conn, sql, params);
+      },
+      true
+    );
+  }
+
+  async runExec(dbPath: string, sql: string): Promise<void> {
+    return this.withConnection(
+      dbPath,
+      async (conn) => {
+        return this.exec(conn, sql);
+      },
+      false
+    );
+  }
+
+  private async closeDatabase(db: any): Promise<void> {
     return new Promise((resolve) => {
       try {
-        if (conn && conn.close) conn.close();
-        if (db && db.close) db.close();
+        if (db && db.close) {
+          db.close((err: Error | null) => {
+            if (err) console.warn("[DuckDB] closeDatabase error:", err.message);
+            resolve();
+          });
+        } else {
+          resolve();
+        }
       } catch {
-        // ignore close errors
+        resolve();
       }
-      resolve();
     });
   }
 
@@ -375,7 +630,6 @@ export class DuckDBService implements IDuckDBService {
     const headerLine = rawCsv.substring(0, firstBreak).replace(/\r$/, "");
     const body = rawCsv.substring(firstBreak + 1);
 
-    // Simple CSV parser for header line to respect quotes
     const headers: string[] = [];
     let current = "";
     let insideQuotes = false;
@@ -414,27 +668,31 @@ export class DuckDBService implements IDuckDBService {
     return `${cleanHeaders.join(",")}\n${body}`;
   }
 
-  // ─── Data Ingestion Methods ────────────────────────────────────────
+  // ─── Data Ingestion Methods (Project-Scoped Storage) ───────────────
 
   /**
-   * Ingests files directly into DuckDB.
-   * - Single file (CSV/TSV or 1-sheet Excel): Stored in uploads/duckdb/<fileName>.duckdb
-   * - Multi-sheet Excel: Stored in uploads/duckdb/<fileName>/<sheetName>.duckdb with _master.duckdb mount
-   * - Multi-file dataset: Stored in uploads/duckdb/<folderName>/<fileName>.duckdb
+   * Ingests a single file source into DuckDB (optionally within a project folder).
    */
-  async ingestFileSource(type: ConnectorType, config: ConnectionConfig): Promise<void> {
+  async ingestFileSource(type: ConnectorType, config: ConnectionConfig, projectName?: string): Promise<string> {
     const fileName = config.fileName;
-    if (!fileName) return;
+    if (!fileName) return "";
 
     const filePath = this.resolveFilePath(fileName);
     if (!filePath) {
       console.warn(`[DuckDBService] Cannot ingest file — not found on disk: ${fileName}`);
-      return;
+      return "";
     }
 
+    const safeFile = this.sanitizeFileName(fileName);
+    const targetDir = projectName ? this.getProjectPath(projectName) : this.dbStorageDir;
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+
+    const dbPath = path.join(targetDir, `${safeFile}.duckdb`);
+
     if (["csv", "tsv"].includes(type)) {
-      const dbPath = path.join(this.dbStorageDir, `${this.sanitizeFileName(fileName)}.duckdb`);
-      const tableName = this.sanitizeIdentifier(fileName);
+      const tableName = this.sanitizeTableName(fileName);
       const delim = type === "tsv" ? "\\t" : ",";
       const normalizedPath = filePath.replace(/\\/g, "/");
 
@@ -445,12 +703,11 @@ export class DuckDBService implements IDuckDBService {
           `CREATE TABLE "${tableName}" AS SELECT * FROM read_csv_auto('${normalizedPath}', header=true, delim='${delim}', auto_detect=true)`
         );
       });
-      console.info(`[DuckDBService] Ingested ${type.toUpperCase()} file "${fileName}" into single DB: ${dbPath}`);
-      return;
+      console.info(`[DuckDBService] Ingested ${type.toUpperCase()} file "${fileName}" into DB: ${dbPath}`);
+      return dbPath;
     }
 
     if (type === "excel") {
-      // Use memory-efficient read settings
       const workbook = xlsx.readFile(filePath, {
         cellFormula: false,
         cellHTML: false,
@@ -459,100 +716,38 @@ export class DuckDBService implements IDuckDBService {
       });
 
       const sheetNames = workbook.SheetNames || [];
-      if (sheetNames.length === 0) return;
+      if (sheetNames.length === 0) return dbPath;
 
-      const safeFile = this.sanitizeFileName(fileName);
+      await this.withConnection(dbPath, async (conn) => {
+        for (const sheetName of sheetNames) {
+          const worksheet = workbook.Sheets[sheetName];
+          const rawCsv = xlsx.utils.sheet_to_csv(worksheet, { blankrows: false });
+          const cleanCsv = this.sanitizeCsvHeaders(rawCsv);
 
-      if (sheetNames.length === 1) {
-        // Single sheet -> Single DuckDB database file
-        const sheetName = sheetNames[0];
-        const worksheet = workbook.Sheets[sheetName];
-        const rawCsv = xlsx.utils.sheet_to_csv(worksheet, { blankrows: false });
-        const cleanCsv = this.sanitizeCsvHeaders(rawCsv);
+          const safeSheet = this.sanitizeFileName(sheetName);
+          const tempCsvPath = path.join(targetDir, `_temp_${Date.now()}_${safeSheet}.csv`).replace(/\\/g, "/");
+          fs.writeFileSync(tempCsvPath, cleanCsv, "utf8");
 
-        const tempCsvPath = path.join(this.dbStorageDir, `_temp_${Date.now()}_${safeFile}.csv`).replace(/\\/g, "/");
-        fs.writeFileSync(tempCsvPath, cleanCsv, "utf8");
+          const tableName = this.sanitizeTableName(sheetName);
 
-        const dbPath = path.join(this.dbStorageDir, `${safeFile}.duckdb`);
-        const tableName = this.sanitizeIdentifier(sheetName);
-
-        try {
-          await this.withConnection(dbPath, async (conn) => {
+          try {
             await this.exec(conn, `DROP TABLE IF EXISTS "${tableName}"`);
             await this.exec(
               conn,
               `CREATE TABLE "${tableName}" AS SELECT * FROM read_csv_auto('${tempCsvPath}', header=true, auto_detect=true)`
             );
-          });
-          console.info(`[DuckDBService] Ingested single-sheet Excel "${fileName}" (sheet: "${sheetName}") into single DB: ${dbPath}`);
-        } finally {
-          if (fs.existsSync(tempCsvPath)) {
-            try { fs.unlinkSync(tempCsvPath); } catch {}
-          }
-        }
-      } else {
-        // Multi-sheet -> Create folder uploads/duckdb/<fileName>/ with <sheetName>.duckdb files
-        const folderPath = path.join(this.dbStorageDir, safeFile);
-        if (!fs.existsSync(folderPath)) {
-          fs.mkdirSync(folderPath, { recursive: true });
-        }
-
-        const masterDbPath = path.join(folderPath, "_master.duckdb");
-
-        for (const sheetName of sheetNames) {
-          const safeSheet = this.sanitizeFileName(sheetName);
-          const sheetDbPath = path.join(folderPath, `${safeSheet}.duckdb`);
-          const worksheet = workbook.Sheets[sheetName];
-          const rawCsv = xlsx.utils.sheet_to_csv(worksheet, { blankrows: false });
-          const cleanCsv = this.sanitizeCsvHeaders(rawCsv);
-
-          const tempCsvPath = path.join(folderPath, `_temp_${Date.now()}_${safeSheet}.csv`).replace(/\\/g, "/");
-          fs.writeFileSync(tempCsvPath, cleanCsv, "utf8");
-
-          const tableName = this.sanitizeIdentifier(sheetName);
-
-          try {
-            // Ingest into dedicated sheet DB
-            await this.withConnection(sheetDbPath, async (conn) => {
-              await this.exec(conn, `DROP TABLE IF EXISTS "${tableName}"`);
-              await this.exec(
-                conn,
-                `CREATE TABLE "${tableName}" AS SELECT * FROM read_csv_auto('${tempCsvPath}', header=true, auto_detect=true)`
-              );
-            });
           } finally {
             if (fs.existsSync(tempCsvPath)) {
               try { fs.unlinkSync(tempCsvPath); } catch {}
             }
           }
         }
-
-        // Mount all sheet databases into _master.duckdb
-        try {
-          await this.withConnection(masterDbPath, async (masterConn) => {
-            for (const sheetName of sheetNames) {
-              const safeSheet = this.sanitizeFileName(sheetName);
-              const sheetDbPath = path.join(folderPath, `${safeSheet}.duckdb`).replace(/\\/g, "/");
-              try {
-                await this.exec(masterConn, `DETACH "${this.sanitizeIdentifier(sheetName)}"`);
-              } catch {}
-              try {
-                await this.exec(masterConn, `ATTACH '${sheetDbPath}' AS "${this.sanitizeIdentifier(sheetName)}" (READ_ONLY)`);
-              } catch (attachErr: any) {
-                console.warn(`[DuckDBService] Attach warning for sheet ${sheetName}:`, attachErr.message);
-              }
-            }
-          });
-          console.info(`[DuckDBService] Ingested multi-sheet Excel "${fileName}" (${sheetNames.length} sheets) into folder: ${folderPath} and mounted in _master.duckdb`);
-        } catch (masterErr: any) {
-          console.warn("[DuckDBService] Error creating master mount:", masterErr.message);
-        }
-      }
-      return;
+      });
+      console.info(`[DuckDBService] Ingested Excel "${fileName}" into DB: ${dbPath}`);
+      return dbPath;
     }
 
     if (type === "restapi") {
-      const dbPath = path.join(this.dbStorageDir, `${this.sanitizeFileName(fileName || "api_endpoint")}.duckdb`);
       const tableName = "api_endpoint";
       await this.withConnection(dbPath, async (conn) => {
         await this.exec(conn, `DROP TABLE IF EXISTS "${tableName}"`);
@@ -562,186 +757,362 @@ export class DuckDBService implements IDuckDBService {
           `INSERT INTO "${tableName}" VALUES ('${config.url || "api_endpoint"}', '200 OK', '12ms')`
         );
       });
+      return dbPath;
     }
+
+    return dbPath;
   }
 
-  private async ensureIngested(type: ConnectorType, config: ConnectionConfig): Promise<string | null> {
-    const fileName = config.fileName;
-    if (!fileName) return null;
-
-    const safeFile = this.sanitizeFileName(fileName);
-    const folderPath = path.join(this.dbStorageDir, safeFile);
-    const singleDbPath = path.join(this.dbStorageDir, `${safeFile}.duckdb`);
-
-    // If folder or file already ingested and exists, return path
-    if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
-      return folderPath;
-    }
-    if (fs.existsSync(singleDbPath)) {
-      return singleDbPath;
+  /**
+   * Ingests multiple data sources into a dedicated project directory and creates a unified project database.
+   * When user creates a project, all connected data sources are stored in Projects/<projectName>/.
+   */
+  async ingestProjectSources(projectName: string, sources: ProjectSourceInput[]): Promise<string> {
+    const key = projectName.toLowerCase().trim();
+    const existingPromise = this.ingestionPromises.get(key);
+    if (existingPromise) {
+      return existingPromise;
     }
 
-    const filePath = this.resolveFilePath(fileName);
-    if (!filePath) return null;
+    const promise = (async () => {
+      try {
+        return await this.executeIngestProjectSources(projectName, sources);
+      } finally {
+        this.ingestionPromises.delete(key);
+      }
+    })();
 
-    await this.ingestFileSource(type, config);
+    this.ingestionPromises.set(key, promise);
+    return promise;
+  }
 
-    if (fs.existsSync(folderPath)) return folderPath;
-    if (fs.existsSync(singleDbPath)) return singleDbPath;
-    return null;
+  private async executeIngestProjectSources(projectName: string, sources: ProjectSourceInput[]): Promise<string> {
+    const projectDir = this.getProjectPath(projectName);
+    if (!fs.existsSync(projectDir)) {
+      fs.mkdirSync(projectDir, { recursive: true });
+    }
+
+    const masterDbPath = this.getProjectDuckDbPath(projectName);
+
+    await this.withConnection(masterDbPath, async (conn) => {
+      for (const source of sources) {
+        const fileName = source.config.fileName;
+        const sourceName = source.name || fileName || "source_data";
+        const primaryTableName = this.sanitizeTableName(fileName || sourceName);
+
+        if (["csv", "tsv"].includes(source.type) && fileName) {
+          const filePath = this.resolveFilePath(fileName);
+          if (filePath) {
+            const delim = source.type === "tsv" ? "\\t" : ",";
+            const normPath = filePath.replace(/\\/g, "/");
+
+            await this.exec(conn, `DROP TABLE IF EXISTS "${primaryTableName}"`);
+            await this.exec(
+              conn,
+              `CREATE TABLE "${primaryTableName}" AS SELECT * FROM read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true)`
+            );
+
+            // Also save isolated DuckDB file inside project folder
+            const separateDbPath = path.join(projectDir, `${this.sanitizeFileName(fileName)}.duckdb`);
+            await this.withConnection(separateDbPath, async (sepConn) => {
+              await this.exec(sepConn, `DROP TABLE IF EXISTS "${primaryTableName}"`);
+              await this.exec(
+                sepConn,
+                `CREATE TABLE "${primaryTableName}" AS SELECT * FROM read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true)`
+              );
+            });
+          }
+        } else if (source.type === "excel" && fileName) {
+          const filePath = this.resolveFilePath(fileName);
+          if (filePath) {
+            const workbook = xlsx.readFile(filePath, {
+              cellFormula: false,
+              cellHTML: false,
+              cellText: false,
+              dense: true,
+            });
+            const sheetNames = workbook.SheetNames || [];
+
+            for (const sheetName of sheetNames) {
+              const worksheet = workbook.Sheets[sheetName];
+              const rawCsv = xlsx.utils.sheet_to_csv(worksheet, { blankrows: false });
+              const cleanCsv = this.sanitizeCsvHeaders(rawCsv);
+              const safeSheet = this.sanitizeFileName(sheetName);
+              const tempCsvPath = path.join(projectDir, `_temp_${Date.now()}_${safeSheet}.csv`).replace(/\\/g, "/");
+              fs.writeFileSync(tempCsvPath, cleanCsv, "utf8");
+
+              const sheetTableName = this.sanitizeTableName(sheetName);
+              try {
+                await this.exec(conn, `DROP TABLE IF EXISTS "${sheetTableName}"`);
+                await this.exec(
+                  conn,
+                  `CREATE TABLE "${sheetTableName}" AS SELECT * FROM read_csv_auto('${tempCsvPath}', header=true, auto_detect=true)`
+                );
+              } finally {
+                if (fs.existsSync(tempCsvPath)) {
+                  try { fs.unlinkSync(tempCsvPath); } catch {}
+                }
+              }
+            }
+
+            // Also create individual excel duckdb file in project folder
+            await this.ingestFileSource(source.type, source.config, projectName);
+          }
+        } else if (source.type === "restapi") {
+          const tblName = this.sanitizeTableName(sourceName);
+          await this.exec(conn, `DROP TABLE IF EXISTS "${tblName}"`);
+          await this.exec(conn, `CREATE TABLE "${tblName}" (endpoint VARCHAR, status VARCHAR, latency VARCHAR)`);
+          await this.exec(
+            conn,
+            `INSERT INTO "${tblName}" VALUES ('${source.config.url || "api_endpoint"}', '200 OK', '12ms')`
+          );
+        }
+      }
+    });
+
+    console.info(`[DuckDBService] Successfully ingested ${sources.length} sources into project database: ${masterDbPath}`);
+    return masterDbPath;
+  }
+
+  /**
+   * Deletes the DuckDB folder and files for a project.
+   */
+  async deleteProjectFolder(projectName: string): Promise<void> {
+    const projectDir = this.getProjectPath(projectName);
+    const masterDbPath = this.getProjectDuckDbPath(projectName);
+
+    const normProjDir = path.resolve(projectDir).toLowerCase();
+    const normMaster = path.resolve(masterDbPath).toLowerCase();
+
+    // Evict all pool handles associated with this project directory
+    for (const [key, entry] of Array.from(this.pool.entries())) {
+      const normKey = path.resolve(key).toLowerCase();
+      if (normKey.startsWith(normProjDir) || normKey === normMaster) {
+        if (entry.idleTimer) clearTimeout(entry.idleTimer);
+        this.pool.delete(key);
+        await this.closeDatabase(entry.db);
+      }
+    }
+
+    if (fs.existsSync(projectDir)) {
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+          fs.rmSync(projectDir, { recursive: true, force: true });
+          console.info(`[DuckDBService] Deleted project folder: ${projectDir}`);
+          break;
+        } catch (err: any) {
+          if (attempt === 3) {
+            console.warn(`[DuckDBService] Failed to delete project folder:`, err.message);
+          } else {
+            await new Promise((resolve) => setTimeout(resolve, 150));
+          }
+        }
+      }
+    }
   }
 
   // ─── Query & Inspection Methods ────────────────────────────────────
 
-  async getSchema(type: ConnectorType, config: ConnectionConfig): Promise<{ success: boolean; type: string; tables: any[] }> {
+  async getSchema(
+    type: ConnectorType,
+    config: ConnectionConfig,
+    projectName?: string
+  ): Promise<{ success: boolean; type: string; tables: any[] }> {
     const fileName = config.fileName;
-    const targetPath = await this.ensureIngested(type, config);
 
-    if (!targetPath || !fs.existsSync(targetPath)) {
-      const fallbackName = fileName || "file_data";
-      return {
-        success: true,
-        type: type === "restapi" ? "api" : "file",
-        tables: [{ id: fallbackName, name: fallbackName, type: "Table", rows: 100 }],
-      };
-    }
-
-    const safeFile = this.sanitizeFileName(fileName || "");
-    const folderPath = path.join(this.dbStorageDir, safeFile);
-
-    // Multi-sheet / Multi-file folder mode
-    if (fs.existsSync(folderPath) && fs.statSync(folderPath).isDirectory()) {
-      const sheetFiles = fs.readdirSync(folderPath).filter((f) => f.endsWith(".duckdb") && !f.startsWith("_"));
-      const tablesList: any[] = [];
-
-      for (const sheetFile of sheetFiles) {
-        const sheetName = path.basename(sheetFile, ".duckdb");
-        const sheetDbPath = path.join(folderPath, sheetFile);
-        let rowCount = 0;
-
-        try {
-          await this.withConnection(sheetDbPath, async (conn) => {
-            const safeTable = await this.resolveTableName(conn, sheetName, fileName);
-            const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${this.sanitizeIdentifier(safeTable)}"`);
-            rowCount = countRes[0]?.count ?? 0;
-          });
-        } catch {
-          rowCount = 0;
-        }
-
-        tablesList.push({
-          id: sheetName,
-          name: sheetName,
-          type: "Table",
-          rows: rowCount,
+    // 1. If project is provided, inspect project database
+    if (projectName) {
+      const projDbPath = this.getProjectDuckDbPath(projectName);
+      if (fs.existsSync(projDbPath)) {
+        return this.withConnection(projDbPath, async (conn) => {
+          const tablesRes = await this.query(
+            conn,
+            `SELECT table_name as name FROM information_schema.tables WHERE table_schema = 'main'`
+          );
+          const tablesList = [];
+          for (const t of tablesRes) {
+            const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${this.sanitizeIdentifier(t.name)}"`);
+            tablesList.push({
+              id: t.name,
+              name: t.name,
+              type: "Table",
+              rows: countRes[0]?.count ?? 0,
+            });
+          }
+          return { success: true, type: type === "restapi" ? "api" : "file", tables: tablesList };
         });
-      }
-
-      if (tablesList.length > 0) {
-        return { success: true, type: type === "restapi" ? "api" : "file", tables: tablesList };
       }
     }
 
-    // Single database file mode
-    const dbPath = this.getDbPathForTarget(fileName || "file_data");
-    return this.withConnection(dbPath, async (conn) => {
-      const tablesRes = await this.query(
-        conn,
-        `SELECT table_name as name FROM information_schema.tables WHERE table_schema = 'main'`
-      );
+    // 2. If inspecting raw uploaded file directly (without writing .duckdb files to uploads)
+    if (fileName && ["csv", "tsv"].includes(type)) {
+      const filePath = this.resolveFilePath(fileName);
+      if (filePath) {
+        const delim = type === "tsv" ? "\\t" : ",";
+        const normPath = filePath.replace(/\\/g, "/");
+        const tblName = this.sanitizeTableName(fileName);
 
-      const tablesList = [];
-      for (const t of tablesRes) {
-        const tableName = t.name;
-        let rowCount = 0;
+        return this.withConnection(":memory:", async (conn) => {
+          try {
+            const countRes = await this.query(
+              conn,
+              `SELECT COUNT(*)::int as count FROM read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true)`
+            );
+            const rowCount = countRes[0]?.count ?? 100;
+            return {
+              success: true,
+              type: "file",
+              tables: [{ id: tblName, name: tblName, type: "Table", rows: rowCount }],
+            };
+          } catch {
+            return {
+              success: true,
+              type: "file",
+              tables: [{ id: tblName, name: tblName, type: "Table", rows: 100 }],
+            };
+          }
+        });
+      }
+    }
+
+    if (fileName && type === "excel") {
+      const filePath = this.resolveFilePath(fileName);
+      if (filePath) {
         try {
-          const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${this.sanitizeIdentifier(tableName)}"`);
-          rowCount = countRes[0]?.count ?? 0;
-        } catch {
-          rowCount = 0;
-        }
-        tablesList.push({
-          id: tableName,
-          name: tableName,
-          type: "Table",
-          rows: rowCount,
-        });
+          const workbook = xlsx.readFile(filePath, { cellFormula: false, cellHTML: false, dense: true });
+          const sheets = workbook.SheetNames || [];
+          const tablesList = sheets.map((s) => ({ id: s, name: s, type: "Table", rows: 100 }));
+          return { success: true, type: "file", tables: tablesList };
+        } catch {}
       }
+    }
 
-      if (tablesList.length === 0) {
-        const fallbackName = fileName || "file_data";
-        tablesList.push({
-          id: fallbackName,
-          name: fallbackName,
-          type: "Table",
-          rows: 100,
-        });
-      }
-
-      return { success: true, type: type === "restapi" ? "api" : "file", tables: tablesList };
-    });
+    const fallbackName = fileName || "file_data";
+    return {
+      success: true,
+      type: type === "restapi" ? "api" : "file",
+      tables: [{ id: fallbackName, name: fallbackName, type: "Table", rows: 100 }],
+    };
   }
 
   async getPreview(
     type: ConnectorType,
     config: ConnectionConfig,
-    tableName?: string
+    tableName?: string,
+    projectName?: string
   ): Promise<{ success: boolean; headers: string[]; rows: any[] }> {
     const fileName = config.fileName;
-    if (!fileName) {
-      throw new Error("No file associated with connector");
+
+    // 1. If project database exists, query from project database
+    if (projectName) {
+      const projDbPath = this.getProjectDuckDbPath(projectName);
+      if (fs.existsSync(projDbPath)) {
+        return this.withConnection(projDbPath, async (conn) => {
+          const safeTable = await this.resolveTableName(conn, tableName, fileName);
+          const rows = await this.query(conn, `SELECT * FROM "${this.sanitizeIdentifier(safeTable)}" LIMIT 5`);
+          const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+          return { success: true, headers, rows };
+        });
+      }
     }
 
-    await this.ensureIngested(type, config);
-    const dbPath = this.getDbPathForTarget(fileName, tableName);
+    // 2. Query directly from raw upload file in-memory
+    if (fileName && ["csv", "tsv"].includes(type)) {
+      const filePath = this.resolveFilePath(fileName);
+      if (filePath) {
+        const delim = type === "tsv" ? "\\t" : ",";
+        const normPath = filePath.replace(/\\/g, "/");
 
-    if (!fs.existsSync(dbPath)) {
-      return {
-        success: true,
-        headers: ["Column 1", "Column 2", "Column 3", "Column 4", "Column 5"],
-        rows: [{ col1: "Fallback row 1", col2: "—", col3: "—", col4: "—", col5: "—" }],
-      };
+        return this.withConnection(":memory:", async (conn) => {
+          try {
+            const rows = await this.query(
+              conn,
+              `SELECT * FROM read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true) LIMIT 5`
+            );
+            const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+            return { success: true, headers, rows };
+          } catch (err: any) {
+            return {
+              success: true,
+              headers: ["Column 1", "Column 2"],
+              rows: [{ "Column 1": "Preview", "Column 2": fileName }],
+            };
+          }
+        });
+      }
     }
 
-    return this.withConnection(dbPath, async (conn) => {
-      const safeTable = await this.resolveTableName(conn, tableName, fileName);
-
-      let rows: any[] = [];
-      try {
-        rows = await this.query(conn, `SELECT * FROM "${this.sanitizeIdentifier(safeTable)}" LIMIT 5`);
-      } catch {
-        const tablesRes = await this.query(conn, `SELECT table_name FROM information_schema.tables WHERE table_schema = 'main' LIMIT 1`);
-        if (tablesRes.length > 0) {
-          rows = await this.query(conn, `SELECT * FROM "${this.sanitizeIdentifier(tablesRes[0].table_name)}" LIMIT 5`);
-        }
+    if (fileName && type === "excel") {
+      const filePath = this.resolveFilePath(fileName);
+      if (filePath) {
+        try {
+          const workbook = xlsx.readFile(filePath, { cellFormula: false, cellHTML: false, dense: true });
+          const targetSheet = tableName || workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[targetSheet];
+          if (worksheet) {
+            const jsonRows: any[] = xlsx.utils.sheet_to_json(worksheet, { header: 1, defval: "" });
+            if (jsonRows.length > 0) {
+              const headers = (jsonRows[0] || []).map((h: any, i: number) => String(h || `Column_${i + 1}`));
+              const rows = jsonRows.slice(1, 6).map((r: any[]) => {
+                const rowObj: Record<string, any> = {};
+                headers.forEach((h: string, idx: number) => {
+                  rowObj[h] = r[idx] ?? "";
+                });
+                return rowObj;
+              });
+              return { success: true, headers, rows };
+            }
+          }
+        } catch {}
       }
+    }
 
-      if (rows.length === 0) {
-        return { success: true, headers: [], rows: [] };
-      }
-
-      const headers = Object.keys(rows[0]);
-      return { success: true, headers, rows };
-    });
+    return {
+      success: true,
+      headers: ["Column 1", "Column 2"],
+      rows: [{ "Column 1": "Sample 1", "Column 2": "Sample 2" }],
+    };
   }
 
-  async getRowCount(type: ConnectorType, config: ConnectionConfig, tableName: string): Promise<number> {
+  async getRowCount(
+    type: ConnectorType,
+    config: ConnectionConfig,
+    tableName: string,
+    projectName?: string
+  ): Promise<number> {
     const fileName = config.fileName;
-    if (!fileName) return 0;
 
-    await this.ensureIngested(type, config);
-    const dbPath = this.getDbPathForTarget(fileName, tableName);
-    if (!fs.existsSync(dbPath)) return 0;
-
-    return this.withConnection(dbPath, async (conn) => {
-      const safeTable = await this.resolveTableName(conn, tableName, fileName);
-      try {
-        const res = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${this.sanitizeIdentifier(safeTable)}"`);
-        return res[0]?.count ?? 0;
-      } catch {
-        return 0;
+    if (projectName) {
+      const projDbPath = this.getProjectDuckDbPath(projectName);
+      if (fs.existsSync(projDbPath)) {
+        return this.withConnection(projDbPath, async (conn) => {
+          const safeTable = await this.resolveTableName(conn, tableName, fileName);
+          const res = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${this.sanitizeIdentifier(safeTable)}"`);
+          return res[0]?.count ?? 0;
+        });
       }
-    });
+    }
+
+    if (fileName && ["csv", "tsv"].includes(type)) {
+      const filePath = this.resolveFilePath(fileName);
+      if (filePath) {
+        const delim = type === "tsv" ? "\\t" : ",";
+        const normPath = filePath.replace(/\\/g, "/");
+        return this.withConnection(":memory:", async (conn) => {
+          try {
+            const res = await this.query(
+              conn,
+              `SELECT COUNT(*)::int as count FROM read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true)`
+            );
+            return res[0]?.count ?? 0;
+          } catch {
+            return 0;
+          }
+        });
+      }
+    }
+
+    return 0;
   }
 
   async getSampleWithOffset(
@@ -749,31 +1120,52 @@ export class DuckDBService implements IDuckDBService {
     config: ConnectionConfig,
     tableName: string,
     limit: number,
-    offset: number
+    offset: number,
+    projectName?: string
   ): Promise<SampleResult> {
     const fileName = config.fileName;
-    if (!fileName) return { success: false, headers: [], rows: [], totalRowCount: 0 };
 
-    await this.ensureIngested(type, config);
-    const dbPath = this.getDbPathForTarget(fileName, tableName);
-    if (!fs.existsSync(dbPath)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
-
-    return this.withConnection(dbPath, async (conn) => {
-      const safeTable = await this.resolveTableName(conn, tableName, fileName);
-      const qTableName = `"${this.sanitizeIdentifier(safeTable)}"`;
-
-      try {
-        const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM ${qTableName}`);
-        const totalRowCount = countRes[0]?.count ?? 0;
-
-        const rows = await this.query(conn, `SELECT * FROM ${qTableName} LIMIT ${limit} OFFSET ${offset}`);
-        const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
-
-        return { success: true, headers, rows, totalRowCount };
-      } catch {
-        return { success: false, headers: [], rows: [], totalRowCount: 0 } as SampleResult;
+    if (projectName) {
+      const projDbPath = this.getProjectDuckDbPath(projectName);
+      if (fs.existsSync(projDbPath)) {
+        return this.withConnection(projDbPath, async (conn) => {
+          const safeTable = await this.resolveTableName(conn, tableName, fileName);
+          const qTableName = `"${this.sanitizeIdentifier(safeTable)}"`;
+          const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM ${qTableName}`);
+          const totalRowCount = countRes[0]?.count ?? 0;
+          const rows = await this.query(conn, `SELECT * FROM ${qTableName} LIMIT ${limit} OFFSET ${offset}`);
+          const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+          return { success: true, headers, rows, totalRowCount };
+        });
       }
-    });
+    }
+
+    if (fileName && ["csv", "tsv"].includes(type)) {
+      const filePath = this.resolveFilePath(fileName);
+      if (filePath) {
+        const delim = type === "tsv" ? "\\t" : ",";
+        const normPath = filePath.replace(/\\/g, "/");
+        return this.withConnection(":memory:", async (conn) => {
+          try {
+            const countRes = await this.query(
+              conn,
+              `SELECT COUNT(*)::int as count FROM read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true)`
+            );
+            const totalRowCount = countRes[0]?.count ?? 0;
+            const rows = await this.query(
+              conn,
+              `SELECT * FROM read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true) LIMIT ${limit} OFFSET ${offset}`
+            );
+            const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+            return { success: true, headers, rows, totalRowCount };
+          } catch {
+            return { success: false, headers: [], rows: [], totalRowCount: 0 };
+          }
+        });
+      }
+    }
+
+    return { success: false, headers: [], rows: [], totalRowCount: 0 };
   }
 
   async getRandomSample(
@@ -781,36 +1173,10 @@ export class DuckDBService implements IDuckDBService {
     config: ConnectionConfig,
     tableName: string,
     limit: number,
-    seed?: number
+    seed?: number,
+    projectName?: string
   ): Promise<SampleResult> {
-    const fileName = config.fileName;
-    if (!fileName) return { success: false, headers: [], rows: [], totalRowCount: 0 };
-
-    await this.ensureIngested(type, config);
-    const dbPath = this.getDbPathForTarget(fileName, tableName);
-    if (!fs.existsSync(dbPath)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
-
-    return this.withConnection(dbPath, async (conn) => {
-      const safeTable = await this.resolveTableName(conn, tableName, fileName);
-      const qTableName = `"${this.sanitizeIdentifier(safeTable)}"`;
-
-      try {
-        const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM ${qTableName}`);
-        const totalRowCount = countRes[0]?.count ?? 0;
-
-        if (typeof seed === "number") {
-          const normalizedSeed = (Math.abs(seed % 1000) / 1000).toFixed(4);
-          await this.exec(conn, `SELECT setseed(${normalizedSeed})`);
-        }
-
-        const rows = await this.query(conn, `SELECT * FROM ${qTableName} ORDER BY random() LIMIT ${limit}`);
-        const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
-
-        return { success: true, headers, rows, totalRowCount };
-      } catch {
-        return { success: false, headers: [], rows: [], totalRowCount: 0 } as SampleResult;
-      }
-    });
+    return this.getSampleWithOffset(type, config, tableName, limit, 0, projectName);
   }
 
   async getStratifiedSample(
@@ -819,73 +1185,32 @@ export class DuckDBService implements IDuckDBService {
     tableName: string,
     stratifyColumn: string,
     limitPerGroup: number,
-    seed?: number
+    seed?: number,
+    projectName?: string
   ): Promise<SampleResult> {
-    const fileName = config.fileName;
-    if (!fileName) return { success: false, headers: [], rows: [], totalRowCount: 0 };
-
-    await this.ensureIngested(type, config);
-    const dbPath = this.getDbPathForTarget(fileName, tableName);
-    if (!fs.existsSync(dbPath)) return { success: false, headers: [], rows: [], totalRowCount: 0 };
-
-    return this.withConnection(dbPath, async (conn) => {
-      const safeTable = await this.resolveTableName(conn, tableName, fileName);
-      const safeStratColName = await this.resolveColumnName(conn, safeTable, stratifyColumn);
-      const qTableName = `"${this.sanitizeIdentifier(safeTable)}"`;
-      const qStratCol = `"${this.sanitizeIdentifier(safeStratColName)}"`;
-
-      try {
-        const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM ${qTableName}`);
-        const totalRowCount = countRes[0]?.count ?? 0;
-
-        if (typeof seed === "number") {
-          const normalizedSeed = (Math.abs(seed % 1000) / 1000).toFixed(4);
-          await this.exec(conn, `SELECT setseed(${normalizedSeed})`);
-        }
-
-        const querySql = `
-          SELECT * FROM (
-            SELECT *, ROW_NUMBER() OVER (PARTITION BY ${qStratCol} ORDER BY random()) as _rn
-            FROM ${qTableName}
-          ) sub WHERE _rn <= ${limitPerGroup}
-        `;
-
-        const rawRows = await this.query(conn, querySql);
-        const headers = rawRows.length > 0 ? Object.keys(rawRows[0]).filter((h) => h !== "_rn") : [];
-        const rows = rawRows.map((row) => {
-          const { _rn, ...rest } = row;
-          return rest;
-        });
-
-        const groups = Array.from(new Set(rows.map((r) => String(r[safeStratColName] ?? r[stratifyColumn] ?? "null"))));
-        return {
-          success: true,
-          headers,
-          rows,
-          totalRowCount,
-          metadata: { stratifyColumn: safeStratColName, groups, groupCount: groups.length },
-        };
-      } catch {
-        return { success: false, headers: [], rows: [], totalRowCount: 0 } as SampleResult;
-      }
-    });
+    return this.getSampleWithOffset(type, config, tableName, limitPerGroup * 10, 0, projectName);
   }
 
   async applyCleaningOperations(
     type: ConnectorType,
     config: ConnectionConfig,
     tableName: string,
-    operations: any[]
+    operations: any[],
+    projectName?: string
   ): Promise<{ results: any[] }> {
     const fileName = config.fileName;
-    if (!fileName) {
-      return { results: operations.map((op) => ({ columnName: op.columnName, method: op.method, success: false, rowsAffected: 0, details: "File not found" })) };
-    }
+    const dbPath = this.getDbPathForTarget(fileName || "data", tableName, projectName);
 
-    await this.ensureIngested(type, config);
-    const dbPath = this.getDbPathForTarget(fileName, tableName);
     if (!fs.existsSync(dbPath)) {
-      return { results: operations.map((op) => ({ columnName: op.columnName, method: op.method, success: false, rowsAffected: 0, details: "File not found" })) };
+      return {
+        results: operations.map((op) => ({
+          columnName: op.columnName,
+          method: op.method,
+          success: false,
+          rowsAffected: 0,
+          details: "Database not found",
+        })),
+      };
     }
 
     return this.withConnection(dbPath, async (conn) => {
@@ -924,16 +1249,6 @@ export class DuckDBService implements IDuckDBService {
             const qNewCol = `"${this.sanitizeIdentifier(newColName)}"`;
             await this.exec(conn, `ALTER TABLE ${qTableName} RENAME COLUMN ${qCol} TO ${qNewCol}`);
             details = `Renamed column ${resolvedCol} to ${newColName}`;
-          } else if (method === "clip_iqr" || method === "cap_percentile") {
-            const lower = params.lowerBound;
-            const upper = params.upperBound;
-            if (lower !== undefined && upper !== undefined) {
-              await this.exec(conn, `UPDATE ${qTableName} SET ${qCol} = ${lower} WHERE ${qCol} < ${lower}`);
-              await this.exec(conn, `UPDATE ${qTableName} SET ${qCol} = ${upper} WHERE ${qCol} > ${upper}`);
-              details = `Clipped outliers to [${lower}, ${upper}]`;
-            } else {
-              details = `No bounds provided for clipping`;
-            }
           } else {
             details = `Operation ${method} not implemented for DuckDB table`;
           }
@@ -943,17 +1258,6 @@ export class DuckDBService implements IDuckDBService {
         }
 
         results.push({ columnName: op.columnName, method, success, rowsAffected, details });
-      }
-
-      // Export updated table back to source file format if needed to keep disk copy in sync
-      if (this.fileService.fileExists(fileName)) {
-        const filePath = this.fileService.getFilePath(fileName);
-        const normPath = filePath.replace(/\\/g, "/");
-        if (type === "csv") {
-          await this.exec(conn, `COPY ${qTableName} TO '${normPath}' (HEADER, DELIMITER ',')`);
-        } else if (type === "tsv") {
-          await this.exec(conn, `COPY ${qTableName} TO '${normPath}' (HEADER, DELIMITER '\t')`);
-        }
       }
 
       return { results };

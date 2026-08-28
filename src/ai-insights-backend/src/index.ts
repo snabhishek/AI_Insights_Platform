@@ -26,9 +26,9 @@ import * as agentThinkingSchema from "./db/agentThinking";
 import * as agentJobsSchema from "./db/agentJobs";
 const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema };
 import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
-import { AgentThinkingService } from "./services/ai/agentThinking.service";
+import { AgentThinkingService } from "./services/ai/agent-thinking/agentThinking.service";
 // import { AgentController } from "./controllers/agent.controller";
-import { IngestionAgentService } from "./services/ai/ingestionAgent.service";
+import { IngestionAgentService } from "./services/ai/ingestion-agent/ingestionAgent.service";
 import { QueueService } from "./services/queue/queue.service";
 import { AIController } from "./controllers/ai.controller";
 import { PostgresDomainRepository } from "./repositories/domain.repository";
@@ -85,13 +85,13 @@ async function bootstrap() {
   connectorRepository = new PostgresConnectorRepository(db);
   const workspaceRepository = new PostgresWorkspaceRepository(db);
   const projectRepository = new PostgresProjectRepository(db);
-  const projectService = new ProjectService(projectRepository);
-  const workspaceService = new WorkspaceService(workspaceRepository, projectRepository);
+  const projectService = new ProjectService(projectRepository, duckDBService);
+  const workspaceService = new WorkspaceService(workspaceRepository, projectRepository, connectorRepository, duckDBService);
   const workspaceController = new WorkspaceController(workspaceService);
   const agentThinkingRepository = new PostgresAgentThinkingRepository(db);
   const agentThinkingService = new AgentThinkingService(agentThinkingRepository);
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester, duckDBService);
-  const sourceRegistryService = new SourceRegistryService(connectorRepository, connectionTester, duckDBService);
+  const sourceRegistryService = new SourceRegistryService(connectorRepository, connectionTester, duckDBService, projectRepository);
   connectorController = new ConnectorController(connectorService, connectionTester, sourceRegistryService);
   // agentController = new AgentController(connectorService);
   const queueService = new QueueService(db);
@@ -107,7 +107,7 @@ async function bootstrap() {
   app.get("/api/filter-options", connectorController.getFilterOptions);
   app.use("/api/connectors", createConnectorRouter(connectorController));
   app.use("/api/domains", createDomainRouter(domainController));
-  
+
   // Agent Router
   const agentRouter = express.Router();
   // agentRouter.post("/inspect", agentController.runInspector);

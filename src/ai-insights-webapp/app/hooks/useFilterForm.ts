@@ -21,6 +21,8 @@ export interface FilterGroup {
 
 export interface FormSchema {
   sourceId?: string;
+  projectId?: string;
+  projectName?: string;
   filterGroups?: FilterGroup[];
   forms?: FilterGroup[];
 }
@@ -91,7 +93,7 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
   const fetchOptions = useCallback(
     async (field: FormField, currentValues: Record<string, any>, searchOverride?: string) => {
       const fieldId = field.fieldId;
-      const sourceId = schema?.sourceId || "default_source";
+      const sourceId = (field as any).sourceId || schema?.sourceId || "default_source";
 
       // Abort previous in-flight request for this fieldId (Race Safety)
       if (abortControllersRef.current.has(fieldId)) {
@@ -120,9 +122,12 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
 
         const queryParams = new URLSearchParams();
         queryParams.set("sourceId", sourceId);
+        if (schema?.projectId) queryParams.set("projectId", schema.projectId);
+        if (schema?.projectName) queryParams.set("projectName", schema.projectName);
         queryParams.set("fieldId", fieldId);
         if ((field as any).columnName) queryParams.set("columnName", (field as any).columnName);
-        if ((field as any).tableName) queryParams.set("table", (field as any).tableName);
+        const resolvedTable = (field as any).tableName || (field as any).table;
+        if (resolvedTable) queryParams.set("table", resolvedTable);
         if (field.controlType) queryParams.set("controlType", field.controlType);
         if (parents.length > 0) queryParams.set("parentFields", JSON.stringify(parents));
         if (Object.keys(parentParamsObj).length > 0) {

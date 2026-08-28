@@ -5,87 +5,6 @@ import FilterForm from "../shared/FilterForm/FilterForm";
 import { FormSchema } from "../../hooks/useFilterForm";
 import { useApp } from "../providers/AppContext";
 
-// Default fallback schema when no project or workflow has been run yet
-const SAMPLE_FORM_SCHEMA: FormSchema = {
-  sourceId: "demand_forecasting_dataset",
-  filterGroups: [
-    {
-      groupName: "Product Hierarchy",
-      priority: "primary",
-      fields: [
-        {
-          fieldId: "category",
-          label: "Product Category",
-          controlType: "dropdown",
-          parentField: null,
-          parentFields: [],
-          options: ["Heat Pumps", "AC Units", "Furnaces", "Thermostats"],
-        },
-        {
-          fieldId: "segment",
-          label: "Product Segment",
-          controlType: "dropdown",
-          parentField: "category",
-          parentFields: ["category"],
-          options: ["Residential", "Commercial", "Industrial"],
-        },
-        {
-          fieldId: "sku",
-          label: "SKU / Model",
-          controlType: "searchable_dropdown",
-          parentField: "segment",
-          parentFields: ["category", "segment"],
-          requiredParentParams: ["category", "segment"],
-          options: ["HP-100", "HP-200", "AC-500", "AC-600", "FN-900"],
-        },
-      ],
-    },
-    {
-      groupName: "Geographic Location",
-      priority: "primary",
-      fields: [
-        {
-          fieldId: "region",
-          label: "Region",
-          controlType: "dropdown",
-          parentField: null,
-          parentFields: [],
-          options: ["North America", "EMEA", "APAC", "LATAM"],
-        },
-        {
-          fieldId: "country",
-          label: "Country",
-          controlType: "dropdown",
-          parentField: "region",
-          parentFields: ["region"],
-          options: ["United States", "Canada", "Germany", "Japan", "Brazil"],
-        },
-      ],
-    },
-    {
-      groupName: "Time & Dates",
-      priority: "primary",
-      fields: [
-        {
-          fieldId: "order_year",
-          label: "Order Year",
-          controlType: "dropdown",
-          parentField: null,
-          parentFields: [],
-          options: [2023, 2024, 2025, 2026],
-        },
-        {
-          fieldId: "order_date",
-          label: "Order Date Range",
-          controlType: "date_range",
-          parentField: "order_year",
-          parentFields: ["order_year"],
-        },
-      ],
-    },
-  ],
-};
-
 interface ModernProjectSelectProps {
   projects: Array<{ id: string; name: string }>;
   selectedProjectId: string;
@@ -183,7 +102,7 @@ function ModernProjectSelect({ projects, selectedProjectId, onSelect }: ModernPr
 export default function ApplicationPage() {
   const { projects } = useApp();
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
-  const [activeSchema, setActiveSchema] = useState<FormSchema>(SAMPLE_FORM_SCHEMA);
+  const [activeSchema, setActiveSchema] = useState<FormSchema | null>(null);
 
   // Automatically select the first available project or sync when projects change
   useEffect(() => {
@@ -191,14 +110,24 @@ export default function ApplicationPage() {
       if (!selectedProjectId || !projects.some((p) => p.id === selectedProjectId)) {
         setSelectedProjectId(projects[0].id);
       }
+    } else {
+      setSelectedProjectId("");
+      setActiveSchema(null);
     }
   }, [projects, selectedProjectId]);
 
-  // Update active schema based on selected project's AI-generated Hierarchy Mapper Form Builder output
+  // Update active schema based strictly on selected project's AI-generated Hierarchy Mapper Form Builder output
   useEffect(() => {
-    if (!selectedProjectId) return;
+    if (!selectedProjectId) {
+      setActiveSchema(null);
+      return;
+    }
+
     const project = projects.find((p) => p.id === selectedProjectId);
-    if (!project) return;
+    if (!project) {
+      setActiveSchema(null);
+      return;
+    }
 
     const agentState = project.agentState as any;
     const rawFormBuilder =
@@ -210,22 +139,25 @@ export default function ApplicationPage() {
     const primarySourceId =
       project.dataSources && project.dataSources.length > 0
         ? project.dataSources[0]
-        : rawFormBuilder?.sourceId || "default_source";
+        : rawFormBuilder?.sourceId;
 
-    if (rawFormBuilder && (Array.isArray(rawFormBuilder.filterGroups) || Array.isArray(rawFormBuilder.forms))) {
-      const groups = rawFormBuilder.filterGroups || rawFormBuilder.forms;
+    const groups = rawFormBuilder?.filterGroups || rawFormBuilder?.forms;
+    const hasValidGroups = Array.isArray(groups) && groups.length > 0;
+
+    if (hasValidGroups && primarySourceId) {
       setActiveSchema({
         sourceId: primarySourceId,
+        projectId: project.id,
+        projectName: project.name,
         filterGroups: groups,
         forms: groups,
       });
-    } else if (primarySourceId && primarySourceId !== "default_source") {
-      setActiveSchema((prev) => ({
-        ...prev,
-        sourceId: primarySourceId,
-      }));
+    } else {
+      setActiveSchema(null);
     }
   }, [selectedProjectId, projects]);
+
+  const hasDesignedForm = activeSchema && Array.isArray(activeSchema.filterGroups) && activeSchema.filterGroups.length > 0;
 
   return (
     <main className="min-h-screen bg-background/50 p-6 md:p-8 space-y-6">
@@ -240,12 +172,26 @@ export default function ApplicationPage() {
         </div>
       )}
 
-      {/* Full-Width Filter Form */}
+      {/* Main Content Area */}
       <div className="w-full">
-        <FilterForm
-          schema={activeSchema}
-          apiBaseUrl="http://127.0.0.1:4000"
-        />
+        {hasDesignedForm ? (
+          <FilterForm
+            schema={activeSchema}
+            apiBaseUrl="http://127.0.0.1:4000"
+          />
+        ) : (
+          <div className="flex flex-col items-center justify-center min-h-[440px] w-full rounded-3xl border border-dashed border-border/80 bg-surface/30 backdrop-blur-sm p-12 text-center shadow-sm animate-in fade-in duration-300">
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-3xl mb-4 shadow-sm">
+              📐
+            </div>
+            <h2 className="text-xl font-bold text-foreground tracking-tight mb-2">
+              Project is yet to be designed.
+            </h2>
+            <p className="text-sm text-muted-foreground max-w-md">
+              This project does not have any completed workflow runs or filter forms yet. Run the AI workflow pipeline to generate data hierarchies and filter forms.
+            </p>
+          </div>
+        )}
       </div>
     </main>
   );

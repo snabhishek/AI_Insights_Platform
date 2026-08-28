@@ -1,3 +1,4 @@
+import fs from "fs";
 import path from "path";
 import {
   ISourceRegistryService,
@@ -9,17 +10,21 @@ import {
 import { IConnectorRepository } from "../../repositories/connector.repository.interface";
 import { IConnectionTesterService } from "../connector/connectionTester.service.interface";
 import { IDuckDBService } from "../duckdb/duckdb.service.interface";
+import { IProjectRepository } from "../../repositories/project.repository.interface";
 import { ConnectorType } from "../../models/connector.types";
+import { Project } from "../../models/project.types";
 
 const IDENTIFIER_REGEX = /^[a-zA-Z0-9_\-\. ]+$/;
 
 export class SourceRegistryService implements ISourceRegistryService {
   private inMemoryRegistry = new Map<string, SourceRegistryEntry>();
+  private projectIngestionPromises = new Map<string, Promise<void>>();
 
   constructor(
     private connectorRepository: IConnectorRepository,
     private connectionTesterService: IConnectionTesterService,
-    private duckDBService?: IDuckDBService
+    private duckDBService?: IDuckDBService,
+    private projectRepository?: IProjectRepository
   ) {}
 
   private deriveBackingEngine(type: ConnectorType): BackingEngineType {
@@ -78,31 +83,43 @@ export class SourceRegistryService implements ISourceRegistryService {
 
     try {
       const connector = await this.connectorRepository.getById(cleanId);
-      if (!connector) return null;
+      if (connector) {
+        const backingEngine = this.deriveBackingEngine(connector.type);
+        const safeFileName = connector.connectionConfig?.fileName
+          ? connector.connectionConfig.fileName.replace(/[^a-zA-Z0-9_-]/g, "_")
+          : undefined;
 
-      const backingEngine = this.deriveBackingEngine(connector.type);
-      const safeFileName = connector.connectionConfig?.fileName
-        ? connector.connectionConfig.fileName.replace(/[^a-zA-Z0-9_-]/g, "_")
-        : undefined;
+        const entry: SourceRegistryEntry = {
+          sourceId: connector.id,
+          name: connector.name,
+          type: connector.type,
+          workspaceId: connector.workspaceId,
+          connectionConfig: connector.connectionConfig,
+          backingEngine,
+          details: {
+            storagePath: safeFileName ? path.join(process.cwd(), "Projects", `${safeFileName}.duckdb`) : undefined,
+            databaseName: connector.connectionConfig?.database,
+            host: connector.connectionConfig?.host,
+            port: connector.connectionConfig?.port ? Number(connector.connectionConfig.port) : undefined,
+          },
+          createdAt: connector.createdAt ? new Date(connector.createdAt) : new Date(),
+        };
 
-      const entry: SourceRegistryEntry = {
-        sourceId: connector.id,
-        name: connector.name,
-        type: connector.type,
-        workspaceId: connector.workspaceId,
-        connectionConfig: connector.connectionConfig,
-        backingEngine,
-        details: {
-          storagePath: safeFileName ? path.join(process.cwd(), "uploads", "duckdb", `${safeFileName}.duckdb`) : undefined,
-          databaseName: connector.connectionConfig?.database,
-          host: connector.connectionConfig?.host,
-          port: connector.connectionConfig?.port ? Number(connector.connectionConfig.port) : undefined,
-        },
-        createdAt: connector.createdAt ? new Date(connector.createdAt) : new Date(),
+        this.inMemoryRegistry.set(cleanId, entry);
+        return entry;
+      }
+
+      // If not found directly in connector repo, construct fallback entry
+      const fallbackEntry: SourceRegistryEntry = {
+        sourceId: cleanId,
+        name: cleanId,
+        type: "csv",
+        connectionConfig: { fileName: cleanId },
+        backingEngine: "duckdb",
+        details: {},
+        createdAt: new Date(),
       };
-
-      this.inMemoryRegistry.set(cleanId, entry);
-      return entry;
+      return fallbackEntry;
     } catch (error) {
       console.warn(`[SourceRegistryService] Failed to resolve sourceId "${cleanId}":`, error);
       return null;
@@ -130,8 +147,47 @@ export class SourceRegistryService implements ISourceRegistryService {
     return updated;
   }
 
+  /**
+   * Resolves the target Project record from project repository using projectId, projectName, or sourceId.
+   */
+  private async resolveProject(projectId?: string, projectName?: string, sourceId?: string): Promise<Project | undefined> {
+    if (!this.projectRepository) return undefined;
+
+    try {
+      if (projectId) {
+        const byId = await this.projectRepository.getById(projectId);
+        if (byId) return byId;
+      }
+
+      const allProjects = await this.projectRepository.getAll();
+
+      if (projectName) {
+        const byName = allProjects.find((p) => p.name.toLowerCase() === projectName.toLowerCase().trim());
+        if (byName) return byName;
+      }
+
+      if (projectId) {
+        const byNameOrId = allProjects.find(
+          (p) => p.id === projectId || p.name.toLowerCase() === projectId.toLowerCase().trim()
+        );
+        if (byNameOrId) return byNameOrId;
+      }
+
+      if (sourceId) {
+        const bySource = allProjects.find(
+          (p) => Array.isArray(p.dataSources) && p.dataSources.includes(sourceId)
+        );
+        if (bySource) return bySource;
+      }
+    } catch (e) {
+      console.warn(`[SourceRegistryService] Error resolving project:`, e);
+    }
+
+    return undefined;
+  }
+
   async fetchFilterOptions(query: FilterOptionsQuery): Promise<FilterOptionsResult> {
-    const { sourceId, fieldId, tableName, parentParams, parentFields = [], search, controlType, limit = 50 } = query;
+    const { sourceId, fieldId, tableName, projectId, projectName, parentParams, parentFields = [], search, controlType, limit = 50 } = query;
 
     // Security check identifiers against allowlist regex
     const cleanFieldId = this.validateIdentifier(fieldId, "fieldId");
@@ -141,17 +197,7 @@ export class SourceRegistryService implements ISourceRegistryService {
 
     const source = await this.getSource(sourceId);
 
-    if (!source) {
-      return {
-        success: false,
-        sourceId,
-        fieldId: cleanFieldId,
-        values: [],
-        totalCount: 0,
-      };
-    }
-
-    const resolvedTable = targetTable || source.connectionConfig.fileName || cleanFieldId;
+    const resolvedTable = targetTable || source?.connectionConfig?.fileName || cleanFieldId;
     const cleanTable = this.validateIdentifier(resolvedTable, "resolvedTable");
 
     // Check parent parameter values
@@ -167,7 +213,6 @@ export class SourceRegistryService implements ISourceRegistryService {
         }
       }
 
-      // User instruction: "If no values for parent fields, Consider the subfield as Independent field"
       if (activeParentFilters.length === 0) {
         isIndependentFallback = true;
       }
@@ -182,29 +227,49 @@ export class SourceRegistryService implements ISourceRegistryService {
 
     try {
       // 1. Direct DuckDB Query Pushdown for High-Performance File Sources
-      if (this.duckDBService && ["csv", "tsv", "excel"].includes(source.type)) {
+      if (this.duckDBService && (!source || ["csv", "tsv", "excel"].includes(source.type))) {
         try {
-          const rawFile = source.connectionConfig.fileName || cleanTable;
-          const dbPath = this.duckDBService.getDuckDbPath(rawFile);
-          
-          // Discover actual table name in DuckDB
-          let actualTable = path.basename(rawFile, path.extname(rawFile)).replace(/[^a-zA-Z0-9_-]/g, "_");
-          try {
-            const tableList = await this.duckDBService.runQuery(dbPath, "SHOW TABLES");
-            if (tableList && tableList.length > 0) {
-              const availableTables = tableList.map((t: any) => Object.values(t)[0] as string);
-              const found = availableTables.find((t) => t.toLowerCase() === actualTable.toLowerCase());
-              if (found) {
-                actualTable = found;
-              } else {
-                actualTable = availableTables[0];
-              }
-            }
-          } catch {}
+          const rawFile = targetTable || source?.connectionConfig?.fileName || cleanTable;
 
-          // Inspect actual columns
-          const cols = await this.duckDBService.runQuery(dbPath, `DESCRIBE "${actualTable.replace(/"/g, '""')}"`);
-          const colNames: string[] = (cols || []).map((c: any) => c.column_name);
+          // 1.1 Attempt to find exact or fuzzy column location across DuckDB databases
+          const colLocation = await this.duckDBService.findColumnLocation(
+            cleanFieldId,
+            targetTable || source?.connectionConfig?.fileName
+          );
+
+          const dbPath = colLocation ? colLocation.dbPath : this.duckDBService.getDuckDbPath(rawFile);
+
+          // Discover actual table name in DuckDB
+          let actualTable = colLocation
+            ? colLocation.tableName
+            : path.basename(rawFile, path.extname(rawFile)).replace(/[^a-zA-Z0-9_-]/g, "_");
+          let colNames: string[] = colLocation ? colLocation.colNames : [];
+
+          if (!colNames || colNames.length === 0) {
+            try {
+              const tableList = await this.duckDBService.runQuery(dbPath, "SHOW TABLES");
+              if (tableList && tableList.length > 0) {
+                const availableTables = tableList.map((t: any) => Object.values(t)[0] as string);
+                const found = availableTables.find(
+                  (t) =>
+                    t.toLowerCase() === actualTable.toLowerCase() ||
+                    t.toLowerCase() === `${actualTable.toLowerCase()}.csv` ||
+                    t.toLowerCase().replace(/[^a-z0-9]/g, "") === actualTable.toLowerCase().replace(/[^a-z0-9]/g, "")
+                );
+                if (found) {
+                  actualTable = found;
+                } else {
+                  actualTable = availableTables[0];
+                }
+              }
+            } catch {}
+
+            // Inspect actual columns
+            try {
+              const cols = await this.duckDBService.runQuery(dbPath, `DESCRIBE "${actualTable.replace(/"/g, '""')}"`);
+              colNames = (cols || []).map((c: any) => c.column_name);
+            } catch {}
+          }
 
           const findBestColumn = (target: string): string | null => {
             const clean = target.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -225,53 +290,108 @@ export class SourceRegistryService implements ISourceRegistryService {
             return null;
           };
 
+          const matchedCol = colLocation?.columnName || findBestColumn(cleanFieldId) || cleanFieldId;
+          const safeCol = matchedCol.replace(/"/g, '""');
           const dateCols = colNames.filter((c) => /date|time|timestamp/i.test(c));
           const primaryDateCol = dateCols.find((c) => /order/i.test(c)) || dateCols[0] || "Order_Date";
 
-          let valExpr = `"${(findBestColumn(cleanFieldId) || cleanFieldId).replace(/"/g, '""')}"`;
-          let isTemporalDerived = false;
+          let valExpr = `"${safeCol}"`;
 
           const targetLower = cleanFieldId.toLowerCase();
-          if (!findBestColumn(cleanFieldId) && dateCols.length > 0) {
+          const isDirectMatch = findBestColumn(cleanFieldId) && !/year|quarter|month|week|day/i.test(cleanFieldId);
+          if (!isDirectMatch && dateCols.length > 0) {
             if (targetLower.includes("year")) {
               valExpr = `CAST(EXTRACT(YEAR FROM "${primaryDateCol.replace(/"/g, '""')}") AS VARCHAR)`;
-              isTemporalDerived = true;
             } else if (targetLower.includes("quarter")) {
               valExpr = `'Q' || CAST(EXTRACT(QUARTER FROM "${primaryDateCol.replace(/"/g, '""')}") AS VARCHAR)`;
-              isTemporalDerived = true;
             } else if (targetLower.includes("month")) {
               valExpr = `strftime('%B', "${primaryDateCol.replace(/"/g, '""')}")`;
-              isTemporalDerived = true;
             }
           }
 
-          if (controlType === "date_range") {
-            const dateCol = (findBestColumn(cleanFieldId) || primaryDateCol).replace(/"/g, '""');
-            const minMaxSql = `
-              SELECT 
-                MIN(CAST("${dateCol}" AS VARCHAR)) AS min_val, 
-                MAX(CAST("${dateCol}" AS VARCHAR)) AS max_val,
-                COUNT(DISTINCT "${dateCol}") AS total_cnt
+          // If a table containing the requested column was found, query it!
+          if (matchingTable && matchedColumn) {
+            const actualTable = matchingTable;
+            const safeCol = matchedColumn.replace(/"/g, '""');
+
+            // Handle date_range controlType
+            if (controlType === "date_range") {
+              const minMaxSql = `
+                SELECT 
+                  MIN(CAST("${safeCol}" AS VARCHAR)) AS min_val, 
+                  MAX(CAST("${safeCol}" AS VARCHAR)) AS max_val,
+                  COUNT(DISTINCT "${safeCol}") AS total_cnt
+                FROM "${actualTable.replace(/"/g, '""')}"
+                WHERE "${safeCol}" IS NOT NULL AND TRIM(CAST("${safeCol}" AS VARCHAR)) != ''
+              `;
+              const stats = await this.duckDBService.runQuery(dbPath, minMaxSql);
+              if (stats && stats.length > 0) {
+                return {
+                  success: true,
+                  sourceId,
+                  fieldId: cleanFieldId,
+                  values: [],
+                  totalCount: Number(stats[0].total_cnt || 0),
+                  dateRange: { min: stats[0].min_val || null, max: stats[0].max_val || null },
+                  isIndependentFallback,
+                };
+              }
+            }
+
+            // Handle dropdown / searchable_dropdown
+            let valExpr = `"${safeCol}"`;
+            let filterSql = `WHERE ${valExpr} IS NOT NULL AND TRIM(CAST(${valExpr} AS VARCHAR)) != ''`;
+            const params: any[] = [];
+
+            // Apply parent parameter filters if present on this table
+            if (activeParentFilters.length > 0) {
+              for (const pf of activeParentFilters) {
+                const matchedPCol = matchColumn(tableColNames, pf.col);
+                if (matchedPCol) {
+                  const safePCol = matchedPCol.replace(/"/g, '""');
+                  filterSql += ` AND CAST("${safePCol}" AS VARCHAR) = ?`;
+                  params.push(String(pf.val));
+                }
+              }
+            }
+
+            if (search && search.trim()) {
+              filterSql += ` AND LOWER(CAST(${valExpr} AS VARCHAR)) LIKE ?`;
+              params.push(`%${search.trim().toLowerCase()}%`);
+            }
+
+            const distinctSql = `
+              SELECT DISTINCT ${valExpr} AS val
               FROM "${actualTable.replace(/"/g, '""')}"
-              WHERE "${dateCol}" IS NOT NULL AND TRIM(CAST("${dateCol}" AS VARCHAR)) != ''
+              ${filterSql}
+              ORDER BY val ASC
+              LIMIT ${limit}
             `;
-            const stats = await this.duckDBService.runQuery(dbPath, minMaxSql);
-            if (stats && stats.length > 0) {
+
+            const rows = await this.duckDBService.runQuery(dbPath, distinctSql, params);
+            if (rows && rows.length > 0) {
+              const values = rows.map((r: any) => r.val).filter((v: any) => v !== undefined && v !== null);
               return {
                 success: true,
                 sourceId,
                 fieldId: cleanFieldId,
-                values: [],
-                totalCount: Number(stats[0].total_cnt || 0),
-                dateRange: { min: stats[0].min_val || null, max: stats[0].max_val || null },
+                values,
+                totalCount: values.length,
                 isIndependentFallback,
               };
             }
           }
+        } catch (duckDbErr: any) {
+          console.warn(`[SourceRegistryService] DuckDB query warning on ${dbPath} for "${cleanFieldId}":`, duckDbErr?.message || duckDbErr);
+        }
+      }
+    }
 
+          // Handle dropdown / searchable_dropdown
           let filterSql = `WHERE ${valExpr} IS NOT NULL AND TRIM(CAST(${valExpr} AS VARCHAR)) != ''`;
           const params: any[] = [];
 
+          // Apply parent parameter filters if present on this table
           if (activeParentFilters.length > 0) {
             for (const pf of activeParentFilters) {
               const matchedPCol = findBestColumn(pf.col);
@@ -283,10 +403,7 @@ export class SourceRegistryService implements ISourceRegistryService {
             }
           }
 
-          if (search && search.trim()) {
-            filterSql += ` AND LOWER(CAST(${valExpr} AS VARCHAR)) LIKE ?`;
-            params.push(`%${search.trim().toLowerCase()}%`);
-          }
+        let rows = sample.rows || [];
 
           const distinctSql = `
             SELECT DISTINCT ${valExpr} AS val
@@ -308,90 +425,95 @@ export class SourceRegistryService implements ISourceRegistryService {
               isIndependentFallback,
             };
           }
-        } catch (duckDbErr) {
-          console.warn(`[SourceRegistryService] DuckDB direct query fallback for "${cleanFieldId}":`, duckDbErr);
+        } catch (duckDbErr: any) {
+          console.warn(`[SourceRegistryService] DuckDB query warning for "${cleanFieldId}":`, duckDbErr?.message || duckDbErr);
         }
       }
+    } catch (err: any) {
+      console.warn(`[SourceRegistryService] Direct query pushdown failed for "${cleanFieldId}":`, err?.message || err);
+    }
 
-      // 2. Universal Sample-Based Extraction Fallback
-      const sample = await this.connectionTesterService.getSampleWithOffset(
-        source.type,
-        source.connectionConfig,
-        cleanTable,
-        limit * 20,
-        0
-      );
-
-      let rows = sample.rows || [];
-
-      // Apply parent filtering if present
-      if (activeParentFilters.length > 0) {
-        rows = rows.filter((row) =>
-          activeParentFilters.every((pf) => {
-            const rowVal = this.getRowValue(row, pf.col);
-            return rowVal !== undefined && String(rowVal).toLowerCase() === String(pf.val).toLowerCase();
-          })
+    // ─── 2. Source-Specific Fallback via ConnectionTester ────
+    if (source && source.connectionConfig?.fileName) {
+      try {
+        const sample = await this.connectionTesterService.getSampleWithOffset(
+          source.type,
+          source.connectionConfig,
+          cleanTable,
+          limit * 20,
+          0
         );
-      }
 
-      if (controlType === "date_range") {
-        const dateValues = rows
-          .map((r) => this.getRowValue(r, cleanFieldId))
-          .filter((v) => v !== undefined && v !== null && String(v).trim() !== "")
-          .map((v) => String(v));
+        let rows = sample.rows || [];
 
-        dateValues.sort();
-        const min = dateValues.length > 0 ? dateValues[0] : null;
-        const max = dateValues.length > 0 ? dateValues[dateValues.length - 1] : null;
+        // Apply parent filtering if present
+        if (activeParentFilters.length > 0) {
+          rows = rows.filter((row) =>
+            activeParentFilters.every((pf) => {
+              const rowVal = this.getRowValue(row, pf.col);
+              return rowVal !== undefined && String(rowVal).toLowerCase() === String(pf.val).toLowerCase();
+            })
+          );
+        }
+
+        if (controlType === "date_range") {
+          const dateValues = rows
+            .map((r) => this.getRowValue(r, cleanFieldId))
+            .filter((v) => v !== undefined && v !== null && String(v).trim() !== "")
+            .map((v) => String(v));
+
+          dateValues.sort();
+          const min = dateValues.length > 0 ? dateValues[0] : null;
+          const max = dateValues.length > 0 ? dateValues[dateValues.length - 1] : null;
+
+          return {
+            success: true,
+            sourceId,
+            fieldId: cleanFieldId,
+            values: [],
+            totalCount: dateValues.length,
+            dateRange: { min, max },
+            isIndependentFallback,
+          };
+        }
+
+        // Apply case-insensitive search term matching if present
+        if (search && typeof search === "string" && search.trim().length > 0) {
+          const searchLower = search.trim().toLowerCase();
+          rows = rows.filter((row) => {
+            const valStr = String(this.getRowValue(row, cleanFieldId) ?? "").toLowerCase();
+            return valStr.includes(searchLower);
+          });
+        }
+
+        const distinctValues = Array.from(
+          new Set(
+            rows
+              .map((r) => this.getRowValue(r, cleanFieldId))
+              .filter((val) => val !== undefined && val !== null && String(val).trim() !== "")
+          )
+        ).slice(0, limit);
 
         return {
           success: true,
           sourceId,
           fieldId: cleanFieldId,
-          values: [],
-          totalCount: dateValues.length,
-          dateRange: { min, max },
+          values: distinctValues,
+          totalCount: distinctValues.length,
           isIndependentFallback,
         };
+      } catch (err: any) {
+        console.warn(`[SourceRegistryService] Fallback error for "${cleanFieldId}":`, err?.message || err);
       }
-
-      // Handling for dropdown and searchable_dropdown
-
-      // Apply case-insensitive search term matching if present
-      if (search && typeof search === "string" && search.trim().length > 0) {
-        const searchLower = search.trim().toLowerCase();
-        rows = rows.filter((row) => {
-          const valStr = String(this.getRowValue(row, cleanFieldId) ?? "").toLowerCase();
-          return valStr.includes(searchLower);
-        });
-      }
-
-      const distinctValues = Array.from(
-        new Set(
-          rows
-            .map((r) => this.getRowValue(r, cleanFieldId))
-            .filter((val) => val !== undefined && val !== null && String(val).trim() !== "")
-        )
-      ).slice(0, limit);
-
-      return {
-        success: true,
-        sourceId,
-        fieldId: cleanFieldId,
-        values: distinctValues,
-        totalCount: distinctValues.length,
-        isIndependentFallback,
-      };
-    } catch (error) {
-      console.warn(`[SourceRegistryService] Error fetching filter options for field "${cleanFieldId}" in source "${sourceId}":`, error);
-      return {
-        success: false,
-        sourceId,
-        fieldId: cleanFieldId,
-        values: [],
-        totalCount: 0,
-        isIndependentFallback,
-      };
     }
+
+    return {
+      success: true,
+      sourceId,
+      fieldId: cleanFieldId,
+      values: [],
+      totalCount: 0,
+      isIndependentFallback,
+    };
   }
 }

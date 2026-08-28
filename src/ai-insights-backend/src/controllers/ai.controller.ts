@@ -1,12 +1,12 @@
 import { Request, Response } from "express";
-import { IIngestionAgentService } from "../services/ai/ingestionAgent.service.interface";
-import { IAgentThinkingService } from "../services/ai/agentThinking.service.interface";
+import { IIngestionAgentService } from "../services/ai/ingestion-agent/ingestionAgent.service.interface";
+import { IAgentThinkingService } from "../services/ai/agent-thinking/agentThinking.service.interface";
 
 export class AIController {
   constructor(
     private ingestionAgentService: IIngestionAgentService,
     private agentThinkingService: IAgentThinkingService
-  ) {}
+  ) { }
 
   getThinking = async (req: Request, res: Response): Promise<void> => {
     const { projectId, pipeline, substep } = req.query as {
