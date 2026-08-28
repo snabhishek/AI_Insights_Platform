@@ -228,6 +228,7 @@ export class SourceRegistryService implements ISourceRegistryService {
     try {
       // 1. Direct DuckDB Query Pushdown for High-Performance File Sources
       if (this.duckDBService && (!source || ["csv", "tsv", "excel"].includes(source.type))) {
+        let dbPath = "";
         try {
           const rawFile = targetTable || source?.connectionConfig?.fileName || cleanTable;
 
@@ -237,7 +238,7 @@ export class SourceRegistryService implements ISourceRegistryService {
             targetTable || source?.connectionConfig?.fileName
           );
 
-          const dbPath = colLocation ? colLocation.dbPath : this.duckDBService.getDuckDbPath(rawFile);
+          dbPath = colLocation ? colLocation.dbPath : this.duckDBService.getDuckDbPath(rawFile);
 
           // Discover actual table name in DuckDB
           let actualTable = colLocation
@@ -375,7 +376,7 @@ export class SourceRegistryService implements ISourceRegistryService {
             };
           }
         } catch (duckDbErr: any) {
-          console.warn(`[SourceRegistryService] DuckDB query warning for "${cleanFieldId}":`, duckDbErr?.message || duckDbErr);
+          console.warn(`[SourceRegistryService] DuckDB query warning on ${dbPath} for "${cleanFieldId}":`, duckDbErr?.message || duckDbErr);
         }
       }
     } catch (err: any) {
