@@ -329,7 +329,7 @@ export class DuckDBService implements IDuckDBService {
     this.schemaCache = { timestamp: Date.now(), columns: colMap, tables: tableMap };
   }
 
-  // ─── pooled connection management ──────────────────────────────────
+  // ─── pooled database management (Isolated Connections) ─────────────
 
   private async acquireConnection(dbPath: string, readOnly = true): Promise<{ db: any; conn: any }> {
     let entry = this.pool.get(dbPath);
