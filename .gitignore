@@ -34,16 +34,13 @@ coverage/
 *.sqlite-shm
 
 # Runtime & personalized project files
-Projects/
-**/Projects/
-ProjectFiles/
-**/ProjectFiles/
-Projects/
-projects/
-**/Projects/
-**/projects/
-uploads/
+ai-insights-backend/Projects/
+ai-insights-backend/Projects/
+ai-insights-backend/ProjectFiles/
+ai-insights-backend/ProjectFiles/
+ai-insights-backend/uploads/
 **/uploads/
+packages/
 drizzle/
 specs/
 docs/
