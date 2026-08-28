@@ -5,7 +5,7 @@ export interface WorkflowRequestPayload {
   userPrompt?: string;
   projectId?: string;
   sessionId?: string;
-  action?: "approve" | "retry";
+  action?: "approve" | "retry" | "resume";
   step?: string;
 }
 

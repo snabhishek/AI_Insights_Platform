@@ -100,6 +100,13 @@ export default function ProjectsPage() {
   const [requiresApproval, setRequiresApproval] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
 
+  // ── Pause/Resume state ────────────────────────────────────────────────────
+  const [isPaused, setIsPaused] = useState(false);
+  const [pausedAtPhase, setPausedAtPhase] = useState<string | null>(null);
+  const [pausedStateSnapshot, setPausedStateSnapshot] = useState<any>(null);
+  const [pausedSessionId, setPausedSessionId] = useState<string | null>(null);
+  const lastDataRef = useRef<any>(null);
+
   const resetPipeline = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -112,6 +119,11 @@ export default function ProjectsPage() {
     setStageOutputs({});
     setWorkflowMessage("Idle");
     setRequiresApproval(false);
+    // Clear pause state
+    setIsPaused(false);
+    setPausedAtPhase(null);
+    setPausedStateSnapshot(null);
+    setPausedSessionId(null);
   };
 
   const completedCount = Object.values(pipelineStatuses).filter((s) => s === "Completed").length;
@@ -338,6 +350,11 @@ export default function ProjectsPage() {
         "Model Validation": "Not Started",
         "Forecast": "Not Started",
       });
+      // Clear pause state when starting fresh
+      setIsPaused(false);
+      setPausedAtPhase(null);
+      setPausedStateSnapshot(null);
+      setPausedSessionId(null);
     }
     let lastData: any = null;
     try {
@@ -392,6 +409,7 @@ export default function ProjectsPage() {
               const chunk = JSON.parse(dataStr);
               if (chunk.success && chunk.data) {
                 lastData = chunk.data;
+                lastDataRef.current = chunk.data; // Store for pause resumption
                 updateWorkflowState(chunk.data);
               } else if (chunk.success === false) {
                 throw new Error(chunk.message || "AI workflow failed");
@@ -448,6 +466,12 @@ export default function ProjectsPage() {
       void stopWorkflowApi(currentSession || undefined, currentProjectId);
     }
 
+    // Clear pause state
+    setIsPaused(false);
+    setPausedAtPhase(null);
+    setPausedStateSnapshot(null);
+    setPausedSessionId(null);
+
     showAlert({
       title: "Workflow Stopped",
       message: "The agentic workflow execution has been stopped and pipeline stages have been reset.",
@@ -472,6 +496,11 @@ export default function ProjectsPage() {
       "Feature Engineering": "In Progress",
     }));
 
+    // Clear pause state
+    setIsPaused(false);
+    setPausedAtPhase(null);
+    setPausedStateSnapshot(null);
+
     void runWorkflow("approve", "Feature Engineering");
   };
 
@@ -491,6 +520,149 @@ export default function ProjectsPage() {
     };
     const normalizedStep = typeof step === "string" ? stepMap[step] || step : undefined;
     void runWorkflow("retry", normalizedStep);
+  };
+
+  const handlePauseWorkflow = () => {
+    // Step 1: Abort current API calls
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+
+    // Step 2: Capture current state snapshot
+    const stateSnapshot = {
+      pipelineStatuses,
+      stageOutputs,
+      activeStage,
+      workflowSessionId,
+      runStatus,
+      lastData: lastDataRef.current,
+    };
+
+    // Step 3: Save pause state
+    setIsPaused(true);
+    setRunStatus("Paused");
+    setPausedStateSnapshot(stateSnapshot);
+    setPausedAtPhase(activeStage || "unknown");
+    setPausedSessionId(workflowSessionId);
+
+    // Step 4: Update backend with pause status
+    if (selectedProject?.id) {
+      void updateProject(selectedProject.id, {
+        agentState: {
+          status: "paused",
+          summary: `Workflow paused at ${activeStage || "unknown"} phase`,
+          message: `Paused mid-phase. Ready to resume from ${activeStage || "current"} phase.`,
+          sessionId: workflowSessionId || undefined,
+          requiresApproval: false,
+        },
+      });
+    }
+
+    showAlert({
+      title: "Workflow Paused",
+      message: `Workflow paused at ${activeStage || "current"} phase. Click Resume to continue.`,
+      type: "info",
+    });
+  };
+
+  const handleResumeWorkflow = async () => {
+    if (!isPaused || !pausedStateSnapshot || !pausedAtPhase) {
+      showAlert({
+        title: "Resume Error",
+        message: "No paused state found. Cannot resume.",
+        type: "error",
+      });
+      return;
+    }
+
+    // Step 1: Restore UI state from snapshot
+    setRunStatus("Running");
+    setIsPaused(false);
+    setActiveStage(pausedAtPhase);
+    setStageOutputs(pausedStateSnapshot.stageOutputs);
+    setPipelineStatuses(pausedStateSnapshot.pipelineStatuses);
+
+    // Step 2: Create new AbortController for resumed execution
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
+    // Step 3: Resume API call from paused phase
+    try {
+      const payload: WorkflowRequestPayload = {
+        connectorId: workflowConnectorIds,
+        userPrompt: selectedProject?.useCase || "",
+        projectId: selectedProject?.id,
+        sessionId: pausedSessionId || undefined,
+        action: "resume",
+        step: pausedAtPhase,
+      };
+
+      const response = await executeWorkflowApi(payload, controller.signal);
+      const reader = response.body?.getReader();
+
+      if (!reader) {
+        throw new Error("Response body reader not available");
+      }
+
+      // Handle streaming response (same as runWorkflow)
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          if (line.startsWith("data: ")) {
+            const dataStr = line.slice(6);
+            if (dataStr === "[DONE]") break;
+            try {
+              const chunk = JSON.parse(dataStr);
+              if (chunk.success && chunk.data) {
+                updateWorkflowState(chunk.data);
+                lastDataRef.current = chunk.data;
+                setPausedStateSnapshot(null);
+                setPausedAtPhase(null);
+              } else if (chunk.success === false) {
+                throw new Error(chunk.message || "AI workflow failed");
+              }
+            } catch (err: any) {
+              console.warn("Failed to parse stream chunk", err);
+            }
+          }
+        }
+      }
+
+      showAlert({
+        title: "Resume Success",
+        message: `Workflow resumed from ${pausedAtPhase} phase.`,
+        type: "success",
+      });
+    } catch (error: any) {
+      if (error.name === "AbortError") {
+        console.info("Resume execution aborted.");
+        return;
+      }
+      console.error("Resume execution error", error);
+      setRunStatus("Idle");
+      setIsPaused(false);
+      showAlert({
+        title: "Resume Error",
+        message: error.message || "Failed to resume workflow.",
+        type: "error",
+      });
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+    }
   };
 
   const handleStageSelect = (stepId: string) => {
@@ -609,6 +781,10 @@ export default function ProjectsPage() {
         onSelectStage={handleStageSelect}
         onApprove={handleApprove}
         onRetry={(stepId) => handleRetry(stepId)}
+        isPaused={isPaused}
+        pausedAtPhase={pausedAtPhase}
+        onPause={handlePauseWorkflow}
+        onResume={handleResumeWorkflow}
         showAlert={showAlert}
       />
     );
