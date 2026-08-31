@@ -243,7 +243,7 @@ function ModernSelect({
   );
 }
 
-export default function FilterForm({ schema, apiBaseUrl = "http://127.0.0.1:4000", onFilterChange }: FilterFormProps) {
+export default function FilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000", onFilterChange }: FilterFormProps) {
   const {
     selectedValues,
     setFieldValue,

@@ -253,6 +253,10 @@ export async function inspectorNode(state: typeof AgentState.State, config?: Run
   if (!services) {
     throw new Error("Services dependency is not provided in config");
   }
+  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
+    console.info(`[Workflow] inspectorNode skipping execution because workflow is stopped/paused.`);
+    return { status: state.status || "failed" };
+  }
   const { connectorService } = services;
   const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await connectorService.getById(connectorId)));
   const validConnectors = connectors.filter((connector) => !!connector);

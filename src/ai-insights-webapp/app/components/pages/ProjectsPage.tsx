@@ -16,7 +16,7 @@ import { INITIAL_PIPELINE_STATUSES } from "../projects/constants";
 import ProjectsListPage   from "../projects/ProjectsListPage";
 import ProjectDetailPage  from "../projects/ProjectDetailPage";
 import ProjectCreatePage  from "../projects/ProjectCreatePage";
-import { executeWorkflowApi, stopWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
+import { executeWorkflowApi, pauseWorkflowApi, stopWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
 
 interface WorkflowResponse {
   success: boolean;
@@ -99,6 +99,7 @@ export default function ProjectsPage() {
   const [workflowMessage, setWorkflowMessage] = useState<string>("Idle");
   const [requiresApproval, setRequiresApproval] = useState(false);
   const abortControllerRef = useRef<AbortController | null>(null);
+  const isExecutingRef = useRef<boolean>(false);
 
   // ── Pause/Resume state ────────────────────────────────────────────────────
   const [isPaused, setIsPaused] = useState(false);
@@ -112,6 +113,7 @@ export default function ProjectsPage() {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
     }
+    isExecutingRef.current = false;
     setPipelineStatuses(INITIAL_PIPELINE_STATUSES);
     setRunStatus("Idle");
     setWorkflowSessionId(null);
@@ -235,14 +237,24 @@ export default function ProjectsPage() {
 
       if (state.status === "completed") {
         setRunStatus("Success");
+        setIsPaused(false);
       } else if (state.status === "failed") {
         setRunStatus("Idle");
+        setIsPaused(false);
+      } else if (state.status === "paused") {
+        setRunStatus("Paused");
+        setIsPaused(true);
+        setPausedAtPhase(determineActiveStage(state));
+        if (state.sessionId) setPausedSessionId(state.sessionId);
       } else if (state.requiresApproval) {
         setRunStatus("Paused");
+        setIsPaused(false);
       } else if (state.status === "running") {
         setRunStatus("Running");
+        setIsPaused(false);
       } else {
         setRunStatus("Idle");
+        setIsPaused(false);
       }
 
       setWorkflowMessage(state.message || state.summary || "Workflow loaded from DB");
@@ -273,13 +285,14 @@ export default function ProjectsPage() {
       setPipelineStatuses(INITIAL_PIPELINE_STATUSES);
       setStageOutputs({});
       setRunStatus("Idle");
+      setIsPaused(false);
       setRequiresApproval(false);
       setWorkflowSessionId(null);
       setWorkflowMessage("");
       setLastRunTime("Not run yet");
       setActiveStage("inspect");
     }
-  }, [selectedProjectId, selectedProject?.agentState]);
+  }, [selectedProjectId]);
 
   const updateWorkflowState = (payload: WorkflowResponse["data"]) => {
     setPipelineStatuses((prev) => {
@@ -289,12 +302,24 @@ export default function ProjectsPage() {
 
     if (payload.status === "completed") {
       setRunStatus("Success");
+      setIsPaused(false);
     } else if (payload.status === "failed") {
       setRunStatus("Idle");
+      setIsPaused(false);
+    } else if (payload.status === "paused") {
+      setRunStatus("Paused");
+      if (payload.requiresApproval) {
+        setIsPaused(false);
+      } else {
+        setIsPaused(true);
+        setPausedAtPhase(determineActiveStage(payload));
+      }
     } else if (payload.requiresApproval) {
       setRunStatus("Paused");
+      setIsPaused(false);
     } else {
       setRunStatus("Running");
+      setIsPaused(false);
     }
 
     setWorkflowMessage(payload.message || payload.summary || "Workflow updated");
@@ -319,23 +344,72 @@ export default function ProjectsPage() {
       }));
     }
 
-    if (selectedProject?.id) {
-      updateProject(selectedProject.id, { agentState: payload });
+    if (
+      selectedProject?.id &&
+      (payload.status === "completed" ||
+        payload.status === "failed" ||
+        payload.status === "paused" ||
+        payload.requiresApproval ||
+        payload.stageStatuses?.resolveSchema === "Completed")
+    ) {
+      void updateProject(selectedProject.id, { agentState: payload });
     }
   };
 
-  const runWorkflow = async (action?: "approve" | "retry", step?: string, overrideUserPrompt?: string) => {
-    if ((runStatus === "Running" || runStatus === "Paused") && !action) return;
+  const runWorkflow = async (action?: "approve" | "retry" | "resume", step?: string, overrideUserPrompt?: string) => {
+    if (!selectedProject) return;
+
+    if (!workflowConnectorIds || workflowConnectorIds.length === 0) {
+      showAlert({
+        title: "No Data Sources",
+        message: "This project has no data sources attached. Please attach a data source before running the workflow.",
+        type: "warning",
+      });
+      return;
+    }
+
+    if (isExecutingRef.current) return;
+    isExecutingRef.current = true;
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      abortControllerRef.current = null;
     }
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
     setRunStatus("Running");
+    setIsPaused(false);
+
     if (action === "approve") {
       setRequiresApproval(false);
+    }
+    if (action === "resume") {
+      const resumeStep = step || pausedAtPhase || "inspect";
+      const stepToStageMap: Record<string, string> = {
+        "inspect": "Data Inspection",
+        "Data Inspection": "Data Inspection",
+        "profileData": "Data Profiling",
+        "Data Profiling": "Data Profiling",
+        "resolveSchema": "Schema Resolver",
+        "Schema Resolver": "Schema Resolver",
+        "hierarchyMapperNode": "Feature Engineering",
+        "hierarchyMapper": "Feature Engineering",
+        "Hierarchy Mapper": "Feature Engineering",
+        "featureArchitectNode": "Feature Engineering",
+        "featureArchitect": "Feature Engineering",
+        "Feature Architect": "Feature Engineering",
+        "exogenous": "Feature Engineering",
+        "exogenousScout": "Feature Engineering",
+        "Exogenous Scout": "Feature Engineering",
+      };
+      const resumingStage = stepToStageMap[resumeStep] || "Data Inspection";
+      setActiveStage(resumeStep);
+      setPipelineStatuses((prev) => ({
+        ...prev,
+        [resumingStage]: "In Progress",
+      }));
+      setWorkflowMessage(`Resuming workflow at ${resumingStage}...`);
     }
     if (!action) {
       setRequiresApproval(false);
@@ -363,8 +437,9 @@ export default function ProjectsPage() {
         userPrompt: overrideUserPrompt !== undefined ? overrideUserPrompt : (selectedProject?.useCase || ""),
         projectId: selectedProject?.id,
       };
-      if (workflowSessionId) {
-        payload.sessionId = workflowSessionId;
+      const currentSession = action === "resume" ? (pausedSessionId || workflowSessionId) : workflowSessionId;
+      if (currentSession) {
+        payload.sessionId = currentSession;
       }
       if (action) {
         payload.action = action;
@@ -411,6 +486,10 @@ export default function ProjectsPage() {
                 lastData = chunk.data;
                 lastDataRef.current = chunk.data; // Store for pause resumption
                 updateWorkflowState(chunk.data);
+                if (chunk.data.status === "paused") {
+                  setPausedStateSnapshot(null);
+                  setPausedAtPhase(null);
+                }
               } else if (chunk.success === false) {
                 throw new Error(chunk.message || "AI workflow failed");
               }
@@ -423,6 +502,12 @@ export default function ProjectsPage() {
 
       if (lastData && lastData.status === "completed") {
         showAlert({ title: "Run Success", message: lastData.summary || "The workflow completed successfully.", type: "success" });
+      } else if (action === "resume" && lastData && lastData.status !== "failed") {
+        showAlert({
+          title: "Workflow Resumed",
+          message: "",
+          type: "success",
+        });
       }
     } catch (error: any) {
       if (error.name === "AbortError") {
@@ -436,8 +521,10 @@ export default function ProjectsPage() {
         return;
       }
       setRunStatus("Idle");
+      setIsPaused(false);
       showAlert({ title: "Workflow Error", message: error.message || "The workflow stream was interrupted.", type: "error" });
     } finally {
+      isExecutingRef.current = false;
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
       }
@@ -445,8 +532,14 @@ export default function ProjectsPage() {
   };
 
   const handleStopWorkflow = () => {
-    const currentSession = workflowSessionId;
+    const currentSession = workflowSessionId || pausedSessionId;
     const currentProjectId = selectedProject?.id;
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    isExecutingRef.current = false;
 
     resetPipeline();
 
@@ -466,15 +559,9 @@ export default function ProjectsPage() {
       void stopWorkflowApi(currentSession || undefined, currentProjectId);
     }
 
-    // Clear pause state
-    setIsPaused(false);
-    setPausedAtPhase(null);
-    setPausedStateSnapshot(null);
-    setPausedSessionId(null);
-
     showAlert({
       title: "Workflow Stopped",
-      message: "The agentic workflow execution has been stopped and pipeline stages have been reset.",
+      message: "",
       type: "info",
     });
   };
@@ -486,6 +573,7 @@ export default function ProjectsPage() {
   const handleApprove = () => {
     setRequiresApproval(false);
     setRunStatus("Running");
+    setIsPaused(false);
     setActiveStage("Feature Engineering");
     setWorkflowMessage("Advancing workflow to Feature Engineering stage...");
     setPipelineStatuses((prev) => ({
@@ -523,36 +611,46 @@ export default function ProjectsPage() {
   };
 
   const handlePauseWorkflow = () => {
+    const currentSession = workflowSessionId || pausedSessionId;
+    const currentProjectId = selectedProject?.id;
+
     // Step 1: Abort current API calls
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    isExecutingRef.current = false;
+
+    // Step 2: Notify backend to pause
+    if (currentSession || currentProjectId) {
+      void pauseWorkflowApi(currentSession || undefined, currentProjectId);
     }
 
-    // Step 2: Capture current state snapshot
+    // Step 3: Capture current state snapshot
     const stateSnapshot = {
       pipelineStatuses,
       stageOutputs,
       activeStage,
-      workflowSessionId,
+      workflowSessionId: currentSession,
       runStatus,
       lastData: lastDataRef.current,
     };
 
-    // Step 3: Save pause state
+    // Step 4: Save pause state
     setIsPaused(true);
     setRunStatus("Paused");
     setPausedStateSnapshot(stateSnapshot);
-    setPausedAtPhase(activeStage || "unknown");
-    setPausedSessionId(workflowSessionId);
+    setPausedAtPhase(activeStage || "inspect");
+    setPausedSessionId(currentSession);
 
-    // Step 4: Update backend with pause status
-    if (selectedProject?.id) {
-      void updateProject(selectedProject.id, {
+    // Step 5: Update backend with pause status
+    if (currentProjectId) {
+      void updateProject(currentProjectId, {
         agentState: {
           status: "paused",
-          summary: `Workflow paused at ${activeStage || "unknown"} phase`,
+          summary: `Workflow paused at ${activeStage || "inspect"} phase`,
           message: `Paused mid-phase. Ready to resume from ${activeStage || "current"} phase.`,
-          sessionId: workflowSessionId || undefined,
+          sessionId: currentSession || undefined,
           requiresApproval: false,
         },
       });
@@ -560,13 +658,13 @@ export default function ProjectsPage() {
 
     showAlert({
       title: "Workflow Paused",
-      message: `Workflow paused at ${activeStage || "current"} phase. Click Resume to continue.`,
+      message: "",
       type: "info",
     });
   };
 
   const handleResumeWorkflow = async () => {
-    if (!isPaused || !pausedStateSnapshot || !pausedAtPhase) {
+    if (!isPaused && runStatus !== "Paused") {
       showAlert({
         title: "Resume Error",
         message: "No paused state found. Cannot resume.",
@@ -575,95 +673,15 @@ export default function ProjectsPage() {
       return;
     }
 
-    // Step 1: Restore UI state from snapshot
-    setRunStatus("Running");
-    setIsPaused(false);
-    setActiveStage(pausedAtPhase);
-    setStageOutputs(pausedStateSnapshot.stageOutputs);
-    setPipelineStatuses(pausedStateSnapshot.pipelineStatuses);
-
-    // Step 2: Create new AbortController for resumed execution
-    if (abortControllerRef.current) {
-      abortControllerRef.current.abort();
+    const resumePhase = pausedAtPhase || activeStage || "inspect";
+    if (pausedStateSnapshot) {
+      if (pausedStateSnapshot.stageOutputs) setStageOutputs(pausedStateSnapshot.stageOutputs);
+      if (pausedStateSnapshot.pipelineStatuses) setPipelineStatuses(pausedStateSnapshot.pipelineStatuses);
     }
-    const controller = new AbortController();
-    abortControllerRef.current = controller;
 
-    // Step 3: Resume API call from paused phase
-    try {
-      const payload: WorkflowRequestPayload = {
-        connectorId: workflowConnectorIds,
-        userPrompt: selectedProject?.useCase || "",
-        projectId: selectedProject?.id,
-        sessionId: pausedSessionId || undefined,
-        action: "resume",
-        step: pausedAtPhase,
-      };
-
-      const response = await executeWorkflowApi(payload, controller.signal);
-      const reader = response.body?.getReader();
-
-      if (!reader) {
-        throw new Error("Response body reader not available");
-      }
-
-      // Handle streaming response (same as runWorkflow)
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const dataStr = line.slice(6);
-            if (dataStr === "[DONE]") break;
-            try {
-              const chunk = JSON.parse(dataStr);
-              if (chunk.success && chunk.data) {
-                updateWorkflowState(chunk.data);
-                lastDataRef.current = chunk.data;
-                setPausedStateSnapshot(null);
-                setPausedAtPhase(null);
-              } else if (chunk.success === false) {
-                throw new Error(chunk.message || "AI workflow failed");
-              }
-            } catch (err: any) {
-              console.warn("Failed to parse stream chunk", err);
-            }
-          }
-        }
-      }
-
-      showAlert({
-        title: "Resume Success",
-        message: `Workflow resumed from ${pausedAtPhase} phase.`,
-        type: "success",
-      });
-    } catch (error: any) {
-      if (error.name === "AbortError") {
-        console.info("Resume execution aborted.");
-        return;
-      }
-      console.error("Resume execution error", error);
-      setRunStatus("Idle");
-      setIsPaused(false);
-      showAlert({
-        title: "Resume Error",
-        message: error.message || "Failed to resume workflow.",
-        type: "error",
-      });
-    } finally {
-      if (abortControllerRef.current === controller) {
-        abortControllerRef.current = null;
-      }
-    }
+    void runWorkflow("resume", resumePhase);
   };
+
 
   const handleStageSelect = (stepId: string) => {
     const stageMap: Record<string, string> = {

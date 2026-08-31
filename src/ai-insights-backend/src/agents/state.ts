@@ -30,6 +30,8 @@ export interface IngestionServices {
   projectId?: string;
   pipeline?: string;
   onThinkingUpdate?: (substep: string) => Promise<void> | void;
+  isCancelled?: () => boolean;
+  abortSignal?: AbortSignal;
 }
 
 export const AgentState = Annotation.Root({

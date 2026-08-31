@@ -41,7 +41,7 @@ import { SourceRegistryService } from "./services/sourceRegistry/sourceRegistry.
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT || 4000);
+const PORT = Number(process.env.PORT || 5000);
 const HOST = process.env.HOST || "0.0.0.0";
 
 // Enable CORS for frontend workspace
