@@ -103,7 +103,7 @@ const ToastCard = ({
         animation: "slideInRight 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards",
       }}
     >
-      <div className="flex items-start gap-3.5">
+      <div className={`flex ${toast.message ? "items-start" : "items-center"} gap-3.5`}>
         {/* Modern Icon Badge */}
         <div className={`p-2 rounded-xl shrink-0 flex items-center justify-center transition-transform hover:scale-105 ${style.iconBg}`}>
           {style.icon}
@@ -127,11 +127,11 @@ const ToastCard = ({
             </button>
           </div>
 
-          {toast.message && (
+          {toast.message ? (
             <p className="mt-1 text-xs text-muted-foreground leading-relaxed line-clamp-3 font-normal">
               {toast.message}
             </p>
-          )}
+          ) : null}
         </div>
       </div>
 

@@ -169,12 +169,15 @@ export class AgentTraceHelper {
         await this.appendTraceEntry(stepName, "output", output);
       }
       return output;
-    } catch (error) {
-      if (traceConfig.enabled) {
+    } catch (error: any) {
+      const isAbort = error?.name === "AbortError" || String(error?.message || error).includes("aborted");
+      if (traceConfig.enabled && !isAbort) {
         this.logLlmTrace(stepName, "error", error, traceConfig.maxChars);
         await this.appendTraceEntry(stepName, "error", error);
       }
-      console.error(error);
+      if (!isAbort) {
+        console.error(error);
+      }
       throw error;
     }
   }
@@ -448,6 +451,11 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
   };
   const substep = substepMap[stepName] || "Data Inspection";
 
+  if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
+    console.info(`[Workflow] Node [${stepName}] skipped because session is stopped/paused`);
+    return fallback;
+  }
+
   try {
     console.info(`[Workflow] Node [${stepName}] started agent execution`);
 
@@ -461,9 +469,14 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
         const stream = await agent.stream(input, {
           streamMode: "values",
           recursionLimit,
+          signal: services?.abortSignal,
         });
 
         for await (const chunk of stream) {
+          if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
+            console.info(`[Workflow] Node [${stepName}] interrupted mid-stream because session is stopped/paused`);
+            break;
+          }
           lastResult = chunk;
           await logAgentMessagesAsThinking(services, substep, chunk);
         }
@@ -471,6 +484,11 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
         return lastResult;
       }
     );
+
+    if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
+      console.info(`[Workflow] Node [${stepName}] returning fallback because session is stopped/paused`);
+      return fallback;
+    }
 
     console.info(`[Workflow] Node [${stepName}] completed agent execution`);
     if (finalResult) {
@@ -493,7 +511,12 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     }
 
     return fallback;
-  } catch (error) {
+  } catch (error: any) {
+    const isAbort = error?.name === "AbortError" || String(error?.message || error).includes("aborted") || services?.isCancelled?.() || services?.abortSignal?.aborted;
+    if (isAbort) {
+      console.info(`[Workflow] Node [${stepName}] execution stopped by user.`);
+      return fallback;
+    }
     console.warn(`Agent ${stepName} execution failed, returning fallback`, error);
     return fallback;
   }
