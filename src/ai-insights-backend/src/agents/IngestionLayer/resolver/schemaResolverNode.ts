@@ -147,10 +147,20 @@ export async function resolveSchema(
 
   const model = getModel();
 
+  if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
+    console.info(`[Workflow] resolveSchema skipping execution and file write because workflow is stopped/paused.`);
+    return fallback;
+  }
+
   await logMilestoneThinking(services, "Schema Resolver", `Resolving DataIngestion modular schema in a single prompt...`);
   const result = await invokeAgentJson("resolveSchema", model, prompt, fallback, services, {
     traceLabel: "agent:resolveSchema",
   });
+
+  if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
+    console.info(`[Workflow] resolveSchema skipping file write because workflow is stopped/paused.`);
+    return fallback;
+  }
 
   const { mappings: rawMappings, domainKnowledge: extractedDk } = extractResolvedMappings(result, fallbackMappings);
   const resolvedDomainKnowledge = extractedDk || result?.domainKnowledge || fallback.domainKnowledge;
@@ -238,6 +248,10 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
   const services = config?.configurable?.services as IngestionServices;
   if (!services) {
     throw new Error("Services dependency is not provided in config");
+  }
+  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
+    console.info(`[Workflow] schemaResolverNode skipping execution because workflow is stopped/paused.`);
+    return { status: state.status || "failed" };
   }
   const { connectorService } = services;
   const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await connectorService.getById(connectorId)));

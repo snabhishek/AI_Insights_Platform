@@ -49,6 +49,21 @@ export async function executeWorkflowApi(
 }
 
 /**
+  Signals the backend to pause an active AI workflow session.
+ */
+export async function pauseWorkflowApi(sessionId?: string, projectId?: string): Promise<void> {
+  if (!sessionId && !projectId) return;
+
+  await fetch(`${BACKEND_URL}/ai/ingestion/pause`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, projectId }),
+  }).catch((err) => {
+    console.warn("Failed to notify backend of workflow pause:", err);
+  });
+}
+
+/**
   Signals the backend to cancel/stop an active AI workflow session.
  */
 export async function stopWorkflowApi(sessionId?: string, projectId?: string): Promise<void> {

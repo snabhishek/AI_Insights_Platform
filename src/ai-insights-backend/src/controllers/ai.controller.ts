@@ -48,7 +48,7 @@ export class AIController {
       userPrompt?: string;
       prompt?: string;
       sessionId?: string;
-      action?: "approve" | "retry";
+      action?: "approve" | "retry" | "resume";
       step?: string;
       projectId?: string;
     };
@@ -56,7 +56,10 @@ export class AIController {
     req.setTimeout(0);
     res.setTimeout(0);
 
+    console.info(`[Workflow] Ingestion workflow requested — action: ${action || "start"}, projectId: ${projectId || "none"}, sessionId: ${sessionId || "none"}, connectors: [${connectorId?.join(", ") || ""}]`);
+
     if (!connectorId || !Array.isArray(connectorId) || connectorId.length === 0) {
+      console.warn(`[Workflow] Ingestion workflow rejected: connectorId is required`);
       res.status(400).json({ success: false, message: "connectorId is required" });
       return;
     }
@@ -68,9 +71,14 @@ export class AIController {
     res.setHeader("X-Accel-Buffering", "no"); // Prevents Nginx buffering streams
     res.flushHeaders();
 
+    let clientDisconnected = false;
+    req.on("close", () => {
+      clientDisconnected = true;
+    });
+
     // Heartbeat interval to keep SSE connection alive during long model processing
     const heartbeat = setInterval(() => {
-      if (!res.writableEnded) {
+      if (!res.writableEnded && !clientDisconnected) {
         res.write(": keep-alive\n\n");
       }
     }, 10000);
@@ -84,30 +92,50 @@ export class AIController {
       });
 
       for await (const update of stream) {
+        if (clientDisconnected) {
+          console.info(`[Workflow] Client disconnected from SSE stream for session ${sessionId || "unknown"}`);
+          break;
+        }
         const canWrite = res.write(`data: ${JSON.stringify({ success: true, data: update })}\n\n`);
         if (!canWrite) {
           await new Promise<void>((resolve) => res.once("drain", resolve));
         }
       }
 
-      res.write("data: [DONE]\n\n");
-      res.end();
+      if (!clientDisconnected && !res.writableEnded) {
+        res.write("data: [DONE]\n\n");
+        res.end();
+      }
     } catch (error: any) {
-      res.write(`data: ${JSON.stringify({ success: false, message: error.message || "AI workflow failed" })}\n\n`);
-      res.end();
+      if (!clientDisconnected && !res.writableEnded) {
+        res.write(`data: ${JSON.stringify({ success: false, message: error.message || "AI workflow failed" })}\n\n`);
+        res.end();
+      }
     } finally {
       clearInterval(heartbeat);
     }
   };
 
+  pauseIngestionWorkflow = async (req: Request, res: Response): Promise<void> => {
+    const { sessionId, projectId } = req.body as { sessionId?: string; projectId?: string };
+    console.info(`[Workflow] Pause requested for session: ${sessionId || "unknown"}, project: ${projectId || "unknown"}`);
+    try {
+      const data = await this.ingestionAgentService.pause(sessionId, projectId);
+      res.json({ success: true, message: "Workflow paused successfully", data });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || "Failed to pause workflow" });
+    }
+  };
+
   stopIngestionWorkflow = async (req: Request, res: Response): Promise<void> => {
     const { sessionId, projectId } = req.body as { sessionId?: string; projectId?: string };
-    console.info(`[Workflow] Stop requested for session: ${sessionId || "unknown"}`);
-    if (sessionId) {
+    console.info(`[Workflow] Stop requested for session: ${sessionId || "unknown"}, project: ${projectId || "unknown"}`);
+    try {
       const data = await this.ingestionAgentService.stop(sessionId, projectId);
       res.json({ success: true, message: "Workflow stopped successfully", data });
-      return;
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || "Failed to stop workflow" });
     }
-    res.json({ success: true, message: "Workflow stopped successfully" });
   };
 }
+
