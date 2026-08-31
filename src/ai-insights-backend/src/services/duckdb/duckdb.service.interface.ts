@@ -1,10 +1,17 @@
 import { ConnectorType, ConnectionConfig } from "../../models/connector.types";
 import { SampleResult } from "../connector/connectionTester.service.interface";
 
+export interface ColumnLocationResult {
+  dbPath: string;
+  tableName: string;
+  columnName: string;
+  colNames: string[];
+}
+
 export interface ProjectSourceInput {
+  name?: string;
   type: ConnectorType;
   config: ConnectionConfig;
-  name?: string;
 }
 
 export interface IDuckDBService {
@@ -22,13 +29,13 @@ export interface IDuckDBService {
   getStratifiedSample(type: ConnectorType, config: ConnectionConfig, tableName: string, stratifyColumn: string, limitPerGroup: number, seed?: number, projectName?: string): Promise<SampleResult>;
   applyCleaningOperations(type: ConnectorType, config: ConnectionConfig, tableName: string, operations: any[], projectName?: string): Promise<{ results: any[] }>;
 
-  /** Resolve a fileName or table to its on-disk DuckDB storage path (optionally within a project folder). */
+  /** Resolve a fileName to its on-disk DuckDB storage path. */
   getDuckDbPath(fileName: string, sheetName?: string, projectName?: string): string;
 
-  /** Get the master DuckDB database path for a given project. */
-  getProjectDuckDbPath(projectName: string): string;
+  /** Resolve a column's location across all available DuckDB databases */
+  findColumnLocation(fieldId: string, preferredTable?: string): Promise<ColumnLocationResult | null>;
 
-  /** Deletes the DuckDB folder and files for a project. */
+  /** Deletes the project folder and cleans up pooled connection handles. */
   deleteProjectFolder(projectName: string): Promise<void>;
 
   /** Run a SQL query against a pooled database connection for the given dbPath. */

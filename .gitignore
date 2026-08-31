@@ -20,20 +20,34 @@ coverage/
 .env*
 !.env.example
 
+# DuckDB and local database files
+*.duckdb
+*.duckdb.*
+*.duckdb.wal
+*.duckdb.tmp
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+
 # Runtime & personalized project files
-ProjectFiles/
-**/ProjectFiles/
-Projects/
-projects/
-**/Projects/
-**/projects/
-uploads/
+ai-insights-backend/Projects/
+ai-insights-backend/Projects/
+ai-insights-backend/ProjectFiles/
+ai-insights-backend/ProjectFiles/
+ai-insights-backend/uploads/
+**/uploads/
+packages/
 drizzle/
 specs/
 docs/
 
 # Logs and debug
 logs/
+**/logs/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
