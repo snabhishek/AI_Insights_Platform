@@ -416,7 +416,6 @@ export default function WorkflowPipeline({
       <div className="flex w-full min-w-0 items-center px-2 py-5 sm:px-4 select-none">
         {PIPELINE_STEPS.map((step, idx) => {
           const connectorComplete = mainStatuses[idx] === "Completed";
-          const connectorActive = connectorComplete || mainStatuses[idx + 1] === "In Progress";
 
           return (
             <React.Fragment key={step.id}>
@@ -432,15 +431,13 @@ export default function WorkflowPipeline({
 
               {idx < PIPELINE_STEPS.length - 1 && (
                 <div className="flex min-w-4 flex-1 items-center" aria-hidden="true">
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500 ring-2 ring-blue-500/15" />
                   <span
                     className={`h-1 min-w-0 flex-1 transition-colors duration-500 ${
-                      connectorActive
+                      connectorComplete
                         ? "bg-gradient-to-r from-blue-500 to-indigo-500"
                         : "bg-border/60 dark:bg-white/15"
                     }`}
                   />
-                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500 ring-2 ring-blue-500/15" />
                 </div>
               )}
             </React.Fragment>

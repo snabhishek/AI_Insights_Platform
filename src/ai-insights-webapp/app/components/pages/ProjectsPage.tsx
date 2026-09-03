@@ -171,6 +171,7 @@ export default function ProjectsPage() {
     mapSingle("featureValidatorNode", "Feature Validator");
     mapSingle("exogenousScout", "Exogenous Scout");
     mapSingle("exogenous", "Exogenous Scout");
+    mapSingle("trainingConfiguration", "Training Configuration");
     mapSingle("modelTraining", "Model Training");
     mapSingle("modelEvaluation", "Model Evaluation");
     mapSingle("modelValidation", "Model Validation");
@@ -467,7 +468,7 @@ export default function ProjectsPage() {
           "Feature Validator": "featureArchitectNode",
           "Exogenous Scout": "exogenous",
           "Feature Engineering": "hierarchyMapperNode",
-          "Model Training & Validation": "modelTraining",
+          "Model Training & Validation": "modelSelection",
           "Model Training": "modelTraining",
           "Model Evaluation": "modelEvaluation",
           "Model Validation": "modelValidation",
@@ -609,7 +610,7 @@ export default function ProjectsPage() {
           }
         : {
             "Feature Engineering": "Completed" as const,
-            "Model Training": "In Progress" as const,
+            "Model Selection": "In Progress" as const,
           }),
     }));
 
@@ -634,7 +635,7 @@ export default function ProjectsPage() {
       "Schema Resolver": "resolveSchema",
       "Exogenous Scout": "exogenous",
       "Feature Engineering": "exogenous",
-      "Model Training & Validation": "modelTraining",
+      "Model Training & Validation": "modelSelection",
       "Model Training": "modelTraining",
       "Model Evaluation": "modelEvaluation",
       "Model Validation": "modelValidation",

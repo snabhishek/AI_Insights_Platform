@@ -39,7 +39,40 @@ function readReport(state: State, services: IngestionServices): any {
   return JSON.parse(fs.readFileSync(reportPath, "utf-8"));
 }
 
+export async function modelSelectionNode(_state: State, _config?: RunnableConfig) {
+  // Phase 1: Model Selection - Initialize training configuration phase
+  const output = { status: "In Progress", summary: "Preparing models for training configuration", phase: "Model Selection" };
+  return { modelSelection: output, status: "running", summary: output.summary, stageOutputs: { modelSelection: output }, stageStatuses: { modelSelection: "Completed", trainingConfiguration: "In Progress", modelTraining: "Pending", modelEvaluation: "Pending", modelValidation: "Pending" } };
+}
+
+export async function trainingConfigurationNode(state: State, config?: RunnableConfig) {
+  // Phase 2: Training Configuration - Prepare the training environment
+  const services = servicesFrom(config);
+  const metadata = featureMetadata(state);
+  const dataset = findDataset(runDirectory(state, services));
+  if (!dataset) throw new Error("Feature Engineering did not produce a supported model-ready dataset artifact");
+  if (!metadata.targetColumn) throw new Error("Feature Engineering did not provide a target column");
+
+  const output = {
+    status: "Completed",
+    summary: "Training configuration prepared successfully",
+    phase: "Training Configuration",
+    dataset,
+    targetColumn: metadata.targetColumn,
+    problemType: metadata.problemType,
+    features: metadata.features,
+    configuration: {
+      models: ["Linear Regression", "Random Forest"],
+      testSplitRatio: 0.3,
+      validationSplitRatio: 0.5,
+    },
+  };
+
+  return { trainingConfiguration: output, status: "running", summary: output.summary, stageOutputs: { trainingConfiguration: output }, stageStatuses: { trainingConfiguration: "Completed", modelTraining: "In Progress", modelEvaluation: "Pending", modelValidation: "Pending", modelSelection: "Pending" } };
+}
+
 export async function modelTrainingNode(state: State, config?: RunnableConfig) {
+  // Phase 3: Model Training - Train and evaluate candidate models
   const services = servicesFrom(config);
   const metadata = featureMetadata(state);
   const dataset = findDataset(runDirectory(state, services));
@@ -99,31 +132,35 @@ print(json.dumps(report))
   await cleanupRunContainer(services.projectId || state.projectId, state.runTimestamp);
   if (!execution.success) throw new Error(execution.stderr || "Model training failed");
   const report = readReport(state, services);
-  const output = { status: "Completed", summary: `${report.runs.filter((run: any) => run.status === "Completed").length} candidate model(s) trained`, dataset, targetColumn: metadata.targetColumn, problemType: metadata.problemType, features: metadata.features, candidates: report.runs, splits: report.splits };
-  return { modelTraining: output, status: "running", summary: output.summary, stageOutputs: { modelTraining: output }, stageStatuses: { modelTraining: "Completed", modelEvaluation: "In Progress" } };
+  const output = { status: "Completed", summary: `${report.runs.filter((run: any) => run.status === "Completed").length} candidate model(s) trained`, dataset, targetColumn: metadata.targetColumn, problemType: metadata.problemType, features: metadata.features, candidates: report.runs, splits: report.splits, phase: "Model Training" };
+  return { modelTraining: output, status: "running", summary: output.summary, stageOutputs: { modelTraining: output }, stageStatuses: { trainingConfiguration: "Completed", modelTraining: "Completed", modelEvaluation: "Pending", modelValidation: "In Progress", modelSelection: "Pending" } };
 }
 
 export async function modelEvaluationNode(state: State, config?: RunnableConfig) {
+  // This phase is now integrated into modelTrainingNode for the sequential flow
+  // Evaluation is part of the training process
   const report = readReport(state, servicesFrom(config));
   const rankedCandidates = report.runs.filter((run: any) => run.status === "Completed").sort((a: any, b: any) => b.score - a.score);
-  const output = { status: "Completed", summary: "Candidate models evaluated and ranked", problemType: report.problemType, primaryMetric: report.problemType === "classification" ? "f1" : "rmse", rankedCandidates };
-  return { modelEvaluation: output, status: "running", summary: output.summary, stageOutputs: { modelEvaluation: output }, stageStatuses: { modelEvaluation: "Completed", modelValidation: "In Progress" } };
+  const output = { status: "Completed", summary: "Candidate models evaluated and ranked", problemType: report.problemType, primaryMetric: report.problemType === "classification" ? "f1" : "rmse", rankedCandidates, phase: "Model Evaluation" };
+  return { modelEvaluation: output, status: "running", summary: output.summary, stageOutputs: { modelEvaluation: output }, stageStatuses: { modelTraining: "Completed", modelEvaluation: "Completed", modelValidation: "In Progress", modelSelection: "Pending" } };
 }
 
 export async function modelValidationNode(state: State, config?: RunnableConfig) {
+  // Phase 4: Model Validation - Final validation phase
   const report = readReport(state, servicesFrom(config));
   const metrics = report.validationMetrics || {};
   const finite = Object.values(metrics).length > 0 && Object.values(metrics).every((value) => typeof value === "number" && Number.isFinite(value));
   if (!finite) throw new Error("Selected model did not produce valid holdout metrics");
-  const output = { status: "Passed", summary: "Selected candidate produced valid held-out test metrics", model: report.selectedModel, testMetrics: metrics, checks: { finiteMetrics: true, heldOutTestSet: true } };
-  return { modelValidation: output, status: "running", summary: output.summary, stageOutputs: { modelValidation: output }, stageStatuses: { modelValidation: "Completed", modelSelection: "In Progress" } };
+  const output = { status: "Passed", summary: "Selected candidate produced valid held-out test metrics", model: report.selectedModel, testMetrics: metrics, checks: { finiteMetrics: true, heldOutTestSet: true }, phase: "Model Validation" };
+  return { modelValidation: output, status: "running", summary: output.summary, stageOutputs: { modelValidation: output }, stageStatuses: { modelTraining: "Completed", modelEvaluation: "Completed", modelValidation: "Completed", modelSelection: "In Progress" } };
 }
 
-export async function modelSelectionNode(state: State, config?: RunnableConfig) {
+export async function finalModelSelectionNode(state: State, config?: RunnableConfig) {
+  // Phase 5: Final Model Selection - Persist and complete
   const services = servicesFrom(config);
   const report = readReport(state, services);
   const artifactPath = path.join(runDirectory(state, services), report.artifact || "selected_model.pkl");
   if (!fs.existsSync(artifactPath)) throw new Error("Selected model artifact is missing");
-  const output = { status: "Completed", summary: `${report.selectedModel} selected and persisted`, model: report.selectedModel, modelVersion: state.runTimestamp, targetColumn: report.targetColumn, problemType: report.problemType, metrics: report.validationMetrics, artifact: report.artifact };
+  const output = { status: "Completed", summary: `${report.selectedModel} selected and persisted`, model: report.selectedModel, modelVersion: state.runTimestamp, targetColumn: report.targetColumn, problemType: report.problemType, metrics: report.validationMetrics, artifact: report.artifact, phase: "Model Selection" };
   return { modelSelection: output, status: "completed", summary: "Model Training & Validation completed successfully", stageOutputs: { modelSelection: output }, stageStatuses: { modelSelection: "Completed" }, steps: [{ name: "Model Training & Validation", status: "completed", summary: output.summary }] };
 }

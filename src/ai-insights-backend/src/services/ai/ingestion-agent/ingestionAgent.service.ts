@@ -645,7 +645,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             if (savedAgentState && (savedAgentState.schemaResolution || savedAgentState.stageOutputs)) {
               console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
 
-              const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelTraining" ? "exogenous" : "resolveSchema";
+              const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" ? "exogenous" : "resolveSchema";
               const restoredState = {
                 ...savedAgentState,
                 connectorId,
@@ -669,7 +669,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         if (hasState) {
           stream = await workflow.stream(null, config);
         } else {
-          const approvingModelPhase = options.step === "Model Training & Validation" || options.step === "modelTraining";
+          const approvingModelPhase = options.step === "Model Training & Validation" || options.step === "modelSelection";
           console.warn(`[Workflow] No checkpoint found for approve. Restoring the ${approvingModelPhase ? "Feature Engineering" : "Data Ingestion"} boundary.`);
           const fallbackState = {
             connectorId,
@@ -962,7 +962,7 @@ export class IngestionAgentService implements IIngestionAgentService {
           const nextNode = Array.isArray(graphState?.next) ? graphState.next[0] : undefined;
           const approvalTarget = nextNode === "hierarchyMapperNode"
             ? "Feature Engineering"
-            : nextNode === "modelTraining"
+            : nextNode === "modelSelection"
               ? "Model Training & Validation"
               : undefined;
           const isAtApprovalGate = Boolean(approvalTarget);

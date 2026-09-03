@@ -845,7 +845,7 @@ export function buildResultFromGraphState(
   const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
   const isFeatureEngineeringStarted = stageStatuses.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending";
   const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted;
-  const isAtModelApproval = nextNodes.includes("modelTraining") && stageStatuses.exogenousScout === "Completed";
+  const isAtModelApproval = nextNodes.includes("modelSelection") && stageStatuses.exogenousScout === "Completed";
   const requiresApproval = status !== "failed" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval);
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
@@ -908,7 +908,7 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     "Model Validation": "modelValidation",
     modelSelection: "modelSelection",
     "Model Selection": "modelSelection",
-    "Model Training & Validation": "modelTraining",
+    "Model Training & Validation": "modelSelection",
   };
   return step ? mapping[step] : undefined;
 }

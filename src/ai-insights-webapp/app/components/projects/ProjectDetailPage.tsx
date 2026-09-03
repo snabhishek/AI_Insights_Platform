@@ -13,7 +13,7 @@ import ExogenousScoutStepOutput from "./pipeline-outputs/ExogenousScoutStepOutpu
 import HierarchyMapperStepOutput from "./pipeline-outputs/HierarchyMapperStepOutput";
 import FeatureArchitectStepOutput from "./pipeline-outputs/FeatureArchitectStepOutput";
 import FeatureValidatorStepOutput from "./pipeline-outputs/FeatureValidatorStepOutput";
-import ModelTrainingValidationStepOutput from "../model/ModelTrainingValidationStepOutput";
+import ModelTrainingValidationStepOutput from "./pipeline-outputs/ModelTrainingValidationStepOutput";
 
 type AlertType = "error" | "success" | "info";
 
@@ -464,10 +464,18 @@ export default function ProjectDetailPage({
           "Exogenous Scout": stageOutputs.exogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
-          "Model Training": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
-          "Model Evaluation": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
-          "Model Validation": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
-          "Model Selection": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
+          "Model Selection": stageOutputs.modelTraining ? (
+            <ModelTrainingValidationStepOutput />
+          ) : null,
+          "Training Configuration": stageOutputs.modelTraining ? (
+            <ModelTrainingValidationStepOutput />
+          ) : null,
+          "Model Training": stageOutputs.modelTraining ? (
+            <ModelTrainingValidationStepOutput />
+          ) : null,
+          "Model Validation": stageOutputs.modelTraining ? (
+            <ModelTrainingValidationStepOutput />
+          ) : null
         };
         console.log(stageOutputs)
 
