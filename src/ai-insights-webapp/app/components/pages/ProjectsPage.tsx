@@ -155,7 +155,6 @@ export default function ProjectsPage() {
     mapSingle("featureValidatorNode", "Feature Validator");
     mapSingle("exogenousScout", "Exogenous Scout");
     mapSingle("exogenous", "Exogenous Scout");
-    mapSingle("trainingDataPreparation", "Training Data Preparation");
     mapSingle("modelTraining", "Model Training");
     mapSingle("modelEvaluation", "Model Evaluation");
     mapSingle("modelValidation", "Model Validation");
@@ -342,7 +341,6 @@ export default function ProjectsPage() {
         "Data Profiling": "Pending",
         "Schema Resolver": "Pending",
         "Feature Engineering": "Not Started",
-        "Training Data Preparation": "Not Started",
         "Model Training": "Not Started",
         "Model Evaluation": "Not Started",
         "Model Validation": "Not Started",
@@ -372,8 +370,7 @@ export default function ProjectsPage() {
           "Feature Validator": "featureArchitectNode",
           "Exogenous Scout": "exogenous",
           "Feature Engineering": "hierarchyMapperNode",
-          "Model Training & Validation": "trainingDataPreparation",
-          "Training Data Preparation": "trainingDataPreparation",
+          "Model Training & Validation": "modelTraining",
           "Model Training": "modelTraining",
           "Model Evaluation": "modelEvaluation",
           "Model Validation": "modelValidation",
@@ -504,8 +501,7 @@ export default function ProjectsPage() {
       "Schema Resolver": "resolveSchema",
       "Exogenous Scout": "exogenous",
       "Feature Engineering": "exogenous",
-      "Model Training & Validation": "trainingDataPreparation",
-      "Training Data Preparation": "trainingDataPreparation",
+      "Model Training & Validation": "modelTraining",
       "Model Training": "modelTraining",
       "Model Evaluation": "modelEvaluation",
       "Model Validation": "modelValidation",
@@ -543,7 +539,6 @@ export default function ProjectsPage() {
       "Data Profiling": "Pending",
       "Schema Resolver": "Pending",
       "Feature Engineering": "Not Started",
-      "Training Data Preparation": "Not Started",
       "Model Training": "Not Started",
       "Model Evaluation": "Not Started",
       "Model Validation": "Not Started",

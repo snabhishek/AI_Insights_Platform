@@ -149,11 +149,10 @@ export const PIPELINE_STEPS: Workflow[] = [
       </svg>
     ),
     step: [
-      { id: "Training Data Preparation", title: "Training Data Preparation", description: "Prepare leakage-safe train, validation, and test datasets", metric: "Prepare", color: "blue", icon: <span>01</span> },
-      { id: "Model Training", title: "Model Training", description: "Train candidate models from the prepared feature dataset", metric: "Train", color: "pink", icon: <span>02</span> },
-      { id: "Model Evaluation", title: "Model Evaluation", description: "Compare candidate models using problem-appropriate metrics", metric: "Evaluate", color: "purple", icon: <span>03</span> },
-      { id: "Model Validation", title: "Model Validation", description: "Validate the leading model on held-out data", metric: "Validate", color: "teal", icon: <span>04</span> },
-      { id: "Model Selection", title: "Model Selection", description: "Persist the best validated model and its selection rationale", metric: "Select", color: "green", icon: <span>05</span> },
+      { id: "Model Training", title: "Model Training", description: "Train candidate models from the validated feature dataset", metric: "Train", color: "pink", icon: <span>01</span> },
+      { id: "Model Evaluation", title: "Model Evaluation", description: "Compare candidate models using problem-appropriate metrics", metric: "Evaluate", color: "purple", icon: <span>02</span> },
+      { id: "Model Validation", title: "Model Validation", description: "Validate the leading model on held-out data", metric: "Validate", color: "teal", icon: <span>03</span> },
+      { id: "Model Selection", title: "Model Selection", description: "Persist the best validated model and its selection rationale", metric: "Select", color: "green", icon: <span>04</span> },
     ],
   },
 ];
@@ -163,7 +162,6 @@ export const INITIAL_PIPELINE_STATUSES: Record<string, "Not Started"> = {
   "Data Profiling": "Not Started",
   "Schema Resolver": "Not Started",
   "Feature Engineering": "Not Started",
-  "Training Data Preparation": "Not Started",
   "Model Training": "Not Started",
   "Model Evaluation": "Not Started",
   "Model Validation": "Not Started",
