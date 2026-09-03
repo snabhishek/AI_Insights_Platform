@@ -311,24 +311,6 @@ export default function WorkflowPipeline({
   const mainStatusMap = getMainStepStatuses(pipelineStatuses, runStatus);
   const mainStatuses = PIPELINE_STEPS.map((step) => mainStatusMap[step.id]);
 
-  let completedMainCount = 0;
-  for (let i = 0; i < mainStatuses.length; i++) {
-    if (mainStatuses[i] === "Completed") {
-      completedMainCount++;
-    } else {
-      break;
-    }
-  }
-
-  const nextIsInProgress = completedMainCount < mainStatuses.length && mainStatuses[completedMainCount] === "In Progress";
-  const totalSegments = PIPELINE_STEPS.length - 1;
-  const calculatedCompletionPct = completedMainCount === PIPELINE_STEPS.length
-    ? 100
-    : Math.min(
-        100,
-        Math.max(0, ((completedMainCount + (nextIsInProgress ? 0.5 : 0)) / totalSegments) * 100)
-      );
-
   const hasExistingRun =
     lastRunTime !== "Not run yet" ||
     runStatus === "Success" ||
@@ -431,26 +413,39 @@ export default function WorkflowPipeline({
         </div>
       </div>
 
-      <div className="relative w-full flex items-center justify-between select-none">
-        <div className="absolute top-[125px] left-[7.15%] right-[7.15%] h-[5px] bg-border/40 dark:bg-white/10 rounded-full pointer-events-none select-none z-0">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-indigo-500 to-violet-600 transition-all duration-700 shadow-[0_0_12px_rgba(99,102,241,0.65)]"
-            style={{ width: `${calculatedCompletionPct}%` }}
-          />
-        </div>
+      <div className="flex w-full min-w-0 items-center px-2 py-5 sm:px-4 select-none">
+        {PIPELINE_STEPS.map((step, idx) => {
+          const connectorComplete = mainStatuses[idx] === "Completed";
+          const connectorActive = connectorComplete || mainStatuses[idx + 1] === "In Progress";
 
-        <div className="flex-1 flex justify-between w-full gap-2 xl:gap-3 relative z-10 py-5">
-          {PIPELINE_STEPS.map((step, idx) => (
-            <WorkflowCard
-              key={step.id}
-              step={step}
-              status={mainStatusMap[step.id]}
-              index={idx}
-              isActive={mainSelectedStage === step.id}
-              onSelect={onSelectStage}
-            />
-          ))}
-        </div>
+          return (
+            <React.Fragment key={step.id}>
+              <div className="flex min-w-0 flex-[0_1_155px] justify-center">
+                <WorkflowCard
+                  step={step}
+                  status={mainStatusMap[step.id]}
+                  index={idx}
+                  isActive={mainSelectedStage === step.id}
+                  onSelect={onSelectStage}
+                />
+              </div>
+
+              {idx < PIPELINE_STEPS.length - 1 && (
+                <div className="flex min-w-4 flex-1 items-center" aria-hidden="true">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500 ring-2 ring-blue-500/15" />
+                  <span
+                    className={`h-1 min-w-0 flex-1 transition-colors duration-500 ${
+                      connectorActive
+                        ? "bg-gradient-to-r from-blue-500 to-indigo-500"
+                        : "bg-border/60 dark:bg-white/15"
+                    }`}
+                  />
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-blue-500 ring-2 ring-blue-500/15" />
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
 
       <div className="border-t border-border pt-5 mt-2 flex flex-col gap-4">
