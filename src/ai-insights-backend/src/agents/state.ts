@@ -58,6 +58,11 @@ export const AgentState = Annotation.Root({
   exogenousScout: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   featureArchitect: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   featureValidator: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  trainingDataPreparation: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  modelTraining: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  modelEvaluation: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  modelValidation: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  modelSelection: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   batchedTables: Annotation<BatchedTableState[]>({
     reducer: (left = [], right = []) => {
       if (Array.isArray(right) && right.length === 0) {
@@ -117,6 +122,11 @@ export const AgentState = Annotation.Root({
           featureArchitect: "Pending",
           featureValidator: "Pending",
           exogenousScout: "Pending",
+          trainingDataPreparation: "Pending",
+          modelTraining: "Pending",
+          modelEvaluation: "Pending",
+          modelValidation: "Pending",
+          modelSelection: "Pending",
         };
       }
       return { ...left, ...right };
@@ -130,6 +140,11 @@ export const AgentState = Annotation.Root({
       featureArchitect: "Pending",
       featureValidator: "Pending",
       exogenousScout: "Pending",
+      trainingDataPreparation: "Pending",
+      modelTraining: "Pending",
+      modelEvaluation: "Pending",
+      modelValidation: "Pending",
+      modelSelection: "Pending",
     }),
   }),
 });

@@ -172,9 +172,17 @@ const MAIN_STEP_MAPPING: Record<string, string> = {
   "Feature Architect": "Feature Engineering",
   "Feature Validator": "Feature Engineering",
   "Feature Engineering": "Feature Engineering",
-  "Model Training": "Model Training",
-  "Model Validation": "Model Validation",
-  "Forecast": "Forecast",
+  "Training Data Preparation": "Model Training & Validation",
+  "trainingDataPreparation": "Model Training & Validation",
+  "Model Training": "Model Training & Validation",
+  "modelTraining": "Model Training & Validation",
+  "Model Evaluation": "Model Training & Validation",
+  "modelEvaluation": "Model Training & Validation",
+  "Model Validation": "Model Training & Validation",
+  "modelValidation": "Model Training & Validation",
+  "Model Selection": "Model Training & Validation",
+  "modelSelection": "Model Training & Validation",
+  "Model Training & Validation": "Model Training & Validation",
 };
 
 const DEFAULT_MAIN_STEP_ID = "Data Ingestion";
@@ -227,12 +235,25 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
   return "Not Started";
 }
 
+const MODEL_SUBSTEPS = ["Training Data Preparation", "Model Training", "Model Evaluation", "Model Validation", "Model Selection"] as const;
+
+function calculateModelStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
+  const statuses = MODEL_SUBSTEPS.map((step) => (pipelineStatuses[step] as PipelineStatus) ?? "Not Started");
+  if (statuses.every((status) => status === "Completed")) return "Completed";
+  if (statuses.some((status) => status === "In Progress" || status === "Completed")) return "In Progress";
+  if (statuses.some((status) => status === "Pending")) return "Pending";
+  return "Not Started";
+}
+
 export function getMainStepStatus(stepId: string, pipelineStatuses: PipelineStatuses): PipelineStatus {
   if (stepId === "Data Ingestion") {
     return calculateDataIngestionStatus(pipelineStatuses);
   }
   if (stepId === "Feature Engineering") {
     return calculateFeatureEngineeringStatus(pipelineStatuses);
+  }
+  if (stepId === "Model Training & Validation") {
+    return calculateModelStatus(pipelineStatuses);
   }
   return (pipelineStatuses[stepId] as PipelineStatus) ?? "Not Started";
 }
@@ -280,7 +301,7 @@ export default function WorkflowPipeline({
   const currentStage = activeStage || "inspect";
   const mainSelectedStage = getMainStepId(currentStage);
 
-  // Compute 5-main-step level statuses and progress line width across the 4 segment connections
+  // Compute top-level phase statuses and progress across the connections between them.
   const mainStatusMap = getMainStepStatuses(pipelineStatuses, runStatus);
   const mainStatuses = PIPELINE_STEPS.map((step) => mainStatusMap[step.id]);
 
@@ -294,7 +315,7 @@ export default function WorkflowPipeline({
   }
 
   const nextIsInProgress = completedMainCount < mainStatuses.length && mainStatuses[completedMainCount] === "In Progress";
-  const totalSegments = PIPELINE_STEPS.length - 1; // 4 segments between 5 main cards
+  const totalSegments = PIPELINE_STEPS.length - 1;
   const calculatedCompletionPct = completedMainCount === PIPELINE_STEPS.length
     ? 100
     : Math.min(

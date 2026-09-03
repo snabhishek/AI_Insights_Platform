@@ -13,6 +13,7 @@ import ExogenousScoutStepOutput from "./pipeline-outputs/ExogenousScoutStepOutpu
 import HierarchyMapperStepOutput from "./pipeline-outputs/HierarchyMapperStepOutput";
 import FeatureArchitectStepOutput from "./pipeline-outputs/FeatureArchitectStepOutput";
 import FeatureValidatorStepOutput from "./pipeline-outputs/FeatureValidatorStepOutput";
+import ModelTrainingValidationStepOutput from "../model/ModelTrainingValidationStepOutput";
 
 type AlertType = "error" | "success" | "info";
 
@@ -451,6 +452,11 @@ export default function ProjectDetailPage({
           "Exogenous Scout": stageOutputs.exogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
+          "Training Data Preparation": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
+          "Model Training": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
+          "Model Evaluation": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
+          "Model Validation": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
+          "Model Selection": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
         };
         console.log(stageOutputs)
 

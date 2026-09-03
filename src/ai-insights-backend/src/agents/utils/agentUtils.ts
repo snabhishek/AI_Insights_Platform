@@ -726,6 +726,10 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
   const isRunningOrDone = (v?: string) => v === "Completed" || v === "In Progress" || v === "Running";
 
+  for (const node of ["modelSelection", "modelValidation", "modelEvaluation", "modelTraining", "trainingDataPreparation"]) {
+    if (isRunningOrDone(stageStatuses[node]) || nextNodes.includes(node)) return node;
+  }
+
   const isExo = isRunningOrDone(stageStatuses.exogenousScout) || 
                 isRunningOrDone(stageStatuses.exogenous) || 
                 nextNodes.includes("exogenous");
@@ -755,9 +759,14 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
   const isRunning = (v?: string) => v === "In Progress" || v === "Running" || v === "Retrying";
   const isCompleted = (v?: string) => v === "Completed" || v === "Success";
 
-  if (status === "completed" || isCompleted(stageStatuses?.exogenousScout)) {
-    return "Feature Engineering and Data Ingestion completed successfully.";
+  if (status === "completed" || isCompleted(stageStatuses?.modelSelection)) {
+    return "Model Training & Validation completed successfully.";
   }
+  if (isRunning(stageStatuses?.modelSelection)) return "Selecting and persisting the best validated model...";
+  if (isRunning(stageStatuses?.modelValidation)) return "Validating the leading model on held-out data...";
+  if (isRunning(stageStatuses?.modelEvaluation)) return "Evaluating and ranking candidate models...";
+  if (isRunning(stageStatuses?.modelTraining)) return "Training candidate models...";
+  if (isRunning(stageStatuses?.trainingDataPreparation)) return "Preparing training, validation, and test datasets...";
   if (isRunning(stageStatuses?.exogenousScout) || isRunning(stageStatuses?.exogenous)) {
     return "Scouting and ranking exogenous variables and external signals...";
   }
@@ -800,7 +809,12 @@ export function buildResultFromGraphState(
     hierarchyMapper: "Pending",
     featureArchitect: "Pending",
     featureValidator: "Pending",
-    exogenousScout: "Pending"
+    exogenousScout: "Pending",
+    trainingDataPreparation: "Pending",
+    modelTraining: "Pending",
+    modelEvaluation: "Pending",
+    modelValidation: "Pending",
+    modelSelection: "Pending"
   };
   const stageStatuses = (values.stageStatuses && typeof values.stageStatuses === "object")
     ? values.stageStatuses as Record<string, string>
@@ -825,6 +839,11 @@ export function buildResultFromGraphState(
     featureArchitect: (values.featureArchitect && typeof values.featureArchitect === "object") ? values.featureArchitect : {},
     featureValidator: (values.featureValidator && typeof values.featureValidator === "object") ? values.featureValidator : {},
     exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
+    trainingDataPreparation: (values.trainingDataPreparation && typeof values.trainingDataPreparation === "object") ? values.trainingDataPreparation : {},
+    modelTraining: (values.modelTraining && typeof values.modelTraining === "object") ? values.modelTraining : {},
+    modelEvaluation: (values.modelEvaluation && typeof values.modelEvaluation === "object") ? values.modelEvaluation : {},
+    modelValidation: (values.modelValidation && typeof values.modelValidation === "object") ? values.modelValidation : {},
+    modelSelection: (values.modelSelection && typeof values.modelSelection === "object") ? values.modelSelection : {},
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
@@ -859,6 +878,17 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
     "Feature Engineering": "hierarchyMapperNode",
+    trainingDataPreparation: "trainingDataPreparation",
+    "Training Data Preparation": "trainingDataPreparation",
+    modelTraining: "modelTraining",
+    "Model Training": "modelTraining",
+    modelEvaluation: "modelEvaluation",
+    "Model Evaluation": "modelEvaluation",
+    modelValidation: "modelValidation",
+    "Model Validation": "modelValidation",
+    modelSelection: "modelSelection",
+    "Model Selection": "modelSelection",
+    "Model Training & Validation": "trainingDataPreparation",
   };
   return step ? mapping[step] : undefined;
 }

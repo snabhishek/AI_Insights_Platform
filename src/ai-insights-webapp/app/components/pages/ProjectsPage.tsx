@@ -155,6 +155,11 @@ export default function ProjectsPage() {
     mapSingle("featureValidatorNode", "Feature Validator");
     mapSingle("exogenousScout", "Exogenous Scout");
     mapSingle("exogenous", "Exogenous Scout");
+    mapSingle("trainingDataPreparation", "Training Data Preparation");
+    mapSingle("modelTraining", "Model Training");
+    mapSingle("modelEvaluation", "Model Evaluation");
+    mapSingle("modelValidation", "Model Validation");
+    mapSingle("modelSelection", "Model Selection");
 
     // Merged stage: Data Profiling = profileData + preprocess
     const profileVal = stageStatuses.profileData;
@@ -185,6 +190,9 @@ export default function ProjectsPage() {
 
   const determineActiveStage = (payload: Partial<WorkflowResponse["data"]>): string => {
     if (payload.status === "completed" || payload.requiresApproval) {
+      if (payload.stageOutputs?.modelSelection || payload.stageStatuses?.modelSelection) {
+        return "modelSelection";
+      }
       if (payload.stageOutputs?.exogenousScout || payload.stageStatuses?.exogenousScout || payload.stageStatuses?.exogenous) {
         return "exogenousScout";
       }
@@ -334,9 +342,11 @@ export default function ProjectsPage() {
         "Data Profiling": "Pending",
         "Schema Resolver": "Pending",
         "Feature Engineering": "Not Started",
+        "Training Data Preparation": "Not Started",
         "Model Training": "Not Started",
+        "Model Evaluation": "Not Started",
         "Model Validation": "Not Started",
-        "Forecast": "Not Started",
+        "Model Selection": "Not Started",
       });
     }
     let lastData: any = null;
@@ -362,6 +372,12 @@ export default function ProjectsPage() {
           "Feature Validator": "featureArchitectNode",
           "Exogenous Scout": "exogenous",
           "Feature Engineering": "hierarchyMapperNode",
+          "Model Training & Validation": "trainingDataPreparation",
+          "Training Data Preparation": "trainingDataPreparation",
+          "Model Training": "modelTraining",
+          "Model Evaluation": "modelEvaluation",
+          "Model Validation": "modelValidation",
+          "Model Selection": "modelSelection",
         };
         payload.step = stepMap[step] || step;
       }
@@ -488,6 +504,12 @@ export default function ProjectsPage() {
       "Schema Resolver": "resolveSchema",
       "Exogenous Scout": "exogenous",
       "Feature Engineering": "exogenous",
+      "Model Training & Validation": "trainingDataPreparation",
+      "Training Data Preparation": "trainingDataPreparation",
+      "Model Training": "modelTraining",
+      "Model Evaluation": "modelEvaluation",
+      "Model Validation": "modelValidation",
+      "Model Selection": "modelSelection",
     };
     const normalizedStep = typeof step === "string" ? stepMap[step] || step : undefined;
     void runWorkflow("retry", normalizedStep);
@@ -500,6 +522,7 @@ export default function ProjectsPage() {
       "Schema Resolver": "resolveSchema",
       "Exogenous Scout": "exogenousScout",
       "Feature Engineering": "exogenousScout",
+      "Model Training & Validation": "modelSelection",
     };
     setActiveStage(stageMap[stepId] || stepId);
   };
@@ -520,9 +543,11 @@ export default function ProjectsPage() {
       "Data Profiling": "Pending",
       "Schema Resolver": "Pending",
       "Feature Engineering": "Not Started",
+      "Training Data Preparation": "Not Started",
       "Model Training": "Not Started",
+      "Model Evaluation": "Not Started",
       "Model Validation": "Not Started",
-      "Forecast": "Not Started",
+      "Model Selection": "Not Started",
     });
     void runWorkflow(undefined, undefined, newUseCase ?? selectedProject.useCase);
   };

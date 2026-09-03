@@ -752,6 +752,21 @@ export class IngestionAgentService implements IIngestionAgentService {
               }
             } else if (nodeName === "exogenous" || nodeName === "exogenousScout") {
               updated.exogenousScout = "Completed";
+              updated.trainingDataPreparation = "In Progress";
+            } else if (nodeName === "trainingDataPreparation") {
+              updated.trainingDataPreparation = "Completed";
+              updated.modelTraining = "In Progress";
+            } else if (nodeName === "modelTraining") {
+              updated.modelTraining = "Completed";
+              updated.modelEvaluation = "In Progress";
+            } else if (nodeName === "modelEvaluation") {
+              updated.modelEvaluation = "Completed";
+              updated.modelValidation = "In Progress";
+            } else if (nodeName === "modelValidation") {
+              updated.modelValidation = "Completed";
+              updated.modelSelection = "In Progress";
+            } else if (nodeName === "modelSelection") {
+              updated.modelSelection = "Completed";
             }
             return updated;
           };
