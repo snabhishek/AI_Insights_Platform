@@ -464,7 +464,6 @@ export default function ProjectDetailPage({
           "Exogenous Scout": stageOutputs.exogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
-          "Training Data Preparation": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
           "Model Training": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
           "Model Evaluation": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,
           "Model Validation": <ModelTrainingValidationStepOutput stageOutputs={stageOutputs} />,

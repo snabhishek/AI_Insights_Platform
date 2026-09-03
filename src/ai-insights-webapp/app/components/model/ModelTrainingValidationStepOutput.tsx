@@ -3,7 +3,6 @@
 import React from "react";
 
 const SECTIONS = [
-  ["Training Data Preparation", "trainingDataPreparation"],
   ["Model Training", "modelTraining"],
   ["Model Evaluation", "modelEvaluation"],
   ["Model Validation", "modelValidation"],

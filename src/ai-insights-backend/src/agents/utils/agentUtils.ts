@@ -749,7 +749,7 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
   const isRunningOrDone = (v?: string) => v === "Completed" || v === "In Progress" || v === "Running";
 
-  for (const node of ["modelSelection", "modelValidation", "modelEvaluation", "modelTraining", "trainingDataPreparation"]) {
+  for (const node of ["modelSelection", "modelValidation", "modelEvaluation", "modelTraining"]) {
     if (isRunningOrDone(stageStatuses[node]) || nextNodes.includes(node)) return node;
   }
 
@@ -789,7 +789,6 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
   if (isRunning(stageStatuses?.modelValidation)) return "Validating the leading model on held-out data...";
   if (isRunning(stageStatuses?.modelEvaluation)) return "Evaluating and ranking candidate models...";
   if (isRunning(stageStatuses?.modelTraining)) return "Training candidate models...";
-  if (isRunning(stageStatuses?.trainingDataPreparation)) return "Preparing training, validation, and test datasets...";
   if (isRunning(stageStatuses?.exogenousScout) || isRunning(stageStatuses?.exogenous)) {
     return "Scouting and ranking exogenous variables and external signals...";
   }
@@ -833,7 +832,6 @@ export function buildResultFromGraphState(
     featureArchitect: "Pending",
     featureValidator: "Pending",
     exogenousScout: "Pending",
-    trainingDataPreparation: "Pending",
     modelTraining: "Pending",
     modelEvaluation: "Pending",
     modelValidation: "Pending",
@@ -846,7 +844,9 @@ export function buildResultFromGraphState(
   
   const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
   const isFeatureEngineeringStarted = stageStatuses.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending";
-  const requiresApproval = isIngestionComplete && !isFeatureEngineeringStarted && status !== "failed";
+  const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted;
+  const isAtModelApproval = nextNodes.includes("modelTraining") && stageStatuses.exogenousScout === "Completed";
+  const requiresApproval = status !== "failed" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval);
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
   return {
@@ -862,7 +862,6 @@ export function buildResultFromGraphState(
     featureArchitect: (values.featureArchitect && typeof values.featureArchitect === "object") ? values.featureArchitect : {},
     featureValidator: (values.featureValidator && typeof values.featureValidator === "object") ? values.featureValidator : {},
     exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
-    trainingDataPreparation: (values.trainingDataPreparation && typeof values.trainingDataPreparation === "object") ? values.trainingDataPreparation : {},
     modelTraining: (values.modelTraining && typeof values.modelTraining === "object") ? values.modelTraining : {},
     modelEvaluation: (values.modelEvaluation && typeof values.modelEvaluation === "object") ? values.modelEvaluation : {},
     modelValidation: (values.modelValidation && typeof values.modelValidation === "object") ? values.modelValidation : {},
@@ -870,7 +869,7 @@ export function buildResultFromGraphState(
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
-    nextStep: isIngestionComplete && !isFeatureEngineeringStarted ? "Feature Engineering" : (nextNodes[0] || "inspect"),
+    nextStep: isAtModelApproval ? "Model Training & Validation" : (isIngestionComplete && !isFeatureEngineeringStarted ? "Feature Engineering" : (nextNodes[0] || "inspect")),
     currentNode: currentStage,
     currentStage,
     stageOutputs: (values.stageOutputs && typeof values.stageOutputs === "object") ? values.stageOutputs : {},
@@ -901,8 +900,6 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
     "Feature Engineering": "hierarchyMapperNode",
-    trainingDataPreparation: "trainingDataPreparation",
-    "Training Data Preparation": "trainingDataPreparation",
     modelTraining: "modelTraining",
     "Model Training": "modelTraining",
     modelEvaluation: "modelEvaluation",
@@ -911,7 +908,7 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     "Model Validation": "modelValidation",
     modelSelection: "modelSelection",
     "Model Selection": "modelSelection",
-    "Model Training & Validation": "trainingDataPreparation",
+    "Model Training & Validation": "modelTraining",
   };
   return step ? mapping[step] : undefined;
 }

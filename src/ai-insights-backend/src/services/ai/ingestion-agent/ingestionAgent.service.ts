@@ -645,7 +645,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             if (savedAgentState && (savedAgentState.schemaResolution || savedAgentState.stageOutputs)) {
               console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
 
-              const predecessorNode = "resolveSchema";
+              const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelTraining" ? "exogenous" : "resolveSchema";
               const restoredState = {
                 ...savedAgentState,
                 connectorId,
@@ -653,7 +653,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
                 runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
                 status: "running",
-                summary: "Advancing to Feature Engineering",
+                summary: `Advancing to ${options.step || "Feature Engineering"}`,
               };
 
               await workflow.updateState(config, restoredState, predecessorNode);
@@ -669,14 +669,15 @@ export class IngestionAgentService implements IIngestionAgentService {
         if (hasState) {
           stream = await workflow.stream(null, config);
         } else {
-          console.warn(`[Workflow] No next node or checkpoint found for approve. Initializing state from resolveSchema.`);
+          const approvingModelPhase = options.step === "Model Training & Validation" || options.step === "modelTraining";
+          console.warn(`[Workflow] No checkpoint found for approve. Restoring the ${approvingModelPhase ? "Feature Engineering" : "Data Ingestion"} boundary.`);
           const fallbackState = {
             connectorId,
             projectId: options?.projectId ?? "",
             userPrompt: userPrompt ?? "",
             runTimestamp: activeRunTimestamp,
             status: "running",
-            summary: "Resuming workflow at Feature Engineering",
+            summary: `Resuming workflow at ${approvingModelPhase ? "Model Training & Validation" : "Feature Engineering"}`,
             inspection: {},
             dataProfile: {},
             schemaResolution: {},
@@ -684,9 +685,11 @@ export class IngestionAgentService implements IIngestionAgentService {
             batchedTables: [],
             steps: [],
             stageOutputs: {},
-            stageStatuses: { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "In Progress", featureArchitect: "Pending", exogenousScout: "Pending" }
+            stageStatuses: approvingModelPhase
+              ? { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "Completed", featureArchitect: "Completed", featureValidator: "Completed", exogenousScout: "Completed", modelTraining: "In Progress" }
+              : { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "In Progress", featureArchitect: "Pending", exogenousScout: "Pending" }
           };
-          await workflow.updateState(config, fallbackState, "resolveSchema");
+          await workflow.updateState(config, fallbackState, approvingModelPhase ? "exogenous" : "resolveSchema");
           stream = await workflow.stream(null, config);
         }
       } else if (options?.action === "resume") {
@@ -853,10 +856,6 @@ export class IngestionAgentService implements IIngestionAgentService {
               }
             } else if (nodeName === "exogenous" || nodeName === "exogenousScout") {
               updated.exogenousScout = "Completed";
-              updated.trainingDataPreparation = "In Progress";
-            } else if (nodeName === "trainingDataPreparation") {
-              updated.trainingDataPreparation = "Completed";
-              updated.modelTraining = "In Progress";
             } else if (nodeName === "modelTraining") {
               updated.modelTraining = "Completed";
               updated.modelEvaluation = "In Progress";
@@ -960,25 +959,29 @@ export class IngestionAgentService implements IIngestionAgentService {
             };
           }
 
-          const isAtApprovalGate =
-            Array.isArray(graphState?.next) &&
-            graphState.next.includes("hierarchyMapperNode") &&
-            options?.action !== "approve";
+          const nextNode = Array.isArray(graphState?.next) ? graphState.next[0] : undefined;
+          const approvalTarget = nextNode === "hierarchyMapperNode"
+            ? "Feature Engineering"
+            : nextNode === "modelTraining"
+              ? "Model Training & Validation"
+              : undefined;
+          const isAtApprovalGate = Boolean(approvalTarget);
 
           if (isAtApprovalGate) {
-            console.info(`[Workflow] Reached Stage 1 (Data Ingestion) completion. Pausing for user approval before Feature Engineering.`);
+            console.info(`[Workflow] Pausing for user approval before ${approvalTarget}.`);
+            const completedPhase = approvalTarget === "Feature Engineering" ? "Data Ingestion" : "Feature Engineering";
             const pausedValues = {
               ...latestGraphStateValues,
               status: "paused",
               requiresApproval: true,
-              summary: "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.",
-              message: "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.",
+              summary: `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`,
+              message: `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`,
             };
             latestGraphStateValues = pausedValues;
             const pausedResult = buildResultFromGraphState({ values: pausedValues, next: graphState?.next }, threadId, connectorId);
             pausedResult.status = "paused";
             pausedResult.requiresApproval = true;
-            pausedResult.nextStep = "Feature Engineering";
+            pausedResult.nextStep = approvalTarget;
             if (options?.projectId) {
               await this.projectService.updateAgentState(options.projectId, pausedValues);
               pausedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);

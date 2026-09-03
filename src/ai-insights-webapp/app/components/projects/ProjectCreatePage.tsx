@@ -193,7 +193,7 @@ export default function ProjectCreatePage({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:5000/api";
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:4000/api";
     fetch(`${backendUrl}/domains`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => {

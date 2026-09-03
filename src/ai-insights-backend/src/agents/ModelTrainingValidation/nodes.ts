@@ -39,19 +39,12 @@ function readReport(state: State, services: IngestionServices): any {
   return JSON.parse(fs.readFileSync(reportPath, "utf-8"));
 }
 
-export async function trainingDataPreparationNode(state: State, config?: RunnableConfig) {
+export async function modelTrainingNode(state: State, config?: RunnableConfig) {
   const services = servicesFrom(config);
   const metadata = featureMetadata(state);
   const dataset = findDataset(runDirectory(state, services));
   if (!dataset) throw new Error("Feature Engineering did not produce a supported model-ready dataset artifact");
   if (!metadata.targetColumn) throw new Error("Feature Engineering did not provide a target column");
-  const output = { status: "Completed", summary: "Model-ready feature artifact located", dataset, ...metadata, splitStrategy: metadata.problemType === "forecasting" ? "ordered 70/15/15" : "seeded 70/15/15" };
-  return { trainingDataPreparation: output, status: "running", summary: output.summary, stageOutputs: { trainingDataPreparation: output }, stageStatuses: { trainingDataPreparation: "Completed", modelTraining: "In Progress" } };
-}
-
-export async function modelTrainingNode(state: State, config?: RunnableConfig) {
-  const services = servicesFrom(config);
-  const prep = state.trainingDataPreparation as any;
   const python = `
 import json, os, pickle
 import pandas as pd
@@ -65,9 +58,9 @@ from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
 from sklearn.linear_model import LinearRegression, LogisticRegression
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, accuracy_score, precision_recall_fscore_support
 
-dataset = ${JSON.stringify(prep.dataset || "")}
-target = ${JSON.stringify(prep.targetColumn || "")}
-problem = ${JSON.stringify(String(prep.problemType || "regression").toLowerCase())}
+dataset = ${JSON.stringify(dataset)}
+target = ${JSON.stringify(metadata.targetColumn)}
+problem = ${JSON.stringify(String(metadata.problemType || "regression").toLowerCase())}
 path = os.path.join('/workspace', dataset)
 df = duckdb.read_parquet(path).df() if path.endswith('.parquet') else pd.read_csv(path)
 if target not in df.columns: raise ValueError(f"Target column '{target}' is missing")
@@ -106,7 +99,7 @@ print(json.dumps(report))
   await cleanupRunContainer(services.projectId || state.projectId, state.runTimestamp);
   if (!execution.success) throw new Error(execution.stderr || "Model training failed");
   const report = readReport(state, services);
-  const output = { status: "Completed", summary: `${report.runs.filter((run: any) => run.status === "Completed").length} candidate model(s) trained`, candidates: report.runs, splits: report.splits };
+  const output = { status: "Completed", summary: `${report.runs.filter((run: any) => run.status === "Completed").length} candidate model(s) trained`, dataset, targetColumn: metadata.targetColumn, problemType: metadata.problemType, features: metadata.features, candidates: report.runs, splits: report.splits };
   return { modelTraining: output, status: "running", summary: output.summary, stageOutputs: { modelTraining: output }, stageStatuses: { modelTraining: "Completed", modelEvaluation: "In Progress" } };
 }
 

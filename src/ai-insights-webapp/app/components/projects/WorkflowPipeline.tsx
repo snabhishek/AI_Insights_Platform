@@ -176,8 +176,6 @@ const MAIN_STEP_MAPPING: Record<string, string> = {
   "Feature Architect": "Feature Engineering",
   "Feature Validator": "Feature Engineering",
   "Feature Engineering": "Feature Engineering",
-  "Training Data Preparation": "Model Training & Validation",
-  "trainingDataPreparation": "Model Training & Validation",
   "Model Training": "Model Training & Validation",
   "modelTraining": "Model Training & Validation",
   "Model Evaluation": "Model Training & Validation",
@@ -239,7 +237,7 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
   return "Not Started";
 }
 
-const MODEL_SUBSTEPS = ["Training Data Preparation", "Model Training", "Model Evaluation", "Model Validation", "Model Selection"] as const;
+const MODEL_SUBSTEPS = ["Model Training", "Model Evaluation", "Model Validation", "Model Selection"] as const;
 
 function calculateModelStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
   const statuses = MODEL_SUBSTEPS.map((step) => (pipelineStatuses[step] as PipelineStatus) ?? "Not Started");

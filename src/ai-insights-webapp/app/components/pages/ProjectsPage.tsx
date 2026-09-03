@@ -98,6 +98,7 @@ export default function ProjectsPage() {
   const [stageOutputs, setStageOutputs] = useState<Record<string, unknown>>({});
   const [workflowMessage, setWorkflowMessage] = useState<string>("Idle");
   const [requiresApproval, setRequiresApproval] = useState(false);
+  const [approvalNextStep, setApprovalNextStep] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isExecutingRef = useRef<boolean>(false);
 
@@ -121,6 +122,7 @@ export default function ProjectsPage() {
     setStageOutputs({});
     setWorkflowMessage("Idle");
     setRequiresApproval(false);
+    setApprovalNextStep(null);
     // Clear pause state
     setIsPaused(false);
     setPausedAtPhase(null);
@@ -270,6 +272,7 @@ export default function ProjectsPage() {
       }
       setActiveStage(determineActiveStage(state));
       setRequiresApproval(Boolean(state.requiresApproval));
+      setApprovalNextStep(state.requiresApproval ? (state.nextStep || "Feature Engineering") : null);
       if (state.sessionId) {
         setWorkflowSessionId(state.sessionId);
       }
@@ -294,6 +297,7 @@ export default function ProjectsPage() {
       setRunStatus("Idle");
       setIsPaused(false);
       setRequiresApproval(false);
+      setApprovalNextStep(null);
       setWorkflowSessionId(null);
       setWorkflowMessage("");
       setLastRunTime("Not run yet");
@@ -339,6 +343,7 @@ export default function ProjectsPage() {
     
     setActiveStage(determineActiveStage(payload));
     setRequiresApproval(Boolean(payload.requiresApproval));
+    setApprovalNextStep(payload.requiresApproval ? (payload.nextStep || null) : null);
     
     if (payload.status === "completed") {
       setLastRunTime(new Date().toLocaleString("en-US", {
@@ -584,17 +589,28 @@ export default function ProjectsPage() {
   };
 
   const handleApprove = () => {
+    const targetPhase = approvalNextStep === "Model Training & Validation"
+      ? "Model Training & Validation"
+      : "Feature Engineering";
     setRequiresApproval(false);
+    setApprovalNextStep(null);
     setRunStatus("Running");
     setIsPaused(false);
-    setActiveStage("Feature Engineering");
-    setWorkflowMessage("Advancing workflow to Feature Engineering stage...");
+    setActiveStage(targetPhase);
+    setWorkflowMessage(`Advancing workflow to ${targetPhase} stage...`);
     setPipelineStatuses((prev) => ({
       ...prev,
-      "Data Inspection": "Completed",
-      "Data Profiling": "Completed",
-      "Schema Resolver": "Completed",
-      "Feature Engineering": "In Progress",
+      ...(targetPhase === "Feature Engineering"
+        ? {
+            "Data Inspection": "Completed" as const,
+            "Data Profiling": "Completed" as const,
+            "Schema Resolver": "Completed" as const,
+            "Feature Engineering": "In Progress" as const,
+          }
+        : {
+            "Feature Engineering": "Completed" as const,
+            "Model Training": "In Progress" as const,
+          }),
     }));
 
     // Clear pause state
@@ -602,7 +618,7 @@ export default function ProjectsPage() {
     setPausedAtPhase(null);
     setPausedStateSnapshot(null);
 
-    void runWorkflow("approve", "Feature Engineering");
+    void runWorkflow("approve", targetPhase);
   };
 
   const handleRetry = (step?: string) => {
