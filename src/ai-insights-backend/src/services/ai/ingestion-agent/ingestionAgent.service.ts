@@ -112,7 +112,20 @@ export class IngestionAgentService implements IIngestionAgentService {
   private checkpointer = new MemorySaver();
   private sessionMeta = new Map<string, WorkflowSessionMeta>();
   private stoppedSessions = new Set<string>();
+  private pausedSessions = new Set<string>();
+  private sessionAbortControllers = new Map<string, AbortController>();
   private traceHelper = new AgentTraceHelper();
+
+  private findSessionIdForProject(projectId?: string): string | undefined {
+    if (!projectId) return undefined;
+    for (const [sessionId, meta] of this.sessionMeta.entries()) {
+      if (meta.projectId === projectId && !this.stoppedSessions.has(sessionId)) {
+        return sessionId;
+      }
+    }
+    return undefined;
+  }
+
 
   constructor(
     private connectorService: ConnectorService,
@@ -128,7 +141,7 @@ export class IngestionAgentService implements IIngestionAgentService {
   async *run(
     connectorId: string[],
     userPrompt?: string,
-    options?: { sessionId?: string; action?: "approve" | "retry"; step?: string; projectId?: string }
+    options?: { sessionId?: string; action?: "approve" | "retry" | "resume"; step?: string; projectId?: string }
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
     const traceSession = await this.traceHelper.createTraceSession();
     const runStartedAt = new Date().toISOString();
@@ -197,6 +210,13 @@ export class IngestionAgentService implements IIngestionAgentService {
         try {
           pWs = await this.projectService.getProjectWithWorkspace(options.projectId);
           savedAgentState = pWs?.project?.agentState;
+          if (savedAgentState && (options?.action === "resume" || options?.action === "retry" || options?.action === "approve")) {
+            latestGraphStateValues = {
+              ...savedAgentState,
+              status: "running",
+              summary: `Resuming workflow at ${options.step || "inspect"} phase`,
+            };
+          }
         } catch (e) {
           console.warn("[Workflow] Failed to lookup project with workspace:", e);
         }
@@ -219,6 +239,11 @@ export class IngestionAgentService implements IIngestionAgentService {
         }
       }
 
+      this.stoppedSessions.delete(threadId);
+      this.pausedSessions.delete(threadId);
+      const sessionAbortController = new AbortController();
+      this.sessionAbortControllers.set(threadId, sessionAbortController);
+
       // Populate services dependencies context to pass inside LangGraph config
       const services = {
         connectorService: this.connectorService,
@@ -231,8 +256,10 @@ export class IngestionAgentService implements IIngestionAgentService {
         projectId: options?.projectId,
         pipeline: "Data Ingestion",
         runTimestamp: activeRunTimestamp,
+        isCancelled: () => this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId),
+        abortSignal: sessionAbortController.signal,
         onThinkingUpdate: async (substep: string) => {
-          if (this.stoppedSessions.has(threadId)) return;
+          if (this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId)) return;
           try {
             const allThinking = options?.projectId
               ? await this.getAllProjectPipelineThinking(options.projectId, "Data Ingestion")
@@ -255,8 +282,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentNode = "preprocess";
               currentStage = "preprocess";
               currentStageStatuses.inspect = "Completed";
-              currentStageStatuses.profileData = "Completed";
-              currentStageStatuses.preprocess = "In Progress";
+              currentStageStatuses.profileData = "In Progress";
             } else if (substep === "Schema Resolver" || substep === "resolveSchema") {
               currentNode = "resolveSchema";
               currentStage = "resolveSchema";
@@ -264,30 +290,17 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStageStatuses.profileData = "Completed";
               currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "In Progress";
-            } else if (substep === "Hierarchy Mapper" || substep === "Relationship Builder" || substep === "Form Builder" || substep === "hierarchyMapper" || substep === "hierarchyMapperNode") {
+            } else if (substep === "Hierarchy Mapper" || substep === "hierarchyMapper" || substep === "hierarchyMapperNode" || substep === "relationshipBuilder" || substep === "formBuilder") {
               currentNode = "hierarchyMapperNode";
-              currentStage = "hierarchyMapper";
+              currentStage = "hierarchyMapperNode";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
               currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Completed";
               currentStageStatuses.hierarchyMapper = "In Progress";
-            } else if (
-              substep === "Feature Architect" ||
-              substep === "Feature Engineering" ||
-              substep === "featureArchitect" ||
-              substep === "featureArchitectNode" ||
-              substep === "featureSupervisor" ||
-              substep === "featureCreation" ||
-              substep === "featureTransformation" ||
-              substep === "buildDataset" ||
-              substep === "dataValidation" ||
-              substep === "featureExtraction" ||
-              substep === "featureSelection" ||
-              substep === "programRectifier"
-            ) {
+            } else if (substep === "Feature Architect" || substep === "featureArchitect" || substep === "featureArchitectNode" || substep === "featureSupervisor" || substep === "featureCreation" || substep === "featureTransformation" || substep === "featureExtraction" || substep === "featureSelection") {
               currentNode = "featureArchitectNode";
-              currentStage = "featureArchitect";
+              currentStage = "featureArchitectNode";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
               currentStageStatuses.preprocess = "Completed";
@@ -296,7 +309,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStageStatuses.featureArchitect = "In Progress";
             } else if (substep === "Feature Validator" || substep === "featureValidator" || substep === "featureValidatorNode") {
               currentNode = "featureArchitectNode";
-              currentStage = "featureValidator";
+              currentStage = "featureArchitectNode";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
               currentStageStatuses.preprocess = "Completed";
@@ -346,8 +359,6 @@ export class IngestionAgentService implements IIngestionAgentService {
         },
         recursionLimit: 100,
       };
-
-      this.stoppedSessions.delete(threadId);
 
       const pipeline = "Data Ingestion";
       if (options?.projectId) {
@@ -678,6 +689,91 @@ export class IngestionAgentService implements IIngestionAgentService {
           await workflow.updateState(config, fallbackState, "resolveSchema");
           stream = await workflow.stream(null, config);
         }
+      } else if (options?.action === "resume") {
+        // Resume: continue from the paused phase (mid-execution checkpoint)
+        const targetStep = options.step || "inspect";
+        console.info(`[Workflow] Resume — continuing from thread ${threadId} at phase ${targetStep}`);
+
+        // Predecessor mapping: which node should be marked as completed so the next node is targetStep
+        const predecessorNodeMap: Record<string, string> = {
+          "inspect": "__start__",
+          "Data Inspection": "__start__",
+          "profileData": "inspect",
+          "Data Profiling": "inspect",
+          "preprocess": "inspect",
+          "resolveSchema": "profileData",
+          "Schema Resolver": "profileData",
+          "hierarchyMapperNode": "resolveSchema",
+          "hierarchyMapper": "resolveSchema",
+          "Hierarchy Mapper": "resolveSchema",
+          "featureArchitectNode": "hierarchyMapperNode",
+          "featureArchitect": "hierarchyMapperNode",
+          "Feature Architect": "hierarchyMapperNode",
+          "featureValidator": "featureArchitectNode",
+          "Feature Validator": "featureArchitectNode",
+          "exogenousScout": "featureArchitectNode",
+          "exogenous": "featureArchitectNode",
+          "Exogenous Scout": "featureArchitectNode",
+        };
+        const predecessorNode = predecessorNodeMap[targetStep] || "__start__";
+
+        let graphState = await workflow.getState(config).catch(() => null);
+        let hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+
+        // If checkpointer has no state, restore from project's persisted agentState
+        if (!hasState && options?.projectId) {
+          try {
+            const project = await this.projectService.getById(options.projectId);
+            const savedAgentState = project?.agentState as any;
+            if (savedAgentState) {
+              console.info(`[Workflow] Restoring graph checkpointer state from project database for resume on thread ${threadId}`);
+
+              const restoredState = {
+                ...savedAgentState,
+                connectorId,
+                projectId: options.projectId,
+                userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
+                runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
+                status: "running",
+                summary: `Resuming from ${targetStep} phase`,
+              };
+
+              if (predecessorNode !== "__start__") {
+                await workflow.updateState(config, restoredState, predecessorNode);
+                graphState = await workflow.getState(config).catch(() => null);
+                hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+                console.info(`[Workflow] Resume state restored. Next nodes: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}]`);
+              }
+            }
+          } catch (e) {
+            console.warn("[Workflow] Failed to restore resume state from database:", e);
+          }
+        }
+
+        if (predecessorNode === "__start__" || !hasState) {
+          console.info(`[Workflow] Resuming thread ${threadId} from start at phase ${targetStep}`);
+          stream = await workflow.stream(
+            {
+              connectorId,
+              projectId: options?.projectId ?? "",
+              userPrompt: userPrompt ?? "",
+              runTimestamp: activeRunTimestamp,
+              status: "running",
+              summary: `Resuming from ${targetStep} phase`,
+              inspection: savedAgentState?.inspection || {},
+              dataProfile: savedAgentState?.dataProfile || {},
+              schemaResolution: savedAgentState?.schemaResolution || {},
+              preprocessing: savedAgentState?.preprocessing || {},
+              batchedTables: savedAgentState?.batchedTables || [],
+              steps: savedAgentState?.steps || [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
+              stageOutputs: savedAgentState?.stageOutputs || {},
+              stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
+            },
+            config
+          );
+        } else {
+          stream = await workflow.stream(null, config);
+        }
       } else {
         // New workflow: first invocation / re-run
         console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);
@@ -702,21 +798,26 @@ export class IngestionAgentService implements IIngestionAgentService {
         );
       }
 
-      // 1. Push initial queued status to client immediately
+      const initialStageStatuses = (options?.action === "resume" || options?.action === "retry") && savedAgentState?.stageStatuses
+        ? { ...savedAgentState.stageStatuses, [options.step || "inspect"]: "In Progress" }
+        : { inspect: "Queued", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" };
+
+      // 1. Push initial queued/resumed status to client immediately
       queue.push({
         connectorId,
-        status: "queued",
-        summary: "Workflow task has been queued (Concurrency Limit: 10). Waiting for resources...",
+        status: "running",
+        summary: options?.action === "resume" ? `Resuming workflow at ${options.step || "inspect"} phase` : "Workflow task has been queued. Waiting for resources...",
         sessionId: threadId,
         requiresApproval: false,
-        stageStatuses: { inspect: "Queued", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" },
-        currentNode: "inspect",
-        currentStage: "inspect",
-        steps: [],
-        inspection: {},
-        schemaResolution: {},
-        dataProfile: {},
-        preprocessing: {},
+        stageStatuses: initialStageStatuses,
+        currentNode: options?.step || "inspect",
+        currentStage: options?.step || "inspect",
+        steps: savedAgentState?.steps || [],
+        inspection: savedAgentState?.inspection || {},
+        schemaResolution: savedAgentState?.schemaResolution || {},
+        dataProfile: savedAgentState?.dataProfile || {},
+        preprocessing: savedAgentState?.preprocessing || {},
+        stageOutputs: savedAgentState?.stageOutputs || {},
       });
 
       // 2. Define the background task to be run inside the QueueService
@@ -773,7 +874,10 @@ export class IngestionAgentService implements IIngestionAgentService {
 
           // Stream updates from initial execution segment
           for await (const chunk of stream) {
-            if (this.stoppedSessions.has(threadId)) break;
+            if (this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId)) {
+              console.info(`[Workflow] Initial stream loop interrupted for thread ${threadId} (paused: ${this.pausedSessions.has(threadId)}, stopped: ${this.stoppedSessions.has(threadId)})`);
+              break;
+            }
 
             const completedNodes = Object.keys(chunk || {});
             let currentStatuses = { ...(latestGraphStateValues.stageStatuses || {}) };
@@ -798,6 +902,51 @@ export class IngestionAgentService implements IIngestionAgentService {
               result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
             }
             agentJobEvents.emit(`job:update:${threadId}`, result);
+          }
+
+          if (this.stoppedSessions.has(threadId)) {
+            console.info(`[Workflow] Halting execution early: thread ${threadId} is stopped.`);
+            const graphState = await workflow.getState(config).catch(() => null);
+            const stoppedValues = {
+              ...(graphState?.values || {}),
+              status: "failed",
+              summary: "Workflow stopped by user",
+              message: "Workflow stopped by user.",
+            };
+            const stoppedResult = buildResultFromGraphState({ ...graphState, values: stoppedValues }, threadId, connectorId);
+            stoppedResult.status = "failed";
+            stoppedResult.summary = "Workflow stopped by user";
+            stoppedResult.message = "Workflow stopped by user.";
+            stoppedResult.requiresApproval = false;
+            if (options?.projectId) {
+              await this.projectService.updateAgentState(options.projectId, stoppedValues);
+              stoppedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+            }
+            agentJobEvents.emit(`job:update:${threadId}`, stoppedResult);
+            return;
+          }
+
+          if (this.pausedSessions.has(threadId)) {
+            console.info(`[Workflow] Halting execution early: thread ${threadId} is paused.`);
+            const graphState = await workflow.getState(config).catch(() => null);
+            const pausedValues = {
+              ...(graphState?.values || {}),
+              ...latestGraphStateValues,
+              status: "paused",
+              summary: "Workflow paused by user",
+              message: "Workflow paused by user.",
+            };
+            const pausedResult = buildResultFromGraphState({ ...graphState, values: pausedValues }, threadId, connectorId);
+            pausedResult.status = "paused";
+            pausedResult.summary = "Workflow paused by user";
+            pausedResult.message = "Workflow paused by user.";
+            pausedResult.requiresApproval = false;
+            if (options?.projectId) {
+              await this.projectService.updateAgentState(options.projectId, pausedValues);
+              pausedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+            }
+            agentJobEvents.emit(`job:update:${threadId}`, pausedResult);
+            return;
           }
 
           // Check if workflow reached an approval gate between pipeline stages
@@ -843,13 +992,17 @@ export class IngestionAgentService implements IIngestionAgentService {
             graphState.next.length > 0 &&
             graphState?.values?.status !== "completed" &&
             graphState?.values?.status !== "failed" &&
-            !this.stoppedSessions.has(threadId)
+            !this.stoppedSessions.has(threadId) &&
+            !this.pausedSessions.has(threadId)
           ) {
             const nextNodes = graphState.next;
             console.info(`[Workflow] Node [${nextNodes.join(", ")}] started`);
             const advanceStream = await workflow.stream(null, config);
             for await (const chunk of advanceStream) {
-              if (this.stoppedSessions.has(threadId)) break;
+              if (this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId)) {
+                console.info(`[Workflow] Advance stream loop interrupted for thread ${threadId} (paused: ${this.pausedSessions.has(threadId)}, stopped: ${this.stoppedSessions.has(threadId)})`);
+                break;
+              }
 
               const completedNodes = Object.keys(chunk || {});
               let currentStatuses = { ...(latestGraphStateValues.stageStatuses || {}) };
@@ -887,6 +1040,27 @@ export class IngestionAgentService implements IIngestionAgentService {
           }
 
           console.info(`[Workflow] State after invoke — next: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}], status: ${graphState?.values?.status || "unknown"}`);
+
+          if (this.pausedSessions.has(threadId)) {
+            const pausedValues = {
+              ...(graphState?.values || {}),
+              ...latestGraphStateValues,
+              status: "paused",
+              summary: "Workflow paused by user",
+              message: "Workflow paused by user.",
+            };
+            const pausedResult = buildResultFromGraphState({ ...graphState, values: pausedValues }, threadId, connectorId);
+            pausedResult.status = "paused";
+            pausedResult.summary = "Workflow paused by user";
+            pausedResult.message = "Workflow paused by user.";
+            pausedResult.requiresApproval = false;
+            if (options?.projectId) {
+              await this.projectService.updateAgentState(options.projectId, pausedValues);
+              pausedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+            }
+            agentJobEvents.emit(`job:update:${threadId}`, pausedResult);
+            return;
+          }
 
           if (this.stoppedSessions.has(threadId)) {
             const stoppedValues = {
@@ -1134,49 +1308,68 @@ export class IngestionAgentService implements IIngestionAgentService {
     return map;
   }
 
-  async stop(sessionId: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }> {
-    this.stoppedSessions.add(sessionId);
-    console.info(`[Workflow] Session ${sessionId} marked as stopped.`);
+  async stop(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }> {
+    const resolvedSessionId = sessionId || this.findSessionIdForProject(projectId);
+    const targetProjectId = projectId || (resolvedSessionId ? this.sessionMeta.get(resolvedSessionId)?.projectId : undefined);
 
-    const meta = this.sessionMeta.get(sessionId);
-    const targetProjectId = projectId || meta?.projectId;
+    if (resolvedSessionId) {
+      this.stoppedSessions.add(resolvedSessionId);
+      this.sessionAbortControllers.get(resolvedSessionId)?.abort();
+      this.sessionAbortControllers.delete(resolvedSessionId);
+      console.info(`[Workflow] Session ${resolvedSessionId} marked as stopped.`);
+    } else {
+      console.info(`[Workflow] Stop requested for project ${targetProjectId || "unknown"}`);
+    }
 
     try {
-      const workflow = createAgentGraph(this.checkpointer);
-      const services = {
-        connectorService: this.connectorService,
-        connectionTester: this.connectionTester,
-        fileService: this.fileService,
-        projectService: this.projectService,
-        traceHelper: this.traceHelper,
-      };
-      const config = {
-        configurable: {
-          thread_id: sessionId,
-          services,
+      if (resolvedSessionId) {
+        const workflow = createAgentGraph(this.checkpointer);
+        const services = {
+          connectorService: this.connectorService,
+          connectionTester: this.connectionTester,
+          fileService: this.fileService,
+          projectService: this.projectService,
+          traceHelper: this.traceHelper,
+        };
+        const config = {
+          configurable: {
+            thread_id: resolvedSessionId,
+            services,
+          }
+        };
+        const graphState = await workflow.getState(config).catch(() => null);
+        const meta = this.sessionMeta.get(resolvedSessionId);
+
+        const updatedValues = {
+          ...(graphState?.values || {}),
+          status: "failed",
+          summary: "Workflow stopped by user",
+          message: "Workflow stopped by user.",
+        };
+
+        const result = buildResultFromGraphState({ ...graphState, values: updatedValues }, resolvedSessionId, graphState?.values?.connectorId || meta?.connectorId || []);
+        result.status = "failed";
+        result.summary = "Workflow stopped by user";
+        result.message = "Workflow stopped by user.";
+        result.requiresApproval = false;
+
+        if (targetProjectId) {
+          await this.projectService.updateAgentState(targetProjectId, updatedValues);
+          console.info(`[Workflow] Project ${targetProjectId} agent state successfully updated to stopped.`);
         }
-      };
-      const graphState = await workflow.getState(config);
-
-      const updatedValues = {
-        ...(graphState?.values || {}),
-        status: "failed",
-        summary: "Workflow stopped by user",
-      };
-
-      const result = buildResultFromGraphState({ ...graphState, values: updatedValues }, sessionId, graphState?.values?.connectorId || meta?.connectorId || []);
-      result.status = "failed";
-      result.summary = "Workflow stopped by user";
-      result.message = "Workflow stopped by user.";
-      result.requiresApproval = false;
-
-      if (targetProjectId) {
-        await this.projectService.updateAgentState(targetProjectId, updatedValues);
-        console.info(`[Workflow] Project ${targetProjectId} agent state updated to stopped/failed.`);
+        agentJobEvents.emit(`job:update:${resolvedSessionId}`, result);
+        return result;
+      } else if (targetProjectId) {
+        await this.projectService.updateAgentState(targetProjectId, {
+          status: "failed",
+          summary: "Workflow stopped by user",
+          message: "Workflow stopped by user.",
+        });
+        console.info(`[Workflow] Project ${targetProjectId} agent state successfully updated to stopped.`);
       }
-      return result;
+      return { success: true, message: "Workflow stopped" };
     } catch (err: any) {
-      console.warn(`[Workflow] Failed to update stopped state for session ${sessionId}:`, err?.message || err);
+      console.warn(`[Workflow] Failed to update stopped state for session ${resolvedSessionId || "unknown"}:`, err?.message || err);
       if (targetProjectId) {
         try {
           await this.projectService.updateAgentState(targetProjectId, {
@@ -1188,4 +1381,80 @@ export class IngestionAgentService implements IIngestionAgentService {
       return { success: true, message: "Workflow stopped" };
     }
   }
+
+  async pause(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }> {
+    const resolvedSessionId = sessionId || this.findSessionIdForProject(projectId);
+    const targetProjectId = projectId || (resolvedSessionId ? this.sessionMeta.get(resolvedSessionId)?.projectId : undefined);
+
+    if (resolvedSessionId) {
+      this.pausedSessions.add(resolvedSessionId);
+      this.stoppedSessions.add(resolvedSessionId);
+      this.sessionAbortControllers.get(resolvedSessionId)?.abort();
+      console.info(`[Workflow] Session ${resolvedSessionId} marked as paused.`);
+    } else {
+      console.info(`[Workflow] Pause requested for project ${targetProjectId || "unknown"}`);
+    }
+
+    try {
+      if (resolvedSessionId) {
+        const workflow = createAgentGraph(this.checkpointer);
+        const services = {
+          connectorService: this.connectorService,
+          connectionTester: this.connectionTester,
+          fileService: this.fileService,
+          projectService: this.projectService,
+          traceHelper: this.traceHelper,
+        };
+        const config = {
+          configurable: {
+            thread_id: resolvedSessionId,
+            services,
+          }
+        };
+        const graphState = await workflow.getState(config).catch(() => null);
+        const meta = this.sessionMeta.get(resolvedSessionId);
+
+        const pausedValues = {
+          ...(graphState?.values || {}),
+          status: "paused",
+          summary: "Workflow paused by user",
+          message: "Workflow paused by user.",
+          sessionId: resolvedSessionId,
+        };
+
+        const result = buildResultFromGraphState({ ...graphState, values: pausedValues }, resolvedSessionId, graphState?.values?.connectorId || meta?.connectorId || []);
+        result.status = "paused";
+        result.summary = "Workflow paused by user";
+        result.message = "Workflow paused by user.";
+        result.requiresApproval = false;
+
+        if (targetProjectId) {
+          await this.projectService.updateAgentState(targetProjectId, pausedValues);
+          console.info(`[Workflow] Project ${targetProjectId} agent state updated to paused.`);
+        }
+        agentJobEvents.emit(`job:update:${resolvedSessionId}`, result);
+        return result;
+      } else if (targetProjectId) {
+        await this.projectService.updateAgentState(targetProjectId, {
+          status: "paused",
+          summary: "Workflow paused by user",
+          message: "Workflow paused by user.",
+        });
+        console.info(`[Workflow] Project ${targetProjectId} agent state updated to paused.`);
+      }
+      return { success: true, message: "Workflow paused" };
+    } catch (err: any) {
+      console.warn(`[Workflow] Failed to update paused state for session ${resolvedSessionId || "unknown"}:`, err?.message || err);
+      if (targetProjectId) {
+        try {
+          await this.projectService.updateAgentState(targetProjectId, {
+            status: "paused",
+            summary: "Workflow paused by user",
+          });
+        } catch (_) { }
+      }
+      return { success: true, message: "Workflow paused" };
+    }
+  }
 }
+

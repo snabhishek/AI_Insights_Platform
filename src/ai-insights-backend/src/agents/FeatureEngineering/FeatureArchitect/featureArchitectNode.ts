@@ -9,6 +9,10 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
   if (!services) {
     throw new Error("Services dependency is not provided in config");
   }
+  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
+    console.info(`[Workflow] featureArchitectNode skipping execution because workflow is stopped/paused.`);
+    return { status: state.status || "failed" };
+  }
 
   await logMilestoneThinking(
     services,

@@ -5,7 +5,7 @@ export interface WorkflowRequestPayload {
   userPrompt?: string;
   projectId?: string;
   sessionId?: string;
-  action?: "approve" | "retry";
+  action?: "approve" | "retry" | "resume";
   step?: string;
 }
 
@@ -46,6 +46,21 @@ export async function executeWorkflowApi(
   }
 
   return res;
+}
+
+/**
+  Signals the backend to pause an active AI workflow session.
+ */
+export async function pauseWorkflowApi(sessionId?: string, projectId?: string): Promise<void> {
+  if (!sessionId && !projectId) return;
+
+  await fetch(`${BACKEND_URL}/ai/ingestion/pause`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ sessionId, projectId }),
+  }).catch((err) => {
+    console.warn("Failed to notify backend of workflow pause:", err);
+  });
 }
 
 /**

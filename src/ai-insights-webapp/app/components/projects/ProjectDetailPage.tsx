@@ -90,6 +90,10 @@ interface ProjectDetailPageProps {
   onSelectStage: (stepId: string) => void;
   onApprove: () => void;
   onRetry: (stepId: string) => void;
+  isPaused?: boolean;
+  pausedAtPhase?: string | null;
+  onPause?: () => void;
+  onResume?: () => void;
   showAlert: (opts: { title: string; message: string; type: AlertType; logs?: string }) => void;
 }
 
@@ -120,6 +124,10 @@ export default function ProjectDetailPage({
   onSelectStage,
   onApprove,
   onRetry,
+  isPaused,
+  pausedAtPhase,
+  onPause,
+  onResume,
   showAlert,
 }: ProjectDetailPageProps) {
   const [isEditingUseCase, setIsEditingUseCase] = React.useState(false);
@@ -420,6 +428,10 @@ export default function ProjectDetailPage({
             onSelectStage={handleSelectStage}
             onApprove={onApprove}
             onRetry={onRetry}
+            isPaused={isPaused}
+            pausedAtPhase={pausedAtPhase}
+            onPause={onPause}
+            onResume={onResume}
           />
         </div>
       </div>

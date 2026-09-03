@@ -10,6 +10,10 @@ import { formBuilderNode } from "./FormBuilder/formBuilderNode";
  */
 export async function hierarchyMapperNode(state: typeof AgentState.State, config?: RunnableConfig) {
   const services = config?.configurable?.services as IngestionServices;
+  if (services?.isCancelled?.() || services?.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
+    console.info(`[Workflow] hierarchyMapperNode skipping execution because workflow is stopped/paused.`);
+    return { status: state.status || "failed" };
+  }
 
   await logMilestoneThinking(
     services,
