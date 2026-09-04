@@ -777,6 +777,91 @@ export class IngestionAgentService implements IIngestionAgentService {
         } else {
           stream = await workflow.stream(null, config);
         }
+      } else if (options?.action === "resume") {
+        // Resume: continue from the paused phase (mid-execution checkpoint)
+        const targetStep = options.step || "inspect";
+        console.info(`[Workflow] Resume — continuing from thread ${threadId} at phase ${targetStep}`);
+
+        // Predecessor mapping: which node should be marked as completed so the next node is targetStep
+        const predecessorNodeMap: Record<string, string> = {
+          "inspect": "__start__",
+          "Data Inspection": "__start__",
+          "profileData": "inspect",
+          "Data Profiling": "inspect",
+          "preprocess": "inspect",
+          "resolveSchema": "profileData",
+          "Schema Resolver": "profileData",
+          "hierarchyMapperNode": "resolveSchema",
+          "hierarchyMapper": "resolveSchema",
+          "Hierarchy Mapper": "resolveSchema",
+          "featureArchitectNode": "hierarchyMapperNode",
+          "featureArchitect": "hierarchyMapperNode",
+          "Feature Architect": "hierarchyMapperNode",
+          "featureValidator": "featureArchitectNode",
+          "Feature Validator": "featureArchitectNode",
+          "exogenousScout": "featureArchitectNode",
+          "exogenous": "featureArchitectNode",
+          "Exogenous Scout": "featureArchitectNode",
+        };
+        const predecessorNode = predecessorNodeMap[targetStep] || "__start__";
+
+        let graphState = await workflow.getState(config).catch(() => null);
+        let hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+
+        // If checkpointer has no state, restore from project's persisted agentState
+        if (!hasState && options?.projectId) {
+          try {
+            const project = await this.projectService.getById(options.projectId);
+            const savedAgentState = project?.agentState as any;
+            if (savedAgentState) {
+              console.info(`[Workflow] Restoring graph checkpointer state from project database for resume on thread ${threadId}`);
+
+              const restoredState = {
+                ...savedAgentState,
+                connectorId,
+                projectId: options.projectId,
+                userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
+                runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
+                status: "running",
+                summary: `Resuming from ${targetStep} phase`,
+              };
+
+              if (predecessorNode !== "__start__") {
+                await workflow.updateState(config, restoredState, predecessorNode);
+                graphState = await workflow.getState(config).catch(() => null);
+                hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+                console.info(`[Workflow] Resume state restored. Next nodes: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}]`);
+              }
+            }
+          } catch (e) {
+            console.warn("[Workflow] Failed to restore resume state from database:", e);
+          }
+        }
+
+        if (predecessorNode === "__start__" || !hasState) {
+          console.info(`[Workflow] Resuming thread ${threadId} from start at phase ${targetStep}`);
+          stream = await workflow.stream(
+            {
+              connectorId,
+              projectId: options?.projectId ?? "",
+              userPrompt: userPrompt ?? "",
+              runTimestamp: activeRunTimestamp,
+              status: "running",
+              summary: `Resuming from ${targetStep} phase`,
+              inspection: savedAgentState?.inspection || {},
+              dataProfile: savedAgentState?.dataProfile || {},
+              schemaResolution: savedAgentState?.schemaResolution || {},
+              preprocessing: savedAgentState?.preprocessing || {},
+              batchedTables: savedAgentState?.batchedTables || [],
+              steps: savedAgentState?.steps || [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
+              stageOutputs: savedAgentState?.stageOutputs || {},
+              stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
+            },
+            config
+          );
+        } else {
+          stream = await workflow.stream(null, config);
+        }
       } else {
         // New workflow: first invocation / re-run
         console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);

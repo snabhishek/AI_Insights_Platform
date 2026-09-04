@@ -16,7 +16,7 @@ import { INITIAL_PIPELINE_STATUSES } from "../projects/constants";
 import ProjectsListPage from "../projects/ProjectsListPage";
 import ProjectDetailPage from "../projects/ProjectDetailPage";
 import ProjectCreatePage from "../projects/ProjectCreatePage";
-import { executeWorkflowApi, pauseWorkflowApi, stopWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
+import { executeWorkflowApi, pauseWorkflowApi, pauseWorkflowApi, stopWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
 
 interface WorkflowResponse {
   success: boolean;
@@ -329,7 +329,15 @@ export default function ProjectsPage() {
     } else if (payload.status === "failed") {
       setRunStatus("Idle");
       setIsPaused(false);
-    } else if (payload.status === "paused" || payload.requiresApproval) {
+    } else if (payload.status === "paused") {
+      setRunStatus("Paused");
+      if (payload.requiresApproval) {
+        setIsPaused(false);
+      } else {
+        setIsPaused(true);
+        setPausedAtPhase(determineActiveStage(payload));
+      }
+    } else if (payload.requiresApproval) {
       setRunStatus("Paused");
       if (payload.requiresApproval) {
         setIsPaused(false);

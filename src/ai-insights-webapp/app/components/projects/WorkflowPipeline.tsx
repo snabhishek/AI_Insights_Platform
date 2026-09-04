@@ -307,7 +307,7 @@ export default function WorkflowPipeline({
   isPaused,
   pausedAtPhase,
   onPause,
-  onResume,
+  onResume
 }: WorkflowPipelineProps) {
   const currentStage = activeStage || "inspect";
   const mainSelectedStage = getMainStepId(currentStage);
@@ -438,8 +438,8 @@ export default function WorkflowPipeline({
                 <div className="flex min-w-4 flex-1 items-center" aria-hidden="true">
                   <span
                     className={`h-1 min-w-0 flex-1 transition-colors duration-500 ${connectorComplete
-                        ? "bg-gradient-to-r from-blue-500 to-indigo-500"
-                        : "bg-border/60 dark:bg-white/15"
+                      ? "bg-gradient-to-r from-blue-500 to-indigo-500"
+                      : "bg-border/60 dark:bg-white/15"
                       }`}
                   />
                 </div>
@@ -502,22 +502,22 @@ export default function WorkflowPipeline({
 
           <span
             className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${requiresApproval || runStatus === "Paused"
-                ? "bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
-                : runStatus === "Running"
-                  ? "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
-                  : runStatus === "Success"
-                    ? "bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
-                    : "bg-surface-muted text-muted-foreground border border-border"
+              ? "bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+              : runStatus === "Running"
+                ? "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
+                : runStatus === "Success"
+                  ? "bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                  : "bg-surface-muted text-muted-foreground border border-border"
               }`}
           >
             <span
               className={`w-1.5 h-1.5 rounded-full shrink-0 ${requiresApproval || runStatus === "Paused"
-                  ? "bg-amber-500 animate-pulse"
-                  : runStatus === "Running"
-                    ? "bg-indigo-500 animate-ping"
-                    : runStatus === "Success"
-                      ? "bg-emerald-500"
-                      : "bg-muted-foreground"
+                ? "bg-amber-500 animate-pulse"
+                : runStatus === "Running"
+                  ? "bg-indigo-500 animate-ping"
+                  : runStatus === "Success"
+                    ? "bg-emerald-500"
+                    : "bg-muted-foreground"
                 }`}
             />
             {requiresApproval
