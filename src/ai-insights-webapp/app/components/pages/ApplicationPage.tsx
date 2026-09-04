@@ -177,7 +177,7 @@ export default function ApplicationPage() {
         {hasDesignedForm ? (
           <FilterForm
             schema={activeSchema}
-            apiBaseUrl="http://127.0.0.1:4000"
+            apiBaseUrl="http://127.0.0.1:5000"
           />
         ) : (
           <div className="flex flex-col items-center justify-center min-h-[440px] w-full rounded-3xl border border-dashed border-border/80 bg-surface/30 backdrop-blur-sm p-12 text-center shadow-sm animate-in fade-in duration-300">

@@ -32,7 +32,7 @@ export interface UseFilterFormOptions {
   apiBaseUrl?: string;
 }
 
-export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: UseFilterFormOptions) {
+export function useFilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000" }: UseFilterFormOptions) {
   const [selectedValues, setSelectedValues] = useState<Record<string, any>>({});
   const [optionsMap, setOptionsMap] = useState<Record<string, any[]>>({});
   const [dateRanges, setDateRanges] = useState<Record<string, { min: string | null; max: string | null }>>({});
@@ -138,7 +138,7 @@ export function useFilterForm({ schema, apiBaseUrl = "http://localhost:4000" }: 
           queryParams.set("search", activeSearch.trim());
         }
 
-        const resolvedApiBase = (apiBaseUrl || "http://127.0.0.1:4000").replace(/\/api\/?$/, "");
+        const resolvedApiBase = (apiBaseUrl || "http://127.0.0.1:5000").replace(/\/api\/?$/, "");
         const url = `${resolvedApiBase}/api/filter-options?${queryParams.toString()}`;
         const response = await fetch(url, { signal: controller.signal });
 

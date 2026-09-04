@@ -228,6 +228,7 @@ export class SourceRegistryService implements ISourceRegistryService {
     try {
       // 1. Direct DuckDB Query Pushdown for High-Performance File Sources
       if (this.duckDBService && (!source || ["csv", "tsv", "excel"].includes(source.type))) {
+        let dbPath = "";
         try {
           const rawFile = targetTable || source?.connectionConfig?.fileName || cleanTable;
 
@@ -237,7 +238,7 @@ export class SourceRegistryService implements ISourceRegistryService {
             targetTable || source?.connectionConfig?.fileName
           );
 
-          const dbPath = colLocation ? colLocation.dbPath : this.duckDBService.getDuckDbPath(rawFile);
+          dbPath = colLocation ? colLocation.dbPath : this.duckDBService.getDuckDbPath(rawFile);
 
           // Discover actual table name in DuckDB
           let actualTable = colLocation
@@ -309,83 +310,29 @@ export class SourceRegistryService implements ISourceRegistryService {
             }
           }
 
-          // If a table containing the requested column was found, query it!
-          if (matchingTable && matchedColumn) {
-            const actualTable = matchingTable;
-            const safeCol = matchedColumn.replace(/"/g, '""');
-
-            // Handle date_range controlType
-            if (controlType === "date_range") {
-              const minMaxSql = `
-                SELECT 
-                  MIN(CAST("${safeCol}" AS VARCHAR)) AS min_val, 
-                  MAX(CAST("${safeCol}" AS VARCHAR)) AS max_val,
-                  COUNT(DISTINCT "${safeCol}") AS total_cnt
-                FROM "${actualTable.replace(/"/g, '""')}"
-                WHERE "${safeCol}" IS NOT NULL AND TRIM(CAST("${safeCol}" AS VARCHAR)) != ''
-              `;
-              const stats = await this.duckDBService.runQuery(dbPath, minMaxSql);
-              if (stats && stats.length > 0) {
-                return {
-                  success: true,
-                  sourceId,
-                  fieldId: cleanFieldId,
-                  values: [],
-                  totalCount: Number(stats[0].total_cnt || 0),
-                  dateRange: { min: stats[0].min_val || null, max: stats[0].max_val || null },
-                  isIndependentFallback,
-                };
-              }
-            }
-
-            // Handle dropdown / searchable_dropdown
-            let valExpr = `"${safeCol}"`;
-            let filterSql = `WHERE ${valExpr} IS NOT NULL AND TRIM(CAST(${valExpr} AS VARCHAR)) != ''`;
-            const params: any[] = [];
-
-            // Apply parent parameter filters if present on this table
-            if (activeParentFilters.length > 0) {
-              for (const pf of activeParentFilters) {
-                const matchedPCol = matchColumn(tableColNames, pf.col);
-                if (matchedPCol) {
-                  const safePCol = matchedPCol.replace(/"/g, '""');
-                  filterSql += ` AND CAST("${safePCol}" AS VARCHAR) = ?`;
-                  params.push(String(pf.val));
-                }
-              }
-            }
-
-            if (search && search.trim()) {
-              filterSql += ` AND LOWER(CAST(${valExpr} AS VARCHAR)) LIKE ?`;
-              params.push(`%${search.trim().toLowerCase()}%`);
-            }
-
-            const distinctSql = `
-              SELECT DISTINCT ${valExpr} AS val
+          // Handle date_range controlType
+          if (controlType === "date_range") {
+            const minMaxSql = `
+              SELECT 
+                MIN(CAST(${valExpr} AS VARCHAR)) AS min_val, 
+                MAX(CAST(${valExpr} AS VARCHAR)) AS max_val,
+                COUNT(DISTINCT ${valExpr}) AS total_cnt
               FROM "${actualTable.replace(/"/g, '""')}"
-              ${filterSql}
-              ORDER BY val ASC
-              LIMIT ${limit}
+              WHERE ${valExpr} IS NOT NULL AND TRIM(CAST(${valExpr} AS VARCHAR)) != ''
             `;
-
-            const rows = await this.duckDBService.runQuery(dbPath, distinctSql, params);
-            if (rows && rows.length > 0) {
-              const values = rows.map((r: any) => r.val).filter((v: any) => v !== undefined && v !== null);
+            const stats = await this.duckDBService.runQuery(dbPath, minMaxSql);
+            if (stats && stats.length > 0) {
               return {
                 success: true,
                 sourceId,
                 fieldId: cleanFieldId,
-                values,
-                totalCount: values.length,
+                values: [],
+                totalCount: Number(stats[0].total_cnt || 0),
+                dateRange: { min: stats[0].min_val || null, max: stats[0].max_val || null },
                 isIndependentFallback,
               };
             }
           }
-        } catch (duckDbErr: any) {
-          console.warn(`[SourceRegistryService] DuckDB query warning on ${dbPath} for "${cleanFieldId}":`, duckDbErr?.message || duckDbErr);
-        }
-      }
-    }
 
           // Handle dropdown / searchable_dropdown
           let filterSql = `WHERE ${valExpr} IS NOT NULL AND TRIM(CAST(${valExpr} AS VARCHAR)) != ''`;
@@ -403,7 +350,10 @@ export class SourceRegistryService implements ISourceRegistryService {
             }
           }
 
-        let rows = sample.rows || [];
+          if (search && search.trim()) {
+            filterSql += ` AND LOWER(CAST(${valExpr} AS VARCHAR)) LIKE ?`;
+            params.push(`%${search.trim().toLowerCase()}%`);
+          }
 
           const distinctSql = `
             SELECT DISTINCT ${valExpr} AS val
@@ -426,7 +376,7 @@ export class SourceRegistryService implements ISourceRegistryService {
             };
           }
         } catch (duckDbErr: any) {
-          console.warn(`[SourceRegistryService] DuckDB query warning for "${cleanFieldId}":`, duckDbErr?.message || duckDbErr);
+          console.warn(`[SourceRegistryService] DuckDB query warning on ${dbPath} for "${cleanFieldId}":`, duckDbErr?.message || duckDbErr);
         }
       }
     } catch (err: any) {
