@@ -9,6 +9,10 @@ export class AgentThinkingService implements IAgentThinkingService {
     return this.agentThinkingRepository.getThinking(projectId, pipeline, substep);
   }
 
+  async getAllThinking(projectId: string, pipeline?: string): Promise<Record<string, ThinkingLog[]>> {
+    return this.agentThinkingRepository.getAllThinking(projectId, pipeline);
+  }
+
   async saveThinking(projectId: string, pipeline: string, substep: string, thinking: ThinkingLog[]): Promise<AgentThinking> {
     return this.agentThinkingRepository.saveThinking(projectId, pipeline, substep, thinking);
   }

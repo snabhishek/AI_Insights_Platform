@@ -94,6 +94,7 @@ interface ProjectDetailPageProps {
   pausedAtPhase?: string | null;
   onPause?: () => void;
   onResume?: () => void;
+  agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   showAlert: (opts: { title: string; message: string; type: AlertType; logs?: string }) => void;
 }
 
@@ -128,6 +129,7 @@ export default function ProjectDetailPage({
   pausedAtPhase,
   onPause,
   onResume,
+  agentThinking,
   showAlert,
 }: ProjectDetailPageProps) {
   const [isEditingUseCase, setIsEditingUseCase] = React.useState(false);
@@ -490,6 +492,7 @@ export default function ProjectDetailPage({
             workflowMessage={workflowMessage}
             projectId={project.id}
             agentState={project.agentState}
+            agentThinking={agentThinking}
           />
         );
       })()}

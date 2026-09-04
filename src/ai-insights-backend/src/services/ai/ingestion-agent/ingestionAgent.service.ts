@@ -225,8 +225,8 @@ export class IngestionAgentService implements IIngestionAgentService {
       // Determine the single unified runTimestamp for this execution
       const activeRunTimestamp =
         options?.action === "approve" ||
-        options?.action === "retry" ||
-        (options?.step && options.step !== "Data Inspection" && options.step !== "inspect")
+          options?.action === "retry" ||
+          (options?.step && options.step !== "Data Inspection" && options.step !== "inspect")
           ? savedAgentState?.runTimestamp || generateDateTimeStamp()
           : generateDateTimeStamp();
 
@@ -645,7 +645,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             if (savedAgentState && (savedAgentState.schemaResolution || savedAgentState.stageOutputs)) {
               console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
 
-              const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" ? "exogenous" : "resolveSchema";
+              const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" ? "exogenous" : "resolveSchema";
               const restoredState = {
                 ...savedAgentState,
                 connectorId,
@@ -669,7 +669,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         if (hasState) {
           stream = await workflow.stream(null, config);
         } else {
-          const approvingModelPhase = options.step === "Model Training & Validation" || options.step === "modelSelection";
+          const approvingModelPhase = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode";
           console.warn(`[Workflow] No checkpoint found for approve. Restoring the ${approvingModelPhase ? "Feature Engineering" : "Data Ingestion"} boundary.`);
           const fallbackState = {
             connectorId,
@@ -856,16 +856,19 @@ export class IngestionAgentService implements IIngestionAgentService {
               }
             } else if (nodeName === "exogenous" || nodeName === "exogenousScout") {
               updated.exogenousScout = "Completed";
-            } else if (nodeName === "modelTraining") {
+            } else if (nodeName === "trainingConfiguration" || nodeName === "trainingConfigurationNode") {
+              updated.trainingConfiguration = "Completed";
+              updated.modelTraining = "In Progress";
+            } else if (nodeName === "modelTraining" || nodeName === "modelTrainingNode") {
               updated.modelTraining = "Completed";
               updated.modelEvaluation = "In Progress";
-            } else if (nodeName === "modelEvaluation") {
+            } else if (nodeName === "modelEvaluation" || nodeName === "modelEvaluationNode") {
               updated.modelEvaluation = "Completed";
               updated.modelValidation = "In Progress";
-            } else if (nodeName === "modelValidation") {
+            } else if (nodeName === "modelValidation" || nodeName === "modelValidationNode") {
               updated.modelValidation = "Completed";
               updated.modelSelection = "In Progress";
-            } else if (nodeName === "modelSelection") {
+            } else if (nodeName === "modelSelection" || nodeName === "modelSelectionNode" || nodeName === "finalModelSelection" || nodeName === "finalModelSelectionNode") {
               updated.modelSelection = "Completed";
             }
             return updated;
@@ -962,7 +965,7 @@ export class IngestionAgentService implements IIngestionAgentService {
           const nextNode = Array.isArray(graphState?.next) ? graphState.next[0] : undefined;
           const approvalTarget = nextNode === "hierarchyMapperNode"
             ? "Feature Engineering"
-            : nextNode === "modelSelection"
+            : (nextNode === "modelSelectionNode" || nextNode === "modelSelection")
               ? "Model Training & Validation"
               : undefined;
           const isAtApprovalGate = Boolean(approvalTarget);
@@ -1240,39 +1243,42 @@ export class IngestionAgentService implements IIngestionAgentService {
     }
   }
 
-  private async getAllProjectPipelineThinking(projectId: string, pipeline: string): Promise<Record<string, Array<{ time: string; text: string; done: boolean }>>> {
-    const map: Record<string, Array<{ time: string; text: string; done: boolean }>> = {};
+  private async getAllProjectPipelineThinking(projectId: string, _pipeline?: string): Promise<Record<string, Array<{ time: string; text: string; done: boolean }>>> {
     try {
-      const allSubsteps = [
-        "Data Inspection",
-        "Data Ingestion",
-        "Data Profiling",
-        "Schema Resolver",
-        "Hierarchy Mapper",
-        "Relationship Builder",
-        "Form Builder",
-        "Feature Architect",
-        "Feature Validator",
-        "Exogenous Scout",
-        "Feature Engineering",
-        "featureSupervisor",
-        "featureCreation",
-        "featureTransformation",
-        "buildDataset",
-        "dataValidation",
-        "featureExtraction",
-        "featureSelection",
-        "programRectifier",
+      const allLogs = await this.agentThinkingService.getAllThinking(projectId);
+      const map: Record<string, Array<{ time: string; text: string; done: boolean }>> = { ...allLogs };
+
+      // Ensure aliases between internal node names and canonical UI step titles
+      const aliasPairs: [string, string][] = [
+        ["inspect", "Data Inspection"],
+        ["profileData", "Data Profiling"],
+        ["preprocess", "Data Profiling"],
+        ["resolveSchema", "Schema Resolver"],
+        ["hierarchyMapperNode", "Hierarchy Mapper"],
+        ["hierarchyMapper", "Hierarchy Mapper"],
+        ["featureArchitectNode", "Feature Architect"],
+        ["featureArchitect", "Feature Architect"],
+        ["featureValidatorNode", "Feature Validator"],
+        ["featureValidator", "Feature Validator"],
+        ["exogenousScout", "Exogenous Scout"],
+        ["exogenous", "Exogenous Scout"],
+        ["modelSelectionNode", "Model Selection"],
+        ["modelSelection", "Model Selection"],
+        ["finalModelSelectionNode", "Model Selection"],
+        ["trainingConfigurationNode", "Training Configuration"],
+        ["trainingConfiguration", "Training Configuration"],
+        ["modelTrainingNode", "Model Training"],
+        ["modelTraining", "Model Training"],
+        ["modelEvaluationNode", "Model Training"],
+        ["modelValidationNode", "Model Validation"],
+        ["modelValidation", "Model Validation"],
       ];
 
-      for (const substep of allSubsteps) {
-        const entry =
-          (await this.agentThinkingService.getThinking(projectId, "Feature Engineering", substep)) ||
-          (await this.agentThinkingService.getThinking(projectId, "Data Ingestion", substep)) ||
-          (await this.agentThinkingService.getThinking(projectId, pipeline, substep));
-
-        if (entry && Array.isArray(entry.thinking) && entry.thinking.length > 0) {
-          map[substep] = entry.thinking;
+      for (const [nodeId, title] of aliasPairs) {
+        if (map[title] && !map[nodeId]) {
+          map[nodeId] = map[title];
+        } else if (map[nodeId] && !map[title]) {
+          map[title] = map[nodeId];
         }
       }
 
@@ -1304,11 +1310,15 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       if (aggregatedFaLogs.length > 0) {
         map["Feature Architect"] = aggregatedFaLogs;
+        map["featureArchitectNode"] = aggregatedFaLogs;
+        map["featureArchitect"] = aggregatedFaLogs;
       }
+
+      return map;
     } catch (err) {
       console.warn("Failed to retrieve agent thinking logs:", err);
+      return {};
     }
-    return map;
   }
 
   async stop(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }> {

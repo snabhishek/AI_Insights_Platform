@@ -42,12 +42,12 @@ function extractTableNames(source: Record<string, unknown>): string[] {
 function formatStageOutput(stage: string, stageOutputs: Record<string, unknown>) {
   const payloads = (stage === "profileData" || stage === "preprocess")
     ? [
-        { label: "Data Profiling", output: stageOutputs.profileData },
-        { label: "Preprocessing", output: stageOutputs.preprocess },
-      ]
+      { label: "Data Profiling", output: stageOutputs.profileData },
+      { label: "Preprocessing", output: stageOutputs.preprocess },
+    ]
     : [
-        { label: stage === "inspect" ? "Inspection" : "Schema Resolution", output: stageOutputs[stage] ?? stageOutputs[stage === "inspect" ? "inspect" : stage] },
-      ];
+      { label: stage === "inspect" ? "Inspection" : "Schema Resolution", output: stageOutputs[stage] ?? stageOutputs[stage === "inspect" ? "inspect" : stage] },
+    ];
 
   const groups: Array<{ title: string; body: string }> = [];
   const add = (title: string, body: string) => {
@@ -237,7 +237,12 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
   return "Not Started";
 }
 
-const MODEL_SUBSTEPS = ["Model Training", "Model Evaluation", "Model Validation", "Model Selection"] as const;
+const MODEL_SUBSTEPS = [
+  "Model Selection",
+  "Training Configuration",
+  "Model Training",
+  "Model Validation",
+] as const;
 
 function calculateModelStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
   const statuses = MODEL_SUBSTEPS.map((step) => (pipelineStatuses[step] as PipelineStatus) ?? "Not Started");
@@ -328,17 +333,17 @@ export default function WorkflowPipeline({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {(requiresApproval && runStatus === "Paused") ? (
+          {requiresApproval ? (
             <>
               <button
                 type="button"
                 onClick={onApprove}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer shrink-0 animate-pulse"
               >
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
-                Approve
+                Proceed to Next Phase
               </button>
               <button
                 type="button"
@@ -432,11 +437,10 @@ export default function WorkflowPipeline({
               {idx < PIPELINE_STEPS.length - 1 && (
                 <div className="flex min-w-4 flex-1 items-center" aria-hidden="true">
                   <span
-                    className={`h-1 min-w-0 flex-1 transition-colors duration-500 ${
-                      connectorComplete
+                    className={`h-1 min-w-0 flex-1 transition-colors duration-500 ${connectorComplete
                         ? "bg-gradient-to-r from-blue-500 to-indigo-500"
                         : "bg-border/60 dark:bg-white/15"
-                    }`}
+                      }`}
                   />
                 </div>
               )}
@@ -497,28 +501,34 @@ export default function WorkflowPipeline({
           <span className="text-muted-foreground">Last run: {lastRunTime}</span>
 
           <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${
-              runStatus === "Running"
-                ? "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
-                : runStatus === "Paused"
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${requiresApproval || runStatus === "Paused"
                 ? "bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
-                : runStatus === "Success"
-                ? "bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
-                : "bg-surface-muted text-muted-foreground border border-border"
-            }`}
+                : runStatus === "Running"
+                  ? "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
+                  : runStatus === "Success"
+                    ? "bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                    : "bg-surface-muted text-muted-foreground border border-border"
+              }`}
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                runStatus === "Running"
-                  ? "bg-indigo-500 animate-ping"
-                  : runStatus === "Paused"
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${requiresApproval || runStatus === "Paused"
                   ? "bg-amber-500 animate-pulse"
-                  : runStatus === "Success"
-                  ? "bg-emerald-500"
-                  : "bg-muted-foreground"
-              }`}
+                  : runStatus === "Running"
+                    ? "bg-indigo-500 animate-ping"
+                    : runStatus === "Success"
+                      ? "bg-emerald-500"
+                      : "bg-muted-foreground"
+                }`}
             />
-            {runStatus === "Running" ? "Running" : runStatus === "Paused" ? "Awaiting Approval" : runStatus === "Success" ? "Success" : "Idle"}
+            {requiresApproval
+              ? "Awaiting Approval"
+              : runStatus === "Running"
+                ? "Running"
+                : runStatus === "Paused"
+                  ? "Paused"
+                  : runStatus === "Success"
+                    ? "Success"
+                    : "Idle"}
           </span>
 
           <button

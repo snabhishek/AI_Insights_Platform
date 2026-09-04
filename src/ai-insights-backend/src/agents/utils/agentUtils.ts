@@ -448,6 +448,17 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     featureValidatorNode: "Feature Validator",
     exogenousScout: "Exogenous Scout",
     exogenous: "Exogenous Scout",
+    modelSelection: "Model Selection",
+    modelSelectionNode: "Model Selection",
+    finalModelSelectionNode: "Model Selection",
+    trainingConfiguration: "Training Configuration",
+    trainingConfigurationNode: "Training Configuration",
+    modelTraining: "Model Training",
+    modelTrainingNode: "Model Training",
+    modelEvaluation: "Model Training",
+    modelEvaluationNode: "Model Training",
+    modelValidation: "Model Validation",
+    modelValidationNode: "Model Validation",
   };
   const substep = substepMap[stepName] || "Data Inspection";
 
@@ -749,7 +760,19 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
   const isRunningOrDone = (v?: string) => v === "Completed" || v === "In Progress" || v === "Running";
 
-  for (const node of ["modelSelection", "modelValidation", "modelEvaluation", "modelTraining"]) {
+  for (const node of [
+    "finalModelSelectionNode",
+    "modelSelectionNode",
+    "modelSelection",
+    "modelValidationNode",
+    "modelValidation",
+    "modelEvaluationNode",
+    "modelEvaluation",
+    "modelTrainingNode",
+    "modelTraining",
+    "trainingConfigurationNode",
+    "trainingConfiguration",
+  ]) {
     if (isRunningOrDone(stageStatuses[node]) || nextNodes.includes(node)) return node;
   }
 
@@ -832,6 +855,7 @@ export function buildResultFromGraphState(
     featureArchitect: "Pending",
     featureValidator: "Pending",
     exogenousScout: "Pending",
+    trainingConfiguration: "Pending",
     modelTraining: "Pending",
     modelEvaluation: "Pending",
     modelValidation: "Pending",
@@ -845,7 +869,7 @@ export function buildResultFromGraphState(
   const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
   const isFeatureEngineeringStarted = stageStatuses.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending";
   const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted;
-  const isAtModelApproval = nextNodes.includes("modelSelection") && stageStatuses.exogenousScout === "Completed";
+  const isAtModelApproval = (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) && stageStatuses.exogenousScout === "Completed";
   const requiresApproval = status !== "failed" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval);
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
@@ -862,6 +886,7 @@ export function buildResultFromGraphState(
     featureArchitect: (values.featureArchitect && typeof values.featureArchitect === "object") ? values.featureArchitect : {},
     featureValidator: (values.featureValidator && typeof values.featureValidator === "object") ? values.featureValidator : {},
     exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
+    trainingConfiguration: (values.trainingConfiguration && typeof values.trainingConfiguration === "object") ? values.trainingConfiguration : {},
     modelTraining: (values.modelTraining && typeof values.modelTraining === "object") ? values.modelTraining : {},
     modelEvaluation: (values.modelEvaluation && typeof values.modelEvaluation === "object") ? values.modelEvaluation : {},
     modelValidation: (values.modelValidation && typeof values.modelValidation === "object") ? values.modelValidation : {},
@@ -900,15 +925,24 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
     "Feature Engineering": "hierarchyMapperNode",
-    modelTraining: "modelTraining",
-    "Model Training": "modelTraining",
-    modelEvaluation: "modelEvaluation",
-    "Model Evaluation": "modelEvaluation",
-    modelValidation: "modelValidation",
-    "Model Validation": "modelValidation",
-    modelSelection: "modelSelection",
-    "Model Selection": "modelSelection",
-    "Model Training & Validation": "modelSelection",
+    trainingConfiguration: "trainingConfigurationNode",
+    trainingConfigurationNode: "trainingConfigurationNode",
+    "Training Configuration": "trainingConfigurationNode",
+    modelTraining: "modelTrainingNode",
+    modelTrainingNode: "modelTrainingNode",
+    "Model Training": "modelTrainingNode",
+    modelEvaluation: "modelEvaluationNode",
+    modelEvaluationNode: "modelEvaluationNode",
+    "Model Evaluation": "modelEvaluationNode",
+    modelValidation: "modelValidationNode",
+    modelValidationNode: "modelValidationNode",
+    "Model Validation": "modelValidationNode",
+    modelSelection: "modelSelectionNode",
+    modelSelectionNode: "modelSelectionNode",
+    finalModelSelection: "finalModelSelectionNode",
+    finalModelSelectionNode: "finalModelSelectionNode",
+    "Model Selection": "modelSelectionNode",
+    "Model Training & Validation": "modelSelectionNode",
   };
   return step ? mapping[step] : undefined;
 }

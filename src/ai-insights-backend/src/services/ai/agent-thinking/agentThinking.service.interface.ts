@@ -2,6 +2,7 @@ import { AgentThinking, ThinkingLog } from "../../../models/agentThinking.types"
 
 export interface IAgentThinkingService {
   getThinking(projectId: string, pipeline: string, substep: string): Promise<AgentThinking | undefined>;
+  getAllThinking(projectId: string, pipeline?: string): Promise<Record<string, ThinkingLog[]>>;
   saveThinking(projectId: string, pipeline: string, substep: string, thinking: ThinkingLog[]): Promise<AgentThinking>;
   deleteThinking(projectId: string, pipeline: string, substep: string): Promise<void>;
   clearProjectPipelineThinking(projectId: string, pipeline: string): Promise<void>;
