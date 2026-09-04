@@ -116,7 +116,7 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
   }, [showInfo]);
 
   return (
-    <div ref={containerRef} className="relative select-none flex justify-center w-full">
+    <div ref={containerRef} className="relative flex w-full min-w-0 justify-center select-none">
       {/* Modern Info Popover Card - Displayed on info icon click */}
       <div
         className={`absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 min-w-[160px] max-w-[210px] p-3 rounded-xl bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border border-border/80 dark:border-white/15 shadow-xl transition-all duration-200 ease-out z-50 text-left ${
@@ -130,12 +130,11 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
         <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-surface/95 dark:bg-slate-900/95 border-r border-b border-border/80 dark:border-white/15 rotate-45" />
       </div>
 
-      {/* Card body container - Opaque background with fixed width of 140px and original height of 230px */}
+      {/* Card body scales with its phase column so the pipeline stays inside its container. */}
       <button
         type="button"
         onClick={() => onSelect?.(step.id)}
-        style={{ width: 155, height: 230, outline: "none" }}
-        className={`relative rounded-lg border-2 bg-[#F5F5F5] dark:bg-surface p-4.5 flex flex-col items-center justify-between transition-all duration-300 hover:-translate-y-1 cursor-pointer text-left ${colors.border} ${colors.shadow} ${isActive ? "ring-2 ring-primary/60 shadow-lg" : ""}`}
+        className={`relative flex aspect-[31/46] w-full max-w-[155px] flex-col items-center justify-between rounded-lg border-2 bg-[#F5F5F5] p-2 text-left outline-none transition-all duration-300 hover:-translate-y-1 sm:p-4.5 dark:bg-surface cursor-pointer ${colors.border} ${colors.shadow} ${isActive ? "ring-2 ring-primary/60 shadow-lg" : ""}`}
       >
         {/* Monospaced card index in background — opacity-[0.08] applied statically so Tailwind JIT picks it up */}
         <div className={`absolute right-5 bottom-4 text-7xl font-black font-mono pointer-events-none select-none leading-none opacity-[0.08] ${colors.glow}`}>

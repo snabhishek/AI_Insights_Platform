@@ -10,7 +10,7 @@ import {
   MongodbIcon,
   RestApiIcon,
 } from "../datasource/Icons";
-import { DataSource, ConnectionConfig } from "../providers/AppContext";
+import { DataSource, ConnectionConfig, BACKEND_URL } from "../providers/AppContext";
 import ConnectionModal from "../datasource/ConnectionModal";
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -193,8 +193,7 @@ export default function ProjectCreatePage({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:5000/api";
-    fetch(`${backendUrl}/domains`)
+    fetch(`${BACKEND_URL}/domains`)
       .then((res) => (res.ok ? res.json() : []))
       .then((data) => {
         if (Array.isArray(data) && data.length > 0) {

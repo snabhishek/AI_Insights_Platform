@@ -13,6 +13,7 @@ import ExogenousScoutStepOutput from "./pipeline-outputs/ExogenousScoutStepOutpu
 import HierarchyMapperStepOutput from "./pipeline-outputs/HierarchyMapperStepOutput";
 import FeatureArchitectStepOutput from "./pipeline-outputs/FeatureArchitectStepOutput";
 import FeatureValidatorStepOutput from "./pipeline-outputs/FeatureValidatorStepOutput";
+import ModelTrainingValidationStepOutput from "./pipeline-outputs/ModelTrainingValidationStepOutput";
 
 type AlertType = "error" | "success" | "info";
 
@@ -93,6 +94,7 @@ interface ProjectDetailPageProps {
   pausedAtPhase?: string | null;
   onPause?: () => void;
   onResume?: () => void;
+  agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   showAlert: (opts: { title: string; message: string; type: AlertType; logs?: string }) => void;
 }
 
@@ -127,6 +129,7 @@ export default function ProjectDetailPage({
   pausedAtPhase,
   onPause,
   onResume,
+  agentThinking,
   showAlert,
 }: ProjectDetailPageProps) {
   const [isEditingUseCase, setIsEditingUseCase] = React.useState(false);
@@ -463,6 +466,18 @@ export default function ProjectDetailPage({
           "Exogenous Scout": stageOutputs.exogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
+          "Model Selection": stageOutputs.modelTraining ? (
+            <ModelTrainingValidationStepOutput />
+          ) : null,
+          "Training Configuration": stageOutputs.modelTraining ? (
+            <ModelTrainingValidationStepOutput />
+          ) : null,
+          "Model Training": stageOutputs.modelTraining ? (
+            <ModelTrainingValidationStepOutput />
+          ) : null,
+          "Model Validation": stageOutputs.modelTraining ? (
+            <ModelTrainingValidationStepOutput />
+          ) : null
         };
         console.log(stageOutputs)
 
@@ -477,6 +492,7 @@ export default function ProjectDetailPage({
             workflowMessage={workflowMessage}
             projectId={project.id}
             agentState={project.agentState}
+            agentThinking={agentThinking}
           />
         );
       })()}

@@ -133,9 +133,9 @@ export const PIPELINE_STEPS: Workflow[] = [
     ]
   },
   {
-    id: "Model Training",
-    title: "Model Training",
-    description: "Train predictive models from prepared data",
+    id: "Model Training & Validation",
+    title: "Model Training & Validation",
+    description: "Train, evaluate, validate, and select the best model",
     // metric: "Train",
     color: "pink",
     icon: (
@@ -148,36 +148,12 @@ export const PIPELINE_STEPS: Workflow[] = [
         <circle cx="20" cy="19" r="2" />
       </svg>
     ),
-  },
-  {
-    id: "Model Validation",
-    title: "Model Validation",
-    description: "Validate model quality and confidence",
-    // metric: "Validate",
-    color: "teal",
-    icon: (
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-        <rect x="4" y="4" width="16" height="16" rx="2" />
-        <path d="M8 12h8" />
-        <path d="M8 8h8" />
-        <path d="M8 16h5" />
-      </svg>
-    ),
-  },
-  {
-    id: "Forecast",
-    title: "Forecast",
-    description: "Publish the final forecast for business action",
-    // metric: "Forecast",
-    color: "red",
-    icon: (
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M5 19V9" />
-        <path d="M12 19V5" />
-        <path d="M19 19v-7" />
-        <path d="M2 19h20" />
-      </svg>
-    ),
+    step: [
+      { id: "Model Selection", title: "Model Selection", description: "Initialize model selection and select candidates", metric: "Select", color: "purple", icon: <span>01</span> },
+      { id: "Training Configuration", title: "Training Configuration", description: "Configure training environment and dataset splits", metric: "Configure", color: "pink", icon: <span>02</span> },
+      { id: "Model Training", title: "Model Training", description: "Train candidate models from the validated feature dataset", metric: "Train", color: "pink", icon: <span>03</span> },
+      { id: "Model Validation", title: "Model Validation", description: "Validate the leading model on held-out data", metric: "Validate", color: "teal", icon: <span>04</span> },
+    ],
   },
 ];
 
@@ -186,7 +162,8 @@ export const INITIAL_PIPELINE_STATUSES: Record<string, "Not Started"> = {
   "Data Profiling": "Not Started",
   "Schema Resolver": "Not Started",
   "Feature Engineering": "Not Started",
+  "Model Selection": "Not Started",
+  "Training Configuration": "Not Started",
   "Model Training": "Not Started",
   "Model Validation": "Not Started",
-  "Forecast": "Not Started",
 };
