@@ -16,7 +16,7 @@ import { INITIAL_PIPELINE_STATUSES } from "../projects/constants";
 import ProjectsListPage from "../projects/ProjectsListPage";
 import ProjectDetailPage from "../projects/ProjectDetailPage";
 import ProjectCreatePage from "../projects/ProjectCreatePage";
-import { executeWorkflowApi, pauseWorkflowApi, pauseWorkflowApi, stopWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
+import { executeWorkflowApi, pauseWorkflowApi, stopWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
 
 interface WorkflowResponse {
   success: boolean;
