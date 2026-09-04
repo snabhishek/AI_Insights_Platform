@@ -13,9 +13,9 @@ import {
 import { useApp, Project } from "../providers/AppContext";
 import { PipelineStatuses, RunStatus } from "../projects/types";
 import { INITIAL_PIPELINE_STATUSES } from "../projects/constants";
-import ProjectsListPage   from "../projects/ProjectsListPage";
-import ProjectDetailPage  from "../projects/ProjectDetailPage";
-import ProjectCreatePage  from "../projects/ProjectCreatePage";
+import ProjectsListPage from "../projects/ProjectsListPage";
+import ProjectDetailPage from "../projects/ProjectDetailPage";
+import ProjectCreatePage from "../projects/ProjectCreatePage";
 import { executeWorkflowApi, pauseWorkflowApi, stopWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
 
 interface WorkflowResponse {
@@ -31,6 +31,7 @@ interface WorkflowResponse {
     currentStage?: string;
     stageOutputs?: Record<string, unknown>;
     stageStatuses?: Record<string, string>;
+    agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
     inspection?: Record<string, unknown>;
     schemaResolution?: Record<string, unknown>;
     dataProfile?: Record<string, unknown>;
@@ -42,16 +43,16 @@ interface WorkflowResponse {
 
 function renderDataSourceIcon(type: string): React.ReactNode {
   switch (type) {
-    case "postgres":   return <PostgresqlIcon size={16} />;
-    case "mysql":      return <MysqlIcon size={16} />;
-    case "sqlserver":  return <SqlServerIcon size={16} />;
-    case "snowflake":  return <SnowflakeIcon size={16} />;
-    case "mongodb":    return <MongodbIcon size={16} />;
-    case "excel":      return <Image src="/images/microsoft-excel.jpg" alt="Excel"  width={16} height={16} className="object-contain shrink-0" />;
-    case "csv":        return <Image src="/images/csv.png"              alt="CSV"   width={16} height={16} className="object-contain shrink-0" />;
-    case "tsv":        return <Image src="/images/tsv.png"              alt="TSV"   width={16} height={16} className="object-contain shrink-0" />;
-    case "restapi":    return <RestApiIcon size={16} />;
-    default:           return null;
+    case "postgres": return <PostgresqlIcon size={16} />;
+    case "mysql": return <MysqlIcon size={16} />;
+    case "sqlserver": return <SqlServerIcon size={16} />;
+    case "snowflake": return <SnowflakeIcon size={16} />;
+    case "mongodb": return <MongodbIcon size={16} />;
+    case "excel": return <Image src="/images/microsoft-excel.jpg" alt="Excel" width={16} height={16} className="object-contain shrink-0" />;
+    case "csv": return <Image src="/images/csv.png" alt="CSV" width={16} height={16} className="object-contain shrink-0" />;
+    case "tsv": return <Image src="/images/tsv.png" alt="TSV" width={16} height={16} className="object-contain shrink-0" />;
+    case "restapi": return <RestApiIcon size={16} />;
+    default: return null;
   }
 }
 
@@ -76,7 +77,7 @@ export default function ProjectsPage() {
   } = useApp();
 
   // ── View routing ──────────────────────────────────────────────────────────
-  const [view, setView]                     = useState<View>("list");
+  const [view, setView] = useState<View>("list");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
@@ -96,8 +97,10 @@ export default function ProjectsPage() {
   const [workflowSessionId, setWorkflowSessionId] = useState<string | null>(null);
   const [activeStage, setActiveStage] = useState<string | null>(null);
   const [stageOutputs, setStageOutputs] = useState<Record<string, unknown>>({});
+  const [agentThinking, setAgentThinking] = useState<Record<string, Array<{ time: string; text: string; done: boolean }>>>({});
   const [workflowMessage, setWorkflowMessage] = useState<string>("Idle");
   const [requiresApproval, setRequiresApproval] = useState(false);
+  const [approvalNextStep, setApprovalNextStep] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const isExecutingRef = useRef<boolean>(false);
 
@@ -119,8 +122,10 @@ export default function ProjectsPage() {
     setWorkflowSessionId(null);
     setActiveStage(null);
     setStageOutputs({});
+    setAgentThinking({});
     setWorkflowMessage("Idle");
     setRequiresApproval(false);
+    setApprovalNextStep(null);
     // Clear pause state
     setIsPaused(false);
     setPausedAtPhase(null);
@@ -157,7 +162,6 @@ export default function ProjectsPage() {
     };
 
     mapSingle("inspect", "Data Inspection");
-    mapSingle("inspect", "Data Inspection");
     mapSingle("resolveSchema", "Schema Resolver");
     mapSingle("hierarchyMapper", "Hierarchy Mapper");
     mapSingle("hierarchyMapperNode", "Hierarchy Mapper");
@@ -169,6 +173,14 @@ export default function ProjectsPage() {
     mapSingle("featureValidatorNode", "Feature Validator");
     mapSingle("exogenousScout", "Exogenous Scout");
     mapSingle("exogenous", "Exogenous Scout");
+    mapSingle("modelSelection", "Model Selection");
+    mapSingle("modelSelectionNode", "Model Selection");
+    mapSingle("trainingConfiguration", "Training Configuration");
+    mapSingle("trainingConfigurationNode", "Training Configuration");
+    mapSingle("modelTraining", "Model Training");
+    mapSingle("modelTrainingNode", "Model Training");
+    mapSingle("modelValidation", "Model Validation");
+    mapSingle("modelValidationNode", "Model Validation");
 
     // Merged stage: Data Profiling = profileData + preprocess
     const profileVal = stageStatuses.profileData;
@@ -199,6 +211,9 @@ export default function ProjectsPage() {
 
   const determineActiveStage = (payload: Partial<WorkflowResponse["data"]>): string => {
     if (payload.status === "completed" || payload.requiresApproval) {
+      if (payload.stageOutputs?.modelSelection || payload.stageStatuses?.modelSelection) {
+        return "modelSelection";
+      }
       if (payload.stageOutputs?.exogenousScout || payload.stageStatuses?.exogenousScout || payload.stageStatuses?.exogenous) {
         return "exogenousScout";
       }
@@ -261,8 +276,14 @@ export default function ProjectsPage() {
       if (state.stageOutputs) {
         setStageOutputs(state.stageOutputs);
       }
+      if (state.agentThinking) {
+        setAgentThinking(state.agentThinking);
+      } else {
+        setAgentThinking({});
+      }
       setActiveStage(determineActiveStage(state));
       setRequiresApproval(Boolean(state.requiresApproval));
+      setApprovalNextStep(state.requiresApproval ? (state.nextStep || "Feature Engineering") : null);
       if (state.sessionId) {
         setWorkflowSessionId(state.sessionId);
       }
@@ -284,9 +305,11 @@ export default function ProjectsPage() {
       // Fresh project with no workflow runs yet
       setPipelineStatuses(INITIAL_PIPELINE_STATUSES);
       setStageOutputs({});
+      setAgentThinking({});
       setRunStatus("Idle");
       setIsPaused(false);
       setRequiresApproval(false);
+      setApprovalNextStep(null);
       setWorkflowSessionId(null);
       setWorkflowMessage("");
       setLastRunTime("Not run yet");
@@ -306,7 +329,7 @@ export default function ProjectsPage() {
     } else if (payload.status === "failed") {
       setRunStatus("Idle");
       setIsPaused(false);
-    } else if (payload.status === "paused") {
+    } else if (payload.status === "paused" || payload.requiresApproval) {
       setRunStatus("Paused");
       if (payload.requiresApproval) {
         setIsPaused(false);
@@ -314,9 +337,6 @@ export default function ProjectsPage() {
         setIsPaused(true);
         setPausedAtPhase(determineActiveStage(payload));
       }
-    } else if (payload.requiresApproval) {
-      setRunStatus("Paused");
-      setIsPaused(false);
     } else {
       setRunStatus("Running");
       setIsPaused(false);
@@ -326,13 +346,20 @@ export default function ProjectsPage() {
     if (payload.stageOutputs) {
       setStageOutputs(payload.stageOutputs);
     }
+    if (payload.agentThinking) {
+      setAgentThinking((prev) => ({
+        ...prev,
+        ...payload.agentThinking,
+      }));
+    }
     if (payload.sessionId) {
       setWorkflowSessionId(payload.sessionId);
     }
-    
+
     setActiveStage(determineActiveStage(payload));
     setRequiresApproval(Boolean(payload.requiresApproval));
-    
+    setApprovalNextStep(payload.requiresApproval ? (payload.nextStep || null) : null);
+
     if (payload.status === "completed") {
       setLastRunTime(new Date().toLocaleString("en-US", {
         month: "short",
@@ -421,8 +448,9 @@ export default function ProjectsPage() {
         "Schema Resolver": "Pending",
         "Feature Engineering": "Not Started",
         "Model Training": "Not Started",
+        "Model Evaluation": "Not Started",
         "Model Validation": "Not Started",
-        "Forecast": "Not Started",
+        "Model Selection": "Not Started",
       });
       // Clear pause state when starting fresh
       setIsPaused(false);
@@ -454,6 +482,11 @@ export default function ProjectsPage() {
           "Feature Validator": "featureArchitectNode",
           "Exogenous Scout": "exogenous",
           "Feature Engineering": "hierarchyMapperNode",
+          "Model Training & Validation": "modelSelectionNode",
+          "Model Training": "modelTrainingNode",
+          "Model Evaluation": "modelEvaluationNode",
+          "Model Validation": "modelValidationNode",
+          "Model Selection": "modelSelectionNode",
         };
         payload.step = stepMap[step] || step;
       }
@@ -571,17 +604,28 @@ export default function ProjectsPage() {
   };
 
   const handleApprove = () => {
+    const targetPhase = approvalNextStep === "Model Training & Validation"
+      ? "Model Training & Validation"
+      : "Feature Engineering";
     setRequiresApproval(false);
+    setApprovalNextStep(null);
     setRunStatus("Running");
     setIsPaused(false);
-    setActiveStage("Feature Engineering");
-    setWorkflowMessage("Advancing workflow to Feature Engineering stage...");
+    setActiveStage(targetPhase);
+    setWorkflowMessage(`Advancing workflow to ${targetPhase} stage...`);
     setPipelineStatuses((prev) => ({
       ...prev,
-      "Data Inspection": "Completed",
-      "Data Profiling": "Completed",
-      "Schema Resolver": "Completed",
-      "Feature Engineering": "In Progress",
+      ...(targetPhase === "Feature Engineering"
+        ? {
+          "Data Inspection": "Completed" as const,
+          "Data Profiling": "Completed" as const,
+          "Schema Resolver": "Completed" as const,
+          "Feature Engineering": "In Progress" as const,
+        }
+        : {
+          "Feature Engineering": "Completed" as const,
+          "Model Selection": "In Progress" as const,
+        }),
     }));
 
     // Clear pause state
@@ -589,7 +633,7 @@ export default function ProjectsPage() {
     setPausedAtPhase(null);
     setPausedStateSnapshot(null);
 
-    void runWorkflow("approve", "Feature Engineering");
+    void runWorkflow("approve", targetPhase);
   };
 
   const handleRetry = (step?: string) => {
@@ -605,6 +649,11 @@ export default function ProjectsPage() {
       "Schema Resolver": "resolveSchema",
       "Exogenous Scout": "exogenous",
       "Feature Engineering": "exogenous",
+      "Model Training & Validation": "modelSelection",
+      "Model Training": "modelTraining",
+      "Model Evaluation": "modelEvaluation",
+      "Model Validation": "modelValidation",
+      "Model Selection": "modelSelection",
     };
     const normalizedStep = typeof step === "string" ? stepMap[step] || step : undefined;
     void runWorkflow("retry", normalizedStep);
@@ -690,6 +739,7 @@ export default function ProjectsPage() {
       "Schema Resolver": "resolveSchema",
       "Exogenous Scout": "exogenousScout",
       "Feature Engineering": "exogenousScout",
+      "Model Training & Validation": "modelSelection",
     };
     setActiveStage(stageMap[stepId] || stepId);
   };
@@ -711,8 +761,9 @@ export default function ProjectsPage() {
       "Schema Resolver": "Pending",
       "Feature Engineering": "Not Started",
       "Model Training": "Not Started",
+      "Model Evaluation": "Not Started",
       "Model Validation": "Not Started",
-      "Forecast": "Not Started",
+      "Model Selection": "Not Started",
     });
     void runWorkflow(undefined, undefined, newUseCase ?? selectedProject.useCase);
   };
@@ -803,6 +854,7 @@ export default function ProjectsPage() {
         pausedAtPhase={pausedAtPhase}
         onPause={handlePauseWorkflow}
         onResume={handleResumeWorkflow}
+        agentThinking={agentThinking}
         showAlert={showAlert}
       />
     );

@@ -39,6 +39,29 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
     }
   }
 
+  async getAllThinking(projectId: string, pipeline?: string): Promise<Record<string, ThinkingLog[]>> {
+    try {
+      const conditions = [eq(agentThinking.projectId, projectId)];
+      if (pipeline) {
+        conditions.push(eq(agentThinking.pipeline, pipeline));
+      }
+      const res = await this.db.select()
+        .from(agentThinking)
+        .where(and(...conditions));
+
+      const map: Record<string, ThinkingLog[]> = {};
+      for (const row of res) {
+        if (row.substep) {
+          map[row.substep] = (row.thinking as ThinkingLog[]) || [];
+        }
+      }
+      return map;
+    } catch (err: any) {
+      console.warn(`[AgentThinkingRepository] Error fetching all thinking for project ${projectId}:`, err.message || err);
+      return {};
+    }
+  }
+
   async saveThinking(projectId: string, pipeline: string, substep: string, thinking: ThinkingLog[]): Promise<AgentThinking> {
     try {
       const existing = await this.getThinking(projectId, pipeline, substep);

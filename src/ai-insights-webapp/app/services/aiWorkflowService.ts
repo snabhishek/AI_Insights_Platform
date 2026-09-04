@@ -14,6 +14,7 @@ export interface WorkflowResponseData {
   summary: string;
   stageStatuses?: Record<string, string>;
   stageOutputs?: Record<string, unknown>;
+  agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   sessionId?: string;
   requiresApproval?: boolean;
   nextStep?: string;
@@ -97,3 +98,26 @@ export async function fetchAgentThinkingApi(
   }
   return res.json();
 }
+
+/**
+  Fetches all saved agent thinking logs for a project from the backend.
+ */
+export async function fetchProjectThinkingApi(
+  projectId: string,
+  pipeline?: string
+): Promise<{ success: boolean; data?: { agentThinking: Record<string, Array<{ time: string; text: string; done: boolean }>> } }> {
+  let url = `${BACKEND_URL}/ai/thinking?projectId=${encodeURIComponent(projectId)}`;
+  if (pipeline) {
+    url += `&pipeline=${encodeURIComponent(pipeline)}`;
+  }
+  const res = await fetch(url, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    if (res.status === 404) return { success: true };
+    throw new Error(`Failed to fetch project thinking: ${res.statusText}`);
+  }
+  return res.json();
+}
+

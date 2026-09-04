@@ -15,16 +15,29 @@ export class AIController {
       substep?: string;
     };
 
-    if (!projectId || !pipeline || !substep) {
-      res.status(400).json({ success: false, message: "projectId, pipeline, and substep query parameters are required" });
+    if (!projectId) {
+      res.status(400).json({ success: false, message: "projectId query parameter is required" });
       return;
     }
 
     try {
-      const thinkingRecord = await this.agentThinkingService.getThinking(projectId, pipeline, substep);
+      if (substep) {
+        if (!pipeline) {
+          res.status(400).json({ success: false, message: "pipeline query parameter is required when substep is provided" });
+          return;
+        }
+        const thinkingRecord = await this.agentThinkingService.getThinking(projectId, pipeline, substep);
+        res.json({
+          success: true,
+          data: thinkingRecord ? { thinking: thinkingRecord.thinking } : null,
+        });
+        return;
+      }
+
+      const allThinking = await this.agentThinkingService.getAllThinking(projectId, pipeline);
       res.json({
         success: true,
-        data: thinkingRecord ? { thinking: thinkingRecord.thinking } : null,
+        data: { agentThinking: allThinking },
       });
     } catch (error: any) {
       res.status(500).json({

@@ -42,12 +42,12 @@ function extractTableNames(source: Record<string, unknown>): string[] {
 function formatStageOutput(stage: string, stageOutputs: Record<string, unknown>) {
   const payloads = (stage === "profileData" || stage === "preprocess")
     ? [
-        { label: "Data Profiling", output: stageOutputs.profileData },
-        { label: "Preprocessing", output: stageOutputs.preprocess },
-      ]
+      { label: "Data Profiling", output: stageOutputs.profileData },
+      { label: "Preprocessing", output: stageOutputs.preprocess },
+    ]
     : [
-        { label: stage === "inspect" ? "Inspection" : "Schema Resolution", output: stageOutputs[stage] ?? stageOutputs[stage === "inspect" ? "inspect" : stage] },
-      ];
+      { label: stage === "inspect" ? "Inspection" : "Schema Resolution", output: stageOutputs[stage] ?? stageOutputs[stage === "inspect" ? "inspect" : stage] },
+    ];
 
   const groups: Array<{ title: string; body: string }> = [];
   const add = (title: string, body: string) => {
@@ -176,9 +176,15 @@ const MAIN_STEP_MAPPING: Record<string, string> = {
   "Feature Architect": "Feature Engineering",
   "Feature Validator": "Feature Engineering",
   "Feature Engineering": "Feature Engineering",
-  "Model Training": "Model Training",
-  "Model Validation": "Model Validation",
-  "Forecast": "Forecast",
+  "Model Training": "Model Training & Validation",
+  "modelTraining": "Model Training & Validation",
+  "Model Evaluation": "Model Training & Validation",
+  "modelEvaluation": "Model Training & Validation",
+  "Model Validation": "Model Training & Validation",
+  "modelValidation": "Model Training & Validation",
+  "Model Selection": "Model Training & Validation",
+  "modelSelection": "Model Training & Validation",
+  "Model Training & Validation": "Model Training & Validation",
 };
 
 const DEFAULT_MAIN_STEP_ID = "Data Ingestion";
@@ -231,12 +237,30 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
   return "Not Started";
 }
 
+const MODEL_SUBSTEPS = [
+  "Model Selection",
+  "Training Configuration",
+  "Model Training",
+  "Model Validation",
+] as const;
+
+function calculateModelStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
+  const statuses = MODEL_SUBSTEPS.map((step) => (pipelineStatuses[step] as PipelineStatus) ?? "Not Started");
+  if (statuses.every((status) => status === "Completed")) return "Completed";
+  if (statuses.some((status) => status === "In Progress" || status === "Completed")) return "In Progress";
+  if (statuses.some((status) => status === "Pending")) return "Pending";
+  return "Not Started";
+}
+
 export function getMainStepStatus(stepId: string, pipelineStatuses: PipelineStatuses): PipelineStatus {
   if (stepId === "Data Ingestion") {
     return calculateDataIngestionStatus(pipelineStatuses);
   }
   if (stepId === "Feature Engineering") {
     return calculateFeatureEngineeringStatus(pipelineStatuses);
+  }
+  if (stepId === "Model Training & Validation") {
+    return calculateModelStatus(pipelineStatuses);
   }
   return (pipelineStatuses[stepId] as PipelineStatus) ?? "Not Started";
 }
@@ -288,27 +312,9 @@ export default function WorkflowPipeline({
   const currentStage = activeStage || "inspect";
   const mainSelectedStage = getMainStepId(currentStage);
 
-  // Compute 5-main-step level statuses and progress line width across the 4 segment connections
+  // Compute top-level phase statuses and progress across the connections between them.
   const mainStatusMap = getMainStepStatuses(pipelineStatuses, runStatus);
   const mainStatuses = PIPELINE_STEPS.map((step) => mainStatusMap[step.id]);
-
-  let completedMainCount = 0;
-  for (let i = 0; i < mainStatuses.length; i++) {
-    if (mainStatuses[i] === "Completed") {
-      completedMainCount++;
-    } else {
-      break;
-    }
-  }
-
-  const nextIsInProgress = completedMainCount < mainStatuses.length && mainStatuses[completedMainCount] === "In Progress";
-  const totalSegments = PIPELINE_STEPS.length - 1; // 4 segments between 5 main cards
-  const calculatedCompletionPct = completedMainCount === PIPELINE_STEPS.length
-    ? 100
-    : Math.min(
-        100,
-        Math.max(0, ((completedMainCount + (nextIsInProgress ? 0.5 : 0)) / totalSegments) * 100)
-      );
 
   const hasExistingRun =
     lastRunTime !== "Not run yet" ||
@@ -327,17 +333,17 @@ export default function WorkflowPipeline({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {(requiresApproval && runStatus === "Paused") ? (
+          {requiresApproval ? (
             <>
               <button
                 type="button"
                 onClick={onApprove}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer shrink-0 animate-pulse"
               >
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
                   <polyline points="20 6 9 17 4 12" />
                 </svg>
-                Approve
+                Proceed to Next Phase
               </button>
               <button
                 type="button"
@@ -412,26 +418,35 @@ export default function WorkflowPipeline({
         </div>
       </div>
 
-      <div className="relative w-full flex items-center justify-between select-none">
-        <div className="absolute top-[125px] left-[7.15%] right-[7.15%] h-[5px] bg-border/40 dark:bg-white/10 rounded-full pointer-events-none select-none z-0">
-          <div
-            className="h-full rounded-full bg-gradient-to-r from-emerald-500 via-indigo-500 to-violet-600 transition-all duration-700 shadow-[0_0_12px_rgba(99,102,241,0.65)]"
-            style={{ width: `${calculatedCompletionPct}%` }}
-          />
-        </div>
+      <div className="flex w-full min-w-0 items-center px-2 py-5 sm:px-4 select-none">
+        {PIPELINE_STEPS.map((step, idx) => {
+          const connectorComplete = mainStatuses[idx] === "Completed";
 
-        <div className="flex-1 flex justify-between w-full gap-2 xl:gap-3 relative z-10 py-5">
-          {PIPELINE_STEPS.map((step, idx) => (
-            <WorkflowCard
-              key={step.id}
-              step={step}
-              status={mainStatusMap[step.id]}
-              index={idx}
-              isActive={mainSelectedStage === step.id}
-              onSelect={onSelectStage}
-            />
-          ))}
-        </div>
+          return (
+            <React.Fragment key={step.id}>
+              <div className="flex min-w-0 flex-[0_1_155px] justify-center">
+                <WorkflowCard
+                  step={step}
+                  status={mainStatusMap[step.id]}
+                  index={idx}
+                  isActive={mainSelectedStage === step.id}
+                  onSelect={onSelectStage}
+                />
+              </div>
+
+              {idx < PIPELINE_STEPS.length - 1 && (
+                <div className="flex min-w-4 flex-1 items-center" aria-hidden="true">
+                  <span
+                    className={`h-1 min-w-0 flex-1 transition-colors duration-500 ${connectorComplete
+                        ? "bg-gradient-to-r from-blue-500 to-indigo-500"
+                        : "bg-border/60 dark:bg-white/15"
+                      }`}
+                  />
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
       </div>
 
       <div className="border-t border-border pt-5 mt-2 flex flex-col gap-4">
@@ -486,28 +501,34 @@ export default function WorkflowPipeline({
           <span className="text-muted-foreground">Last run: {lastRunTime}</span>
 
           <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${
-              runStatus === "Running"
-                ? "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
-                : runStatus === "Paused"
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${requiresApproval || runStatus === "Paused"
                 ? "bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
-                : runStatus === "Success"
-                ? "bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
-                : "bg-surface-muted text-muted-foreground border border-border"
-            }`}
+                : runStatus === "Running"
+                  ? "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
+                  : runStatus === "Success"
+                    ? "bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
+                    : "bg-surface-muted text-muted-foreground border border-border"
+              }`}
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${
-                runStatus === "Running"
-                  ? "bg-indigo-500 animate-ping"
-                  : runStatus === "Paused"
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${requiresApproval || runStatus === "Paused"
                   ? "bg-amber-500 animate-pulse"
-                  : runStatus === "Success"
-                  ? "bg-emerald-500"
-                  : "bg-muted-foreground"
-              }`}
+                  : runStatus === "Running"
+                    ? "bg-indigo-500 animate-ping"
+                    : runStatus === "Success"
+                      ? "bg-emerald-500"
+                      : "bg-muted-foreground"
+                }`}
             />
-            {runStatus === "Running" ? "Running" : runStatus === "Paused" ? "Awaiting Approval" : runStatus === "Success" ? "Success" : "Idle"}
+            {requiresApproval
+              ? "Awaiting Approval"
+              : runStatus === "Running"
+                ? "Running"
+                : runStatus === "Paused"
+                  ? "Paused"
+                  : runStatus === "Success"
+                    ? "Success"
+                    : "Idle"}
           </span>
 
           <button
