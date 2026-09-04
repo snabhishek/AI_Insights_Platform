@@ -225,8 +225,8 @@ export class IngestionAgentService implements IIngestionAgentService {
       // Determine the single unified runTimestamp for this execution
       const activeRunTimestamp =
         options?.action === "approve" ||
-        options?.action === "retry" ||
-        (options?.step && options.step !== "Data Inspection" && options.step !== "inspect")
+          options?.action === "retry" ||
+          (options?.step && options.step !== "Data Inspection" && options.step !== "inspect")
           ? savedAgentState?.runTimestamp || generateDateTimeStamp()
           : generateDateTimeStamp();
 
@@ -645,7 +645,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             if (savedAgentState && (savedAgentState.schemaResolution || savedAgentState.stageOutputs)) {
               console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
 
-              const predecessorNode = "resolveSchema";
+              const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" ? "exogenous" : "resolveSchema";
               const restoredState = {
                 ...savedAgentState,
                 connectorId,
@@ -653,7 +653,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
                 runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
                 status: "running",
-                summary: "Advancing to Feature Engineering",
+                summary: `Advancing to ${options.step || "Feature Engineering"}`,
               };
 
               await workflow.updateState(config, restoredState, predecessorNode);
@@ -669,14 +669,15 @@ export class IngestionAgentService implements IIngestionAgentService {
         if (hasState) {
           stream = await workflow.stream(null, config);
         } else {
-          console.warn(`[Workflow] No next node or checkpoint found for approve. Initializing state from resolveSchema.`);
+          const approvingModelPhase = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode";
+          console.warn(`[Workflow] No checkpoint found for approve. Restoring the ${approvingModelPhase ? "Feature Engineering" : "Data Ingestion"} boundary.`);
           const fallbackState = {
             connectorId,
             projectId: options?.projectId ?? "",
             userPrompt: userPrompt ?? "",
             runTimestamp: activeRunTimestamp,
             status: "running",
-            summary: "Resuming workflow at Feature Engineering",
+            summary: `Resuming workflow at ${approvingModelPhase ? "Model Training & Validation" : "Feature Engineering"}`,
             inspection: {},
             dataProfile: {},
             schemaResolution: {},
@@ -684,9 +685,11 @@ export class IngestionAgentService implements IIngestionAgentService {
             batchedTables: [],
             steps: [],
             stageOutputs: {},
-            stageStatuses: { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "In Progress", featureArchitect: "Pending", exogenousScout: "Pending" }
+            stageStatuses: approvingModelPhase
+              ? { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "Completed", featureArchitect: "Completed", featureValidator: "Completed", exogenousScout: "Completed", modelTraining: "In Progress" }
+              : { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "In Progress", featureArchitect: "Pending", exogenousScout: "Pending" }
           };
-          await workflow.updateState(config, fallbackState, "resolveSchema");
+          await workflow.updateState(config, fallbackState, approvingModelPhase ? "exogenous" : "resolveSchema");
           stream = await workflow.stream(null, config);
         }
       } else if (options?.action === "resume") {
@@ -853,6 +856,20 @@ export class IngestionAgentService implements IIngestionAgentService {
               }
             } else if (nodeName === "exogenous" || nodeName === "exogenousScout") {
               updated.exogenousScout = "Completed";
+            } else if (nodeName === "trainingConfiguration" || nodeName === "trainingConfigurationNode") {
+              updated.trainingConfiguration = "Completed";
+              updated.modelTraining = "In Progress";
+            } else if (nodeName === "modelTraining" || nodeName === "modelTrainingNode") {
+              updated.modelTraining = "Completed";
+              updated.modelEvaluation = "In Progress";
+            } else if (nodeName === "modelEvaluation" || nodeName === "modelEvaluationNode") {
+              updated.modelEvaluation = "Completed";
+              updated.modelValidation = "In Progress";
+            } else if (nodeName === "modelValidation" || nodeName === "modelValidationNode") {
+              updated.modelValidation = "Completed";
+              updated.modelSelection = "In Progress";
+            } else if (nodeName === "modelSelection" || nodeName === "modelSelectionNode" || nodeName === "finalModelSelection" || nodeName === "finalModelSelectionNode") {
+              updated.modelSelection = "Completed";
             }
             return updated;
           };
@@ -945,25 +962,29 @@ export class IngestionAgentService implements IIngestionAgentService {
             };
           }
 
-          const isAtApprovalGate =
-            Array.isArray(graphState?.next) &&
-            graphState.next.includes("hierarchyMapperNode") &&
-            options?.action !== "approve";
+          const nextNode = Array.isArray(graphState?.next) ? graphState.next[0] : undefined;
+          const approvalTarget = nextNode === "hierarchyMapperNode"
+            ? "Feature Engineering"
+            : (nextNode === "modelSelectionNode" || nextNode === "modelSelection")
+              ? "Model Training & Validation"
+              : undefined;
+          const isAtApprovalGate = Boolean(approvalTarget);
 
           if (isAtApprovalGate) {
-            console.info(`[Workflow] Reached Stage 1 (Data Ingestion) completion. Pausing for user approval before Feature Engineering.`);
+            console.info(`[Workflow] Pausing for user approval before ${approvalTarget}.`);
+            const completedPhase = approvalTarget === "Feature Engineering" ? "Data Ingestion" : "Feature Engineering";
             const pausedValues = {
               ...latestGraphStateValues,
               status: "paused",
               requiresApproval: true,
-              summary: "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.",
-              message: "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.",
+              summary: `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`,
+              message: `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`,
             };
             latestGraphStateValues = pausedValues;
             const pausedResult = buildResultFromGraphState({ values: pausedValues, next: graphState?.next }, threadId, connectorId);
             pausedResult.status = "paused";
             pausedResult.requiresApproval = true;
-            pausedResult.nextStep = "Feature Engineering";
+            pausedResult.nextStep = approvalTarget;
             if (options?.projectId) {
               await this.projectService.updateAgentState(options.projectId, pausedValues);
               pausedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
@@ -1222,39 +1243,42 @@ export class IngestionAgentService implements IIngestionAgentService {
     }
   }
 
-  private async getAllProjectPipelineThinking(projectId: string, pipeline: string): Promise<Record<string, Array<{ time: string; text: string; done: boolean }>>> {
-    const map: Record<string, Array<{ time: string; text: string; done: boolean }>> = {};
+  private async getAllProjectPipelineThinking(projectId: string, _pipeline?: string): Promise<Record<string, Array<{ time: string; text: string; done: boolean }>>> {
     try {
-      const allSubsteps = [
-        "Data Inspection",
-        "Data Ingestion",
-        "Data Profiling",
-        "Schema Resolver",
-        "Hierarchy Mapper",
-        "Relationship Builder",
-        "Form Builder",
-        "Feature Architect",
-        "Feature Validator",
-        "Exogenous Scout",
-        "Feature Engineering",
-        "featureSupervisor",
-        "featureCreation",
-        "featureTransformation",
-        "buildDataset",
-        "dataValidation",
-        "featureExtraction",
-        "featureSelection",
-        "programRectifier",
+      const allLogs = await this.agentThinkingService.getAllThinking(projectId);
+      const map: Record<string, Array<{ time: string; text: string; done: boolean }>> = { ...allLogs };
+
+      // Ensure aliases between internal node names and canonical UI step titles
+      const aliasPairs: [string, string][] = [
+        ["inspect", "Data Inspection"],
+        ["profileData", "Data Profiling"],
+        ["preprocess", "Data Profiling"],
+        ["resolveSchema", "Schema Resolver"],
+        ["hierarchyMapperNode", "Hierarchy Mapper"],
+        ["hierarchyMapper", "Hierarchy Mapper"],
+        ["featureArchitectNode", "Feature Architect"],
+        ["featureArchitect", "Feature Architect"],
+        ["featureValidatorNode", "Feature Validator"],
+        ["featureValidator", "Feature Validator"],
+        ["exogenousScout", "Exogenous Scout"],
+        ["exogenous", "Exogenous Scout"],
+        ["modelSelectionNode", "Model Selection"],
+        ["modelSelection", "Model Selection"],
+        ["finalModelSelectionNode", "Model Selection"],
+        ["trainingConfigurationNode", "Training Configuration"],
+        ["trainingConfiguration", "Training Configuration"],
+        ["modelTrainingNode", "Model Training"],
+        ["modelTraining", "Model Training"],
+        ["modelEvaluationNode", "Model Training"],
+        ["modelValidationNode", "Model Validation"],
+        ["modelValidation", "Model Validation"],
       ];
 
-      for (const substep of allSubsteps) {
-        const entry =
-          (await this.agentThinkingService.getThinking(projectId, "Feature Engineering", substep)) ||
-          (await this.agentThinkingService.getThinking(projectId, "Data Ingestion", substep)) ||
-          (await this.agentThinkingService.getThinking(projectId, pipeline, substep));
-
-        if (entry && Array.isArray(entry.thinking) && entry.thinking.length > 0) {
-          map[substep] = entry.thinking;
+      for (const [nodeId, title] of aliasPairs) {
+        if (map[title] && !map[nodeId]) {
+          map[nodeId] = map[title];
+        } else if (map[nodeId] && !map[title]) {
+          map[title] = map[nodeId];
         }
       }
 
@@ -1286,11 +1310,15 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       if (aggregatedFaLogs.length > 0) {
         map["Feature Architect"] = aggregatedFaLogs;
+        map["featureArchitectNode"] = aggregatedFaLogs;
+        map["featureArchitect"] = aggregatedFaLogs;
       }
+
+      return map;
     } catch (err) {
       console.warn("Failed to retrieve agent thinking logs:", err);
+      return {};
     }
-    return map;
   }
 
   async stop(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }> {

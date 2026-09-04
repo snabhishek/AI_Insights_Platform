@@ -15,6 +15,7 @@ interface CardModalProps {
   workflowMessage?: string;
   projectId?: string;
   agentState?: Record<string, any>;
+  agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
 }
 
 // Map color strings to active Tailwind text/border/bg classes for step circles
@@ -67,12 +68,14 @@ export default function CardModal({
   workflowMessage = "",
   projectId,
   agentState,
+  agentThinking,
 }: CardModalProps) {
   const [activeStepIndex, setActiveStepIndex] = useState<number>(0);
   const [thinkingLogs, setThinkingLogs] = useState<Array<{ time: string; text: string; done: boolean }>>([]);
   const [activeTab, setActiveTab] = useState<"output" | "thinking">("output");
   const lastStepIdRef = useRef<string>("");
   const lastStepStatusRef = useRef<string>("");
+  const logsEndRef = useRef<HTMLDivElement>(null);
 
   const stepsList: WorkflowStep[] = workflowCard?.step || [];
   const activeStep = stepsList[activeStepIndex] || null;
@@ -121,7 +124,11 @@ export default function CardModal({
       }
     };
 
-    const streamed = agentState?.agentThinking?.[activeStep.id] || [];
+    const activeId = activeStep.id;
+    const streamed =
+      agentThinking?.[activeId] ||
+      agentState?.agentThinking?.[activeId] ||
+      [];
     if (streamed.length > 0) {
       setThinkingLogs(streamed);
     } else {
@@ -131,7 +138,14 @@ export default function CardModal({
     if (stepIdChanged) {
       lastStepIdRef.current = activeStep.id;
     }
-  }, [activeStep?.id, activeStepStatus, isOpen, projectId, agentState?.agentThinking, workflowCard?.id, workflowCard?.title]);
+  }, [activeStep?.id, activeStepStatus, isOpen, projectId, agentState?.agentThinking, agentThinking, workflowCard?.id, workflowCard?.title]);
+
+  // Auto-scroll terminal log container when new logs arrive
+  useEffect(() => {
+    if (activeTab === "thinking") {
+      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  }, [thinkingLogs, activeTab]);
 
   // Synchronize activeTab based on step status and selection
   useEffect(() => {
@@ -385,6 +399,7 @@ export default function CardModal({
                         No agent thinking logs available for this step.
                       </div>
                     )}
+                    <div ref={logsEndRef} />
                   </div>
                 </div>
               )

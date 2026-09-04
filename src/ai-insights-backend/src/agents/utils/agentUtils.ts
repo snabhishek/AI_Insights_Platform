@@ -448,6 +448,17 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     featureValidatorNode: "Feature Validator",
     exogenousScout: "Exogenous Scout",
     exogenous: "Exogenous Scout",
+    modelSelection: "Model Selection",
+    modelSelectionNode: "Model Selection",
+    finalModelSelectionNode: "Model Selection",
+    trainingConfiguration: "Training Configuration",
+    trainingConfigurationNode: "Training Configuration",
+    modelTraining: "Model Training",
+    modelTrainingNode: "Model Training",
+    modelEvaluation: "Model Training",
+    modelEvaluationNode: "Model Training",
+    modelValidation: "Model Validation",
+    modelValidationNode: "Model Validation",
   };
   const substep = substepMap[stepName] || "Data Inspection";
 
@@ -749,6 +760,22 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
   const isRunningOrDone = (v?: string) => v === "Completed" || v === "In Progress" || v === "Running";
 
+  for (const node of [
+    "finalModelSelectionNode",
+    "modelSelectionNode",
+    "modelSelection",
+    "modelValidationNode",
+    "modelValidation",
+    "modelEvaluationNode",
+    "modelEvaluation",
+    "modelTrainingNode",
+    "modelTraining",
+    "trainingConfigurationNode",
+    "trainingConfiguration",
+  ]) {
+    if (isRunningOrDone(stageStatuses[node]) || nextNodes.includes(node)) return node;
+  }
+
   const isExo = isRunningOrDone(stageStatuses.exogenousScout) || 
                 isRunningOrDone(stageStatuses.exogenous) || 
                 nextNodes.includes("exogenous");
@@ -778,9 +805,13 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
   const isRunning = (v?: string) => v === "In Progress" || v === "Running" || v === "Retrying";
   const isCompleted = (v?: string) => v === "Completed" || v === "Success";
 
-  if (status === "completed" || isCompleted(stageStatuses?.exogenousScout)) {
-    return "Feature Engineering and Data Ingestion completed successfully.";
+  if (status === "completed" || isCompleted(stageStatuses?.modelSelection)) {
+    return "Model Training & Validation completed successfully.";
   }
+  if (isRunning(stageStatuses?.modelSelection)) return "Selecting and persisting the best validated model...";
+  if (isRunning(stageStatuses?.modelValidation)) return "Validating the leading model on held-out data...";
+  if (isRunning(stageStatuses?.modelEvaluation)) return "Evaluating and ranking candidate models...";
+  if (isRunning(stageStatuses?.modelTraining)) return "Training candidate models...";
   if (isRunning(stageStatuses?.exogenousScout) || isRunning(stageStatuses?.exogenous)) {
     return "Scouting and ranking exogenous variables and external signals...";
   }
@@ -823,7 +854,12 @@ export function buildResultFromGraphState(
     hierarchyMapper: "Pending",
     featureArchitect: "Pending",
     featureValidator: "Pending",
-    exogenousScout: "Pending"
+    exogenousScout: "Pending",
+    trainingConfiguration: "Pending",
+    modelTraining: "Pending",
+    modelEvaluation: "Pending",
+    modelValidation: "Pending",
+    modelSelection: "Pending"
   };
   const stageStatuses = (values.stageStatuses && typeof values.stageStatuses === "object")
     ? values.stageStatuses as Record<string, string>
@@ -832,7 +868,9 @@ export function buildResultFromGraphState(
   
   const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
   const isFeatureEngineeringStarted = stageStatuses.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending";
-  const requiresApproval = isIngestionComplete && !isFeatureEngineeringStarted && status !== "failed";
+  const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted;
+  const isAtModelApproval = (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) && stageStatuses.exogenousScout === "Completed";
+  const requiresApproval = status !== "failed" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval);
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
   return {
@@ -848,10 +886,15 @@ export function buildResultFromGraphState(
     featureArchitect: (values.featureArchitect && typeof values.featureArchitect === "object") ? values.featureArchitect : {},
     featureValidator: (values.featureValidator && typeof values.featureValidator === "object") ? values.featureValidator : {},
     exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
+    trainingConfiguration: (values.trainingConfiguration && typeof values.trainingConfiguration === "object") ? values.trainingConfiguration : {},
+    modelTraining: (values.modelTraining && typeof values.modelTraining === "object") ? values.modelTraining : {},
+    modelEvaluation: (values.modelEvaluation && typeof values.modelEvaluation === "object") ? values.modelEvaluation : {},
+    modelValidation: (values.modelValidation && typeof values.modelValidation === "object") ? values.modelValidation : {},
+    modelSelection: (values.modelSelection && typeof values.modelSelection === "object") ? values.modelSelection : {},
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
-    nextStep: isIngestionComplete && !isFeatureEngineeringStarted ? "Feature Engineering" : (nextNodes[0] || "inspect"),
+    nextStep: isAtModelApproval ? "Model Training & Validation" : (isIngestionComplete && !isFeatureEngineeringStarted ? "Feature Engineering" : (nextNodes[0] || "inspect")),
     currentNode: currentStage,
     currentStage,
     stageOutputs: (values.stageOutputs && typeof values.stageOutputs === "object") ? values.stageOutputs : {},
@@ -882,6 +925,24 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     "Data Profiling": "profileData",
     "Schema Resolver": "resolveSchema",
     "Feature Engineering": "hierarchyMapperNode",
+    trainingConfiguration: "trainingConfigurationNode",
+    trainingConfigurationNode: "trainingConfigurationNode",
+    "Training Configuration": "trainingConfigurationNode",
+    modelTraining: "modelTrainingNode",
+    modelTrainingNode: "modelTrainingNode",
+    "Model Training": "modelTrainingNode",
+    modelEvaluation: "modelEvaluationNode",
+    modelEvaluationNode: "modelEvaluationNode",
+    "Model Evaluation": "modelEvaluationNode",
+    modelValidation: "modelValidationNode",
+    modelValidationNode: "modelValidationNode",
+    "Model Validation": "modelValidationNode",
+    modelSelection: "modelSelectionNode",
+    modelSelectionNode: "modelSelectionNode",
+    finalModelSelection: "finalModelSelectionNode",
+    finalModelSelectionNode: "finalModelSelectionNode",
+    "Model Selection": "modelSelectionNode",
+    "Model Training & Validation": "modelSelectionNode",
   };
   return step ? mapping[step] : undefined;
 }
