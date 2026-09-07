@@ -126,6 +126,16 @@ export class IngestionAgentService implements IIngestionAgentService {
     return undefined;
   }
 
+  isProjectActive(projectId?: string): boolean {
+    if (!projectId) return false;
+    for (const [sessionId, meta] of this.sessionMeta.entries()) {
+      if (meta.projectId === projectId && !this.stoppedSessions.has(sessionId) && !this.pausedSessions.has(sessionId)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
 
   constructor(
     private connectorService: ConnectorService,
@@ -214,7 +224,10 @@ export class IngestionAgentService implements IIngestionAgentService {
             latestGraphStateValues = {
               ...savedAgentState,
               status: "running",
-              summary: `Resuming workflow at ${options.step || "inspect"} phase`,
+              summary: options?.action === "approve"
+                ? `Advancing workflow to ${options.step || "Feature Engineering"} phase`
+                : `Resuming workflow at ${options.step || "inspect"} phase`,
+              ...(options?.action === "approve" ? { requiresApproval: false, nextStep: undefined } : {}),
             };
           }
         } catch (e) {
@@ -358,464 +371,32 @@ export class IngestionAgentService implements IIngestionAgentService {
           services,
         },
         recursionLimit: 100,
+        signal: sessionAbortController.signal,
       };
 
       const pipeline = "Data Ingestion";
-      if (options?.projectId) {
-        const projectId = options.projectId;
-        let activeSubstep: string | undefined;
-
-        if (options.action === "retry" && options.step) {
-          const stepMap: Record<string, string> = {
-            inspect: "Data Inspection",
-            profileData: "Data Profiling",
-            preprocess: "Data Profiling",
-            resolveSchema: "Schema Resolver",
-            hierarchyMapper: "Hierarchy Mapper",
-            hierarchyMapperNode: "Hierarchy Mapper",
-            "Hierarchy Mapper": "Hierarchy Mapper",
-            featureArchitect: "Feature Architect",
-            featureArchitectNode: "Feature Architect",
-            "Feature Architect": "Feature Architect",
-            featureValidator: "Feature Validator",
-            featureValidatorNode: "Feature Validator",
-            "Feature Validator": "Feature Validator",
-            exogenous: "Exogenous Scout",
-            exogenousScout: "Exogenous Scout",
-            "Exogenous Scout": "Exogenous Scout",
-            "Data Ingestion": "Data Ingestion",
-            "Data Profiling": "Data Profiling",
-            "Schema Resolver": "Schema Resolver",
-            "Feature Engineering": "Hierarchy Mapper"
-          };
-          const substep = stepMap[options.step];
-          if (substep) {
-            activeSubstep = substep;
-            if (substep === "Data Inspection" || substep === "Data Ingestion") {
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Inspection");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Ingestion");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
-            } else if (substep === "Data Profiling") {
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
-            } else if (substep === "Schema Resolver") {
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-            } else if (substep === "Hierarchy Mapper") {
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
-            } else if (substep === "Feature Architect") {
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
-            } else if (substep === "Feature Validator") {
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
-            } else if (substep === "Exogenous Scout") {
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-            } else if (substep === "Feature Engineering") {
-              await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
-            }
-          }
-        } else if (options.action === "approve") {
-          const graphState = await workflow.getState(config);
-          const nextNodes = Array.isArray(graphState?.next) ? graphState.next : [];
-          if (nextNodes.includes("profileData")) {
-            activeSubstep = "Data Profiling";
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
-          } else if (nextNodes.includes("resolveSchema")) {
-            activeSubstep = "Schema Resolver";
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-          } else if (nextNodes.includes("hierarchyMapperNode") || nextNodes.includes("hierarchyMapper")) {
-            activeSubstep = "Hierarchy Mapper";
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
-          } else if (nextNodes.includes("featureArchitectNode") || nextNodes.includes("featureArchitect")) {
-            activeSubstep = "Feature Architect";
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
-          } else if (nextNodes.includes("exogenous")) {
-            activeSubstep = "Exogenous Scout";
-            await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
-          }
-        } else {
-          activeSubstep = "Data Inspection";
-          await this.agentThinkingService.clearProjectPipelineThinking(projectId, pipeline);
-
-          const cleanInitialState = {
-            connectorId,
-            projectId: options.projectId,
-            userPrompt: userPrompt ?? "",
-            runTimestamp: activeRunTimestamp,
-            batchedTables: [],
-            inspection: {},
-            dataProfile: {},
-            preprocess: {},
-            schemaResolution: {},
-            hierarchyMapper: {},
-            featureArchitect: {},
-            featureValidator: {},
-            exogenousScout: {},
-            status: "running",
-            summary: "Ingestion workflow started",
-            steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
-            stageOutputs: {},
-            stageStatuses: {
-              inspect: "In Progress",
-              profileData: "Pending",
-              preprocess: "Pending",
-              resolveSchema: "Pending",
-              hierarchyMapper: "Pending",
-              featureArchitect: "Pending",
-              featureValidator: "Pending",
-              exogenousScout: "Pending"
-            }
-          };
-          try {
-            await this.projectService.updateAgentState(options.projectId, cleanInitialState, userPrompt);
-          } catch (e) {
-            console.warn("[Workflow] Failed to reset project agent state on new run:", e);
-          }
-        }
-
-        if (activeSubstep) {
-          const logs = SUBSTEP_THINKING_TEMPLATES[activeSubstep] || [];
-          const currentGraphState = await workflow.getState(config).catch(() => null);
-          const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
-
-          const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : "In Progress";
-          const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-          const schemaStatus = (activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || (activeSubstep === "Exogenous Scout") || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
-          const hierarchyStatus = (activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Hierarchy Mapper" ? "In Progress" : "Pending");
-          const featureArchitectStatus = (activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Feature Architect" || activeSubstep === "Feature Engineering" ? "In Progress" : "Pending");
-          const featureValidatorStatus = activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Feature Validator" ? "In Progress" : "Pending");
-          const exogenousStatus = activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending";
-
-          const mergedStageStatuses = {
-            ...(calculatedBase.stageStatuses || {}),
-            inspect: inspectStatus,
-            profileData: profileStatus,
-            preprocess: preprocessStatus,
-            resolveSchema: schemaStatus,
-            hierarchyMapper: hierarchyStatus,
-            featureArchitect: featureArchitectStatus,
-            featureValidator: featureValidatorStatus,
-            exogenousScout: exogenousStatus,
-          };
-
-          const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : activeSubstep === "Hierarchy Mapper" ? "hierarchyMapperNode" : activeSubstep === "Feature Architect" ? "featureArchitectNode" : activeSubstep === "Feature Validator" ? "featureArchitectNode" : "exogenousScout";
-
-          const fullBaseResult: IngestionAgentRunResult = {
-            ...calculatedBase,
-            connectorId,
-            status: "running",
-            summary: `${activeSubstep} agent reasoning in progress`,
-            sessionId: threadId,
-            requiresApproval: false,
-            stageStatuses: mergedStageStatuses,
-            currentNode: nodeKey,
-            currentStage: nodeKey,
-          };
-
-          for await (const thinkingUpdate of this.streamThinking(projectId, pipeline, activeSubstep, fullBaseResult, logs, threadId)) {
-            if (this.stoppedSessions.has(threadId)) break;
-            queue.push(thinkingUpdate);
-          }
-        }
-      }
-
-      let stream: any;
-
-      if (options?.action === "retry" && options.step) {
-        const targetNode = mapRetryStepToInterruptNode(options.step);
-        console.info(`[Workflow] Retry requested for step "${options.step}" → target node "${targetNode}", thread ${threadId}`);
-
-        if (targetNode === "inspect") {
-          // Retry inspect = start fresh with a new thread
-          threadId = `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-          meta = { threadId, connectorId, userPrompt: userPrompt ?? meta.userPrompt ?? "", projectId: options?.projectId };
-          this.sessionMeta.set(threadId, meta);
-          const freshConfig = {
-            configurable: {
-              thread_id: threadId,
-              services,
-            },
-            recursionLimit: 100,
-          };
-          if (options?.projectId) {
-            await this.agentThinkingService.clearProjectPipelineThinking(options.projectId, pipeline);
-          }
-          stream = await workflow.stream(
-            {
-              connectorId,
-              projectId: options?.projectId ?? "",
-              userPrompt: meta.userPrompt,
-              status: "queued",
-              summary: "Retrying from inspect",
-              inspection: {},
-              dataProfile: {},
-              schemaResolution: {},
-              preprocessing: {},
-              batchedTables: [],
-              steps: [],
-              stageOutputs: {},
-              stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
-            },
-            freshConfig
-          );
-        } else {
-          // For profileData or resolveSchema retry: find the checkpoint where that node is next
-          let retryCheckpointId: string | undefined;
-          try {
-            for await (const snapshot of workflow.getStateHistory(config)) {
-              const snapshotNext = Array.isArray(snapshot.next) ? snapshot.next : [];
-              if (snapshotNext.includes(targetNode!)) {
-                retryCheckpointId = (snapshot.config as any)?.configurable?.checkpoint_id;
-                break;
-              }
-            }
-          } catch (historyError: any) {
-            console.warn(`[Workflow] Failed to read state history for retry:`, historyError?.message);
-          }
-
-          if (retryCheckpointId) {
-            console.info(`[Workflow] Retrying from checkpoint ${retryCheckpointId}`);
-            const retryConfig = {
-              configurable: {
-                thread_id: threadId,
-                checkpoint_id: retryCheckpointId,
-                services,
-              },
-              recursionLimit: 100,
-            };
-            stream = await workflow.stream(null, retryConfig);
-          } else {
-            console.warn(`[Workflow] No checkpoint found for retry target "${targetNode}", resuming from current position`);
-            stream = await workflow.stream(null, config);
-          }
-        }
-      } else if (options?.action === "approve") {
-        // Approve: resume from the current interrupt
-        console.info(`[Workflow] Approve — resuming thread ${threadId}`);
-
-        let graphState = await workflow.getState(config).catch(() => null);
-        let hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
-
-        // If checkpointer has no state (e.g. server restart or fresh MemorySaver instance),
-        // restore state from project's persisted agentState in PostgreSQL!
-        if (!hasState && options?.projectId) {
-          try {
-            const project = await this.projectService.getById(options.projectId);
-            const savedAgentState = project?.agentState as any;
-            if (savedAgentState && (savedAgentState.schemaResolution || savedAgentState.stageOutputs)) {
-              console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
-
-              const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" ? "exogenous" : "resolveSchema";
-              const restoredState = {
-                ...savedAgentState,
-                connectorId,
-                projectId: options.projectId,
-                userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
-                runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
-                status: "running",
-                summary: `Advancing to ${options.step || "Feature Engineering"}`,
-              };
-
-              await workflow.updateState(config, restoredState, predecessorNode);
-              graphState = await workflow.getState(config).catch(() => null);
-              hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
-              console.info(`[Workflow] Restored graph state. Next node to execute: [${graphState?.next?.join(", ")}]`);
-            }
-          } catch (restoreErr: any) {
-            console.warn(`[Workflow] Failed to restore state from project:`, restoreErr?.message);
-          }
-        }
-
-        if (hasState) {
-          stream = await workflow.stream(null, config);
-        } else {
-          const approvingModelPhase = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode";
-          console.warn(`[Workflow] No checkpoint found for approve. Restoring the ${approvingModelPhase ? "Feature Engineering" : "Data Ingestion"} boundary.`);
-          const fallbackState = {
-            connectorId,
-            projectId: options?.projectId ?? "",
-            userPrompt: userPrompt ?? "",
-            runTimestamp: activeRunTimestamp,
-            status: "running",
-            summary: `Resuming workflow at ${approvingModelPhase ? "Model Training & Validation" : "Feature Engineering"}`,
-            inspection: {},
-            dataProfile: {},
-            schemaResolution: {},
-            preprocessing: {},
-            batchedTables: [],
-            steps: [],
-            stageOutputs: {},
-            stageStatuses: approvingModelPhase
-              ? { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "Completed", featureArchitect: "Completed", featureValidator: "Completed", exogenousScout: "Completed", modelTraining: "In Progress" }
-              : { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "In Progress", featureArchitect: "Pending", exogenousScout: "Pending" }
-          };
-          await workflow.updateState(config, fallbackState, approvingModelPhase ? "exogenous" : "resolveSchema");
-          stream = await workflow.stream(null, config);
-        }
-      } else if (options?.action === "resume") {
-        // Resume: continue from the paused phase (mid-execution checkpoint)
-        const targetStep = options.step || "inspect";
-        console.info(`[Workflow] Resume — continuing from thread ${threadId} at phase ${targetStep}`);
-
-        // Predecessor mapping: which node should be marked as completed so the next node is targetStep
-        const predecessorNodeMap: Record<string, string> = {
-          "inspect": "__start__",
-          "Data Inspection": "__start__",
-          "profileData": "inspect",
-          "Data Profiling": "inspect",
-          "preprocess": "inspect",
-          "resolveSchema": "profileData",
-          "Schema Resolver": "profileData",
-          "hierarchyMapperNode": "resolveSchema",
-          "hierarchyMapper": "resolveSchema",
-          "Hierarchy Mapper": "resolveSchema",
-          "featureArchitectNode": "hierarchyMapperNode",
-          "featureArchitect": "hierarchyMapperNode",
-          "Feature Architect": "hierarchyMapperNode",
-          "featureValidator": "featureArchitectNode",
-          "Feature Validator": "featureArchitectNode",
-          "exogenousScout": "featureArchitectNode",
-          "exogenous": "featureArchitectNode",
-          "Exogenous Scout": "featureArchitectNode",
-        };
-        const predecessorNode = predecessorNodeMap[targetStep] || "__start__";
-
-        let graphState = await workflow.getState(config).catch(() => null);
-        let hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
-
-        // If checkpointer has no state, restore from project's persisted agentState
-        if (!hasState && options?.projectId) {
-          try {
-            const project = await this.projectService.getById(options.projectId);
-            const savedAgentState = project?.agentState as any;
-            if (savedAgentState) {
-              console.info(`[Workflow] Restoring graph checkpointer state from project database for resume on thread ${threadId}`);
-
-              const restoredState = {
-                ...savedAgentState,
-                connectorId,
-                projectId: options.projectId,
-                userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
-                runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
-                status: "running",
-                summary: `Resuming from ${targetStep} phase`,
-              };
-
-              if (predecessorNode !== "__start__") {
-                await workflow.updateState(config, restoredState, predecessorNode);
-                graphState = await workflow.getState(config).catch(() => null);
-                hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
-                console.info(`[Workflow] Resume state restored. Next nodes: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}]`);
-              }
-            }
-          } catch (e) {
-            console.warn("[Workflow] Failed to restore resume state from database:", e);
-          }
-        }
-
-        if (predecessorNode === "__start__" || !hasState) {
-          console.info(`[Workflow] Resuming thread ${threadId} from start at phase ${targetStep}`);
-          stream = await workflow.stream(
-            {
-              connectorId,
-              projectId: options?.projectId ?? "",
-              userPrompt: userPrompt ?? "",
-              runTimestamp: activeRunTimestamp,
-              status: "running",
-              summary: `Resuming from ${targetStep} phase`,
-              inspection: savedAgentState?.inspection || {},
-              dataProfile: savedAgentState?.dataProfile || {},
-              schemaResolution: savedAgentState?.schemaResolution || {},
-              preprocessing: savedAgentState?.preprocessing || {},
-              batchedTables: savedAgentState?.batchedTables || [],
-              steps: savedAgentState?.steps || [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
-              stageOutputs: savedAgentState?.stageOutputs || {},
-              stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
-            },
-            config
-          );
-        } else {
-          stream = await workflow.stream(null, config);
-        }
-      } else {
-        // New workflow: first invocation / re-run
-        console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);
-        stream = await workflow.stream(
-          {
-            connectorId,
-            projectId: options?.projectId ?? "",
-            userPrompt: userPrompt ?? "",
-            runTimestamp: activeRunTimestamp,
-            status: "queued",
-            summary: "Ingestion workflow started",
-            inspection: {},
-            dataProfile: {},
-            schemaResolution: {},
-            preprocessing: {},
-            batchedTables: [],
-            steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
-            stageOutputs: {},
-            stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
-          },
-          config
-        );
-      }
 
       const initialStageStatuses = (options?.action === "resume" || options?.action === "retry") && savedAgentState?.stageStatuses
         ? { ...savedAgentState.stageStatuses, [options.step || "inspect"]: "In Progress" }
-        : { inspect: "Queued", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" };
+        : options?.action === "approve"
+          ? { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "In Progress", featureArchitect: "Pending", featureValidator: "Pending", exogenousScout: "Pending" }
+          : { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", hierarchyMapper: "Pending", featureArchitect: "Pending", featureValidator: "Pending", exogenousScout: "Pending" };
 
-      // 1. Push initial queued/resumed status to client immediately
+      // 1. Push initial status to client immediately (<10ms) to unblock SSE connection
       queue.push({
         connectorId,
         status: "running",
-        summary: options?.action === "resume" ? `Resuming workflow at ${options.step || "inspect"} phase` : "Workflow task has been queued. Waiting for resources...",
+        summary: options?.action === "resume"
+          ? `Resuming workflow at ${options.step || "inspect"} phase`
+          : options?.action === "approve"
+            ? `Advancing workflow to ${options.step || "Feature Engineering"}`
+            : "Workflow started. Initializing agent reasoning...",
         sessionId: threadId,
         requiresApproval: false,
         stageStatuses: initialStageStatuses,
-        currentNode: options?.step || "inspect",
-        currentStage: options?.step || "inspect",
-        steps: savedAgentState?.steps || [],
+        currentNode: options?.step || (options?.action === "approve" ? "hierarchyMapperNode" : "inspect"),
+        currentStage: options?.step || (options?.action === "approve" ? "hierarchyMapperNode" : "inspect"),
+        steps: savedAgentState?.steps || [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
         inspection: savedAgentState?.inspection || {},
         schemaResolution: savedAgentState?.schemaResolution || {},
         dataProfile: savedAgentState?.dataProfile || {},
@@ -874,6 +455,440 @@ export class IngestionAgentService implements IIngestionAgentService {
             return updated;
           };
 
+          if (options?.projectId) {
+            const projectId = options.projectId;
+            let activeSubstep: string | undefined;
+
+            if (options.action === "retry" && options.step) {
+              const stepMap: Record<string, string> = {
+                inspect: "Data Inspection",
+                profileData: "Data Profiling",
+                preprocess: "Data Profiling",
+                resolveSchema: "Schema Resolver",
+                hierarchyMapper: "Hierarchy Mapper",
+                hierarchyMapperNode: "Hierarchy Mapper",
+                "Hierarchy Mapper": "Hierarchy Mapper",
+                featureArchitect: "Feature Architect",
+                featureArchitectNode: "Feature Architect",
+                "Feature Architect": "Feature Architect",
+                featureValidator: "Feature Validator",
+                featureValidatorNode: "Feature Validator",
+                "Feature Validator": "Feature Validator",
+                exogenous: "Exogenous Scout",
+                exogenousScout: "Exogenous Scout",
+                "Exogenous Scout": "Exogenous Scout",
+                "Data Ingestion": "Data Ingestion",
+                "Data Profiling": "Data Profiling",
+                "Schema Resolver": "Schema Resolver",
+                "Feature Engineering": "Hierarchy Mapper"
+              };
+              const substep = stepMap[options.step];
+              if (substep) {
+                activeSubstep = substep;
+                if (substep === "Data Inspection" || substep === "Data Ingestion") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Inspection");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Ingestion");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+                } else if (substep === "Data Profiling") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+                } else if (substep === "Schema Resolver") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+                } else if (substep === "Hierarchy Mapper") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+                } else if (substep === "Feature Architect") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+                } else if (substep === "Feature Validator") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+                } else if (substep === "Exogenous Scout") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+                } else if (substep === "Feature Engineering") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+                }
+              }
+            } else if (options.action === "approve") {
+              const graphState = await workflow.getState(config).catch(() => null);
+              const nextNodes = Array.isArray(graphState?.next) ? graphState.next : [];
+              if (nextNodes.includes("profileData")) {
+                activeSubstep = "Data Profiling";
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Data Profiling");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+              } else if (nextNodes.includes("resolveSchema")) {
+                activeSubstep = "Schema Resolver";
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Schema Resolver");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              } else if (nextNodes.includes("hierarchyMapperNode") || nextNodes.includes("hierarchyMapper")) {
+                activeSubstep = "Hierarchy Mapper";
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Hierarchy Mapper");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+              } else if (nextNodes.includes("featureArchitectNode") || nextNodes.includes("featureArchitect")) {
+                activeSubstep = "Feature Architect";
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Architect");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Validator");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+              } else if (nextNodes.includes("exogenous")) {
+                activeSubstep = "Exogenous Scout";
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              }
+            } else {
+              activeSubstep = "Data Inspection";
+              await this.agentThinkingService.clearProjectPipelineThinking(projectId, pipeline);
+
+              const cleanInitialState = {
+                connectorId,
+                projectId: options.projectId,
+                userPrompt: userPrompt ?? "",
+                runTimestamp: activeRunTimestamp,
+                batchedTables: [],
+                inspection: {},
+                dataProfile: {},
+                preprocess: {},
+                schemaResolution: {},
+                hierarchyMapper: {},
+                featureArchitect: {},
+                featureValidator: {},
+                exogenousScout: {},
+                status: "running",
+                summary: "Ingestion workflow started",
+                steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
+                stageOutputs: {},
+                stageStatuses: {
+                  inspect: "In Progress",
+                  profileData: "Pending",
+                  preprocess: "Pending",
+                  resolveSchema: "Pending",
+                  hierarchyMapper: "Pending",
+                  featureArchitect: "Pending",
+                  featureValidator: "Pending",
+                  exogenousScout: "Pending"
+                }
+              };
+              try {
+                await this.projectService.updateAgentState(options.projectId, cleanInitialState, userPrompt);
+              } catch (e) {
+                console.warn("[Workflow] Failed to reset project agent state on new run:", e);
+              }
+            }
+
+            if (activeSubstep) {
+              const logs = SUBSTEP_THINKING_TEMPLATES[activeSubstep] || [];
+              const currentGraphState = await workflow.getState(config).catch(() => null);
+              const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
+
+              const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : "In Progress";
+              const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+              const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+              const schemaStatus = (activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || (activeSubstep === "Exogenous Scout") || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
+              const hierarchyStatus = (activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Hierarchy Mapper" ? "In Progress" : "Pending");
+              const featureArchitectStatus = (activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Feature Architect" || activeSubstep === "Feature Engineering" ? "In Progress" : "Pending");
+              const featureValidatorStatus = activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Feature Validator" ? "In Progress" : "Pending");
+              const exogenousStatus = activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending";
+
+              const mergedStageStatuses = {
+                ...(calculatedBase.stageStatuses || {}),
+                inspect: inspectStatus,
+                profileData: profileStatus,
+                preprocess: preprocessStatus,
+                resolveSchema: schemaStatus,
+                hierarchyMapper: hierarchyStatus,
+                featureArchitect: featureArchitectStatus,
+                featureValidator: featureValidatorStatus,
+                exogenousScout: exogenousStatus,
+              };
+
+              const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : activeSubstep === "Hierarchy Mapper" ? "hierarchyMapperNode" : activeSubstep === "Feature Architect" ? "featureArchitectNode" : activeSubstep === "Feature Validator" ? "featureArchitectNode" : "exogenousScout";
+
+              const fullBaseResult: IngestionAgentRunResult = {
+                ...calculatedBase,
+                connectorId,
+                status: "running",
+                summary: `${activeSubstep} agent reasoning in progress`,
+                sessionId: threadId,
+                requiresApproval: false,
+                stageStatuses: mergedStageStatuses,
+                currentNode: nodeKey,
+                currentStage: nodeKey,
+              };
+
+              for await (const thinkingUpdate of this.streamThinking(projectId, pipeline, activeSubstep, fullBaseResult, logs, threadId)) {
+                if (this.stoppedSessions.has(threadId)) break;
+                agentJobEvents.emit(`job:update:${threadId}`, thinkingUpdate);
+              }
+            }
+          }
+
+          let stream: any;
+
+          if (options?.action === "retry" && options.step) {
+            const targetNode = mapRetryStepToInterruptNode(options.step);
+            console.info(`[Workflow] Retry requested for step "${options.step}" → target node "${targetNode}", thread ${threadId}`);
+
+            if (targetNode === "inspect") {
+              this.checkpointer = new MemorySaver();
+              const freshConfig = {
+                configurable: {
+                  thread_id: threadId,
+                  services,
+                },
+                recursionLimit: 100,
+              };
+              if (options?.projectId) {
+                await this.agentThinkingService.clearProjectPipelineThinking(options.projectId, pipeline);
+              }
+              stream = await workflow.stream(
+                {
+                  connectorId,
+                  projectId: options?.projectId ?? "",
+                  userPrompt: meta.userPrompt,
+                  status: "queued",
+                  summary: "Retrying from inspect",
+                  inspection: {},
+                  dataProfile: {},
+                  schemaResolution: {},
+                  preprocessing: {},
+                  batchedTables: [],
+                  steps: [],
+                  stageOutputs: {},
+                  stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
+                },
+                freshConfig
+              );
+            } else {
+              let retryCheckpointId: string | undefined;
+              try {
+                for await (const snapshot of workflow.getStateHistory(config)) {
+                  const snapshotNext = Array.isArray(snapshot.next) ? snapshot.next : [];
+                  if (snapshotNext.includes(targetNode!)) {
+                    retryCheckpointId = (snapshot.config as any)?.configurable?.checkpoint_id;
+                    break;
+                  }
+                }
+              } catch (historyError: any) {
+                console.warn(`[Workflow] Failed to read state history for retry:`, historyError?.message);
+              }
+
+              if (retryCheckpointId) {
+                console.info(`[Workflow] Retrying from checkpoint ${retryCheckpointId}`);
+                const retryConfig = {
+                  configurable: {
+                    thread_id: threadId,
+                    checkpoint_id: retryCheckpointId,
+                    services,
+                  },
+                  recursionLimit: 100,
+                  signal: sessionAbortController.signal,
+                };
+                stream = await workflow.stream(null, retryConfig);
+              } else {
+                console.warn(`[Workflow] No checkpoint found for retry target "${targetNode}", resuming from current position`);
+                stream = await workflow.stream(null, config);
+              }
+            }
+          } else if (options?.action === "approve") {
+            console.info(`[Workflow] Approve — resuming thread ${threadId}`);
+
+            let graphState = await workflow.getState(config).catch(() => null);
+            let hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+
+            if (!hasState && options?.projectId) {
+              try {
+                const project = await this.projectService.getById(options.projectId);
+                const savedAgentState = project?.agentState as any;
+                if (savedAgentState && (savedAgentState.schemaResolution || savedAgentState.stageOutputs)) {
+                  console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
+
+                  const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" ? "exogenous" : "resolveSchema";
+                  const restoredState = {
+                    ...savedAgentState,
+                    connectorId,
+                    projectId: options.projectId,
+                    userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
+                    runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
+                    status: "running",
+                    requiresApproval: false,
+                    nextStep: undefined,
+                    summary: `Advancing to ${options.step || "Feature Engineering"}`,
+                  };
+
+                  await workflow.updateState(config, restoredState, predecessorNode);
+                  graphState = await workflow.getState(config).catch(() => null);
+                  hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+                  console.info(`[Workflow] Restored graph state. Next node to execute: [${graphState?.next?.join(", ")}]`);
+                }
+              } catch (restoreErr: any) {
+                console.warn(`[Workflow] Failed to restore state from project:`, restoreErr?.message);
+              }
+            }
+
+            if (hasState) {
+              stream = await workflow.stream(null, config);
+            } else {
+              const approvingModelPhase = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode";
+              console.warn(`[Workflow] No checkpoint found for approve. Restoring the ${approvingModelPhase ? "Feature Engineering" : "Data Ingestion"} boundary.`);
+              const fallbackState = {
+                connectorId,
+                projectId: options?.projectId ?? "",
+                userPrompt: userPrompt ?? "",
+                runTimestamp: activeRunTimestamp,
+                status: "running",
+                requiresApproval: false,
+                nextStep: undefined,
+                summary: `Resuming workflow at ${approvingModelPhase ? "Model Training & Validation" : "Feature Engineering"}`,
+                inspection: {},
+                dataProfile: {},
+                schemaResolution: {},
+                preprocessing: {},
+                batchedTables: [],
+                steps: [],
+                stageOutputs: {},
+                stageStatuses: approvingModelPhase
+                  ? { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "Completed", featureArchitect: "Completed", featureValidator: "Completed", exogenousScout: "Completed", modelTraining: "In Progress" }
+                  : { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "In Progress", featureArchitect: "Pending", exogenousScout: "Pending" }
+              };
+              await workflow.updateState(config, fallbackState, approvingModelPhase ? "exogenous" : "resolveSchema");
+              stream = await workflow.stream(null, config);
+            }
+          } else if (options?.action === "resume") {
+            const targetStep = options.step || "inspect";
+            console.info(`[Workflow] Resume — continuing from thread ${threadId} at phase ${targetStep}`);
+
+            const predecessorNodeMap: Record<string, string> = {
+              "inspect": "__start__",
+              "Data Inspection": "__start__",
+              "profileData": "inspect",
+              "Data Profiling": "inspect",
+              "preprocess": "inspect",
+              "resolveSchema": "profileData",
+              "Schema Resolver": "profileData",
+              "hierarchyMapperNode": "resolveSchema",
+              "hierarchyMapper": "resolveSchema",
+              "Hierarchy Mapper": "resolveSchema",
+              "featureArchitectNode": "hierarchyMapperNode",
+              "featureArchitect": "hierarchyMapperNode",
+              "Feature Architect": "hierarchyMapperNode",
+              "featureValidator": "featureArchitectNode",
+              "Feature Validator": "featureArchitectNode",
+              "exogenousScout": "featureArchitectNode",
+              "exogenous": "featureArchitectNode",
+              "Exogenous Scout": "featureArchitectNode",
+            };
+            const predecessorNode = predecessorNodeMap[targetStep] || "__start__";
+
+            let graphState = await workflow.getState(config).catch(() => null);
+            let hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+
+            if (!hasState && options?.projectId) {
+              try {
+                const project = await this.projectService.getById(options.projectId);
+                const savedAgentState = project?.agentState as any;
+                if (savedAgentState) {
+                  console.info(`[Workflow] Restoring graph checkpointer state from project database for resume on thread ${threadId}`);
+
+                  const restoredState = {
+                    ...savedAgentState,
+                    connectorId,
+                    projectId: options.projectId,
+                    userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
+                    runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
+                    status: "running",
+                    summary: `Resuming from ${targetStep} phase`,
+                  };
+
+                  if (predecessorNode !== "__start__") {
+                    await workflow.updateState(config, restoredState, predecessorNode);
+                    graphState = await workflow.getState(config).catch(() => null);
+                    hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+                    console.info(`[Workflow] Resume state restored. Next nodes: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}]`);
+                  }
+                }
+              } catch (e) {
+                console.warn("[Workflow] Failed to restore resume state from database:", e);
+              }
+            }
+
+            if (predecessorNode === "__start__" || !hasState) {
+              console.info(`[Workflow] Resuming thread ${threadId} from start at phase ${targetStep}`);
+              stream = await workflow.stream(
+                {
+                  connectorId,
+                  projectId: options?.projectId ?? "",
+                  userPrompt: userPrompt ?? "",
+                  runTimestamp: activeRunTimestamp,
+                  status: "running",
+                  summary: `Resuming from ${targetStep} phase`,
+                  inspection: savedAgentState?.inspection || {},
+                  dataProfile: savedAgentState?.dataProfile || {},
+                  schemaResolution: savedAgentState?.schemaResolution || {},
+                  preprocessing: savedAgentState?.preprocessing || {},
+                  batchedTables: savedAgentState?.batchedTables || [],
+                  steps: savedAgentState?.steps || [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
+                  stageOutputs: savedAgentState?.stageOutputs || {},
+                  stageStatuses: { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
+                },
+                config
+              );
+            } else {
+              stream = await workflow.stream(null, config);
+            }
+          } else {
+            console.info(`[Workflow] Starting new workflow, thread ${threadId}, connectors: [${connectorId.join(", ")}]`);
+            stream = await workflow.stream(
+              {
+                connectorId,
+                projectId: options?.projectId ?? "",
+                userPrompt: userPrompt ?? "",
+                runTimestamp: activeRunTimestamp,
+                status: "queued",
+                summary: "Ingestion workflow started",
+                inspection: {},
+                dataProfile: {},
+                schemaResolution: {},
+                preprocessing: {},
+                batchedTables: [],
+                steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
+                stageOutputs: {},
+                stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
+              },
+              config
+            );
+          }
+
           // Stream updates from initial execution segment
           for await (const chunk of stream) {
             if (this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId)) {
@@ -900,6 +915,9 @@ export class IngestionAgentService implements IIngestionAgentService {
               latestGraphStateValues.stageStatuses = currentStatuses;
             }
             const result = buildResultFromGraphState({ values: latestGraphStateValues, next: graphState?.next }, threadId, connectorId);
+            if (result.status === "running") {
+              result.requiresApproval = false;
+            }
             if (options?.projectId) {
               result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
             }
@@ -911,12 +929,12 @@ export class IngestionAgentService implements IIngestionAgentService {
             const graphState = await workflow.getState(config).catch(() => null);
             const stoppedValues = {
               ...(graphState?.values || {}),
-              status: "failed",
+              status: "stopped",
               summary: "Workflow stopped by user",
               message: "Workflow stopped by user.",
             };
             const stoppedResult = buildResultFromGraphState({ ...graphState, values: stoppedValues }, threadId, connectorId);
-            stoppedResult.status = "failed";
+            stoppedResult.status = "stopped";
             stoppedResult.summary = "Workflow stopped by user";
             stoppedResult.message = "Workflow stopped by user.";
             stoppedResult.requiresApproval = false;
@@ -977,6 +995,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               ...latestGraphStateValues,
               status: "paused",
               requiresApproval: true,
+              nextStep: approvalTarget,
               summary: `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`,
               message: `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`,
             };
@@ -1029,6 +1048,9 @@ export class IngestionAgentService implements IIngestionAgentService {
                 latestGraphStateValues.stageStatuses = currentStatuses;
               }
               const result = buildResultFromGraphState({ values: latestGraphStateValues, next: currentGraphState?.next }, threadId, connectorId);
+              if (result.status === "running") {
+                result.requiresApproval = false;
+              }
               if (options?.projectId) {
                 result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
               }
@@ -1071,12 +1093,14 @@ export class IngestionAgentService implements IIngestionAgentService {
           if (this.stoppedSessions.has(threadId)) {
             const stoppedValues = {
               ...(graphState?.values || {}),
-              status: "failed",
+              status: "stopped",
               summary: "Workflow stopped by user",
+              message: "Workflow stopped by user.",
             };
             const stoppedResult = buildResultFromGraphState({ ...graphState, values: stoppedValues }, threadId, connectorId);
-            stoppedResult.status = "failed";
+            stoppedResult.status = "stopped";
             stoppedResult.summary = "Workflow stopped by user";
+            stoppedResult.message = "Workflow stopped by user.";
             stoppedResult.requiresApproval = false;
             if (options?.projectId) {
               await this.projectService.updateAgentState(options.projectId, stoppedValues);
@@ -1087,9 +1111,11 @@ export class IngestionAgentService implements IIngestionAgentService {
           }
 
           const result = buildResultFromGraphState(graphState, threadId, connectorId);
-          if (options?.action === "approve") {
+          if (result.status === "running" || options?.action === "approve") {
             result.requiresApproval = false;
-            result.message = "Data Ingestion approved. Moving to Feature Engineering stage.";
+            if (options?.action === "approve") {
+              result.message = "Data Ingestion approved. Moving to Feature Engineering stage.";
+            }
           }
 
           if (options?.projectId) {
@@ -1127,7 +1153,19 @@ export class IngestionAgentService implements IIngestionAgentService {
         }
       };
 
-      // 3. Register the task in the Concurrency/Memory QueueService
+      // 3. Setup listeners to feed queue events into the PushQueue for SSE response stream BEFORE enqueuing
+      const onJobUpdate = (result: any) => {
+        queue.push(result);
+      };
+
+      const onJobClose = () => {
+        queue.close();
+      };
+
+      agentJobEvents.on(`job:update:${threadId}`, onJobUpdate);
+      agentJobEvents.once(`job:close:${threadId}`, onJobClose);
+
+      // 4. Register the task in the Concurrency/Memory QueueService
       this.queueService.enqueue(
         threadId,
         options?.projectId || "general",
@@ -1144,18 +1182,6 @@ export class IngestionAgentService implements IIngestionAgentService {
         } as any);
         queue.close();
       });
-
-      // 4. Setup listeners to feed queue events into the PushQueue for SSE response stream
-      const onJobUpdate = (result: any) => {
-        queue.push(result);
-      };
-
-      const onJobClose = () => {
-        queue.close();
-      };
-
-      agentJobEvents.on(`job:update:${threadId}`, onJobUpdate);
-      agentJobEvents.once(`job:close:${threadId}`, onJobClose);
 
       try {
         for await (const update of queue) {
@@ -1355,13 +1381,13 @@ export class IngestionAgentService implements IIngestionAgentService {
 
         const updatedValues = {
           ...(graphState?.values || {}),
-          status: "failed",
+          status: "stopped",
           summary: "Workflow stopped by user",
           message: "Workflow stopped by user.",
         };
 
         const result = buildResultFromGraphState({ ...graphState, values: updatedValues }, resolvedSessionId, graphState?.values?.connectorId || meta?.connectorId || []);
-        result.status = "failed";
+        result.status = "stopped";
         result.summary = "Workflow stopped by user";
         result.message = "Workflow stopped by user.";
         result.requiresApproval = false;
@@ -1374,7 +1400,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         return result;
       } else if (targetProjectId) {
         await this.projectService.updateAgentState(targetProjectId, {
-          status: "failed",
+          status: "stopped",
           summary: "Workflow stopped by user",
           message: "Workflow stopped by user.",
         });
@@ -1386,7 +1412,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       if (targetProjectId) {
         try {
           await this.projectService.updateAgentState(targetProjectId, {
-            status: "failed",
+            status: "stopped",
             summary: "Workflow stopped by user",
           });
         } catch (_) { }

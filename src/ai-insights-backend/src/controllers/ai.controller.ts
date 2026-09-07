@@ -85,14 +85,20 @@ export class AIController {
     res.flushHeaders();
 
     let clientDisconnected = false;
-    req.on("close", () => {
-      clientDisconnected = true;
+    res.on("close", () => {
+      if (!res.writableEnded) {
+        clientDisconnected = true;
+      }
     });
 
     // Heartbeat interval to keep SSE connection alive during long model processing
     const heartbeat = setInterval(() => {
-      if (!res.writableEnded && !clientDisconnected) {
-        res.write(": keep-alive\n\n");
+      if (!res.writableEnded && !clientDisconnected && !res.closed) {
+        try {
+          res.write(": keep-alive\n\n");
+        } catch {
+          clientDisconnected = true;
+        }
       }
     }, 10000);
 
@@ -105,7 +111,7 @@ export class AIController {
       });
 
       for await (const update of stream) {
-        if (clientDisconnected) {
+        if (clientDisconnected || res.writableEnded || res.closed) {
           console.info(`[Workflow] Client disconnected from SSE stream for session ${sessionId || "unknown"}`);
           break;
         }
@@ -115,12 +121,12 @@ export class AIController {
         }
       }
 
-      if (!clientDisconnected && !res.writableEnded) {
+      if (!clientDisconnected && !res.writableEnded && !res.closed) {
         res.write("data: [DONE]\n\n");
         res.end();
       }
     } catch (error: any) {
-      if (!clientDisconnected && !res.writableEnded) {
+      if (!clientDisconnected && !res.writableEnded && !res.closed) {
         res.write(`data: ${JSON.stringify({ success: false, message: error.message || "AI workflow failed" })}\n\n`);
         res.end();
       }

@@ -33,5 +33,6 @@ export interface IIngestionAgentService {
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown>;
   stop(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
   pause(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
+  isProjectActive?(projectId?: string): boolean;
 }
 

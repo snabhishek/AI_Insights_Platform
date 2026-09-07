@@ -868,9 +868,9 @@ export function buildResultFromGraphState(
   
   const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
   const isFeatureEngineeringStarted = stageStatuses.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending";
-  const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted;
+  const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted && isIngestionComplete;
   const isAtModelApproval = (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) && stageStatuses.exogenousScout === "Completed";
-  const requiresApproval = status !== "failed" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval);
+  const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval);
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
   return {

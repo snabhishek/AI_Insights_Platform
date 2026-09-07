@@ -8,6 +8,7 @@ export interface Project {
   useCase?: string;
   domain?: string;
   subDomain?: string;
+  status?: string;
   agentState?: Record<string, unknown>;
   createdAt: string;
 }
@@ -16,6 +17,7 @@ export interface ProjectRun {
   id: string;
   projectId: string;
   useCase?: string;
+  status?: string;
   agentState: Record<string, unknown>;
   createdAt: string;
 }

@@ -90,10 +90,14 @@ export class QueueService {
       // 2. Execute task
       await task.runFn();
 
-      // 3. Update database status to 'completed'
-      await this.db.update(agentJobs)
-        .set({ status: "completed", updatedAt: new Date() })
-        .where(eq(agentJobs.id, task.jobId));
+      // 3. Update database status to 'completed' only if not already marked stopped/paused/failed
+      const currentJob = await this.db.select().from(agentJobs).where(eq(agentJobs.id, task.jobId)).limit(1);
+      const curStatus = currentJob[0]?.status;
+      if (curStatus !== "stopped" && curStatus !== "paused" && curStatus !== "failed") {
+        await this.db.update(agentJobs)
+          .set({ status: "completed", updatedAt: new Date() })
+          .where(eq(agentJobs.id, task.jobId));
+      }
 
     } catch (err: any) {
       console.error(`[QueueService] Job ${task.jobId} failed:`, err.message || err);

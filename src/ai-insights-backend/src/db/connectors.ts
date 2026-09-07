@@ -21,6 +21,7 @@ export const projects = pgTable("projects", {
   useCase: text("use_case"),
   domain: varchar("domain", { length: 255 }),
   subDomain: varchar("sub_domain", { length: 255 }),
+  status: varchar("status", { length: 50 }).default("idle"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => {
   return {
@@ -58,6 +59,7 @@ export const projectRuns = pgTable("project_runs", {
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   useCase: text("use_case"),
+  status: varchar("status", { length: 50 }).default("idle"),
   agentState: jsonb("agent_state").$type<Record<string, unknown>>().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => {

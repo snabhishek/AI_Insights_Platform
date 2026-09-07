@@ -57,11 +57,12 @@ export async function initializeDatabaseSchemas() {
       );
     `);
 
-    // Add use_case, domain, sub_domain columns to existing projects table if they don't exist (migration)
+    // Add use_case, domain, sub_domain, status columns to existing projects table if they don't exist (migration)
     await query(`
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS use_case TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS domain VARCHAR(255);
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS sub_domain VARCHAR(255);
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'idle';
     `);
 
     // 3b. Domains table
@@ -116,13 +117,27 @@ export async function initializeDatabaseSchemas() {
         id VARCHAR(50) PRIMARY KEY,
         project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         use_case TEXT,
+        status VARCHAR(50) DEFAULT 'idle',
         agent_state JSONB NOT NULL,
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `);
     await query(`
+      ALTER TABLE project_runs ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'idle';
+    `);
+    await query(`
       CREATE INDEX IF NOT EXISTS project_runs_project_id_idx ON project_runs (project_id);
     `);
+
+    // Startup sanitization: any workflow left in 'running' state from previous process crash/restart is marked 'stopped'
+    try {
+      await query(`
+        UPDATE projects SET status = 'stopped' WHERE status = 'running';
+        UPDATE project_runs SET status = 'stopped', agent_state = jsonb_set(agent_state, '{status}', '"stopped"') WHERE status = 'running' OR agent_state->>'status' = 'running';
+      `);
+    } catch (cleanErr: any) {
+      console.warn("[DB] Startup sanitization warning:", cleanErr?.message || cleanErr);
+    }
 
     // 8. Agent Thinking table
     await query(`

@@ -23,5 +23,6 @@ export interface UpdateProjectDto {
   name?: string;
   useCase?: string;
   dataSources?: string[];
+  status?: string;
   agentState?: Record<string, unknown>;
 }
