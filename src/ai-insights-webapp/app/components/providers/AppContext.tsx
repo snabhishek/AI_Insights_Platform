@@ -49,6 +49,7 @@ export interface Project {
   useCase?: string;
   domain?: string;
   subDomain?: string;
+  status?: string;
   agentState?: Record<string, unknown>;
 }
 
@@ -90,9 +91,9 @@ interface AppContextType {
   userProfile: UserProfile;
   updateUserProfile: (profile: Partial<UserProfile>) => void;
   testConnection: (type: DataSource["type"], config: ConnectionConfig) => Promise<{ success: boolean; message: string; latencyMs: number }>;
-  showToast: (config: { title: string; message: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
-  showNotification: (config: { title: string; message: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
-  showAlert: (config: { title: string; message: string; type: "success" | "error" | "info" | "warning"; logs?: string }) => void;
+  showToast: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
+  showNotification: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
+  showAlert: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; logs?: string }) => void;
   showConfirm: (config: { title: string; message: string; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
   openCreateWorkspace: () => void;
 }
@@ -145,16 +146,17 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const showToast = useCallback(
     (config: {
-      title: string;
-      message: string;
+      title?: string;
+      message?: string;
       type?: "success" | "error" | "info" | "warning";
       duration?: number;
     }) => {
       const id = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+      const messageText = config.title || config.message || "";
       const newToast: ToastItem = {
         id,
-        title: config.title,
-        message: config.message,
+        title: messageText,
+        message: "",
         type: config.type || "info",
         duration: config.duration || 4500,
       };
@@ -187,25 +189,25 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const showAlert = useCallback(
     (config: {
-      title: string;
-      message: string;
+      title?: string;
+      message?: string;
       type?: "success" | "error" | "info" | "warning";
       logs?: string;
     }) => {
       // If diagnostic logs are provided, render full MessageModal
       if (config.logs) {
         setAlertConfig({
-          title: config.title,
-          message: config.message,
+          title: config.title || "Diagnostic Logs",
+          message: config.message || config.title || "",
           type: config.type === "warning" ? "info" : (config.type || "info"),
           logs: config.logs,
         });
         setAlertOpen(true);
       } else {
-        // Standard notification: display shared top-right modern toast
+        // Standard notification: display shared top-right modern toast with ONLY the message, no explanation
+        const messageText = config.title || config.message || "";
         showToast({
-          title: config.title,
-          message: config.message,
+          title: messageText,
           type: config.type || "info",
         });
       }
@@ -315,7 +317,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     const res = await fetch(`${BACKEND_URL}/workspaces/${id}`, { method: "DELETE" });
     const data = await res.json();
     if (!res.ok) {
-      showAlert({ title: "Delete Failed", message: data.message || "Could not delete workspace.", type: "error" });
+      showAlert({ title: data.message || "Could not delete workspace", type: "error" });
       return;
     }
     setWorkspaces((prev) => {
@@ -352,11 +354,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return true;
       } else {
         const err = await res.json();
-        showAlert({ title: "Project Creation Error", message: err.message || "A project with this title already exists.", type: "error" });
+        showAlert({ title: err.message || "A project with this title already exists", type: "error" });
         return false;
       }
     } catch (err: any) {
-      showAlert({ title: "Project Creation Failed", message: err.message || "Failed to create project", type: "error" });
+      showAlert({ title: err.message || "Failed to create project", type: "error" });
       return false;
     }
   };
@@ -392,12 +394,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${id}`, { method: "DELETE" });
       if (res.ok) {
         setProjects((prev) => prev.filter((p) => p.id !== id));
+        showAlert({ title: "Project Deleted", type: "success" });
       } else {
         const err = await res.json();
         throw new Error(err.message || "Failed to delete project");
       }
     } catch (err: any) {
-      showAlert({ title: "Delete Failed", message: err.message, type: "error" });
+      showAlert({ title: err.message || "Delete Failed", type: "error" });
     }
   };
 
@@ -427,8 +430,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         const newSource = await res.json();
         setDataSources((prev) => [newSource, ...prev]);
         showToast({
-          title: "Successfully Connected",
-          message: `Data source "${name}" connected successfully.`,
+          title: "Connection Added",
           type: "success",
         });
       } else {
@@ -438,8 +440,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (err: any) {
       console.error(err);
       showToast({
-        title: "Connection Failed",
-        message: err.message || "Could not register connector config.",
+        title: err.message || "Connection Failed",
         type: "error",
       });
     }
@@ -450,14 +451,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${BACKEND_URL}/connectors/${id}`, { method: "DELETE" });
       if (res.ok) {
         setDataSources((prev) => prev.filter((ds) => ds.id !== id));
-        showAlert({ title: "Connection Deleted", message: "Data source has been permanently deleted from storage.", type: "success" });
+        showAlert({ title: "Connection Deleted", type: "success" });
       } else {
         const errorData = await res.json();
         throw new Error(errorData.message || "Failed to delete connector");
       }
     } catch (err: any) {
       console.error("Failed to delete source:", err);
-      showAlert({ title: "Deletion Failed", message: err.message || "Could not remove database record.", type: "error" });
+      showAlert({ title: err.message || "Deletion Failed", type: "error" });
     }
   };
 
@@ -468,7 +469,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const updated = await res.json();
         setDataSources((prev) => prev.map((ds) => (ds.id === id ? updated : ds)));
-        showAlert({ title: "Connection Disconnected", message: "Data source has been disconnected. Live catalog monitoring paused.", type: "info" });
+        showAlert({ title: "Connection Disconnected", type: "info" });
       } else {
         const errorData = await res.json();
         throw new Error(errorData.message || "Failed to disconnect");
@@ -476,7 +477,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (err: any) {
       console.error("Failed to disconnect source:", err);
       setDataSources((prev) => prev.map((ds) => (ds.id === id ? { ...ds, status: "Connected" } : ds)));
-      showAlert({ title: "Disconnection Failed", message: err.message || "Could not change status.", type: "error" });
+      showAlert({ title: err.message || "Disconnection Failed", type: "error" });
     }
   };
 
@@ -487,7 +488,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const updated = await res.json();
         setDataSources((prev) => prev.map((ds) => (ds.id === id ? updated : ds)));
-        showAlert({ title: "Connection Restored", message: "Data source has been successfully reconnected.", type: "success" });
+        showAlert({ title: "Connection Restored", type: "success" });
       } else {
         const errorData = await res.json();
         throw new Error(errorData.message || "Failed to connect");
@@ -495,7 +496,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch (err: any) {
       console.error("Failed to connect source:", err);
       setDataSources((prev) => prev.map((ds) => (ds.id === id ? { ...ds, status: "Disconnected" } : ds)));
-      showAlert({ title: "Reconnection Failed", message: err.message || "Could not change status.", type: "error" });
+      showAlert({ title: err.message || "Reconnection Failed", type: "error" });
     }
   };
 
@@ -509,14 +510,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const updated = await res.json();
         setDataSources((prev) => prev.map((ds) => (ds.id === id ? updated : ds)));
-        showAlert({ title: "Connection Updated", message: `Data source configuration for "${name}" updated successfully.`, type: "success" });
+        showAlert({ title: "Connection Updated", type: "success" });
       } else {
         const errorData = await res.json();
         throw new Error(errorData.message || "Failed to update connector");
       }
     } catch (err: any) {
       console.error("Failed to update source:", err);
-      showAlert({ title: "Update Failed", message: err.message || "Could not save connection parameters.", type: "error" });
+      showAlert({ title: err.message || "Update Failed", type: "error" });
     }
   };
 

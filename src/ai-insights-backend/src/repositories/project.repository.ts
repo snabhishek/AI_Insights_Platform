@@ -20,6 +20,7 @@ export class PostgresProjectRepository implements IProjectRepository {
       useCase: row.use_case ?? row.useCase ?? undefined,
       domain: row.domain ?? undefined,
       subDomain: row.sub_domain ?? row.subDomain ?? undefined,
+      status: row.status || (row.agent_state?.status) || "idle",
       agentState: row.agent_state ?? row.agentState ?? {},
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
     };
@@ -30,6 +31,7 @@ export class PostgresProjectRepository implements IProjectRepository {
       id: row.id,
       projectId: row.project_id || row.projectId,
       useCase: row.use_case ?? row.useCase ?? undefined,
+      status: row.status || (row.agent_state?.status) || "idle",
       agentState: row.agent_state ?? row.agentState ?? {},
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
     };
@@ -48,13 +50,35 @@ export class PostgresProjectRepository implements IProjectRepository {
     const project = this.mapRowToProject(res[0]);
     if (latestRuns.length > 0) {
       project.agentState = latestRuns[0].agentState;
+      project.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || project.status || "idle";
+      if (project.agentState && typeof project.agentState === "object") {
+        (project.agentState as any).status = project.status;
+      }
     }
     return project;
   }
 
   async getAll(): Promise<Project[]> {
     const res = await this.db.select().from(schema.projects).orderBy(desc(schema.projects.createdAt));
-    return res.map((row) => this.mapRowToProject(row));
+    const projects: Project[] = [];
+    for (const row of res) {
+      const proj = this.mapRowToProject(row);
+      const latestRuns = await this.db
+        .select()
+        .from(schema.projectRuns)
+        .where(eq(schema.projectRuns.projectId, proj.id))
+        .orderBy(desc(schema.projectRuns.createdAt))
+        .limit(1);
+      if (latestRuns.length > 0) {
+        proj.agentState = latestRuns[0].agentState;
+        proj.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || proj.status || "idle";
+        if (proj.agentState && typeof proj.agentState === "object") {
+          (proj.agentState as any).status = proj.status;
+        }
+      }
+      projects.push(proj);
+    }
+    return projects;
   }
 
   async getProjectWithWorkspace(id: string): Promise<ProjectWithWorkspace | undefined> {
@@ -78,13 +102,19 @@ export class PostgresProjectRepository implements IProjectRepository {
   async updateAgentState(id: string, agentState: Record<string, unknown>, useCase?: string): Promise<Project | undefined> {
     const currentProj = await this.getById(id);
     const effectiveUseCase = useCase ?? currentProj?.useCase;
+    const effectiveStatus = (agentState?.status as string) || currentProj?.status || "idle";
 
-    // Update useCase on projects table if provided
+    // Update projects table with status and useCase
+    const projectUpdates: Record<string, any> = {
+      status: effectiveStatus,
+    };
     if (effectiveUseCase !== undefined && effectiveUseCase !== currentProj?.useCase) {
-      await this.db.update(schema.projects)
-        .set({ useCase: effectiveUseCase })
-        .where(eq(schema.projects.id, id));
+      projectUpdates.useCase = effectiveUseCase;
     }
+
+    await this.db.update(schema.projects)
+      .set(projectUpdates)
+      .where(eq(schema.projects.id, id));
 
     // Always insert a new state execution record into project_runs table
     try {
@@ -93,6 +123,7 @@ export class PostgresProjectRepository implements IProjectRepository {
         id: runId,
         projectId: id,
         useCase: effectiveUseCase || null,
+        status: effectiveStatus,
         agentState,
       });
     } catch (runErr: any) {
@@ -102,6 +133,7 @@ export class PostgresProjectRepository implements IProjectRepository {
     const updatedProj = await this.getById(id);
     if (updatedProj) {
       updatedProj.agentState = agentState;
+      updatedProj.status = effectiveStatus;
     }
     return updatedProj;
   }
@@ -111,6 +143,7 @@ export class PostgresProjectRepository implements IProjectRepository {
     if (updates.name !== undefined) updatePayload.name = updates.name;
     if (updates.useCase !== undefined) updatePayload.useCase = updates.useCase;
     if (updates.dataSources !== undefined) updatePayload.dataSources = updates.dataSources;
+    if (updates.status !== undefined) updatePayload.status = updates.status;
 
     if (Object.keys(updatePayload).length > 0) {
       await this.db.update(schema.projects)
@@ -148,6 +181,10 @@ export class PostgresProjectRepository implements IProjectRepository {
         .limit(1);
       if (latestRuns.length > 0) {
         proj.agentState = latestRuns[0].agentState;
+        proj.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || proj.status || "idle";
+        if (proj.agentState && typeof proj.agentState === "object") {
+          (proj.agentState as any).status = proj.status;
+        }
       }
       projects.push(proj);
     }
@@ -166,6 +203,7 @@ export class PostgresProjectRepository implements IProjectRepository {
       useCase: project.useCase || null,
       domain: project.domain || null,
       subDomain: project.subDomain || null,
+      status: project.status || "idle",
       createdAt: now,
     });
     return project;
