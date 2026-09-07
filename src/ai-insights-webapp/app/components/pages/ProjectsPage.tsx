@@ -250,26 +250,54 @@ export default function ProjectsPage() {
       const nextStatuses = mapStageToPipelineStatus(state.stageStatuses, pipelineStatuses);
       setPipelineStatuses(nextStatuses);
 
-      if (state.status === "completed") {
+      const rawStatus = (state.status || (selectedProject as any).status || "").toLowerCase();
+
+      if (rawStatus === "completed" || rawStatus === "success") {
         setRunStatus("Success");
         setIsPaused(false);
-      } else if (state.status === "failed") {
-        setRunStatus("Idle");
+        setRequiresApproval(false);
+        setApprovalNextStep(null);
+      } else if (rawStatus === "stopped") {
+        setRunStatus("Stopped");
         setIsPaused(false);
-      } else if (state.status === "paused") {
+        setRequiresApproval(false);
+        setApprovalNextStep(null);
+      } else if (rawStatus === "failed") {
+        setRunStatus("Failed");
+        setIsPaused(false);
+        setRequiresApproval(false);
+        setApprovalNextStep(null);
+      } else if (rawStatus === "running") {
+        // If reopening the app when no execution is actively streaming in this session,
+        // it cannot be actively running.
+        if (isExecutingRef.current) {
+          setRunStatus("Running");
+          setIsPaused(false);
+          setRequiresApproval(false);
+          setApprovalNextStep(null);
+        } else {
+          setRunStatus("Stopped");
+          setIsPaused(false);
+          setRequiresApproval(false);
+          setApprovalNextStep(null);
+        }
+      } else if (rawStatus === "paused" && state.requiresApproval) {
+        setRunStatus("Paused");
+        setIsPaused(false);
+        setRequiresApproval(true);
+        setApprovalNextStep(state.nextStep || "Feature Engineering");
+      } else if (rawStatus === "paused") {
         setRunStatus("Paused");
         setIsPaused(true);
+        setRequiresApproval(false);
+        setApprovalNextStep(null);
         setPausedAtPhase(determineActiveStage(state));
         if (state.sessionId) setPausedSessionId(state.sessionId);
-      } else if (state.requiresApproval) {
-        setRunStatus("Paused");
-        setIsPaused(false);
-      } else if (state.status === "running") {
-        setRunStatus("Running");
-        setIsPaused(false);
       } else {
         setRunStatus("Idle");
         setIsPaused(false);
+        setRequiresApproval(false);
+        setApprovalNextStep(null);
       }
 
       setWorkflowMessage(state.message || state.summary || "Workflow loaded from DB");
@@ -282,8 +310,10 @@ export default function ProjectsPage() {
         setAgentThinking({});
       }
       setActiveStage(determineActiveStage(state));
-      setRequiresApproval(Boolean(state.requiresApproval));
-      setApprovalNextStep(state.requiresApproval ? (state.nextStep || "Feature Engineering") : null);
+      if (state.status !== "running") {
+        setRequiresApproval(Boolean(state.requiresApproval));
+        setApprovalNextStep(state.requiresApproval ? (state.nextStep || "Feature Engineering") : null);
+      }
       if (state.sessionId) {
         setWorkflowSessionId(state.sessionId);
       }
@@ -323,31 +353,39 @@ export default function ProjectsPage() {
       return nextStatuses;
     });
 
-    if (payload.status === "completed") {
+    const rawStatus = (payload.status || "").toLowerCase();
+    if (rawStatus === "completed" || rawStatus === "success") {
       setRunStatus("Success");
       setIsPaused(false);
-    } else if (payload.status === "failed") {
-      setRunStatus("Idle");
+      setRequiresApproval(false);
+      setApprovalNextStep(null);
+    } else if (rawStatus === "stopped") {
+      setRunStatus("Stopped");
       setIsPaused(false);
-    } else if (payload.status === "paused") {
+      setRequiresApproval(false);
+      setApprovalNextStep(null);
+    } else if (rawStatus === "failed") {
+      setRunStatus("Failed");
+      setIsPaused(false);
+      setRequiresApproval(false);
+      setApprovalNextStep(null);
+    } else if (rawStatus === "paused") {
       setRunStatus("Paused");
       if (payload.requiresApproval) {
         setIsPaused(false);
+        setRequiresApproval(true);
+        setApprovalNextStep(payload.nextStep || null);
       } else {
         setIsPaused(true);
-        setPausedAtPhase(determineActiveStage(payload));
-      }
-    } else if (payload.requiresApproval) {
-      setRunStatus("Paused");
-      if (payload.requiresApproval) {
-        setIsPaused(false);
-      } else {
-        setIsPaused(true);
+        setRequiresApproval(false);
+        setApprovalNextStep(null);
         setPausedAtPhase(determineActiveStage(payload));
       }
     } else {
       setRunStatus("Running");
       setIsPaused(false);
+      setRequiresApproval(false);
+      setApprovalNextStep(null);
     }
 
     setWorkflowMessage(payload.message || payload.summary || "Workflow updated");
@@ -365,8 +403,6 @@ export default function ProjectsPage() {
     }
 
     setActiveStage(determineActiveStage(payload));
-    setRequiresApproval(Boolean(payload.requiresApproval));
-    setApprovalNextStep(payload.requiresApproval ? (payload.nextStep || null) : null);
 
     if (payload.status === "completed") {
       setLastRunTime(new Date().toLocaleString("en-US", {
@@ -383,11 +419,12 @@ export default function ProjectsPage() {
       selectedProject?.id &&
       (payload.status === "completed" ||
         payload.status === "failed" ||
+        payload.status === "stopped" ||
         payload.status === "paused" ||
         payload.requiresApproval ||
         payload.stageStatuses?.resolveSchema === "Completed")
     ) {
-      void updateProject(selectedProject.id, { agentState: payload });
+      void updateProject(selectedProject.id, { agentState: payload, status: payload.status });
     }
   };
 
@@ -396,8 +433,7 @@ export default function ProjectsPage() {
 
     if (!workflowConnectorIds || workflowConnectorIds.length === 0) {
       showAlert({
-        title: "No Data Sources",
-        message: "This project has no data sources attached. Please attach a data source before running the workflow.",
+        title: "Please attach a data source before running the workflow",
         type: "warning",
       });
       return;
@@ -516,8 +552,9 @@ export default function ProjectsPage() {
         buffer = lines.pop() || "";
 
         for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const dataStr = line.slice(6);
+          const trimmed = line.trim();
+          if (trimmed.startsWith("data: ")) {
+            const dataStr = trimmed.slice(6).trim();
             if (dataStr === "[DONE]") {
               break;
             }
@@ -542,11 +579,10 @@ export default function ProjectsPage() {
       }
 
       if (lastData && lastData.status === "completed") {
-        showAlert({ title: "Run Success", message: lastData.summary || "The workflow completed successfully.", type: "success" });
+        showAlert({ title: lastData.summary || "Workflow completed successfully", type: "success" });
       } else if (action === "resume" && lastData && lastData.status !== "failed") {
         showAlert({
           title: "Workflow Resumed",
-          message: "",
           type: "success",
         });
       }
@@ -558,16 +594,20 @@ export default function ProjectsPage() {
       console.error("Workflow execution stream error", error);
       if (lastData && (lastData.status === "completed" || lastData.stageStatuses?.resolveSchema === "Completed")) {
         updateWorkflowState(lastData);
-        showAlert({ title: "Run Success", message: lastData.summary || "Data Ingestion completed successfully.", type: "success" });
+        showAlert({ title: lastData.summary || "Data Ingestion completed successfully", type: "success" });
         return;
       }
       setRunStatus("Idle");
       setIsPaused(false);
-      showAlert({ title: "Workflow Error", message: error.message || "The workflow stream was interrupted.", type: "error" });
+      showAlert({ title: error.message || "Workflow stream was interrupted", type: "error" });
     } finally {
       isExecutingRef.current = false;
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
+      }
+      // Only persist lastData if the execution was NOT aborted/cancelled by user
+      if (!controller.signal.aborted && selectedProject?.id && lastData && lastData.status !== "stopped") {
+        void updateProject(selectedProject.id, { agentState: lastData, status: lastData.status });
       }
     }
   };
@@ -581,18 +621,25 @@ export default function ProjectsPage() {
       abortControllerRef.current = null;
     }
     isExecutingRef.current = false;
+    lastDataRef.current = null;
 
     resetPipeline();
+    setRunStatus("Stopped");
+    setWorkflowMessage("Workflow stopped by user");
+
+    const stoppedState = {
+      status: "stopped",
+      summary: "Workflow stopped by user",
+      message: "Workflow stopped by user",
+      sessionId: currentSession || undefined,
+      requiresApproval: false,
+      lastRunTime: new Date().toISOString(),
+    };
 
     if (currentProjectId) {
       void updateProject(currentProjectId, {
-        agentState: {
-          status: "failed",
-          summary: "Workflow stopped by user",
-          message: "Workflow stopped by user",
-          sessionId: currentSession || undefined,
-          requiresApproval: false,
-        },
+        status: "stopped",
+        agentState: stoppedState,
       });
     }
 
@@ -612,6 +659,7 @@ export default function ProjectsPage() {
   };
 
   const handleApprove = () => {
+    if (isExecutingRef.current) return;
     const targetPhase = approvalNextStep === "Model Training & Validation"
       ? "Model Training & Validation"
       : "Feature Engineering";
@@ -703,6 +751,7 @@ export default function ProjectsPage() {
     // Step 5: Update backend with pause status
     if (currentProjectId) {
       void updateProject(currentProjectId, {
+        status: "paused",
         agentState: {
           status: "paused",
           summary: `Workflow paused at ${activeStage || "inspect"} phase`,
@@ -723,8 +772,7 @@ export default function ProjectsPage() {
   const handleResumeWorkflow = async () => {
     if (!isPaused && runStatus !== "Paused") {
       showAlert({
-        title: "Resume Error",
-        message: "No paused state found. Cannot resume.",
+        title: "No paused state found. Cannot resume",
         type: "error",
       });
       return;
@@ -840,16 +888,16 @@ export default function ProjectsPage() {
         onGoBack={goToList}
         onDelete={() => confirmDeleteProject(selectedProject)}
         onEdit={() =>
-          showAlert({ title: "Edit Project", message: "Edit Project is being worked separately in the backend.", type: "info" })
+          showAlert({ title: "Edit Project is being worked separately in the backend", type: "info" })
         }
         onViewHistory={() =>
-          showAlert({ title: "Run History", message: "Project execution logs are being worked separately in the backend.", type: "info" })
+          showAlert({ title: "Project execution logs are being worked separately in the backend", type: "info" })
         }
         onManageSources={() =>
-          showAlert({ title: "Manage Data Sources", message: "Data source management is being worked separately in the backend.", type: "info" })
+          showAlert({ title: "Data source management is being worked separately in the backend", type: "info" })
         }
         onAddTag={() =>
-          showAlert({ title: "Add Tag", message: "Tag management is being worked separately in the backend.", type: "info" })
+          showAlert({ title: "Tag management is being worked separately in the backend", type: "info" })
         }
         activeStage={activeStage}
         stageOutputs={stageOutputs}

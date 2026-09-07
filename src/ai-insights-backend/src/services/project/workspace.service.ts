@@ -198,14 +198,19 @@ export class WorkspaceService {
       name: updatedName,
       useCase: updatedUseCase,
       dataSources: updatedSources,
+      status: updateData.status,
     });
 
     let updatedProject: Project | undefined;
 
     if (updateData.agentState !== undefined) {
+      const stateToSave = {
+        ...updateData.agentState,
+        ...(updateData.status ? { status: updateData.status } : {}),
+      };
       updatedProject = await this.projectRepository.updateAgentState(
         pid,
-        updateData.agentState,
+        stateToSave,
         updatedUseCase
       );
     } else {

@@ -107,13 +107,14 @@ export class WorkspaceController {
 
   updateProject = async (req: Request, res: Response): Promise<void> => {
     const pid = req.params.pid as string;
-    const { name, useCase, dataSources, agentState } = req.body;
+    const { name, useCase, dataSources, status, agentState } = req.body;
 
     try {
       const result = await this.workspaceService.updateProject(pid, {
         name,
         useCase,
         dataSources,
+        status,
         agentState,
       });
 

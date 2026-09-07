@@ -95,7 +95,7 @@ interface ProjectDetailPageProps {
   onPause?: () => void;
   onResume?: () => void;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
-  showAlert: (opts: { title: string; message: string; type: AlertType; logs?: string }) => void;
+  showAlert: (opts: { title: string; message?: string; type: AlertType; logs?: string }) => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -236,8 +236,7 @@ export default function ProjectDetailPage({
             <button
               onClick={() =>
                 showAlert({
-                  title: "Project Actions",
-                  message: "Additional project actions are being worked separately in the backend.",
+                  title: "Project actions are being worked separately in the backend",
                   type: "info",
                 })
               }
@@ -313,8 +312,7 @@ export default function ProjectDetailPage({
                       <button
                         onClick={() =>
                           showAlert({
-                            title: ds.name,
-                            message: `Connector properties for ${ds.name}. Details: ${JSON.stringify(ds.connectionConfig ?? {})}`,
+                            title: `Connector: ${ds.name}`,
                             type: "info",
                           })
                         }

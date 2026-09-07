@@ -107,7 +107,7 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
 
   const handleSaveEdits = async () => {
     if (!editName.trim()) {
-      showAlert({ title: "Validation Error", message: "Name is required", type: "error" });
+      showAlert({ title: "Name is required", type: "error" });
       return;
     }
 
