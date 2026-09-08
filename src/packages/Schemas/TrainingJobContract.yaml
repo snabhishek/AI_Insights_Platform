@@ -1,0 +1,500 @@
+# =============================================================================
+# TRAINING JOB CONTRACT — AutoML Platform
+# Scope: AGENT TRAINING ONLY.
+#
+# Dataset ingestion, data understanding, profiling, feature engineering,
+# feature selection, and preprocessing are handled by upstream agents.
+# This contract consumes their finalized outputs through upstream_artifacts.
+#
+# The training agent uses this contract to:
+# 1. Understand the ML problem.
+# 2. Select/validate the training strategy.
+# 3. Train candidate models.
+# 4. Optimize hyperparameters.
+# 5. Evaluate and select the best model.
+#
+# Every field should contain either a concrete value or an explicit null when
+# it is not applicable.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# PRIMARY METRIC
+# -----------------------------------------------------------------------------
+# Single source of truth for the metric used throughout training, optimization,
+# evaluation, and model selection. The same definition must not be duplicated.
+# -----------------------------------------------------------------------------
+
+x-primary-metric-def: &primary_metric_def
+  value: "<string>"
+  source: "<enum: llm_inference|user_override|platform_default>"
+  confidence: 0.0
+  confirmation_threshold: 0.85
+  requires_confirmation: false
+
+  # Explain why this metric best represents the business objective.
+  rationale: "<string>"
+
+  # Evidence used by the agent when selecting the metric.
+  evidence:
+    - "<string>"
+
+
+# -----------------------------------------------------------------------------
+# TRAINING JOB
+# -----------------------------------------------------------------------------
+
+training_job:
+  job_id: "<string>"
+  experiment_name: "<string>"
+  version: "<semver>"
+  created_at: "<ISO-8601 timestamp>"
+  created_by: "<string>"
+  description: "<string>"
+
+
+# -----------------------------------------------------------------------------
+# ML TASK
+# -----------------------------------------------------------------------------
+
+task:
+  task_type: "<enum: classification|regression|clustering|ranking|forecasting>"
+
+  # Classification: binary|multiclass|multilabel
+  # Regression: single|multioutput
+  # Other task types use only applicable values.
+  task_subtype: "<string>"
+
+  learning_type: "<enum: supervised|unsupervised|semi_supervised|self_supervised>"
+
+  # Defines what the trained model must return.
+  prediction_type: "<enum: label|probability|probability_thresholded|score|value>"
+
+  target:
+    name: "<string|null>"
+    datatype: "<enum: boolean|categorical|numeric|null>"
+    description: "<string|null>"
+    source: "<string|null>"
+
+    # Business/data rule used to produce the target.
+    derivation: "<string|null>"
+
+    positive_class: "<string|null>"
+    negative_class: "<string|null>"
+
+  # How far into the future the prediction applies.
+  prediction_horizon: "<string|null>"
+
+  # Event/time at which the available information is considered valid.
+  prediction_timestamp: "<string|null>"
+
+
+# -----------------------------------------------------------------------------
+# UPSTREAM ARTIFACTS
+# -----------------------------------------------------------------------------
+# References finalized outputs from upstream agents.
+# These are identifiers, not definitions of those artifacts.
+# -----------------------------------------------------------------------------
+
+upstream_artifacts:
+  dataset_id: "<string>"
+  dataset_version: "<string>"
+
+  feature_set_id: "<string>"
+  feature_set_version: "<string>"
+
+  profiling_report_id: "<string>"
+
+  relationship_schema_id: "<string|null>"
+
+  row_count: 0
+  column_count: 0
+
+
+# -----------------------------------------------------------------------------
+# DATA SPLITTING
+# -----------------------------------------------------------------------------
+
+split:
+  strategy: "<enum: random|stratified|temporal|stratified_temporal|group>"
+
+  train_ratio: 0.0
+  validation_ratio: 0.0
+  test_ratio: 0.0
+
+  random_seed: 42
+
+  # Required for stratified strategies.
+  stratify_by: "<string|null>"
+
+  # Required when related rows must not appear across multiple splits.
+  group_by: "<string|null>"
+
+  # Required for temporal strategies.
+  time_column: "<string|null>"
+
+  temporal:
+    train_start: "<date|null>"
+    train_end: "<date|null>"
+    validation_start: "<date|null>"
+    validation_end: "<date|null>"
+    test_start: "<date|null>"
+    test_end: "<date|null>"
+
+  cross_validation:
+    enabled: false
+
+    strategy: "<enum: kfold|stratified_kfold|time_series>"
+
+    folds: 0
+
+    # Must be false for time-aware validation.
+    shuffle: false
+
+    random_seed: 42
+
+
+# -----------------------------------------------------------------------------
+# CLASS IMBALANCE
+# -----------------------------------------------------------------------------
+
+imbalance:
+  detected: false
+
+  # Ratio of minority/positive samples to majority/negative samples.
+  ratio: null
+
+  strategy: "<enum: class_weighting|oversampling|undersampling|smote|none>"
+
+  class_weights: "<enum: balanced|custom|none>"
+
+  sampling:
+    method: "<enum: none|smote|random_oversample|random_undersample>"
+    sampling_ratio: null
+
+
+# -----------------------------------------------------------------------------
+# TRAINING STRATEGY
+# -----------------------------------------------------------------------------
+
+training:
+  mode: "<enum: automl_search|single_model|ensemble>"
+
+  # Candidate model families the training agent should consider.
+  candidate_models:
+    - "<string>"
+
+  # Models explicitly excluded because of business, technical, or
+  # infrastructure constraints.
+  excluded_models:
+    - "<string>"
+
+  baseline_model: "<string|null>"
+
+  ensemble:
+    enabled: false
+    strategy: "<enum: stacking|voting|blending|null>"
+
+  random_seed: 42
+
+  early_stopping:
+    enabled: false
+
+    # Number of evaluation rounds without improvement before stopping.
+    patience: null
+
+    # Always follows the primary metric.
+    metric: *primary_metric_name
+
+  max_training_time: "<duration|null>"
+
+  model_selection_strategy: "<string>"
+
+
+# -----------------------------------------------------------------------------
+# MODEL CONFIGURATION
+# -----------------------------------------------------------------------------
+# Defines model-specific fixed parameters.
+# Hyperparameters intended for optimization belong under
+# hyperparameter_optimization.search_space.
+# -----------------------------------------------------------------------------
+
+models:
+  - model_id: "<string>"
+    framework: "<enum: xgboost|lightgbm|sklearn|pytorch|tensorflow>"
+    algorithm: "<string>"
+    enabled: true
+
+    # Parameters fixed by the agent/user and not optimized.
+    parameters: {}
+
+
+# -----------------------------------------------------------------------------
+# HYPERPARAMETER OPTIMIZATION
+# -----------------------------------------------------------------------------
+
+hyperparameter_optimization:
+  enabled: false
+
+  method: "<enum: grid|random|bayesian|hyperband>"
+
+  # Optimization always targets the primary metric.
+  objective_metric: *primary_metric_name
+
+  direction: "<enum: maximize|minimize>"
+
+  max_trials: 0
+
+  timeout: "<duration|null>"
+
+  search_space: {}
+
+  pruning:
+    enabled: false
+
+
+# -----------------------------------------------------------------------------
+# SEARCH SPACE
+# -----------------------------------------------------------------------------
+# Generic representation used by the training engine. The actual parameters
+# depend on the selected model family.
+# -----------------------------------------------------------------------------
+
+search_space:
+  "<parameter_name>":
+    type: "<enum: uniform|log_uniform|integer|categorical>"
+
+    min: null
+    max: null
+
+    # Used when type = categorical.
+    values: []
+
+
+# -----------------------------------------------------------------------------
+# TRAINING OBJECTIVE
+# -----------------------------------------------------------------------------
+
+objective:
+  # Loss function directly optimized by the model during training.
+  training_loss: "<string>"
+
+  # Must reference the single primary metric definition.
+  optimization_metric: *primary_metric_name
+
+  direction: "<enum: maximize|minimize>"
+
+  custom_objective:
+    enabled: false
+    definition: "<string|null>"
+
+
+# -----------------------------------------------------------------------------
+# EVALUATION
+# -----------------------------------------------------------------------------
+
+evaluation:
+  # Single source of truth for the metric used to evaluate the final models.
+  primary_metric: *primary_metric_def
+
+  # Additional metrics reported for comparison but not optimized.
+  secondary_metrics:
+    - "<string>"
+
+  # Optional metrics translating model performance into business impact.
+  # business_metrics:
+  #   - name: "<string>"
+  #     description: "<string>"
+
+  # Business/technical minimum requirements for model acceptance.
+  thresholds:
+    primary_metric_min: null
+
+    # Applicable only when relevant to the task.
+    secondary_metric_constraints: {}
+
+  # Evaluate performance independently across important business segments.
+  segment_analysis:
+    - "<string>"
+
+  confidence_intervals:
+    enabled: false
+
+  bootstrap:
+    enabled: false
+    samples: null
+
+  fairness_scope:
+    protected_attributes:
+      - "<string>"
+
+    metric: "<enum: false_positive_rate_parity|demographic_parity|equal_opportunity|null>"
+
+    max_disparity: null
+
+
+# -----------------------------------------------------------------------------
+# THRESHOLD OPTIMIZATION
+# -----------------------------------------------------------------------------
+# Applicable primarily to classification models producing probabilities or
+# scores that must be converted into business decisions.
+# -----------------------------------------------------------------------------
+
+thresholding:
+  enabled: false
+
+  default_threshold: null
+
+  optimization:
+    enabled: false
+
+    metric: "<string|null>"
+
+    constraints: {}
+
+
+# -----------------------------------------------------------------------------
+# COMPUTE
+# -----------------------------------------------------------------------------
+
+compute:
+  device: "<enum: cpu|gpu>"
+
+  cpu_count: 0
+
+  gpu_count: 0
+
+  gpu_type: "<string|null>"
+
+  memory_limit: "<string|null>"
+
+  distributed_training:
+    enabled: false
+    workers: 1
+
+  precision: "<enum: fp16|fp32|bf16>"
+
+  batch_size: null
+
+  # Relevant when the selected framework/model supports parallel data loading.
+  num_workers: null
+
+
+# -----------------------------------------------------------------------------
+# RESOURCE / BUSINESS CONSTRAINTS
+# -----------------------------------------------------------------------------
+
+constraints:
+  max_runtime_minutes: null
+
+  max_memory_gb: null
+
+  max_gpu_hours: null
+
+  max_trials: null
+
+  max_model_size_mb: null
+
+  # Maximum allowed p99 inference latency.
+  max_inference_latency_ms: null
+
+  minimum_performance:
+    metric: *primary_metric_name
+    value: null
+
+  maximum_cost:
+    amount: null
+    currency: "<ISO-4217|null>"
+
+
+# -----------------------------------------------------------------------------
+# VALIDATION GATES
+# -----------------------------------------------------------------------------
+# Hard requirements that a trained model must satisfy before it can be
+# considered a successful training result.
+# -----------------------------------------------------------------------------
+
+validation_gates:
+  minimum_primary_metric: null
+
+  # Difference between training and validation performance that indicates
+  # unacceptable overfitting.
+  maximum_overfitting_gap: null
+
+  maximum_latency: null
+
+  maximum_model_size: null
+
+  fairness_requirements: null
+
+  data_quality_requirements:
+    max_null_rate: null
+
+    schema_match: "<enum: strict|lenient>"
+
+  calibration_requirement:
+    method: "<enum: isotonic|platt|none>"
+
+    max_calibration_error: null
+
+  stability_requirement:
+    metric_variance_across_folds_max: null
+
+  pass_condition: "<enum: all_gates_must_pass|weighted_score>"
+
+
+# -----------------------------------------------------------------------------
+# MODEL SELECTION
+# -----------------------------------------------------------------------------
+# Determines which candidate becomes the final model after all candidates
+# have been trained and evaluated.
+# -----------------------------------------------------------------------------
+
+model_selection:
+  primary_metric: *primary_metric_name
+
+  direction: "<enum: maximize|minimize>"
+
+  # Applied only after candidates satisfy validation gates.
+  tie_breakers:
+    - "<string>"
+
+  constraints:
+    "<constraint_name>": "<value>"
+
+  selection_strategy: "<string>"
+
+
+# -----------------------------------------------------------------------------
+# ARTIFACTS
+# -----------------------------------------------------------------------------
+
+artifacts:
+  output_path: "<string>"
+
+  save:
+    model: true
+    metrics: true
+    predictions: false
+    explainability: false
+    training_config: true
+
+  # serialization_format: "<enum: pickle|joblib|onnx|safetensors|framework_native>" # :CHECK: need to check the common serialization format to support all the OS
+  serialization_format: "onnx"
+
+  explainability_method: "<enum: shap|lime|none>"
+
+
+# -----------------------------------------------------------------------------
+# REPRODUCIBILITY
+# -----------------------------------------------------------------------------
+
+reproducibility:
+  python_version: "<string>"
+
+  # Lockfile hash, environment snapshot, or package-version reference.
+  library_versions: "<string>"
+
+  container_image: "<string>"
+
+  pipeline_git_commit: "<string>"
