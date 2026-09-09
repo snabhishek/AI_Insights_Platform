@@ -3,7 +3,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { AgentState, IngestionServices } from "../state";
 import { cleanupRunContainer, executePythonScript } from "../tools/helpers/pythonExecutor";
-import { getSandboxDirectory } from "../tools/filesystem";
+import { getPythonScriptDirectory } from "../tools/filesystem";
 
 type State = typeof AgentState.State;
 
@@ -25,7 +25,7 @@ function featureMetadata(state: State) {
 }
 
 function runDirectory(state: State, services: IngestionServices) {
-  return getSandboxDirectory(services.projectId || state.projectId, state.runTimestamp);
+  return getPythonScriptDirectory(services, state.runTimestamp);
 }
 
 function findDataset(dir: string): string | null {

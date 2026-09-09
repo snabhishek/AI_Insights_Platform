@@ -6,7 +6,7 @@ import { FeatureArchitectAnnotation } from "./state";
 import { executePythonScript } from "../../tools/helpers/pythonExecutor";
 import * as fs from "fs";
 import * as path from "path";
-import { getMcpFilesystemTools, getSandboxDirectory, makePipelineTemplate } from "../../tools";
+import { getMcpFilesystemTools, getPythonScriptDirectory, makePipelineTemplate } from "../../tools";
 
 
 interface RectifierOutput extends Record<string, unknown> {
@@ -93,14 +93,7 @@ export async function programRectificationNode(
   let attempt = 0;
   const maxAttempts = 3;
   // Build or update aggregated script content
-  const baseDir = path.join(
-    process.cwd(),
-    "uploads",
-    "projects",
-    services.projectId || "default",
-    "runs",
-    state.runTimestamp || "default"
-  );
+  const baseDir = getPythonScriptDirectory(services, state.runTimestamp);
   const scriptPath = path.join(baseDir, aggregatedName);
   let aggregated = "";
   if (fs.existsSync(scriptPath)) {
@@ -237,10 +230,7 @@ export async function programRectificationNode(
       };
 
       try {
-        const fsTools = await getMcpFilesystemTools({
-          projectId: services.projectId,
-          runTimestamp: state.runTimestamp,
-        });
+        const fsTools = await getMcpFilesystemTools(services);
 
         await invokeAgentJson<RectifierOutput>(
           "featureArchitect",

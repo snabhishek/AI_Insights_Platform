@@ -5,7 +5,7 @@ import { validateWithRetry } from "../../validator/validatorNode";
 import { FeatureArchitectAnnotation, DataValidationOutput } from "./state";
 import * as path from "path";
 import * as fs from "fs";
-import { getMcpFilesystemTools, getSandboxDirectory, makePipelineTemplate } from "../../tools";
+import { getMcpFilesystemTools, getPythonScriptDirectory, makePipelineTemplate } from "../../tools";
 
 export async function dataValidationNode(
   state: typeof FeatureArchitectAnnotation.State,
@@ -36,9 +36,9 @@ export async function dataValidationNode(
     );
   }
 
-  const sandboxDir = getSandboxDirectory(services?.projectId, state.runTimestamp);
+  const pythonScriptDir = getPythonScriptDirectory(services, state.runTimestamp);
   const scriptName = state.aggregatedScriptPath || "aggregated_feature_pipeline.py";
-  const scriptPath = path.join(sandboxDir, scriptName);
+  const scriptPath = path.join(pythonScriptDir, scriptName);
   if (!fs.existsSync(scriptPath)) {
     fs.writeFileSync(scriptPath, makePipelineTemplate(scriptName), "utf-8");
   }
@@ -58,10 +58,7 @@ export async function dataValidationNode(
   ].join("\n\n");
 
   try {
-    const fsTools = await getMcpFilesystemTools({
-      projectId: services?.projectId,
-      runTimestamp: state.runTimestamp,
-    });
+    const fsTools = await getMcpFilesystemTools(services);
 
     const result = await validateWithRetry<DataValidationOutput>(
       "dataValidation",
