@@ -46,6 +46,7 @@ export interface ResolvedSchemaPayload {
 export function getPackagesDir(): string {
   const candidateDirs = [
     path.resolve(process.cwd(), "../../packages"),
+    path.resolve(process.cwd(), "storage/packages"),
     path.resolve(process.cwd(), "uploads/packages"),
     path.resolve(process.cwd(), "../packages"),
     path.resolve(__dirname, "../../../../../packages"),
@@ -55,7 +56,7 @@ export function getPackagesDir(): string {
       return dir;
     }
   }
-  return candidateDirs[1]; // default to uploads/packages
+  return candidateDirs[1]; // default to storage/packages
 }
 
 /**

@@ -28,7 +28,11 @@ export interface IngestionServices {
   traceHelper: AgentTraceHelper;
   agentThinkingService?: any;
   projectId?: string;
+  projectName?: string;
+  workspaceName?: string;
+  folderPath?: string;
   pipeline?: string;
+  runTimestamp?: string;
   onThinkingUpdate?: (substep: string) => Promise<void> | void;
   isCancelled?: () => boolean;
   abortSignal?: AbortSignal;

@@ -90,7 +90,7 @@ async function bootstrap() {
   const workspaceController = new WorkspaceController(workspaceService);
   const agentThinkingRepository = new PostgresAgentThinkingRepository(db);
   const agentThinkingService = new AgentThinkingService(agentThinkingRepository);
-  connectorService = new ConnectorService(connectorRepository, fileService, connectionTester, duckDBService);
+  connectorService = new ConnectorService(connectorRepository, fileService, connectionTester, duckDBService, workspaceRepository);
   const sourceRegistryService = new SourceRegistryService(connectorRepository, connectionTester, duckDBService, projectRepository);
   connectorController = new ConnectorController(connectorService, connectionTester, sourceRegistryService);
   // agentController = new AgentController(connectorService);

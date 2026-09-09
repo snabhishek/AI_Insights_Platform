@@ -9,7 +9,7 @@ import {
   createGetTableColumnsAndProfileTool, 
   createGetSplitBoundariesTool, 
   getMcpFilesystemTools, 
-  getSandboxDirectory, 
+  getPythonScriptDirectory, 
   makePipelineTemplate 
 } from "../../tools";
 
@@ -70,9 +70,9 @@ export async function featureValidatorNode(
     );
   }
 
-  const sandboxDir = getSandboxDirectory(services?.projectId, state.runTimestamp);
+  const pythonScriptDir = getPythonScriptDirectory(services, state.runTimestamp);
   const scriptName = state.aggregatedScriptPath || "aggregated_feature_pipeline.py";
-  const scriptPath = path.join(sandboxDir, scriptName);
+  const scriptPath = path.join(pythonScriptDir, scriptName);
   if (!fs.existsSync(scriptPath)) {
     fs.writeFileSync(scriptPath, makePipelineTemplate(scriptName), "utf-8");
   }
@@ -100,10 +100,7 @@ export async function featureValidatorNode(
   try {
     const getTableColumnsAndProfileTool = createGetTableColumnsAndProfileTool(state.inspector, state.dataProfile);
     const getSplitBoundariesTool = createGetSplitBoundariesTool(state.orchestrationDecision, state.dataProfile);
-    const fsTools = await getMcpFilesystemTools({
-      projectId: services?.projectId,
-      runTimestamp: state.runTimestamp,
-    });
+    const fsTools = await getMcpFilesystemTools(services);
 
     const result = await validateWithRetry<FeatureValidatorOutput>(
       "featureValidator",

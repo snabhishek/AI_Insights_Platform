@@ -6,6 +6,14 @@ import { IDuckDBService, ProjectSourceInput } from "../duckdb/duckdb.service.int
 import { Workspace, CreateProjectDto, UpdateProjectDto } from "../../models/workspace.types";
 import { Project, ProjectRun } from "../../models/project.types";
 import { createProjectSchemaFile, deleteProjectSchemaFolder } from "../../agents/tools/helpers";
+import {
+  computeProjectRelativePath,
+  ensureDirectoryExists,
+  getWorkspaceDir,
+  resolveStoragePath,
+} from "../../config/fileServer.config";
+import fs from "fs";
+import path from "path";
 
 export type ServiceResult<T> =
   | { success: true; data: T }
@@ -64,11 +72,16 @@ export class WorkspaceService {
       for (const p of projects) {
         await deleteProjectSchemaFolder(ws.name, p.name);
         if (this.duckDBService) {
-          await this.duckDBService.deleteProjectFolder(p.name);
+          await this.duckDBService.deleteProjectFolder(p.name, ws.name, p.folderPath);
         }
       }
+      const wsDir = getWorkspaceDir(ws.name);
+      if (fs.existsSync(wsDir)) {
+        fs.rmSync(wsDir, { recursive: true, force: true });
+        console.log(`[workspaceService] Deleted workspace directory: ${wsDir}`);
+      }
     } catch (e: any) {
-      console.warn(`[workspaceService] Failed to clean up project folders during workspace deletion:`, e?.message || e);
+      console.warn(`[workspaceService] Failed to clean up project/workspace folders during workspace deletion:`, e?.message || e);
     }
 
     await this.workspaceRepository.delete(id);
@@ -122,6 +135,11 @@ export class WorkspaceService {
     }
 
     const projectId = `proj-${uuidv4()}`;
+    const relativeFolderPath = computeProjectRelativePath(ws.name, name);
+    const absFolderPath = resolveStoragePath(relativeFolderPath);
+    ensureDirectoryExists(absFolderPath);
+    ensureDirectoryExists(path.join(absFolderPath, "python_script"));
+
     const newProject: Project = {
       id: projectId,
       name,
@@ -129,6 +147,7 @@ export class WorkspaceService {
       dataSources,
       initials: projectData.initials || "US",
       workspaceId,
+      folderPath: relativeFolderPath,
       useCase: projectData.useCase || "",
       domain: projectData.domain || "",
       subDomain: projectData.subDomain || "",
@@ -150,7 +169,7 @@ export class WorkspaceService {
         console.warn(`[workspaceService] Failed to create project schema YAML file:`, schemaErr?.message || schemaErr);
       }
 
-      // 2. Ingest connected data sources into DuckDB under Projects/<projectName>/
+      // 2. Ingest connected data sources into DuckDB under designated project folder
       if (this.duckDBService && this.connectorRepository && dataSources.length > 0) {
         try {
           const projectSourceInputs: ProjectSourceInput[] = [];
@@ -165,7 +184,7 @@ export class WorkspaceService {
             }
           }
           if (projectSourceInputs.length > 0) {
-            await this.duckDBService.ingestProjectSources(newProject.name, projectSourceInputs);
+            await this.duckDBService.ingestProjectSources(newProject.name, projectSourceInputs, ws.name, relativeFolderPath);
           }
         } catch (ingestErr: any) {
           console.warn(`[workspaceService] Warning during project DuckDB source ingestion:`, ingestErr?.message || ingestErr);

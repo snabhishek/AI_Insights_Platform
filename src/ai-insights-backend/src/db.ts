@@ -53,15 +53,17 @@ export async function initializeDatabaseSchemas() {
         initials VARCHAR(10) NOT NULL DEFAULT 'US',
         workspace_id VARCHAR(50) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
         use_case TEXT,
+        folder_path VARCHAR(500),
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `);
 
-    // Add use_case, domain, sub_domain, status columns to existing projects table if they don't exist (migration)
+    // Add use_case, domain, sub_domain, folder_path, status columns to existing projects table if they don't exist (migration)
     await query(`
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS use_case TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS domain VARCHAR(255);
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS sub_domain VARCHAR(255);
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS folder_path VARCHAR(500);
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'idle';
     `);
 

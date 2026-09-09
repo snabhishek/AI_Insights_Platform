@@ -3,6 +3,8 @@ import fs from "fs";
 import path from "path";
 import { exec } from "child_process";
 import { IngestionServices } from "../../state";
+import { getPythonScriptDirectory } from "../filesystem/mcpFilesystemClient";
+import { getDatasourcesBasePath } from "../../../config/fileServer.config";
 
 export interface ExecutionResult {
   success: boolean;
@@ -237,14 +239,7 @@ export async function executePythonScript(
   services: IngestionServices,
   connectorIdList?: string[]
 ): Promise<ExecutionResult> {
-  const baseDir = path.join(
-    process.cwd(),
-    "uploads",
-    "projects",
-    projectId || "default",
-    "runs",
-    runTimestamp || "default"
-  );
+  const baseDir = getPythonScriptDirectory(projectId, runTimestamp);
   if (!fs.existsSync(baseDir)) {
     fs.mkdirSync(baseDir, { recursive: true });
   }
@@ -252,19 +247,13 @@ export async function executePythonScript(
   const scriptPath = path.join(baseDir, scriptName);
   fs.writeFileSync(scriptPath, code, "utf-8");
 
-  const duckDbDir = path.join(process.cwd(), "Projects");
-  if (!fs.existsSync(duckDbDir)) {
-    fs.mkdirSync(duckDbDir, { recursive: true });
-  }
-
-  const uploadsDir = path.join(process.cwd(), "uploads");
-  if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
+  const datasourcesDir = getDatasourcesBasePath();
+  if (!fs.existsSync(datasourcesDir)) {
+    fs.mkdirSync(datasourcesDir, { recursive: true });
   }
 
   const normRunDir = path.resolve(baseDir).replace(/\\/g, "/");
-  const normDuckDbDir = path.resolve(duckDbDir).replace(/\\/g, "/");
-  const normUploadsDir = path.resolve(uploadsDir).replace(/\\/g, "/");
+  const normDatasourcesDir = path.resolve(datasourcesDir).replace(/\\/g, "/");
 
   // Formulate command line arguments for the datasource
   const args: string[] = [];
@@ -277,7 +266,7 @@ export async function executePythonScript(
       const config = connector.connectionConfig;
 
       if (["excel", "csv", "tsv"].includes(type) && config.fileName) {
-        const containerDbPath = `/workspace/uploads`;
+        const containerDbPath = `/workspace/datasources`;
         args.push(`--db-path "${containerDbPath}"`);
       } else if (type === "postgres") {
         if (config.host) args.push(`--host "${config.host}"`);
@@ -343,8 +332,9 @@ export async function executePythonScript(
       HostConfig: {
         Binds: [
           `${normRunDir}:/workspace`,
-          `${normDuckDbDir}:/workspace/duckdb`,
-          `${normUploadsDir}:/workspace/uploads`,
+          `${normRunDir}:/workspace/duckdb`,
+          `${normDatasourcesDir}:/workspace/datasources`,
+          `${normDatasourcesDir}:/workspace/uploads`,
         ],
         Memory: 2 * 1024 * 1024 * 1024, // 2GB memory limit
         NanoCpus: 2 * 1000000000, // 2 CPU cores limit

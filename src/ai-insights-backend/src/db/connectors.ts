@@ -21,6 +21,7 @@ export const projects = pgTable("projects", {
   useCase: text("use_case"),
   domain: varchar("domain", { length: 255 }),
   subDomain: varchar("sub_domain", { length: 255 }),
+  folderPath: varchar("folder_path", { length: 500 }),
   status: varchar("status", { length: 50 }).default("idle"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => {

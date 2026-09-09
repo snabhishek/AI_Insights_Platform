@@ -15,6 +15,7 @@ import { IAgentThinkingService } from "../agent-thinking/agentThinking.service.i
 import { QueueService } from "../../queue/queue.service";
 import { agentJobEvents } from "../../queue/queueEvents";
 import { generateDateTimeStamp, ensureProjectRunFolder } from "../../../agents/tools/helpers";
+import { registerProjectMetadata } from "../../../agents/tools/filesystem/mcpFilesystemClient";
 
 const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Data Ingestion": [
@@ -219,6 +220,13 @@ export class IngestionAgentService implements IIngestionAgentService {
       if (options?.projectId) {
         try {
           pWs = await this.projectService.getProjectWithWorkspace(options.projectId);
+          if (pWs?.project?.name) {
+            registerProjectMetadata(options.projectId, {
+              projectName: pWs.project.name,
+              workspaceName: pWs.workspaceName,
+              folderPath: pWs.project.folderPath,
+            });
+          }
           savedAgentState = pWs?.project?.agentState;
           if (savedAgentState && (options?.action === "resume" || options?.action === "retry" || options?.action === "approve")) {
             latestGraphStateValues = {
@@ -267,6 +275,9 @@ export class IngestionAgentService implements IIngestionAgentService {
         traceHelper: this.traceHelper,
         agentThinkingService: this.agentThinkingService,
         projectId: options?.projectId,
+        projectName: pWs?.project?.name,
+        workspaceName: pWs?.workspaceName,
+        folderPath: pWs?.project?.folderPath,
         pipeline: "Data Ingestion",
         runTimestamp: activeRunTimestamp,
         isCancelled: () => this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId),
