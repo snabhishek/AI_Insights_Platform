@@ -34,7 +34,7 @@ export async function featureCreationNode(
   }
 
   const systemPrompt = await getPromptFromFile(
-    "featureCreation.md",
+    "FeatureArchitect/featureCreation.md",
     "You are an expert AI Feature Engineering Agent specialized in feature creation."
   );
 

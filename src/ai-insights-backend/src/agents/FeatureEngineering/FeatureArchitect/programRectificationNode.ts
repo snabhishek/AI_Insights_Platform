@@ -203,7 +203,7 @@ export async function programRectificationNode(
       }
 
       const systemPrompt = await getPromptFromFile(
-        "programRectifier.md",
+        "FeatureArchitect/programRectifier.md",
         "You are an expert AI Python Debugger and Code Rectification Agent."
       );
 

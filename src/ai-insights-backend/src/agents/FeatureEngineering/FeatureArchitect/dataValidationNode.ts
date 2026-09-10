@@ -24,7 +24,7 @@ export async function dataValidationNode(
   }
 
   const systemPrompt = await getPromptFromFile(
-    "dataValidation.md",
+    "FeatureArchitect/dataValidation.md",
     "You are an expert AI Data Quality and Validation Agent."
   );
 

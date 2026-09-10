@@ -33,7 +33,7 @@ export async function featureExtractionNode(
   }
 
   const systemPrompt = await getPromptFromFile(
-    "featureExtraction.md",
+    "FeatureArchitect/featureExtraction.md",
     "You are an expert AI Feature Engineering Agent specialized in feature extraction and dimensionality reduction."
   );
 

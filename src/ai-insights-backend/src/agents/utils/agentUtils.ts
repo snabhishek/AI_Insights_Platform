@@ -535,8 +535,11 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
 
 export function resolvePromptFilePath(filename: string): string {
   const baseDirs = [
-    path.resolve(__dirname, "../prompts"),
+    path.resolve(process.cwd(), "prompts"),
     path.resolve(process.cwd(), "src/agents/prompts"),
+    path.resolve(__dirname, "../prompts"),
+    path.resolve(__dirname, "../../../prompts"),
+    path.resolve(__dirname, "../../../../prompts"),
     path.resolve(__dirname, "../../../src/agents/prompts"),
   ];
 
