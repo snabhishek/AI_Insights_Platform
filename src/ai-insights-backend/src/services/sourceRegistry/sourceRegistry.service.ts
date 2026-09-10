@@ -366,7 +366,7 @@ export class SourceRegistryService implements ISourceRegistryService {
           `;
 
           const rows = await this.duckDBService.runQuery(dbPath, distinctSql, params);
-          if (rows && rows.length > 0) {
+          if (Array.isArray(rows)) {
             const values = rows.map((r: any) => r.val).filter((v: any) => v !== undefined && v !== null);
             return {
               success: true,
