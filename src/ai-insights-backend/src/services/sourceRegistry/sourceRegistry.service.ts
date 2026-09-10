@@ -14,7 +14,7 @@ import { IProjectRepository } from "../../repositories/project.repository.interf
 import { ConnectorType } from "../../models/connector.types";
 import { Project } from "../../models/project.types";
 
-const IDENTIFIER_REGEX = /^[a-zA-Z0-9_\-\. ]+$/;
+const IDENTIFIER_REGEX = /^[a-zA-Z0-9_\-\. \/()&#%+\:$@!\[\]]+$/;
 
 export class SourceRegistryService implements ISourceRegistryService {
   private inMemoryRegistry = new Map<string, SourceRegistryEntry>();
@@ -366,7 +366,7 @@ export class SourceRegistryService implements ISourceRegistryService {
           `;
 
           const rows = await this.duckDBService.runQuery(dbPath, distinctSql, params);
-          if (rows && rows.length > 0) {
+          if (Array.isArray(rows)) {
             const values = rows.map((r: any) => r.val).filter((v: any) => v !== undefined && v !== null);
             return {
               success: true,
