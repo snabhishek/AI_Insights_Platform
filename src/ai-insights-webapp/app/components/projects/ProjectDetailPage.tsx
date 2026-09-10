@@ -464,17 +464,32 @@ export default function ProjectDetailPage({
           "Exogenous Scout": stageOutputs.exogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
-          "Model Selection": stageOutputs.modelTraining ? (
-            <ModelTrainingValidationStepOutput />
+          "Model Selection": (stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+            <ModelTrainingValidationStepOutput
+              modelSelection={stageOutputs.modelSelection}
+              modelTraining={stageOutputs.modelTraining}
+              projectId={project.id}
+            />
           ) : null,
-          "Training Configuration": stageOutputs.modelTraining ? (
-            <ModelTrainingValidationStepOutput />
+          "Training Configuration": (stageOutputs.trainingConfiguration || stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+            <ModelTrainingValidationStepOutput
+              modelSelection={stageOutputs.modelSelection}
+              trainingConfiguration={stageOutputs.trainingConfiguration}
+              projectId={project.id}
+            />
           ) : null,
           "Model Training": stageOutputs.modelTraining ? (
-            <ModelTrainingValidationStepOutput />
+            <ModelTrainingValidationStepOutput
+              modelTraining={stageOutputs.modelTraining}
+              projectId={project.id}
+            />
           ) : null,
-          "Model Validation": stageOutputs.modelTraining ? (
-            <ModelTrainingValidationStepOutput />
+          "Model Validation": (stageOutputs.modelValidation || stageOutputs.modelTraining) ? (
+            <ModelTrainingValidationStepOutput
+              modelValidation={stageOutputs.modelValidation}
+              modelTraining={stageOutputs.modelTraining}
+              projectId={project.id}
+            />
           ) : null
         };
         console.log(stageOutputs)
