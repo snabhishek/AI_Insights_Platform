@@ -159,6 +159,21 @@ async function runFilterOptionsTests() {
     assert(false, `Security validation test threw error: ${err.message}`);
   }
 
+  // Test 8: Valid field identifier containing slashes such as "SKU / Product ID"
+  try {
+    const res8 = await registry.fetchFilterOptions({
+      sourceId: "test-source-1",
+      fieldId: "SKU / Product ID",
+      limit: 10,
+    });
+    assert(
+      res8.success && Array.isArray(res8.values),
+      "Field identifier containing slashes (e.g. 'SKU / Product ID') passes security validation and returns choices"
+    );
+  } catch (err: any) {
+    assert(false, `Field with slashes test threw error: ${err.message}`);
+  }
+
   console.log(`\n=== Test Results: ${passedCount}/${totalCount} Passed ===`);
   if (passedCount < totalCount) {
     process.exit(1);
