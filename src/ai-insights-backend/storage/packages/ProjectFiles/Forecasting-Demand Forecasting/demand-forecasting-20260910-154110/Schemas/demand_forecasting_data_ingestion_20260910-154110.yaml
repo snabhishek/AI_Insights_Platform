@@ -1,0 +1,343 @@
+version: '1.0'
+generatedAt: '2026-08-24T07:48:00.000Z'
+resolvedTables:
+  - carrier_forecast_dataset
+fields:
+  Identifier:
+    - field: carrier_forecast_dataset.Customer_ID
+      subtype: ForeignKey
+      priority: High
+      priorityRationale: Identifies the purchasing account or distributor entity to analyze channel-level ordering patterns.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Product_ID
+      subtype: ForeignKey
+      priority: Critical
+      priorityRationale: Core product master key linking demand forecasting models to catalog specifications.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.SKU
+      subtype: BusinessKey
+      priority: Critical
+      priorityRationale: Granular unit-level tracking key required for item-level HVAC demand forecasting and inventory replenishment.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Supplier_ID
+      subtype: ForeignKey
+      priority: Medium
+      priorityRationale: Identifies component vendors to evaluate supply constraints, lead times, and procurement risks.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Order_ID
+      subtype: PrimaryKey
+      priority: Medium
+      priorityRationale: Unique transaction key for historical order tracking and deduplication.
+      sensitiveSubtype: null
+  Categorical:
+    - field: carrier_forecast_dataset.Segment
+      subtype: Nominal
+      priority: High
+      priorityRationale: Classifies customer accounts (e.g., Commercial, Residential, Industrial) for segmented demand and channel analysis.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Category
+      subtype: Hierarchical Category
+      priority: Critical
+      priorityRationale: Primary HVAC product family grouping (e.g., Chillers, Heat Pumps) driving category-level aggregate forecasts.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Supplier_Type
+      subtype: Nominal
+      priority: Low
+      priorityRationale: Vendor classification category supporting supplier risk and tiering analysis.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Promotion_Type
+      subtype: Nominal
+      priority: Medium
+      priorityRationale: Specifies active promotion structures to measure promotional demand lift and elasticity.
+      sensitiveSubtype: null
+  Numerical:
+    - field: carrier_forecast_dataset.Capacity_Units_Monthly
+      subtype: Capacity
+      priority: Medium
+      priorityRationale: Supplier monthly production volume capacity indicating component procurement ceiling.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Order_Quantity
+      subtype: Count
+      priority: Critical
+      priorityRationale: Target volume metric representing actual historical unit sales and demand quantity.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.FG_Inventory_Units
+      subtype: Count
+      priority: Critical
+      priorityRationale: Current finished goods stock on hand, vital for available-to-promise calculation and stockout mitigation.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.WIP_Inventory_Units
+      subtype: Count
+      priority: Medium
+      priorityRationale: Units in production pipeline used to project short-term finished goods availability.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Raw_Inventory_Units
+      subtype: Count
+      priority: Medium
+      priorityRationale: Raw component inventory level required for manufacturing and replenishment scheduling.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Safety_Stock_Target
+      subtype: Target
+      priority: High
+      priorityRationale: Target safety stock threshold required to buffer against seasonal demand surges and lead time variance.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Historical_Discount_Sensitivity
+      subtype: Coefficient
+      priority: Medium
+      priorityRationale: Econometric price elasticity coefficient measuring demand response to price shifts.
+      sensitiveSubtype: null
+  Boolean:
+    - field: carrier_forecast_dataset.Is_Active
+      subtype: Flag
+      priority: Low
+      priorityRationale: Filters active trading customer accounts from dormant historical records.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Is_Premium
+      subtype: Flag
+      priority: Low
+      priorityRationale: Distinguishes premium tier HVAC equipment lines from standard offerings.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Is_Rush_Order
+      subtype: Flag
+      priority: Medium
+      priorityRationale: Indicates expedited order fulfillment requiring prioritized production and dispatch scheduling.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Is_Promotion_Active
+      subtype: Flag
+      priority: High
+      priorityRationale: Isolates promotion-driven demand spikes from organic baseline demand.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Weather_Anomaly_Flag
+      subtype: Flag
+      priority: High
+      priorityRationale: Flags extreme weather anomalies (e.g., heatwaves, cold snaps) driving sudden demand outliers.
+      sensitiveSubtype: null
+  Temporal:
+    - field: carrier_forecast_dataset.Registration_Date
+      subtype: Date
+      priority: Low
+      priorityRationale: Account onboarding timestamp used for customer cohort and tenure tracking.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Launch_Date
+      subtype: Date
+      priority: Low
+      priorityRationale: Product release date indicating lifecycle phase and maturity.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Order_Date
+      subtype: Date
+      priority: Critical
+      priorityRationale: Primary time-series index for daily/weekly/monthly demand aggregations and seasonal decomposition.
+      sensitiveSubtype: null
+  Duration:
+    - field: carrier_forecast_dataset.Supplier_Lead_Time_Days
+      subtype: LeadTime
+      priority: High
+      priorityRationale: Procurement cycle time in days governing supplier reorder points and material scheduling.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Promised_Delivery_Days
+      subtype: Days
+      priority: Low
+      priorityRationale: Committed customer fulfillment SLA duration.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Backlog_Days
+      subtype: Days
+      priority: High
+      priorityRationale: Measures unfulfilled demand backlog duration highlighting capacity constraints and fulfillment delays.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.FG_Inventory_Age_Days
+      subtype: Age
+      priority: Medium
+      priorityRationale: Tracks inventory shelf age to identify slow-moving or obsolete HVAC stock.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.WIP_Lead_Time_Days
+      subtype: LeadTime
+      priority: Medium
+      priorityRationale: Manufacturing throughput cycle duration to convert WIP into available finished goods.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Raw_Inventory_Days_Supply
+      subtype: Coverage
+      priority: High
+      priorityRationale: Operational coverage metric showing days of production sustained by current raw stock.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Inventory_Supplier_Lead_Time_Days
+      subtype: LeadTime
+      priority: Medium
+      priorityRationale: Current replenishment lead time from vendors for calculating reorder schedules.
+      sensitiveSubtype: null
+  Location:
+    - field: carrier_forecast_dataset.Customer_Region
+      subtype: Region
+      priority: High
+      priorityRationale: Geographic territory of customer for regional demand distribution and localized forecasting.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Customer_Country
+      subtype: Country
+      priority: Low
+      priorityRationale: Country of customer headquarters for cross-border trade and demographic partitioning.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Supplier_Region
+      subtype: Region
+      priority: Low
+      priorityRationale: Geographic location of supplier facility for regional supply chain vulnerability mapping.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Supplier_Country
+      subtype: Country
+      priority: Low
+      priorityRationale: Supplier manufacturing nation for tariff, lead time, and cross-border risk assessment.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Order_Region
+      subtype: Region
+      priority: Critical
+      priorityRationale: Delivery destination region used to align regional warehouse stocks and weather demand drivers.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Order_Country
+      subtype: Country
+      priority: Low
+      priorityRationale: Fulfillment destination country for cross-border shipping logistics.
+      sensitiveSubtype: null
+  Text:
+    - field: carrier_forecast_dataset.Customer_Name
+      subtype: OrganizationName
+      priority: Low
+      priorityRationale: Descriptive legal name of the purchasing entity.
+      sensitiveSubtype: OrganizationName
+    - field: carrier_forecast_dataset.Product_Name
+      subtype: ProductName
+      priority: Low
+      priorityRationale: Human-readable descriptive label for HVAC product models.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Supplier_Name
+      subtype: OrganizationName
+      priority: Low
+      priorityRationale: Descriptive vendor trade name.
+      sensitiveSubtype: OrganizationName
+  Financial:
+    - field: carrier_forecast_dataset.Annual_Revenue_Potential
+      subtype: Revenue
+      priority: Medium
+      priorityRationale: Estimated account contract potential for high-value distributor prioritization.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Base_Price
+      subtype: UnitPrice
+      priority: High
+      priorityRationale: Standard list price benchmark across product categories.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Manufacturing_Cost
+      subtype: Cost
+      priority: Medium
+      priorityRationale: Direct manufacturing cost required for margin optimization and production economics.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Unit_Price
+      subtype: UnitPrice
+      priority: High
+      priorityRationale: Invoiced selling price per unit reflecting transaction-level pricing agreements.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Order_Value
+      subtype: TotalAmount
+      priority: High
+      priorityRationale: Total financial order gross value metric for revenue planning.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.FG_Inventory_Value
+      subtype: Valuation
+      priority: Medium
+      priorityRationale: Capitalized monetary valuation of finished inventory measuring working capital lockup.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Price_Per_Unit
+      subtype: UnitPrice
+      priority: Medium
+      priorityRationale: Benchmark pricing schedule rate used in price optimization models.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Effective_Price
+      subtype: RealizedPrice
+      priority: High
+      priorityRationale: Actual net realized price after discounts, serving as key input to econometric demand curves.
+      sensitiveSubtype: null
+  Percentage:
+    - field: carrier_forecast_dataset.On_Time_Delivery_Rate
+      subtype: Rate
+      priority: Medium
+      priorityRationale: Historical supplier on-time fulfillment rate indicating delivery reliability.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Order_Discount_Rate
+      subtype: DiscountRate
+      priority: Medium
+      priorityRationale: Transaction discount percentage affecting customer purchasing volume.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Pricing_Discount_Rate
+      subtype: DiscountRate
+      priority: Medium
+      priorityRationale: Promotional or policy discount percentage applied in commercial schedules.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Humidity_Percentage
+      subtype: AtmosphericRate
+      priority: Medium
+      priorityRationale: Ambient relative humidity percentage influencing cooling and dehumidification equipment demand.
+      sensitiveSubtype: null
+  Score:
+    - field: carrier_forecast_dataset.Credit_Rating
+      subtype: CreditScore
+      priority: Low
+      priorityRationale: Financial risk rating of customer account governing trade credit limits.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Energy_Efficiency_Rating
+      subtype: Rating
+      priority: Medium
+      priorityRationale: Efficiency rating (e.g., SEER/EER) impacting regulatory adoption and consumer choice.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Quality_Rating
+      subtype: Rating
+      priority: Medium
+      priorityRationale: Vendor quality compliance score evaluating defect rates.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Cooling_Degree_Days
+      subtype: Index
+      priority: Critical
+      priorityRationale: Primary HVAC industry energy demand index strongly correlated with summer cooling equipment sales.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Heating_Degree_Days
+      subtype: Index
+      priority: Critical
+      priorityRationale: Primary HVAC industry energy demand index directly driving winter heating and heat pump demand.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Forecast_Confidence
+      subtype: ConfidenceScore
+      priority: High
+      priorityRationale: Statistical confidence score indicating model prediction reliability for automated stock allocation.
+      sensitiveSubtype: null
+  Measurement:
+    - field: carrier_forecast_dataset.Weight_kg
+      subtype: Mass
+      priority: Low
+      priorityRationale: Physical equipment weight used for freight logistics and freight cost estimation.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Temperature_Avg_Daily
+      subtype: Temperature
+      priority: Critical
+      priorityRationale: Core daily ambient mean temperature driving HVAC seasonal load and consumer demand.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Temperature_Max_Daily
+      subtype: Temperature
+      priority: High
+      priorityRationale: Peak daily temperature correlated with cooling equipment emergency replacement demand.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Temperature_Min_Daily
+      subtype: Temperature
+      priority: High
+      priorityRationale: Minimum daily temperature correlated with peak heating system load and failure replacements.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Precipitation_mm
+      subtype: Precipitation
+      priority: Low
+      priorityRationale: Rainfall metric used as a secondary weather covariate for HVAC installation activity.
+      sensitiveSubtype: null
+    - field: carrier_forecast_dataset.Wind_Speed_kmh
+      subtype: Velocity
+      priority: Low
+      priorityRationale: Ambient wind speed covariate affecting building thermal loads.
+      sensitiveSubtype: null
+  Status:
+    - field: carrier_forecast_dataset.Order_Status
+      subtype: LifecycleStatus
+      priority: High
+      priorityRationale: Tracks order state (e.g., Pending, Shipped, Delivered) to distinguish confirmed shipments from open orders.
+      sensitiveSubtype: null

@@ -455,13 +455,13 @@ sequenceDiagram
 
 #### Step 1: Subgraph Initialization & Problem Formulation
 - **Node**: `supervisorNode`
-- **Prompt**: `featureSupervisor.md`
+- **Prompt**: `FeatureArchitect/featureSupervisor.md`
 - **Actions**: Reads candidate tables and inspection profiles via tools (`getTableNames`, `getTableColumnsAndProfile`). Formulates `problemType` (classification/regression/forecasting), `targetColumn`, `predictionEntity`, `timeColumn`, and `leakageColumns`.
 - **Decision**: Outputs `nextWorker: "featureCreation"`.
 
 #### Step 2: Feature Creation
 - **Node**: `featureCreationNode`
-- **Prompt**: `featureCreation.md`
+- **Prompt**: `FeatureArchitect/featureCreation.md`
 - **Actions**: Proposes domain-specific feature engineering (One-Hot Encoding, numerical binning, datetime field splitting, rolling aggregations, cross-table ratio interactions).
 - **Filesystem Action**: Uses MCP `read_text_file` to locate `FEATURE_CREATION` region in `aggregated_feature_pipeline.py` and `edit_file` to write `main_feature_creation(args_list=None)`.
 - **Output**: JSON containing recommendations array, `pythonCode`, and `yamlLineage`.
@@ -471,35 +471,35 @@ sequenceDiagram
 - **Routing**: Bypasses LLM prompt and immediately sets `nextWorker: "programRectifier"`.
 - **Node**: `programRectificationNode`.
 - **Execution**: Runs the aggregated script inside the Docker container against the project's data files.
-- **Handling**: If exit code is 0, logs success and returns to Supervisor. If non-zero, triggers the Rectifier LLM (`programRectifier.md`) to read traceback, edit the script, and re-run.
+- **Handling**: If exit code is 0, logs success and returns to Supervisor. If non-zero, triggers the Rectifier LLM (`FeatureArchitect/programRectifier.md`) to read traceback, edit the script, and re-run.
 
 #### Step 4: Feature Transformation & Imputation
 - **Node**: `featureTransformationNode`
-- **Prompt**: `featureTransformation.md`
+- **Prompt**: `FeatureArchitect/featureTransformation.md`
 - **Actions**: Recommends missing value imputation (median/mode/KNN), scaling (`StandardScaler`, `RobustScaler`), power transforms (`log1p`, Box-Cox), and rare category pooling.
 - **Enforcement**: Must fit transformers only on training splits to prevent data leakage.
 - **Filesystem Action**: Edits the `FEATURE_TRANSFORMATION` region in `aggregated_feature_pipeline.py`.
 
 #### Step 5: Dataset Assembly (Build Dataset)
 - **Node**: `buildDatasetNode`
-- **Prompt**: `buildDataset.md`
+- **Prompt**: `FeatureArchitect/buildDataset.md`
 - **Actions**: Formulates the multi-table join plan at the prediction entity grain (`predictionEntity`).
 - **Filesystem Action**: Edits `BUILD_DATASET` region with `main_build_dataset(args_list=None)`, generating a unified Parquet file at `--output-path` (`dataset.parquet`).
 
 #### Step 6: Data Quality & Target Leakage Validation
 - **Node**: `dataValidationNode`
-- **Prompt**: `dataValidation.md`
+- **Prompt**: `FeatureArchitect/dataValidation.md`
 - **Actions**: Audits the assembled dataset matrix for null rates, constant columns, duplicate entity keys, and correlation with the target variable to flag target leakage.
 - **Filesystem Action**: Edits `DATA_VALIDATION` region to output `validation_report.json`.
 
 #### Step 7: Feature Extraction & Dimensionality Reduction
 - **Node**: `featureExtractionNode`
-- **Prompt**: `featureExtraction.md`
+- **Prompt**: `FeatureArchitect/featureExtraction.md`
 - **Actions**: Evaluates whether high-dimensional sparse features require dimensionality reduction (PCA, TruncatedSVD, UMAP). If required, generates code in `FEATURE_EXTRACTION` region and persists component variance metadata.
 
 #### Step 8: Feature Selection & Pruning
 - **Node**: `featureSelectionNode`
-- **Prompt**: `featureSelection.md`
+- **Prompt**: `FeatureArchitect/featureSelection.md`
 - **Actions**: Applies collinearity filters ($>0.95$ Pearson correlation), low-variance thresholds ($Var < 0.01$), and tree-based importance metrics (RandomForest/LightGBM importance).
 - **Filesystem Action**: Edits `FEATURE_SELECTION` region to export the final dataset to `selected_features.parquet`.
 

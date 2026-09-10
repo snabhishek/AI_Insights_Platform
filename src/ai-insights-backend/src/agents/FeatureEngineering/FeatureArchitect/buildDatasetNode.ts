@@ -24,7 +24,7 @@ export async function buildDatasetNode(
   }
 
   const systemPrompt = await getPromptFromFile(
-    "buildDataset.md",
+    "FeatureArchitect/buildDataset.md",
     "You are an expert AI Data Engineering Agent specialized in assembling machine learning datasets."
   );
 

@@ -34,7 +34,7 @@ export async function featureTransformationNode(
   }
 
   const systemPrompt = await getPromptFromFile(
-    "featureTransformation.md",
+    "FeatureArchitect/featureTransformation.md",
     "You are an expert AI Feature Engineering Agent specialized in feature transformation and missing value imputation."
   );
 
