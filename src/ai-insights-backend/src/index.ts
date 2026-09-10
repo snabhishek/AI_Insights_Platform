@@ -24,7 +24,8 @@ import { checkAndCreateDatabase, runMigrations, pool } from "./db";
 import * as connectorsSchema from "./db/connectors";
 import * as agentThinkingSchema from "./db/agentThinking";
 import * as agentJobsSchema from "./db/agentJobs";
-const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema };
+import * as modelSelectionSchema from "./db/modelSelection";
+const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema, ...modelSelectionSchema };
 import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
 import { AgentThinkingService } from "./services/ai/agent-thinking/agentThinking.service";
 // import { AgentController } from "./controllers/agent.controller";
@@ -36,6 +37,11 @@ import { DomainService } from "./services/domain/domain.service";
 import { DomainController } from "./controllers/domain.controller";
 import createDomainRouter from "./routes/domains";
 import { SourceRegistryService } from "./services/sourceRegistry/sourceRegistry.service";
+import { PostgresModelSelectionRepository } from "./repositories/modelSelection.repository";
+import { ModelSelectionLLMService } from "./services/ai/model-selection/modelSelectionLLM.service";
+import { ModelSelectionService } from "./services/ai/model-selection/modelSelection.service";
+import { ModelSelectionController } from "./controllers/modelSelection.controller";
+import createModelSelectionRouter from "./routes/modelSelection";
 
 
 dotenv.config();
@@ -103,10 +109,16 @@ async function bootstrap() {
   const domainService = new DomainService(domainRepository);
   const domainController = new DomainController(domainService);
 
+  const modelSelectionRepository = new PostgresModelSelectionRepository(db);
+  const modelSelectionLLMService = new ModelSelectionLLMService();
+  const modelSelectionService = new ModelSelectionService(modelSelectionRepository, modelSelectionLLMService, projectService);
+  const modelSelectionController = new ModelSelectionController(modelSelectionService);
+
   // 4. Mount Main routers
   app.get("/api/filter-options", connectorController.getFilterOptions);
   app.use("/api/connectors", createConnectorRouter(connectorController));
   app.use("/api/domains", createDomainRouter(domainController));
+  app.use("/api/model-selection", createModelSelectionRouter(modelSelectionController));
 
   // Agent Router
   const agentRouter = express.Router();

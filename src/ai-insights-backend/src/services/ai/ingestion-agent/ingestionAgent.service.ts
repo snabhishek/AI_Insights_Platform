@@ -448,20 +448,19 @@ export class IngestionAgentService implements IIngestionAgentService {
               }
             } else if (nodeName === "exogenous" || nodeName === "exogenousScout") {
               updated.exogenousScout = "Completed";
+              if (!updated.modelSelection || updated.modelSelection === "Pending") {
+                updated.modelSelection = "In Progress";
+              }
+            } else if (nodeName === "modelSelection" || nodeName === "modelSelectionNode") {
+              updated.modelSelection = "Completed";
             } else if (nodeName === "trainingConfiguration" || nodeName === "trainingConfigurationNode") {
               updated.trainingConfiguration = "Completed";
               updated.modelTraining = "In Progress";
             } else if (nodeName === "modelTraining" || nodeName === "modelTrainingNode") {
               updated.modelTraining = "Completed";
-              updated.modelEvaluation = "In Progress";
-            } else if (nodeName === "modelEvaluation" || nodeName === "modelEvaluationNode") {
-              updated.modelEvaluation = "Completed";
               updated.modelValidation = "In Progress";
             } else if (nodeName === "modelValidation" || nodeName === "modelValidationNode") {
               updated.modelValidation = "Completed";
-              updated.modelSelection = "In Progress";
-            } else if (nodeName === "modelSelection" || nodeName === "modelSelectionNode" || nodeName === "finalModelSelection" || nodeName === "finalModelSelectionNode") {
-              updated.modelSelection = "Completed";
             }
             return updated;
           };
@@ -744,7 +743,11 @@ export class IngestionAgentService implements IIngestionAgentService {
                 if (savedAgentState && (savedAgentState.schemaResolution || savedAgentState.stageOutputs)) {
                   console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
 
-                  const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" ? "exogenous" : "resolveSchema";
+                  const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode"
+                    ? "exogenous"
+                    : options.step === "Training Configuration" || options.step === "trainingConfigurationNode" || options.step === "Model Training"
+                    ? "modelSelectionNode"
+                    : "resolveSchema";
                   const restoredState = {
                     ...savedAgentState,
                     connectorId,
@@ -996,19 +999,25 @@ export class IngestionAgentService implements IIngestionAgentService {
             ? "Feature Engineering"
             : (nextNode === "modelSelectionNode" || nextNode === "modelSelection")
               ? "Model Training & Validation"
-              : undefined;
+              : (nextNode === "trainingConfigurationNode" || nextNode === "trainingConfiguration")
+                ? "Training Configuration"
+                : undefined;
           const isAtApprovalGate = Boolean(approvalTarget);
 
           if (isAtApprovalGate) {
             console.info(`[Workflow] Pausing for user approval before ${approvalTarget}.`);
-            const completedPhase = approvalTarget === "Feature Engineering" ? "Data Ingestion" : "Feature Engineering";
+            const completedPhase = approvalTarget === "Feature Engineering"
+              ? "Data Ingestion"
+              : approvalTarget === "Model Training & Validation"
+                ? "Feature Engineering"
+                : "Model Selection";
             const pausedValues = {
               ...latestGraphStateValues,
               status: "paused",
               requiresApproval: true,
               nextStep: approvalTarget,
-              summary: `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`,
-              message: `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`,
+              summary: `${completedPhase} completed successfully. Select candidate models and approve to proceed to ${approvalTarget}.`,
+              message: `${completedPhase} completed successfully. Select candidate models and approve to proceed to ${approvalTarget}.`,
             };
             latestGraphStateValues = pausedValues;
             const pausedResult = buildResultFromGraphState({ values: pausedValues, next: graphState?.next }, threadId, connectorId);

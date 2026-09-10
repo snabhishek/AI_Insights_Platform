@@ -5,6 +5,13 @@ import { AgentState, IngestionServices } from "../state";
 import { cleanupRunContainer, executePythonScript } from "../tools/helpers/pythonExecutor";
 import { getPythonScriptDirectory } from "../tools/filesystem";
 
+import { drizzle } from "drizzle-orm/node-postgres";
+import { pool } from "../../db";
+import * as modelSelectionSchema from "../../db/modelSelection";
+import { PostgresModelSelectionRepository } from "../../repositories/modelSelection.repository";
+import { ModelSelectionLLMService } from "../../services/ai/model-selection/modelSelectionLLM.service";
+import { ModelSelectionService } from "../../services/ai/model-selection/modelSelection.service";
+
 type State = typeof AgentState.State;
 
 function servicesFrom(config?: RunnableConfig): IngestionServices {
@@ -39,33 +46,55 @@ function readReport(state: State, services: IngestionServices): any {
   return JSON.parse(fs.readFileSync(reportPath, "utf-8"));
 }
 
-export async function modelSelectionNode(_state: State, _config?: RunnableConfig) {
-  // Phase 1: 3.1 Model Selection - Initial candidate model recommendation
-  const metadata = featureMetadata(_state);
-  const candidateModels = metadata.problemType === "classification"
-    ? ["Logistic Regression", "Random Forest Classifier", "Gradient Boosting Classifier"]
-    : ["Linear Regression", "Random Forest Regressor", "Gradient Boosting Regressor"];
+export async function modelSelectionNode(state: State, config?: RunnableConfig) {
+  // Phase 1: 3.1 Model Selection - Pre-training model selection agent
+  const services = servicesFrom(config);
+  const projectId = services.projectId || state.projectId || "default-project";
+  const metadata = featureMetadata(state);
+  const dataset = findDataset(runDirectory(state, services));
 
-  const output = {
-    status: "Completed",
-    summary: `Selected candidate models for ${metadata.problemType} problem: ${candidateModels.join(", ")}`,
-    phase: "Model Selection",
-    problemType: metadata.problemType,
+  const db = drizzle(pool, { schema: modelSelectionSchema });
+  const repo = new PostgresModelSelectionRepository(db);
+  const llmService = new ModelSelectionLLMService();
+  const service = new ModelSelectionService(repo, llmService, services.projectService);
+
+  const inputContext = {
+    projectId,
+    userPrompt: state.userPrompt,
+    useCase: state.userPrompt,
+    runTimestamp: state.runTimestamp,
+    featureArchitect: state.featureArchitect,
+    featureValidator: state.featureValidator,
+    exogenousScout: state.exogenousScout,
     targetColumn: metadata.targetColumn,
-    candidateModels,
+    problemType: metadata.problemType,
+    datasetPath: dataset ? path.join(runDirectory(state, services), dataset) : undefined,
   };
 
+  const decisionRecord = await service.analyze(inputContext, projectId);
+  const decision = decisionRecord.decision;
+
+  const candidateNames = (decision.candidates || []).map((c) => c.displayName || c.model_id);
+  const summary = `Model selection completed for ${decision.target_entity?.name || metadata.targetColumn || "target"}. Recommended: ${decision.recommended_model?.model_id || "None"} (${((decision.recommended_model?.suitability_score || 0) * 100).toFixed(0)}%). Candidates: ${candidateNames.join(", ")}`;
+
   return {
-    modelSelection: output,
+    modelSelection: decision,
     status: "running",
-    summary: output.summary,
-    stageOutputs: { modelSelection: output },
+    summary,
+    stageOutputs: { modelSelection: decision },
     stageStatuses: {
       modelSelection: "Completed",
-      trainingConfiguration: "In Progress",
+      trainingConfiguration: "Pending",
       modelTraining: "Pending",
       modelValidation: "Pending",
     },
+    steps: [
+      {
+        name: "Model Selection",
+        status: "completed",
+        summary,
+      },
+    ],
   };
 }
 
@@ -77,16 +106,36 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
   if (!dataset) throw new Error("Feature Engineering did not produce a supported model-ready dataset artifact");
   if (!metadata.targetColumn) throw new Error("Feature Engineering did not provide a target column");
 
+  // Read user-selected models or fallback to recommended model from modelSelection
+  const trainingConfig = (state.trainingConfiguration || {}) as any;
+  const modelSelection = (state.modelSelection || {}) as any;
+
+  let candidateModels: string[] = [];
+  if (Array.isArray(trainingConfig.candidate_models) && trainingConfig.candidate_models.length > 0) {
+    candidateModels = trainingConfig.candidate_models;
+  } else if (Array.isArray(trainingConfig.models) && trainingConfig.models.length > 0) {
+    candidateModels = trainingConfig.models;
+  } else if (modelSelection.recommended_model?.model_id) {
+    candidateModels = [modelSelection.recommended_model.model_id];
+  } else if (Array.isArray(modelSelection.candidates) && modelSelection.candidates.length > 0) {
+    candidateModels = modelSelection.candidates.map((c: any) => c.model_id);
+  } else {
+    candidateModels = metadata.problemType === "classification"
+      ? ["Logistic Regression", "Random Forest"]
+      : ["Linear Regression", "Random Forest"];
+  }
+
   const output = {
     status: "Completed",
-    summary: "Training configuration and dataset split strategy prepared successfully",
+    summary: `Training configuration prepared for models: ${candidateModels.join(", ")}`,
     phase: "Training Configuration",
     dataset,
     targetColumn: metadata.targetColumn,
     problemType: metadata.problemType,
     features: metadata.features,
     configuration: {
-      models: metadata.problemType === "classification" ? ["Logistic Regression", "Random Forest"] : ["Linear Regression", "Random Forest"],
+      models: candidateModels,
+      candidate_models: candidateModels,
       testSplitRatio: 0.3,
       validationSplitRatio: 0.5,
       cvFolds: 5,

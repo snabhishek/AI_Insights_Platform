@@ -70,18 +70,6 @@ task:
   # Defines what the trained model must return.
   prediction_type: "<enum: label|probability|probability_thresholded|score|value>"
 
-  target:
-    name: "<string|null>"
-    datatype: "<enum: boolean|categorical|numeric|null>"
-    description: "<string|null>"
-    source: "<string|null>"
-
-    # Business/data rule used to produce the target.
-    derivation: "<string|null>"
-
-    positive_class: "<string|null>"
-    negative_class: "<string|null>"
-
   # How far into the future the prediction applies.
   prediction_horizon: "<string|null>"
 
@@ -171,63 +159,6 @@ imbalance:
   sampling:
     method: "<enum: none|smote|random_oversample|random_undersample>"
     sampling_ratio: null
-
-
-# -----------------------------------------------------------------------------
-# TRAINING STRATEGY
-# -----------------------------------------------------------------------------
-
-training:
-  mode: "<enum: automl_search|single_model|ensemble>"
-
-  # Candidate model families the training agent should consider.
-  candidate_models:
-    - "<string>"
-
-  # Models explicitly excluded because of business, technical, or
-  # infrastructure constraints.
-  excluded_models:
-    - "<string>"
-
-  baseline_model: "<string|null>"
-
-  ensemble:
-    enabled: false
-    strategy: "<enum: stacking|voting|blending|null>"
-
-  random_seed: 42
-
-  early_stopping:
-    enabled: false
-
-    # Number of evaluation rounds without improvement before stopping.
-    patience: null
-
-    # Always follows the primary metric.
-    metric: *primary_metric_name
-
-  max_training_time: "<duration|null>"
-
-  model_selection_strategy: "<string>"
-
-
-# -----------------------------------------------------------------------------
-# MODEL CONFIGURATION
-# -----------------------------------------------------------------------------
-# Defines model-specific fixed parameters.
-# Hyperparameters intended for optimization belong under
-# hyperparameter_optimization.search_space.
-# -----------------------------------------------------------------------------
-
-models:
-  - model_id: "<string>"
-    framework: "<enum: xgboost|lightgbm|sklearn|pytorch|tensorflow>"
-    algorithm: "<string>"
-    enabled: true
-
-    # Parameters fixed by the agent/user and not optimized.
-    parameters: {}
-
 
 # -----------------------------------------------------------------------------
 # HYPERPARAMETER OPTIMIZATION
@@ -451,6 +382,53 @@ validation_gates:
 # -----------------------------------------------------------------------------
 
 model_selection:
+
+  target_entity:
+    name: "<string|null>"
+    datatype: "<enum: boolean|categorical|numeric|null>"
+    description: "<string|null>"
+    source: "<string|null>"
+
+  # Business/data rule used to produce the target.
+  derivation: "<string|null>"
+
+  positive_class: "<string|null>"
+  negative_class: "<string|null>"
+
+  prediction_grain:
+    entity: "<string>"
+    keys: []
+    frequency: "<string|null>"
+
+  recommended_model:
+    model_id: [example - lightgbm]
+    rank: 1
+    suitability_score: 0.92
+    recommendation: "primary"
+
+  candidates:
+    - model_id: [example - lightgbm]
+      rank: 1
+      suitability_score: 0.92
+      recommendation: "primary"
+      reasoning:
+        strengths:
+          - "..."
+        weaknesses:
+          - "..."
+        suitability:
+          - "..."
+
+    - model_id: [example - lightgbm]
+      rank: 2
+      suitability_score: 0.89
+      recommendation: "alternative"
+
+    - model_id: [example - lightgbm]
+      rank: 3
+      suitability_score: 0.86
+      recommendation: "alternative"
+
   primary_metric: *primary_metric_name
 
   direction: "<enum: maximize|minimize>"
@@ -463,6 +441,40 @@ model_selection:
     "<constraint_name>": "<value>"
 
   selection_strategy: "<string>"
+
+  training:
+    mode: "<enum: automl_search|single_model|ensemble>"
+
+    baseline_model: "<string|null>"
+
+    ensemble:
+      enabled: false
+      strategy: "<enum: stacking|voting|blending|null>"
+
+    random_seed: 42
+
+    early_stopping:
+      enabled: false
+
+      # Number of evaluation rounds without improvement before stopping.
+      patience: null
+
+      # Always follows the primary metric.
+      metric: *primary_metric_name
+
+  max_training_time: "<duration|null>"
+
+  model_selection_strategy: "<string>"
+
+  # Model Selection
+  models:                     
+  - model_id: "<string>"
+    framework: "<enum: xgboost|lightgbm|sklearn|pytorch|tensorflow>"
+    algorithm: "<string>"
+    enabled: true
+
+    # Parameters fixed by the agent/user and not optimized.
+    parameters: {}
 
 
 # -----------------------------------------------------------------------------

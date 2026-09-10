@@ -514,6 +514,54 @@ export async function initializeDatabaseSchemas() {
       console.log("[DB] Seeding business domains completed successfully.");
     }
 
+    // Model Selection Decisions table
+    await query(`
+      CREATE TABLE IF NOT EXISTS model_selection_decisions (
+        id VARCHAR(50) PRIMARY KEY,
+        project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        use_case TEXT,
+        status VARCHAR(50) NOT NULL DEFAULT 'READY',
+        dataset_version VARCHAR(100),
+        feature_set_version VARCHAR(100),
+        model_catalog_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+        prompt_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+        agent_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
+        llm_provider VARCHAR(50),
+        llm_model VARCHAR(100),
+        execution_duration_ms INTEGER,
+        candidate_count INTEGER,
+        primary_model_id VARCHAR(100),
+        input_context_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
+        decision JSONB NOT NULL DEFAULT '{}'::jsonb,
+        user_selection JSONB,
+        is_stale BOOLEAN NOT NULL DEFAULT FALSE,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS model_selection_decisions_project_id_idx ON model_selection_decisions(project_id);
+      CREATE INDEX IF NOT EXISTS model_selection_decisions_status_idx ON model_selection_decisions(status);
+    `);
+
+    // Dynamic Model Registry table for explored models
+    await query(`
+      CREATE TABLE IF NOT EXISTS dynamic_model_registry (
+        model_id VARCHAR(100) PRIMARY KEY,
+        display_name VARCHAR(255) NOT NULL,
+        algorithm VARCHAR(255) NOT NULL,
+        framework VARCHAR(50) NOT NULL DEFAULT 'custom',
+        supported_tasks TEXT[] NOT NULL DEFAULT '{}',
+        capabilities TEXT[] NOT NULL DEFAULT '{}',
+        strengths TEXT[] NOT NULL DEFAULT '{}',
+        weaknesses TEXT[] NOT NULL DEFAULT '{}',
+        is_baseline BOOLEAN NOT NULL DEFAULT FALSE,
+        source VARCHAR(50) NOT NULL DEFAULT 'web_search',
+        metadata JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS dynamic_model_registry_framework_idx ON dynamic_model_registry(framework);
+      CREATE INDEX IF NOT EXISTS dynamic_model_registry_source_idx ON dynamic_model_registry(source);
+    `);
+
     console.log("[DB] Database tables initialization and migrations completed successfully.");
   } catch (err: any) {
     console.error("[DB] Failed to initialize database schemas:", err.message || err);
