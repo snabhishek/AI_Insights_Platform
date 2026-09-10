@@ -44,6 +44,8 @@ export function useFilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000" }: 
   const abortControllersRef = useRef<Map<string, AbortController>>(new Map());
   const fetchSeqRef = useRef<Map<string, number>>(new Map());
   const searchDebounceTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map());
+  const selectedValuesRef = useRef(selectedValues);
+  const searchTermsRef = useRef(searchTerms);
 
   // Extract all fields and build parent-child dependency graph
   const allFields = useRef<FormField[]>([]);
@@ -133,7 +135,7 @@ export function useFilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000" }: 
         if (Object.keys(parentParamsObj).length > 0) {
           queryParams.set("parents", JSON.stringify(parentParamsObj));
         }
-        const activeSearch = searchOverride !== undefined ? searchOverride : searchTerms[fieldId] || "";
+        const activeSearch = searchOverride !== undefined ? searchOverride : searchTermsRef.current[fieldId] || "";
         if (activeSearch.trim()) {
           queryParams.set("search", activeSearch.trim());
         }
@@ -149,39 +151,35 @@ export function useFilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000" }: 
           if (data.dateRange) {
             setDateRanges((prev) => ({ ...prev, [fieldId]: data.dateRange }));
           }
-          const resolvedValues = Array.isArray(data.values) && data.values.length > 0
-            ? data.values
-            : (field.options || []);
+          // An empty array is a valid search result and must not be replaced by
+          // the field's static fallback choices.
+          const resolvedValues = Array.isArray(data.values) ? data.values : (field.options || []);
           setOptionsMap((prev) => ({ ...prev, [fieldId]: resolvedValues }));
-          setFallbackMap((prev) => ({ ...prev, [fieldId]: !hasParentFilter }));
+          setFallbackMap((prev) => ({
+            ...prev,
+            [fieldId]: typeof data.isIndependentFallback === "boolean"
+              ? data.isIndependentFallback
+              : !hasParentFilter,
+          }));
           setErrorMap((prev) => ({ ...prev, [fieldId]: null }));
         } else {
-          // If backend response is not OK (e.g. 404 or sourceId not registered), fallback to inline options
-          if (field.controlType === "date_range") {
-            setDateRanges((prev) => ({ ...prev, [fieldId]: { min: "2023-01-01", max: "2026-12-31" } }));
-          }
-          setOptionsMap((prev) => ({ ...prev, [fieldId]: field.options || [] }));
-          setFallbackMap((prev) => ({ ...prev, [fieldId]: !hasParentFilter }));
-          setErrorMap((prev) => ({ ...prev, [fieldId]: null }));
+          setErrorMap((prev) => ({ ...prev, [fieldId]: `Request failed with status ${response.status}` }));
         }
       } catch (err: any) {
         if (err.name === "AbortError") return;
         if (fetchSeqRef.current.get(fieldId) !== seq) return;
 
-        // Fallback gracefully to inline options if server fetch fails
-        if (field.controlType === "date_range") {
-          setDateRanges((prev) => ({ ...prev, [fieldId]: { min: "2023-01-01", max: "2026-12-31" } }));
-        }
-        setOptionsMap((prev) => ({ ...prev, [fieldId]: field.options || [] }));
-        setFallbackMap((prev) => ({ ...prev, [fieldId]: true }));
-        setErrorMap((prev) => ({ ...prev, [fieldId]: null }));
+        setErrorMap((prev) => ({
+          ...prev,
+          [fieldId]: err instanceof Error ? err.message : "Failed to load filter options",
+        }));
       } finally {
         if (fetchSeqRef.current.get(fieldId) === seq) {
           setLoadingMap((prev) => ({ ...prev, [fieldId]: false }));
         }
       }
     },
-    [schema?.sourceId, apiBaseUrl, searchTerms]
+    [schema?.sourceId, schema?.projectId, schema?.projectName, apiBaseUrl]
   );
 
   // Initial fetch for all fields when schema mounts or updates
@@ -190,35 +188,62 @@ export function useFilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000" }: 
     const groups = schema.filterGroups || schema.forms || [];
     groups.forEach((group) => {
       (group.fields || []).forEach((field) => {
-        fetchOptions(field, {});
+        fetchOptions(field, {}, "");
       });
     });
   }, [schema, fetchOptions]);
 
+  // Cancel outstanding work when the form is unmounted. Field-specific aborts
+  // inside fetchOptions continue to handle replacement requests while mounted.
+  useEffect(() => {
+    const controllers = abortControllersRef.current;
+    const timers = searchDebounceTimersRef.current;
+
+    return () => {
+      timers.forEach((timer) => clearTimeout(timer));
+      timers.clear();
+      controllers.forEach((controller) => controller.abort());
+      controllers.clear();
+    };
+  }, []);
+
   // Handle value change with Transitive Reset (Cascade Clear)
   const setFieldValue = useCallback(
     (fieldId: string, value: any) => {
-      setSelectedValues((prev) => {
-        const next = { ...prev, [fieldId]: value };
+      const next = { ...selectedValuesRef.current, [fieldId]: value };
 
-        // Transitive cascade reset: clear all direct & indirect child values
-        const descendants = getTransitiveDescendants(fieldId);
-        descendants.forEach((childId) => {
-          delete next[childId];
+      // Transitive cascade reset: clear descendant values and stale choices.
+      const descendants = getTransitiveDescendants(fieldId);
+      descendants.forEach((childId) => {
+        delete next[childId];
+        const timer = searchDebounceTimersRef.current.get(childId);
+        if (timer) clearTimeout(timer);
+        searchDebounceTimersRef.current.delete(childId);
+        abortControllersRef.current.get(childId)?.abort();
+      });
+
+      selectedValuesRef.current = next;
+      setSelectedValues(next);
+
+      if (descendants.size > 0) {
+        setOptionsMap((prev) => {
+          const updated = { ...prev };
+          descendants.forEach((childId) => delete updated[childId]);
+          return updated;
         });
+        setSearchTerms((prev) => {
+          const updated = { ...prev };
+          descendants.forEach((childId) => delete updated[childId]);
+          searchTermsRef.current = updated;
+          return updated;
+        });
+      }
 
-        // Trigger refetch for direct children with updated parent values
-        const children = directChildrenMap.current.get(fieldId);
-        if (children) {
-          children.forEach((childId) => {
-            const childField = allFields.current.find((f) => f.fieldId === childId);
-            if (childField) {
-              fetchOptions(childField, next);
-            }
-          });
-        }
-
-        return next;
+      // Only direct children can be resolved from the new parent value.
+      const children = directChildrenMap.current.get(fieldId);
+      children?.forEach((childId) => {
+        const childField = allFields.current.find((f) => f.fieldId === childId);
+        if (childField) fetchOptions(childField, next, "");
       });
     },
     [getTransitiveDescendants, fetchOptions]
@@ -227,7 +252,11 @@ export function useFilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000" }: 
   // Handle debounced search for searchable_dropdown controls (~250ms)
   const handleSearchChange = useCallback(
     (fieldId: string, term: string) => {
-      setSearchTerms((prev) => ({ ...prev, [fieldId]: term }));
+      setSearchTerms((prev) => {
+        const next = { ...prev, [fieldId]: term };
+        searchTermsRef.current = next;
+        return next;
+      });
 
       if (searchDebounceTimersRef.current.has(fieldId)) {
         clearTimeout(searchDebounceTimersRef.current.get(fieldId)!);
@@ -236,30 +265,40 @@ export function useFilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000" }: 
       const timer = setTimeout(() => {
         const field = allFields.current.find((f) => f.fieldId === fieldId);
         if (field) {
-          fetchOptions(field, selectedValues, term);
+          fetchOptions(field, selectedValuesRef.current, term);
         }
+        searchDebounceTimersRef.current.delete(fieldId);
       }, 250);
 
       searchDebounceTimersRef.current.set(fieldId, timer);
     },
-    [fetchOptions, selectedValues]
+    [fetchOptions]
   );
 
   const retryFetch = useCallback(
     (fieldId: string) => {
       const field = allFields.current.find((f) => f.fieldId === fieldId);
       if (field) {
-        fetchOptions(field, selectedValues);
+        fetchOptions(field, selectedValuesRef.current, searchTermsRef.current[fieldId] || "");
       }
     },
-    [fetchOptions, selectedValues]
+    [fetchOptions]
   );
 
   const resetAllFilters = useCallback(() => {
+    searchDebounceTimersRef.current.forEach((timer) => clearTimeout(timer));
+    searchDebounceTimersRef.current.clear();
+    abortControllersRef.current.forEach((controller) => controller.abort());
+    abortControllersRef.current.clear();
+    selectedValuesRef.current = {};
+    searchTermsRef.current = {};
     setSelectedValues({});
     setSearchTerms({});
     setErrorMap({});
-  }, []);
+    setLoadingMap({});
+
+    allFields.current.forEach((field) => fetchOptions(field, {}, ""));
+  }, [fetchOptions]);
 
   return {
     selectedValues,
