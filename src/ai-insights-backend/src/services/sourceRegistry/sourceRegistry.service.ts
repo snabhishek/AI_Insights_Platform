@@ -14,7 +14,7 @@ import { IProjectRepository } from "../../repositories/project.repository.interf
 import { ConnectorType } from "../../models/connector.types";
 import { Project } from "../../models/project.types";
 
-const IDENTIFIER_REGEX = /^[a-zA-Z0-9_\-\. ]+$/;
+const IDENTIFIER_REGEX = /^[a-zA-Z0-9_\-\. \/()&#%+\:$@!\[\]]+$/;
 
 export class SourceRegistryService implements ISourceRegistryService {
   private inMemoryRegistry = new Map<string, SourceRegistryEntry>();
