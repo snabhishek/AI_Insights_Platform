@@ -279,7 +279,7 @@ export default function CardModal({
         </div>
 
         {/* Right Panel: Active Step Logs & Custom Output Area */}
-        <div className="flex-1 overflow-y-auto flex flex-col bg-background/30 relative">
+        <div className="flex-1 flex flex-col min-h-0 bg-background/30 relative overflow-hidden">
           
           {/* Header of right panel containing Title, Icon, Status and Close button */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-border/80 bg-surface-muted/60 shrink-0 select-none">

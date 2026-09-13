@@ -109,9 +109,13 @@ export class ModelSelectionValidator {
 
         // Check recommendation type enum
         if (candidate.recommendation !== "primary" && candidate.recommendation !== "alternative") {
-          errors.push(
-            `Candidate "${id}" recommendation must be "primary" or "alternative", received: "${candidate.recommendation}"`
-          );
+          if (candidate.recommendation === "baseline") {
+            candidate.recommendation = "alternative";
+          } else {
+            errors.push(
+              `Candidate "${id}" recommendation must be "primary" or "alternative", received: "${candidate.recommendation}"`
+            );
+          }
         }
       });
 

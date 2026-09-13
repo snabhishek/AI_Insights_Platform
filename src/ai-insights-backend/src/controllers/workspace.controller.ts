@@ -152,4 +152,18 @@ export class WorkspaceController {
       res.status(500).json({ success: false, message: error.message || "Failed to delete project" });
     }
   };
+
+  getProjectById = async (req: Request, res: Response): Promise<void> => {
+    const pid = req.params.pid as string;
+    try {
+      const project = await this.workspaceService.getProjectById(pid);
+      if (!project) {
+        res.status(404).json({ success: false, message: "Project not found" });
+        return;
+      }
+      res.json(project);
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || "Failed to fetch project" });
+    }
+  };
 }

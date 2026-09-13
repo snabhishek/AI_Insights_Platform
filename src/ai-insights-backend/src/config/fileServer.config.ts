@@ -142,6 +142,8 @@ export function ensureFileServerDirectories(): void {
   ensureDirectoryExists(base);
   ensureDirectoryExists(getWorkspacesBasePath());
   ensureDirectoryExists(path.join(base, "packages"));
+  ensureDirectoryExists(path.join(base, "packages", "projectFiles"));
+  ensureDirectoryExists(path.join(base, "packages", "Schemas"));
 
   // Clean up legacy root datasources directory if it exists and is empty
   const legacyRootDs = path.join(base, "datasources");

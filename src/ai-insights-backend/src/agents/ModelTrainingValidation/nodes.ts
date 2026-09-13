@@ -4,6 +4,7 @@ import * as path from "path";
 import { AgentState, IngestionServices } from "../state";
 import { cleanupRunContainer, executePythonScript } from "../tools/helpers/pythonExecutor";
 import { getPythonScriptDirectory } from "../tools/filesystem";
+import { saveModularTrainingJobContract } from "../tools/helpers/schemaHelper";
 
 import { drizzle } from "drizzle-orm/node-postgres";
 import { pool } from "../../db";
@@ -74,11 +75,31 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
   const decisionRecord = await service.analyze(inputContext, projectId);
   const decision = decisionRecord.decision;
 
+  const effectiveRunTimestamp = state.runTimestamp || (services as any)?.runTimestamp;
+
+  // Persist modular Training Job Contract YAML into project run folder
+  if (services?.projectService && projectId) {
+    try {
+      const pWs = await services.projectService.getProjectWithWorkspace(projectId);
+      if (pWs && pWs.project) {
+        await saveModularTrainingJobContract(
+          pWs.workspaceName || "DefaultWorkspace",
+          pWs.project.name,
+          decision,
+          effectiveRunTimestamp
+        );
+      }
+    } catch (contractErr: any) {
+      console.warn("[modelSelectionNode] Warning saving Training Job Contract to project folder:", contractErr?.message || contractErr);
+    }
+  }
+
   const candidateNames = (decision.candidates || []).map((c) => c.displayName || c.model_id);
   const summary = `Model selection completed for ${decision.target_entity?.name || metadata.targetColumn || "target"}. Recommended: ${decision.recommended_model?.model_id || "None"} (${((decision.recommended_model?.suitability_score || 0) * 100).toFixed(0)}%). Candidates: ${candidateNames.join(", ")}`;
 
   return {
     modelSelection: decision,
+    runTimestamp: effectiveRunTimestamp,
     status: "running",
     summary,
     stageOutputs: { modelSelection: decision },

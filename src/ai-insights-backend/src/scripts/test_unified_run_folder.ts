@@ -5,8 +5,11 @@ import {
   saveModularResolvedSchemas,
   saveModularRelationshipSchema,
   saveModularFormSchema,
+  saveModularTrainingJobContract,
   createProjectSchemaFile,
   getPackagesDir,
+  getProjectFilesParent,
+  resolveProjectFolderName,
   generateDateTimeStamp,
   sanitizeName,
 } from "../agents/tools/helpers";
@@ -20,11 +23,12 @@ async function testUnifiedRunFolder() {
   const projectName = "Order Analytics";
   const cleanWsName = sanitizeName(workspaceName);
   const cleanProjName = sanitizeName(projectName);
-  const parentFolderName = `${cleanWsName}-${cleanProjName}`;
   const runSlug = cleanProjName.toLowerCase().replace(/[\s-]+/g, "-");
 
   const packagesDir = getPackagesDir();
-  const parentProjectDir = path.resolve(packagesDir, "ProjectFiles", parentFolderName);
+  const projectFilesParent = getProjectFilesParent(packagesDir);
+  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
+  const parentProjectDir = path.resolve(projectFilesParent, parentFolderName);
 
   // 1. Simulate Project Creation (creates domain schema in parent project dir)
   console.log("[Step 1] Creating project initial schema file...");
@@ -85,10 +89,26 @@ async function testUnifiedRunFolder() {
   );
   console.log(`Saved Form schema to: ${formResult.formSchemaPath}`);
 
-  // 6. Verify that ALL schemas exist in the SAME run folder!
+  // 6. Save Training Job Contract schema with runTimestamp
+  console.log("\n[Step 6] Saving Training Job Contract schema...");
+  const contractResult = await saveModularTrainingJobContract(
+    workspaceName,
+    projectName,
+    {
+      target_entity: { name: "Demand", datatype: "numeric" },
+      recommended_model: { model_id: "lightgbm", rank: 1, suitability_score: 0.95 },
+      candidates: [{ model_id: "lightgbm", rank: 1, suitability_score: 0.95 }],
+      primary_metric: "RMSE",
+      models: [{ model_id: "lightgbm", framework: "lightgbm", algorithm: "LightGBM", enabled: true, parameters: {} }],
+    },
+    runTimestamp
+  );
+  console.log(`Saved Training Job Contract to: ${contractResult.trainingJobContractPath}`);
+
+  // 7. Verify that ALL schemas exist in the SAME run folder!
   const runFolderName = `${runSlug}-${runTimestamp}`;
   const expectedRunFolder = path.resolve(parentProjectDir, runFolderName, "Schemas");
-  console.log(`\n[Step 6] Verifying all schemas in folder: ${expectedRunFolder}`);
+  console.log(`\n[Step 7] Verifying all schemas in folder: ${expectedRunFolder}`);
 
   const filesInRunDir = fs.readdirSync(expectedRunFolder);
   console.log("Files inside unified run folder:", filesInRunDir);
@@ -97,10 +117,11 @@ async function testUnifiedRunFolder() {
   const hasDI = filesInRunDir.some((f) => f.includes("_data_ingestion_") && f.endsWith(".yaml"));
   const hasRel = filesInRunDir.some((f) => f.includes("_relationship_schema_") && f.endsWith(".yaml"));
   const hasForm = filesInRunDir.some((f) => f.includes("_form_schema_") && f.endsWith(".yaml"));
+  const hasContract = filesInRunDir.some((f) => f.includes("_training_job_contract_") && f.endsWith(".yaml"));
 
-  if (!hasDomain || !hasDI || !hasRel || !hasForm) {
+  if (!hasDomain || !hasDI || !hasRel || !hasForm || !hasContract) {
     throw new Error(
-      `Unified run folder verification failed! hasDomain=${hasDomain}, hasDI=${hasDI}, hasRel=${hasRel}, hasForm=${hasForm}`
+      `Unified run folder verification failed! hasDomain=${hasDomain}, hasDI=${hasDI}, hasRel=${hasRel}, hasForm=${hasForm}, hasContract=${hasContract}`
     );
   }
 

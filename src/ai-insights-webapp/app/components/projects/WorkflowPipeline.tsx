@@ -25,6 +25,7 @@ interface WorkflowPipelineProps {
   pausedAtPhase?: string | null;
   onPause?: () => void;
   onResume?: () => void;
+  isApproving?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -173,17 +174,30 @@ const MAIN_STEP_MAPPING: Record<string, string> = {
   "exogenousScout": "Feature Engineering",
   "exogenous": "Feature Engineering",
   "Hierarchy Mapper": "Feature Engineering",
+  "hierarchyMapper": "Feature Engineering",
+  "hierarchyMapperNode": "Feature Engineering",
   "Feature Architect": "Feature Engineering",
+  "featureArchitect": "Feature Engineering",
+  "featureArchitectNode": "Feature Engineering",
   "Feature Validator": "Feature Engineering",
+  "featureValidator": "Feature Engineering",
+  "featureValidatorNode": "Feature Engineering",
   "Feature Engineering": "Feature Engineering",
+  "Training Configuration": "Model Training & Validation",
+  "trainingConfiguration": "Model Training & Validation",
+  "trainingConfigurationNode": "Model Training & Validation",
   "Model Training": "Model Training & Validation",
   "modelTraining": "Model Training & Validation",
+  "modelTrainingNode": "Model Training & Validation",
   "Model Evaluation": "Model Training & Validation",
   "modelEvaluation": "Model Training & Validation",
+  "modelEvaluationNode": "Model Training & Validation",
   "Model Validation": "Model Training & Validation",
   "modelValidation": "Model Training & Validation",
+  "modelValidationNode": "Model Training & Validation",
   "Model Selection": "Model Training & Validation",
   "modelSelection": "Model Training & Validation",
+  "modelSelectionNode": "Model Training & Validation",
   "Model Training & Validation": "Model Training & Validation",
 };
 
@@ -196,6 +210,23 @@ export function getMainStepId(stepOrStageId: string | null): string {
 }
 
 function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
+  if (pipelineStatuses["Data Ingestion"] === "Completed") {
+    return "Completed";
+  }
+  const isDownstreamActive =
+    pipelineStatuses["Feature Engineering"] === "Completed" ||
+    pipelineStatuses["Feature Engineering"] === "In Progress" ||
+    pipelineStatuses["Model Selection"] === "Completed" ||
+    pipelineStatuses["Model Selection"] === "In Progress" ||
+    pipelineStatuses["Training Configuration"] === "Completed" ||
+    pipelineStatuses["Training Configuration"] === "In Progress" ||
+    pipelineStatuses["Model Training"] === "Completed" ||
+    pipelineStatuses["Model Training"] === "In Progress" ||
+    pipelineStatuses["Model Validation"] === "Completed" ||
+    pipelineStatuses["Model Validation"] === "In Progress";
+  if (isDownstreamActive) {
+    return "Completed";
+  }
   const s1 = (pipelineStatuses["Data Inspection"] as PipelineStatus) ?? "Not Started";
   const s2 = (pipelineStatuses["Data Profiling"] as PipelineStatus) ?? "Not Started";
   const s3 = (pipelineStatuses["Schema Resolver"] as PipelineStatus) ?? "Not Started";
@@ -203,7 +234,10 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
   if (s1 === "Completed" && s2 === "Completed" && s3 === "Completed") {
     return "Completed";
   }
-  if ([s1, s2, s3].some((s) => s === "In Progress" || s === "Completed")) {
+  if ([s1, s2, s3].some((s) => s === "In Progress")) {
+    return "In Progress";
+  }
+  if ([s1, s2, s3].some((s) => s === "Completed")) {
     return "In Progress";
   }
   if ([s1, s2, s3].some((s) => s === "Pending")) {
@@ -220,6 +254,21 @@ const FEATURE_ENGINEERING_SUBSTEPS = [
 ] as const;
 
 function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
+  if (pipelineStatuses["Feature Engineering"] === "Completed") {
+    return "Completed";
+  }
+  const isModelPhaseActiveOrCompleted =
+    pipelineStatuses["Model Selection"] === "Completed" ||
+    pipelineStatuses["Model Selection"] === "In Progress" ||
+    pipelineStatuses["Training Configuration"] === "Completed" ||
+    pipelineStatuses["Training Configuration"] === "In Progress" ||
+    pipelineStatuses["Model Training"] === "Completed" ||
+    pipelineStatuses["Model Training"] === "In Progress" ||
+    pipelineStatuses["Model Validation"] === "Completed" ||
+    pipelineStatuses["Model Validation"] === "In Progress";
+  if (isModelPhaseActiveOrCompleted) {
+    return "Completed";
+  }
   const s1 = (pipelineStatuses["Hierarchy Mapper"] as PipelineStatus) ?? "Not Started";
   const s2 = (pipelineStatuses["Feature Architect"] as PipelineStatus) ?? "Not Started";
   const s3 = (pipelineStatuses["Feature Validator"] as PipelineStatus) ?? "Not Started";
@@ -228,7 +277,10 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
   if (s1 === "Completed" && s2 === "Completed" && s3 === "Completed" && s4 === "Completed") {
     return "Completed";
   }
-  if ([s1, s2, s3, s4].some((s) => s === "In Progress" || s === "Completed")) {
+  if ([s1, s2, s3, s4].some((s) => s === "In Progress")) {
+    return "In Progress";
+  }
+  if ([s1, s2, s3, s4].some((s) => s === "Completed")) {
     return "In Progress";
   }
   if ([s1, s2, s3, s4].some((s) => s === "Pending")) {
@@ -307,7 +359,8 @@ export default function WorkflowPipeline({
   isPaused,
   pausedAtPhase,
   onPause,
-  onResume
+  onResume,
+  isApproving
 }: WorkflowPipelineProps) {
   const currentStage = activeStage || "inspect";
   const mainSelectedStage = getMainStepId(currentStage);
@@ -364,17 +417,30 @@ export default function WorkflowPipeline({
               <button
                 type="button"
                 onClick={onApprove}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer shrink-0 animate-pulse"
+                disabled={isApproving}
+                className={`inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
               >
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                  <polyline points="20 6 9 17 4 12" />
-                </svg>
-                Proceed to Next Phase
+                {isApproving ? (
+                  <>
+                    <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                      <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                    </svg>
+                    Advancing...
+                  </>
+                ) : (
+                  <>
+                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                      <polyline points="20 6 9 17 4 12" />
+                    </svg>
+                    Proceed to Next Phase
+                  </>
+                )}
               </button>
               <button
                 type="button"
                 onClick={onStopWorkflow}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0"
+                disabled={isApproving}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50"
               >
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
                   <rect x="5" y="5" width="14" height="14" rx="2" />
@@ -456,7 +522,15 @@ export default function WorkflowPipeline({
           <div>
             <p className="text-[11px] uppercase tracking-[0.2em] font-bold text-muted-foreground">Selected stage</p>
             <h3 className="text-sm font-semibold text-foreground">{mainSelectedStage}</h3>
-            <p className="text-xs text-muted-foreground mt-1">{workflowMessage || "Select a workflow stage to inspect the live output."}</p>
+            <p className="text-xs text-muted-foreground mt-1">
+              {(() => {
+                const isIngestionStageDone = calculateDataIngestionStatus(pipelineStatuses) === "Completed";
+                if (mainSelectedStage === "Data Ingestion" && isIngestionStageDone && !requiresApproval) {
+                  return "Data Ingestion completed successfully.";
+                }
+                return workflowMessage || "Select a workflow stage to inspect the live output.";
+              })()}
+            </p>
           </div>
           <div className="flex items-center gap-2">
             <button

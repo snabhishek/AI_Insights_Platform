@@ -815,6 +815,7 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
   if (isRunning(stageStatuses?.modelValidation)) return "Validating the leading model on held-out data...";
   if (isRunning(stageStatuses?.modelEvaluation)) return "Evaluating and ranking candidate models...";
   if (isRunning(stageStatuses?.modelTraining)) return "Training candidate models...";
+  if (isRunning(stageStatuses?.trainingConfiguration)) return "Configuring model training parameters...";
   if (isRunning(stageStatuses?.exogenousScout) || isRunning(stageStatuses?.exogenous)) {
     return "Scouting and ranking exogenous variables and external signals...";
   }
@@ -827,6 +828,21 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
   if (isRunning(stageStatuses?.hierarchyMapper)) {
     return "Discovering dimensional hierarchies and entity relationships...";
   }
+
+  // Feature Engineering completed check
+  const isFEComplete = isCompleted(stageStatuses?.exogenousScout) || isCompleted(stageStatuses?.exogenous);
+  if (isFEComplete) {
+    return "Feature Engineering completed successfully. Approve to proceed to Model Training & Validation.";
+  }
+
+  // Feature Engineering started check
+  const isFEStarted = (stageStatuses?.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending") ||
+    (stageStatuses?.featureArchitect && stageStatuses.featureArchitect !== "Pending") ||
+    (stageStatuses?.featureValidator && stageStatuses.featureValidator !== "Pending");
+  if (isFEStarted) {
+    return "Feature Engineering workflow is running...";
+  }
+
   if (isCompleted(stageStatuses?.resolveSchema)) {
     return "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.";
   }
@@ -872,7 +888,8 @@ export function buildResultFromGraphState(
   const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
   const isFeatureEngineeringStarted = stageStatuses.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending";
   const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted && isIngestionComplete;
-  const isAtModelApproval = (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) && stageStatuses.exogenousScout === "Completed";
+  const ss = stageStatuses as Record<string, string>;
+  const isAtModelApproval = (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) && (ss.exogenousScout === "Completed" || ss.exogenous === "Completed");
   const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval);
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
@@ -903,6 +920,7 @@ export function buildResultFromGraphState(
     stageOutputs: (values.stageOutputs && typeof values.stageOutputs === "object") ? values.stageOutputs : {},
     stageStatuses,
     message: buildMessage(nextNodes, status, stageStatuses),
+    runTimestamp: (typeof values.runTimestamp === "string" && values.runTimestamp.trim().length > 0) ? values.runTimestamp.trim() : undefined,
   };
 }
 
