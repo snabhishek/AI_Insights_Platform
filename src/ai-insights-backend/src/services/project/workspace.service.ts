@@ -281,4 +281,8 @@ export class WorkspaceService {
 
     return { success: true, data: true };
   }
+
+  async getProjectById(pid: string): Promise<Project | undefined> {
+    return this.projectRepository.getById(pid);
+  }
 }

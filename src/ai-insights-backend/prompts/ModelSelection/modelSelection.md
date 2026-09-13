@@ -471,20 +471,15 @@ Do not invent configuration values that are not supported by the available conte
 
 ## 16. Identify Downstream Feature Requirements
 
-Identify features or feature characteristics that are important for the selected modelling approach.
+Identify features or feature characteristics that are important for the selected modelling approach. Each requirement must be specific, distinct, and actionable. Do not output repetitive generic placeholders like "Standard preprocessing".
 
-Examples:
-
-- Lag features
-- Rolling statistics
-- Temporal features
-- Historical aggregates
-- Entity-level aggregates
-- Categorical information
-- Interaction features
-- Scaling
-- Encoding
-- Derived behavioural features
+Examples of concrete requirements:
+- Lag features (e.g. t-1, t-7, t-14 historical lags)
+- Rolling window aggregates (e.g. 7-day and 30-day moving average and volatility)
+- Temporal & calendar features (e.g. day-of-week, month, holiday flags)
+- Categorical target/frequency encoding for high-cardinality entities
+- Outlier clipping and robust scaling for continuous numerical fields
+- Historical and entity-level aggregates
 
 These are requirements or recommendations.
 

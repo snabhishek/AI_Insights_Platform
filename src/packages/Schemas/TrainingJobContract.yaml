@@ -25,8 +25,10 @@
 # evaluation, and model selection. The same definition must not be duplicated.
 # -----------------------------------------------------------------------------
 
+x-primary-metric-name: &primary_metric_name "<string>"
+
 x-primary-metric-def: &primary_metric_def
-  value: "<string>"
+  value: *primary_metric_name
   source: "<enum: llm_inference|user_override|platform_default>"
   confidence: 0.0
   confirmation_threshold: 0.85

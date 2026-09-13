@@ -38,19 +38,48 @@ export default function ModelSelectionStepOutput({
   const recommendedModel: ModelCandidate | null = payload.recommended_model || null;
   const candidates: ModelCandidate[] = Array.isArray(payload.candidates) ? payload.candidates : [];
   const training = payload.training || {};
-  const featureRequirements: Array<{ feature: string; requirement: string; reason: string }> = Array.isArray(
-    payload.featureRequirements
-  )
+  const rawRequirements = Array.isArray(payload.featureRequirements)
     ? payload.featureRequirements
+    : Array.isArray(payload.feature_requirements)
+    ? payload.feature_requirements
     : [];
+
+  const featureRequirements: Array<{ feature: string; requirement: string; reason: string }> = rawRequirements.map(
+    (req: any, idx: number) => {
+      if (typeof req === "string") {
+        return { feature: "all", requirement: req, reason: "" };
+      }
+      const defaultList = [
+        "Standard numerical normalization & scaling",
+        "Categorical high-cardinality target/frequency encoding",
+        "Historical lag & rolling aggregation generation",
+        "Calendar features (day-of-week, seasonality, holidays)",
+        "Outlier clipping & robust median imputation",
+      ];
+      const reqText = req.requirement && req.requirement !== "Standard preprocessing"
+        ? req.requirement
+        : (req.desc || req.description || req.type || (req.feature && req.feature !== "all" ? `${req.feature} preprocessing` : defaultList[idx % defaultList.length]));
+      return {
+        feature: req.feature || "all",
+        requirement: reqText,
+        reason: req.reason || "",
+      };
+    }
+  );
   const hpo = payload.hyperparameterOptimization || {};
   const confidence = payload.confidence || {};
 
   // User model selection state
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
-  const [expandedCandidateId, setExpandedCandidateId] = useState<string | null>(null);
+  const [expandedCandidateIds, setExpandedCandidateIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+
+  const toggleCandidateExpanded = (modelId: string) => {
+    setExpandedCandidateIds((prev) =>
+      prev.includes(modelId) ? prev.filter((id) => id !== modelId) : [...prev, modelId]
+    );
+  };
 
   // Initialize selection with primary model and any pre-existing user selection
   useEffect(() => {
@@ -299,7 +328,7 @@ export default function ModelSelectionStepOutput({
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3.5">
             {alternativeCandidates.map((candidate) => {
               const isSelected = selectedModelIds.includes(candidate.model_id);
-              const isExpanded = expandedCandidateId === candidate.model_id;
+              const isExpanded = expandedCandidateIds.includes(candidate.model_id);
 
               return (
                 <div
@@ -340,7 +369,7 @@ export default function ModelSelectionStepOutput({
                     <div className="mt-3 pt-2.5 border-t border-border/60">
                       <button
                         type="button"
-                        onClick={() => setExpandedCandidateId(isExpanded ? null : candidate.model_id)}
+                        onClick={() => toggleCandidateExpanded(candidate.model_id)}
                         className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
                       >
                         {isExpanded ? "Hide Reasoning ▲" : "View Strengths & Trade-offs ▼"}
@@ -451,12 +480,17 @@ export default function ModelSelectionStepOutput({
           </div>
           {featureRequirements.length > 0 ? (
             <div className="space-y-1.5 max-h-28 overflow-y-auto pr-1">
-              {featureRequirements.map((req, i) => (
-                <div key={i} className="text-xs flex items-start gap-1.5">
-                  <span className="text-primary font-bold">•</span>
-                  <span className="text-foreground/90 font-medium">{req.requirement || req.feature}</span>
-                </div>
-              ))}
+              {featureRequirements.map((req, i) => {
+                const displayText = req.feature && req.feature !== "all" && !req.requirement.toLowerCase().includes(req.feature.toLowerCase())
+                  ? `${req.feature}: ${req.requirement}`
+                  : req.requirement || req.feature;
+                return (
+                  <div key={i} className="text-xs flex items-start gap-1.5">
+                    <span className="text-primary font-bold">•</span>
+                    <span className="text-foreground/90 font-medium">{displayText}</span>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             <p className="text-xs text-muted-foreground">
@@ -466,10 +500,10 @@ export default function ModelSelectionStepOutput({
         </div>
       </div>
 
-      {/* ─── Confirmation & Handoff Action Bar ────────────────────────────────────────── */}
-      <div className="sticky bottom-2 z-10 rounded-2xl border border-border bg-surface/95 backdrop-blur-md p-4 shadow-lg flex flex-col sm:flex-row items-center justify-between gap-4">
+      {/* ─── Confirmation & Handoff Section ────────────────────────────────────────── */}
+      <div className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">
+          <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">
             {selectedModelIds.length}
           </div>
           <div>

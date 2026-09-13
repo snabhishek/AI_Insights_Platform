@@ -37,6 +37,7 @@ coverage/
 src/ai-insights-backend/Projects/
 src/ai-insights-backend/uploads/
 src/packages/ProjectFiles
+src/ai-insights-backend/storage/
 drizzle/
 specs/
 docs/

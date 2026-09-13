@@ -3,6 +3,7 @@ import { IModelSelectionService } from "./modelSelection.service.interface";
 import { IModelSelectionRepository } from "../../../repositories/modelSelection.repository.interface";
 import { IModelSelectionLLMService } from "./modelSelectionLLM.service.interface";
 import { ProjectService } from "../../project/project.service";
+import { saveModularTrainingJobContract } from "../../../agents/tools/helpers";
 import {
   defaultModelCapabilityRegistry,
   ModelCapabilityRegistry,
@@ -150,6 +151,21 @@ export class ModelSelectionService implements IModelSelectionService {
       } catch (projErr: any) {
         console.warn(`[ModelSelectionService] Could not update project agentState for ${effectiveProjectId}:`, projErr?.message || projErr);
       }
+
+      // Persist modular Training Job Contract YAML into project run folder
+      try {
+        const pWs = await this.projectService.getProjectWithWorkspace(effectiveProjectId);
+        if (pWs && pWs.project) {
+          await saveModularTrainingJobContract(
+            pWs.workspaceName || "DefaultWorkspace",
+            pWs.project.name,
+            decision,
+            inputContext.runTimestamp
+          );
+        }
+      } catch (contractErr: any) {
+        console.warn(`[ModelSelectionService] Warning saving Training Job Contract for ${effectiveProjectId}:`, contractErr?.message || contractErr);
+      }
     }
 
     return record;
@@ -222,8 +238,30 @@ export class ModelSelectionService implements IModelSelectionService {
 
         await this.projectService.updateAgentState(record.projectId, updatedState);
         console.info(`[ModelSelectionService] Successfully handed off ${selectedModelIds.length} user-selected models to Training Configuration for project ${record.projectId}`);
+
+        // Update Training Job Contract schema with user-selected models
+        const pWs = await this.projectService.getProjectWithWorkspace(record.projectId);
+        if (pWs && pWs.project) {
+          const updatedDecision = {
+            ...record.decision,
+            models: (record.decision.candidates || []).map((c) => ({
+              model_id: c.model_id,
+              framework: c.framework || "custom",
+              algorithm: c.algorithm || c.displayName || c.model_id,
+              enabled: selectedModelIds.some((s) => s.toLowerCase().trim() === c.model_id.toLowerCase().trim()),
+              parameters: {},
+            })),
+          };
+
+          await saveModularTrainingJobContract(
+            pWs.workspaceName || "DefaultWorkspace",
+            pWs.project.name,
+            updatedDecision,
+            record.datasetVersion
+          );
+        }
       } catch (e: any) {
-        console.warn(`[ModelSelectionService] Training handoff state update failed for project ${record.projectId}:`, e?.message || e);
+        console.warn(`[ModelSelectionService] Training handoff state update or contract save failed for project ${record.projectId}:`, e?.message || e);
       }
     }
 
