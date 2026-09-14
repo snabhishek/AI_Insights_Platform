@@ -1,0 +1,54 @@
+version: "1.0"
+generatedAt: Exact Time Stamp of file created
+resolvedTables: List of tables resolved from the dataset, if files like excel or csv accounts to individual files.
+  - sample table 1
+  - sample table 2
+FeatureEngineering:
+  FieldClassification:  
+    field_name: Name of the field like customerId
+    tags: [Identifier, Metadata]
+    is_feature: True / false
+    is_sensitive: True / false
+    priority: [Critical, High, Medium, Low]
+    source_table: sample table 1
+    engineering:
+      transformation: one_hot_encode   # log_transform | scale | bucket | lag | rolling_avg | one_hot_encode | target_encode | none
+      derived_from: [raw_field_a, raw_field_b]   # null if not derived
+      output_feature_name: region_west   # the actual column name fed to the model
+
+  Label:
+    description: Human- or system-assigned labels used for supervised learning or annotation
+    typical_analysis: Classification evaluation
+    priority: [Critical, High, Medium, Low]
+    priority_rationale: Ground truth the model is trained against; essential for supervised learning
+    source_table: sample table 1
+
+  Target:
+    description: Prediction objectives for modeling
+    typical_analysis: Supervised learning
+    target_type: what kind of prediction problem it drives (regression/binary classification/multiclass/multilabel/time-series)
+    priority: [Critical, High, Medium, Low]
+    priority_rationale: The prediction objective itself — without it there is no ML use case
+    source_table: sample table 1
+
+  Metadata:
+    description: Information describing the data itself
+    typical_analysis: Data lineage, governance
+    priority: [Critical, High, Medium, Low]
+    priority_rationale: Useful for governance/lineage, rarely used as a modeling feature
+    source_table: sample table 1
+
+  ExternalFactor:
+    description: Outside variables influencing outcomes
+    typical_analysis: Correlation analysis, forecasting
+    priority: [Critical, High, Medium, Low]
+    priority_rationale: Frequently a strong exogenous driver in forecasting use cases
+    source_table: sample table 1
+
+  Sensitive:
+    field_name: Name of the field
+    description: Data requiring restricted access/handling
+    priority: Conditional
+    priority_rationale: Governed by compliance rather than modeling value — may be required for specific use cases (e.g. fraud/credit risk) but needs masking/approval first
+    subtypes: [PII, PHI, FinancialSensitive, Confidential, LegalHold]
+    source_table: sample table 1

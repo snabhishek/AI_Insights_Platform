@@ -7,6 +7,7 @@ import { ProjectService } from "../../project/project.service";
 import { createAgentGraph } from "../../../agents/graph";
 import {
   AgentTraceHelper,
+  buildMessage,
   buildResultFromGraphState,
   mapRetryStepToInterruptNode
 } from "../../../agents/utils/agentUtils";
@@ -14,7 +15,8 @@ import { WorkflowSessionMeta } from "../../../agents/state";
 import { IAgentThinkingService } from "../agent-thinking/agentThinking.service.interface";
 import { QueueService } from "../../queue/queue.service";
 import { agentJobEvents } from "../../queue/queueEvents";
-import { generateDateTimeStamp, ensureProjectRunFolder } from "../../../agents/tools/helpers";
+import { generateDateTimeStamp, ensureProjectRunFolder, getLatestProjectRunTimestamp } from "../../../agents/tools/helpers";
+import { registerProjectMetadata } from "../../../agents/tools/filesystem/mcpFilesystemClient";
 
 const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Data Ingestion": [
@@ -68,6 +70,27 @@ const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
     "Architecting and transforming candidate features...",
     "Validating features for leakage, multicollinearity, and drift...",
     "Scouting exogenous variables and external dataset signals..."
+  ],
+  "Model Selection": [
+    "Reading validated feature matrix, target entity, and problem definition...",
+    "Querying model registry for candidate algorithms matching task subtype...",
+    "Evaluating dataset size, grain, sparsity, and temporal horizons...",
+    "Formulating candidate model rankings and generating decision reasoning..."
+  ],
+  "Training Configuration": [
+    "Configuring train/validation/test split ratios and CV folds...",
+    "Preparing feature encoders and model hyperparameter search spaces...",
+    "Setting up training execution environment and hardware resources..."
+  ],
+  "Model Training": [
+    "Fitting candidate models against training partitions...",
+    "Executing hyperparameter optimization trials...",
+    "Recording intermediate loss and convergence diagnostics..."
+  ],
+  "Model Validation": [
+    "Evaluating candidate models on held-out validation dataset...",
+    "Computing out-of-sample metrics (RMSE, MAE, R², F1, AUC-ROC)...",
+    "Running baseline model comparison and selecting champion model..."
   ]
 };
 
@@ -115,6 +138,7 @@ export class IngestionAgentService implements IIngestionAgentService {
   private pausedSessions = new Set<string>();
   private sessionAbortControllers = new Map<string, AbortController>();
   private traceHelper = new AgentTraceHelper();
+  private activeRuns = new Map<string, { threadId: string; projectId?: string; startedAt: string }>();
 
   private findSessionIdForProject(projectId?: string): string | undefined {
     if (!projectId) return undefined;
@@ -128,12 +152,31 @@ export class IngestionAgentService implements IIngestionAgentService {
 
   isProjectActive(projectId?: string): boolean {
     if (!projectId) return false;
+    for (const [threadId, run] of this.activeRuns.entries()) {
+      if (run.projectId === projectId && !this.stoppedSessions.has(threadId) && !this.pausedSessions.has(threadId)) {
+        return true;
+      }
+    }
     for (const [sessionId, meta] of this.sessionMeta.entries()) {
       if (meta.projectId === projectId && !this.stoppedSessions.has(sessionId) && !this.pausedSessions.has(sessionId)) {
         return true;
       }
     }
     return false;
+  }
+
+  getActiveWorkflow(): { active: boolean; projectId: string | null; sessionId: string | null; status: string } {
+    for (const [threadId, run] of this.activeRuns.entries()) {
+      if (!this.stoppedSessions.has(threadId) && !this.pausedSessions.has(threadId)) {
+        return {
+          active: true,
+          projectId: run.projectId || null,
+          sessionId: threadId,
+          status: "running",
+        };
+      }
+    }
+    return { active: false, projectId: null, sessionId: null, status: "idle" };
   }
 
 
@@ -219,6 +262,13 @@ export class IngestionAgentService implements IIngestionAgentService {
       if (options?.projectId) {
         try {
           pWs = await this.projectService.getProjectWithWorkspace(options.projectId);
+          if (pWs?.project?.name) {
+            registerProjectMetadata(options.projectId, {
+              projectName: pWs.project.name,
+              workspaceName: pWs.workspaceName,
+              folderPath: pWs.project.folderPath,
+            });
+          }
           savedAgentState = pWs?.project?.agentState;
           if (savedAgentState && (options?.action === "resume" || options?.action === "retry" || options?.action === "approve")) {
             latestGraphStateValues = {
@@ -236,12 +286,29 @@ export class IngestionAgentService implements IIngestionAgentService {
       }
 
       // Determine the single unified runTimestamp for this execution
-      const activeRunTimestamp =
+      let activeRunTimestamp = "";
+      const isContinuing =
         options?.action === "approve" ||
-          options?.action === "retry" ||
-          (options?.step && options.step !== "Data Inspection" && options.step !== "inspect")
-          ? savedAgentState?.runTimestamp || generateDateTimeStamp()
-          : generateDateTimeStamp();
+        options?.action === "retry" ||
+        options?.action === "resume" ||
+        (Boolean(options?.step) && options?.step !== "Data Inspection" && options?.step !== "inspect");
+
+      if (isContinuing) {
+        if (savedAgentState?.runTimestamp && String(savedAgentState.runTimestamp).trim().length > 0) {
+          activeRunTimestamp = String(savedAgentState.runTimestamp).trim();
+        } else if (pWs?.project?.name && pWs?.workspaceName) {
+          const latestOnDisk = getLatestProjectRunTimestamp(pWs.workspaceName, pWs.project.name);
+          if (latestOnDisk) {
+            activeRunTimestamp = latestOnDisk;
+          }
+        }
+      }
+
+      if (!activeRunTimestamp) {
+        activeRunTimestamp = generateDateTimeStamp();
+      }
+
+      latestGraphStateValues.runTimestamp = activeRunTimestamp;
 
       // Ensure the unified project run folder exists before workflow execution begins
       if (pWs && pWs.project && pWs.workspaceName) {
@@ -254,6 +321,7 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       this.stoppedSessions.delete(threadId);
       this.pausedSessions.delete(threadId);
+      this.activeRuns.set(threadId, { threadId, projectId: options?.projectId, startedAt: runStartedAt });
       const sessionAbortController = new AbortController();
       this.sessionAbortControllers.set(threadId, sessionAbortController);
 
@@ -267,6 +335,9 @@ export class IngestionAgentService implements IIngestionAgentService {
         traceHelper: this.traceHelper,
         agentThinkingService: this.agentThinkingService,
         projectId: options?.projectId,
+        projectName: pWs?.project?.name,
+        workspaceName: pWs?.workspaceName,
+        folderPath: pWs?.project?.folderPath,
         pipeline: "Data Ingestion",
         runTimestamp: activeRunTimestamp,
         isCancelled: () => this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId),
@@ -376,11 +447,81 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       const pipeline = "Data Ingestion";
 
+      const isApprovingModel = options?.action === "approve" && (
+        Boolean(options.step?.toLowerCase().includes("model")) ||
+        Boolean(options.step?.toLowerCase().includes("training"))
+      );
+
       const initialStageStatuses = (options?.action === "resume" || options?.action === "retry") && savedAgentState?.stageStatuses
         ? { ...savedAgentState.stageStatuses, [options.step || "inspect"]: "In Progress" }
-        : options?.action === "approve"
-          ? { inspect: "Completed", profileData: "Completed", preprocess: "Completed", resolveSchema: "Completed", hierarchyMapper: "In Progress", featureArchitect: "Pending", featureValidator: "Pending", exogenousScout: "Pending" }
-          : { inspect: "In Progress", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending", hierarchyMapper: "Pending", featureArchitect: "Pending", featureValidator: "Pending", exogenousScout: "Pending" };
+        : isApprovingModel
+          ? {
+              inspect: "Completed",
+              profileData: "Completed",
+              preprocess: "Completed",
+              resolveSchema: "Completed",
+              hierarchyMapper: "Completed",
+              featureArchitect: "Completed",
+              featureValidator: "Completed",
+              exogenousScout: "Completed",
+              modelSelection: "In Progress",
+              trainingConfiguration: "Pending",
+              modelTraining: "Pending",
+              modelValidation: "Pending",
+            }
+          : options?.action === "approve"
+            ? {
+                inspect: "Completed",
+                profileData: "Completed",
+                preprocess: "Completed",
+                resolveSchema: "Completed",
+                hierarchyMapper: "In Progress",
+                featureArchitect: "Pending",
+                featureValidator: "Pending",
+                exogenousScout: "Pending",
+                modelSelection: "Pending",
+                trainingConfiguration: "Pending",
+                modelTraining: "Pending",
+                modelValidation: "Pending",
+              }
+            : {
+                inspect: "In Progress",
+                profileData: "Pending",
+                preprocess: "Pending",
+                resolveSchema: "Pending",
+                hierarchyMapper: "Pending",
+                featureArchitect: "Pending",
+                featureValidator: "Pending",
+                exogenousScout: "Pending",
+                modelSelection: "Pending",
+                trainingConfiguration: "Pending",
+                modelTraining: "Pending",
+                modelValidation: "Pending",
+              };
+
+      const approveMessage = isApprovingModel
+        ? "Advancing workflow to Model Training & Validation stage..."
+        : `Advancing workflow to ${options?.step || "Feature Engineering"} stage...`;
+
+      if (options?.action === "approve" && options?.projectId) {
+        const approvedAgentState = {
+          ...(savedAgentState || {}),
+          status: "running",
+          requiresApproval: false,
+          runTimestamp: activeRunTimestamp,
+          stageStatuses: initialStageStatuses,
+          currentNode: options?.step || (isApprovingModel ? "modelSelectionNode" : "hierarchyMapperNode"),
+          currentStage: options?.step || (isApprovingModel ? "modelSelectionNode" : "hierarchyMapperNode"),
+          summary: isApprovingModel ? "Advancing workflow to Model Training & Validation stage" : `Advancing workflow to ${options?.step || "Feature Engineering"} stage`,
+          message: approveMessage,
+        };
+        try {
+          await this.projectService.updateAgentState(options.projectId, approvedAgentState);
+          console.info(`[Workflow] Updated project ${options.projectId} database agentState to running on approve.`);
+        } catch (err) {
+          console.warn("[Workflow] Failed to update project agent state on approve:", err);
+        }
+      }
 
       // 1. Push initial status to client immediately (<10ms) to unblock SSE connection
       queue.push({
@@ -389,19 +530,23 @@ export class IngestionAgentService implements IIngestionAgentService {
         summary: options?.action === "resume"
           ? `Resuming workflow at ${options.step || "inspect"} phase`
           : options?.action === "approve"
-            ? `Advancing workflow to ${options.step || "Feature Engineering"}`
+            ? (isApprovingModel ? "Advancing workflow to Model Training & Validation stage" : `Advancing workflow to ${options.step || "Feature Engineering"}`)
             : "Workflow started. Initializing agent reasoning...",
         sessionId: threadId,
         requiresApproval: false,
+        runTimestamp: activeRunTimestamp,
         stageStatuses: initialStageStatuses,
-        currentNode: options?.step || (options?.action === "approve" ? "hierarchyMapperNode" : "inspect"),
-        currentStage: options?.step || (options?.action === "approve" ? "hierarchyMapperNode" : "inspect"),
+        currentNode: options?.step || (options?.action === "approve" ? (isApprovingModel ? "modelSelectionNode" : "hierarchyMapperNode") : "inspect"),
+        currentStage: options?.step || (options?.action === "approve" ? (isApprovingModel ? "modelSelectionNode" : "hierarchyMapperNode") : "inspect"),
         steps: savedAgentState?.steps || [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
         inspection: savedAgentState?.inspection || {},
         schemaResolution: savedAgentState?.schemaResolution || {},
         dataProfile: savedAgentState?.dataProfile || {},
         preprocessing: savedAgentState?.preprocessing || {},
         stageOutputs: savedAgentState?.stageOutputs || {},
+        message: options?.action === "approve"
+          ? approveMessage
+          : buildMessage([], "running", initialStageStatuses),
       });
 
       // 2. Define the background task to be run inside the QueueService
@@ -437,20 +582,19 @@ export class IngestionAgentService implements IIngestionAgentService {
               }
             } else if (nodeName === "exogenous" || nodeName === "exogenousScout") {
               updated.exogenousScout = "Completed";
+              if (!updated.modelSelection || updated.modelSelection === "Pending") {
+                updated.modelSelection = "In Progress";
+              }
+            } else if (nodeName === "modelSelection" || nodeName === "modelSelectionNode") {
+              updated.modelSelection = "Completed";
             } else if (nodeName === "trainingConfiguration" || nodeName === "trainingConfigurationNode") {
               updated.trainingConfiguration = "Completed";
               updated.modelTraining = "In Progress";
             } else if (nodeName === "modelTraining" || nodeName === "modelTrainingNode") {
               updated.modelTraining = "Completed";
-              updated.modelEvaluation = "In Progress";
-            } else if (nodeName === "modelEvaluation" || nodeName === "modelEvaluationNode") {
-              updated.modelEvaluation = "Completed";
               updated.modelValidation = "In Progress";
             } else if (nodeName === "modelValidation" || nodeName === "modelValidationNode") {
               updated.modelValidation = "Completed";
-              updated.modelSelection = "In Progress";
-            } else if (nodeName === "modelSelection" || nodeName === "modelSelectionNode" || nodeName === "finalModelSelection" || nodeName === "finalModelSelectionNode") {
-              updated.modelSelection = "Completed";
             }
             return updated;
           };
@@ -480,7 +624,19 @@ export class IngestionAgentService implements IIngestionAgentService {
                 "Data Ingestion": "Data Ingestion",
                 "Data Profiling": "Data Profiling",
                 "Schema Resolver": "Schema Resolver",
-                "Feature Engineering": "Hierarchy Mapper"
+                "Feature Engineering": "Hierarchy Mapper",
+                "Model Selection": "Model Selection",
+                modelSelection: "Model Selection",
+                modelSelectionNode: "Model Selection",
+                "Training Configuration": "Training Configuration",
+                trainingConfiguration: "Training Configuration",
+                trainingConfigurationNode: "Training Configuration",
+                "Model Training": "Model Training",
+                modelTraining: "Model Training",
+                modelTrainingNode: "Model Training",
+                "Model Validation": "Model Validation",
+                modelValidation: "Model Validation",
+                modelValidationNode: "Model Validation",
               };
               const substep = stepMap[options.step];
               if (substep) {
@@ -528,6 +684,20 @@ export class IngestionAgentService implements IIngestionAgentService {
                   await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
                 } else if (substep === "Feature Engineering") {
                   await this.agentThinkingService.deleteThinking(projectId, pipeline, "Feature Engineering");
+                } else if (substep === "Model Selection") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Selection");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Training Configuration");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Training");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Validation");
+                } else if (substep === "Training Configuration") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Training Configuration");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Training");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Validation");
+                } else if (substep === "Model Training") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Training");
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Validation");
+                } else if (substep === "Model Validation") {
+                  await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Validation");
                 }
               }
             } else if (options.action === "approve") {
@@ -565,6 +735,17 @@ export class IngestionAgentService implements IIngestionAgentService {
               } else if (nextNodes.includes("exogenous")) {
                 activeSubstep = "Exogenous Scout";
                 await this.agentThinkingService.deleteThinking(projectId, pipeline, "Exogenous Scout");
+              } else if (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) {
+                activeSubstep = "Model Selection";
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Selection");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Training Configuration");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Training");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Validation");
+              } else if (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration")) {
+                activeSubstep = "Training Configuration";
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Training Configuration");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Training");
+                await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Validation");
               }
             } else {
               activeSubstep = "Data Inspection";
@@ -611,14 +792,23 @@ export class IngestionAgentService implements IIngestionAgentService {
               const currentGraphState = await workflow.getState(config).catch(() => null);
               const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
 
-              const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : "In Progress";
-              const profileStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-              const preprocessStatus = (activeSubstep === "Schema Resolver" || activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-              const schemaStatus = (activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || (activeSubstep === "Exogenous Scout") || activeSubstep === "Feature Engineering") ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
-              const hierarchyStatus = (activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Hierarchy Mapper" ? "In Progress" : "Pending");
-              const featureArchitectStatus = (activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout") ? "Completed" : (activeSubstep === "Feature Architect" || activeSubstep === "Feature Engineering" ? "In Progress" : "Pending");
-              const featureValidatorStatus = activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Feature Validator" ? "In Progress" : "Pending");
-              const exogenousStatus = activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending";
+              const isModelSubstep = activeSubstep === "Model Selection" || activeSubstep === "Training Configuration" || activeSubstep === "Model Training" || activeSubstep === "Model Validation" || activeSubstep === "Model Training & Validation";
+              const isFESubstep = activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering";
+
+              const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || isFESubstep || isModelSubstep) ? "Completed" : "In Progress";
+              const profileStatus = (activeSubstep === "Schema Resolver" || isFESubstep || isModelSubstep) ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+              const preprocessStatus = (activeSubstep === "Schema Resolver" || isFESubstep || isModelSubstep) ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
+              const schemaStatus = (isFESubstep || isModelSubstep) ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
+
+              const hierarchyStatus = isModelSubstep || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Hierarchy Mapper" ? "In Progress" : "Pending");
+              const featureArchitectStatus = isModelSubstep || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Feature Architect" || activeSubstep === "Feature Engineering" ? "In Progress" : "Pending");
+              const featureValidatorStatus = isModelSubstep || activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Feature Validator" ? "In Progress" : "Pending");
+              const exogenousStatus = isModelSubstep ? "Completed" : (activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending");
+
+              const modelSelectionStatus = (activeSubstep === "Training Configuration" || activeSubstep === "Model Training" || activeSubstep === "Model Validation") ? "Completed" : (activeSubstep === "Model Selection" || activeSubstep === "Model Training & Validation" ? "In Progress" : "Pending");
+              const trainingConfigStatus = (activeSubstep === "Model Training" || activeSubstep === "Model Validation") ? "Completed" : (activeSubstep === "Training Configuration" ? "In Progress" : "Pending");
+              const modelTrainingStatus = activeSubstep === "Model Validation" ? "Completed" : (activeSubstep === "Model Training" ? "In Progress" : "Pending");
+              const modelValidationStatus = activeSubstep === "Model Validation" ? "In Progress" : "Pending";
 
               const mergedStageStatuses = {
                 ...(calculatedBase.stageStatuses || {}),
@@ -630,15 +820,31 @@ export class IngestionAgentService implements IIngestionAgentService {
                 featureArchitect: featureArchitectStatus,
                 featureValidator: featureValidatorStatus,
                 exogenousScout: exogenousStatus,
+                modelSelection: modelSelectionStatus,
+                trainingConfiguration: trainingConfigStatus,
+                modelTraining: modelTrainingStatus,
+                modelValidation: modelValidationStatus,
               };
 
-              const nodeKey = activeSubstep === "Data Inspection" ? "inspect" : activeSubstep === "Data Profiling" ? "profileData" : activeSubstep === "Schema Resolver" ? "resolveSchema" : activeSubstep === "Hierarchy Mapper" ? "hierarchyMapperNode" : activeSubstep === "Feature Architect" ? "featureArchitectNode" : activeSubstep === "Feature Validator" ? "featureArchitectNode" : "exogenousScout";
+              const nodeKey = activeSubstep === "Data Inspection" ? "inspect"
+                : activeSubstep === "Data Profiling" ? "profileData"
+                : activeSubstep === "Schema Resolver" ? "resolveSchema"
+                : activeSubstep === "Hierarchy Mapper" ? "hierarchyMapperNode"
+                : activeSubstep === "Feature Architect" ? "featureArchitectNode"
+                : activeSubstep === "Feature Validator" ? "featureArchitectNode"
+                : activeSubstep === "Exogenous Scout" ? "exogenousScout"
+                : (activeSubstep === "Model Selection" || activeSubstep === "Model Training & Validation") ? "modelSelectionNode"
+                : activeSubstep === "Training Configuration" ? "trainingConfigurationNode"
+                : activeSubstep === "Model Training" ? "modelTrainingNode"
+                : activeSubstep === "Model Validation" ? "modelValidationNode"
+                : "inspect";
 
               const fullBaseResult: IngestionAgentRunResult = {
                 ...calculatedBase,
                 connectorId,
                 status: "running",
                 summary: `${activeSubstep} agent reasoning in progress`,
+                message: buildMessage([nodeKey], "running", mergedStageStatuses),
                 sessionId: threadId,
                 requiresApproval: false,
                 stageStatuses: mergedStageStatuses,
@@ -704,7 +910,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               }
 
               if (retryCheckpointId) {
-                console.info(`[Workflow] Retrying from checkpoint ${retryCheckpointId}`);
+                console.info(`[Workflow] Retrying from in-memory checkpoint ${retryCheckpointId}`);
                 const retryConfig = {
                   configurable: {
                     thread_id: threadId,
@@ -716,8 +922,137 @@ export class IngestionAgentService implements IIngestionAgentService {
                 };
                 stream = await workflow.stream(null, retryConfig);
               } else {
-                console.warn(`[Workflow] No checkpoint found for retry target "${targetNode}", resuming from current position`);
-                stream = await workflow.stream(null, config);
+                console.info(`[Workflow] No in-memory checkpoint found for retry target "${targetNode}". Restoring state from database for thread ${threadId}`);
+
+                const predecessorNodeMap: Record<string, string> = {
+                  profileData: "inspect",
+                  preprocess: "inspect",
+                  resolveSchema: "profileData",
+                  hierarchyMapperNode: "resolveSchema",
+                  hierarchyMapper: "resolveSchema",
+                  featureArchitectNode: "hierarchyMapperNode",
+                  featureArchitect: "hierarchyMapperNode",
+                  featureValidator: "hierarchyMapperNode",
+                  featureValidatorNode: "hierarchyMapperNode",
+                  exogenous: "featureArchitectNode",
+                  exogenousScout: "featureArchitectNode",
+                  modelSelection: "exogenous",
+                  modelSelectionNode: "exogenous",
+                  trainingConfiguration: "modelSelectionNode",
+                  trainingConfigurationNode: "modelSelectionNode",
+                  modelTraining: "trainingConfigurationNode",
+                  modelTrainingNode: "trainingConfigurationNode",
+                  modelValidation: "modelTrainingNode",
+                  modelValidationNode: "modelTrainingNode",
+                };
+
+                const predecessorNode = predecessorNodeMap[targetNode || ""] || predecessorNodeMap[options.step || ""];
+
+                let stateToRestore = savedAgentState;
+                if (!stateToRestore && options?.projectId) {
+                  try {
+                    const project = await this.projectService.getById(options.projectId);
+                    stateToRestore = project?.agentState as any;
+                  } catch (fetchErr: any) {
+                    console.warn(`[Workflow] Failed to fetch project for retry state restore:`, fetchErr?.message);
+                  }
+                }
+
+                if (stateToRestore && predecessorNode) {
+                  const cleanStageStatuses = { ...(stateToRestore.stageStatuses || {}) };
+                  const cleanStageOutputs = { ...(stateToRestore.stageOutputs || {}) };
+
+                  // Reset downstream and target stage outputs and statuses
+                  const stagesToReset: string[] = [];
+                  if (targetNode === "modelSelectionNode" || targetNode === "modelSelection") {
+                    stagesToReset.push("modelSelection", "trainingConfiguration", "modelTraining", "modelValidation");
+                    delete stateToRestore.modelSelection;
+                    delete stateToRestore.trainingConfiguration;
+                    delete stateToRestore.modelTraining;
+                    delete stateToRestore.modelValidation;
+                  } else if (targetNode === "trainingConfigurationNode" || targetNode === "trainingConfiguration") {
+                    stagesToReset.push("trainingConfiguration", "modelTraining", "modelValidation");
+                    delete stateToRestore.trainingConfiguration;
+                    delete stateToRestore.modelTraining;
+                    delete stateToRestore.modelValidation;
+                  } else if (targetNode === "modelTrainingNode" || targetNode === "modelTraining") {
+                    stagesToReset.push("modelTraining", "modelValidation");
+                    delete stateToRestore.modelTraining;
+                    delete stateToRestore.modelValidation;
+                  } else if (targetNode === "modelValidationNode" || targetNode === "modelValidation") {
+                    stagesToReset.push("modelValidation");
+                    delete stateToRestore.modelValidation;
+                  } else if (targetNode === "exogenous" || targetNode === "exogenousScout") {
+                    stagesToReset.push("exogenousScout", "modelSelection", "trainingConfiguration", "modelTraining", "modelValidation");
+                    delete stateToRestore.exogenousScout;
+                  } else if (targetNode === "featureArchitectNode" || targetNode === "featureArchitect") {
+                    stagesToReset.push("featureArchitect", "featureValidator", "exogenousScout", "modelSelection", "trainingConfiguration", "modelTraining", "modelValidation");
+                    delete stateToRestore.featureArchitect;
+                    delete stateToRestore.featureValidator;
+                    delete stateToRestore.exogenousScout;
+                  } else if (targetNode === "hierarchyMapperNode" || targetNode === "hierarchyMapper") {
+                    stagesToReset.push("hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout", "modelSelection", "trainingConfiguration", "modelTraining", "modelValidation");
+                    delete stateToRestore.hierarchyMapper;
+                    delete stateToRestore.formBuilder;
+                    delete stateToRestore.relationshipBuilder;
+                  } else if (targetNode === "resolveSchema") {
+                    stagesToReset.push("resolveSchema", "hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout", "modelSelection");
+                    delete stateToRestore.schemaResolution;
+                  } else if (targetNode === "profileData") {
+                    stagesToReset.push("profileData", "resolveSchema", "hierarchyMapper");
+                    delete stateToRestore.dataProfile;
+                  }
+
+                  for (const stage of stagesToReset) {
+                    delete cleanStageOutputs[stage];
+                    if (stage === stagesToReset[0]) {
+                      cleanStageStatuses[stage] = "In Progress";
+                    } else {
+                      cleanStageStatuses[stage] = "Pending";
+                    }
+                  }
+
+                  const restoredState = {
+                    ...stateToRestore,
+                    connectorId,
+                    projectId: options?.projectId || meta.projectId || "",
+                    userPrompt: userPrompt ?? meta.userPrompt ?? stateToRestore.userPrompt ?? "",
+                    runTimestamp: stateToRestore.runTimestamp || activeRunTimestamp,
+                    status: "running",
+                    requiresApproval: false,
+                    nextStep: undefined,
+                    summary: `Retrying step "${options.step}" (${targetNode})`,
+                    stageStatuses: cleanStageStatuses,
+                    stageOutputs: cleanStageOutputs,
+                  };
+
+                  await workflow.updateState(config, restoredState, predecessorNode);
+                  const graphState = await workflow.getState(config).catch(() => null);
+                  console.info(`[Workflow] Restored graph state for retry. Next node to execute: [${graphState?.next?.join(", ")}]`);
+
+                  stream = await workflow.stream(null, config);
+                } else {
+                  console.warn(`[Workflow] Cannot restore state for retry target "${targetNode}", restarting from beginning`);
+                  stream = await workflow.stream(
+                    {
+                      connectorId,
+                      projectId: options?.projectId ?? "",
+                      userPrompt: userPrompt ?? meta.userPrompt ?? "",
+                      runTimestamp: activeRunTimestamp,
+                      status: "queued",
+                      summary: `Retrying from beginning for step ${options.step}`,
+                      inspection: {},
+                      dataProfile: {},
+                      schemaResolution: {},
+                      preprocessing: {},
+                      batchedTables: [],
+                      steps: [],
+                      stageOutputs: {},
+                      stageStatuses: { inspect: "Pending", profileData: "Pending", preprocess: "Pending", resolveSchema: "Pending" }
+                    },
+                    config
+                  );
+                }
               }
             }
           } else if (options?.action === "approve") {
@@ -733,7 +1068,11 @@ export class IngestionAgentService implements IIngestionAgentService {
                 if (savedAgentState && (savedAgentState.schemaResolution || savedAgentState.stageOutputs)) {
                   console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
 
-                  const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" ? "exogenous" : "resolveSchema";
+                  const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" || options.step === "Model Selection"
+                    ? "exogenous"
+                    : options.step === "Training Configuration" || options.step === "trainingConfigurationNode" || options.step === "Model Training" || options.step === "modelTrainingNode"
+                    ? "modelSelectionNode"
+                    : "resolveSchema";
                   const restoredState = {
                     ...savedAgentState,
                     connectorId,
@@ -759,7 +1098,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             if (hasState) {
               stream = await workflow.stream(null, config);
             } else {
-              const approvingModelPhase = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode";
+              const approvingModelPhase = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" || options.step === "Model Selection";
               console.warn(`[Workflow] No checkpoint found for approve. Restoring the ${approvingModelPhase ? "Feature Engineering" : "Data Ingestion"} boundary.`);
               const fallbackState = {
                 connectorId,
@@ -807,6 +1146,19 @@ export class IngestionAgentService implements IIngestionAgentService {
               "exogenousScout": "featureArchitectNode",
               "exogenous": "featureArchitectNode",
               "Exogenous Scout": "featureArchitectNode",
+              "modelSelection": "exogenous",
+              "modelSelectionNode": "exogenous",
+              "Model Selection": "exogenous",
+              "Model Training & Validation": "exogenous",
+              "trainingConfiguration": "modelSelectionNode",
+              "trainingConfigurationNode": "modelSelectionNode",
+              "Training Configuration": "modelSelectionNode",
+              "modelTraining": "trainingConfigurationNode",
+              "modelTrainingNode": "trainingConfigurationNode",
+              "Model Training": "trainingConfigurationNode",
+              "modelValidation": "modelTrainingNode",
+              "modelValidationNode": "modelTrainingNode",
+              "Model Validation": "modelTrainingNode",
             };
             const predecessorNode = predecessorNodeMap[targetStep] || "__start__";
 
@@ -908,18 +1260,21 @@ export class IngestionAgentService implements IIngestionAgentService {
               latestGraphStateValues = {
                 ...latestGraphStateValues,
                 ...graphState.values,
+                runTimestamp: (graphState.values.runTimestamp as string) || latestGraphStateValues.runTimestamp || activeRunTimestamp,
                 stageOutputs: { ...(latestGraphStateValues.stageOutputs || {}), ...(graphState.values.stageOutputs || {}) },
                 stageStatuses: { ...currentStatuses, ...(graphState.values.stageStatuses || {}) }
               };
             } else {
               latestGraphStateValues.stageStatuses = currentStatuses;
             }
+            latestGraphStateValues.runTimestamp = latestGraphStateValues.runTimestamp || activeRunTimestamp;
             const result = buildResultFromGraphState({ values: latestGraphStateValues, next: graphState?.next }, threadId, connectorId);
             if (result.status === "running") {
               result.requiresApproval = false;
             }
             if (options?.projectId) {
               result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+              await this.projectService.updateAgentState(options.projectId, latestGraphStateValues);
             }
             agentJobEvents.emit(`job:update:${threadId}`, result);
           }
@@ -990,20 +1345,32 @@ export class IngestionAgentService implements IIngestionAgentService {
 
           if (isAtApprovalGate) {
             console.info(`[Workflow] Pausing for user approval before ${approvalTarget}.`);
-            const completedPhase = approvalTarget === "Feature Engineering" ? "Data Ingestion" : "Feature Engineering";
+            const completedPhase = approvalTarget === "Feature Engineering"
+              ? "Data Ingestion"
+              : "Feature Engineering";
+            const pausedStatuses = { ...(latestGraphStateValues.stageStatuses || {}) };
+            if (approvalTarget === "Feature Engineering") {
+              pausedStatuses.hierarchyMapper = "Pending";
+            } else if (approvalTarget === "Model Training & Validation") {
+              pausedStatuses.modelSelection = "Pending";
+            }
+            const approvalSummary = `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`;
             const pausedValues = {
               ...latestGraphStateValues,
+              runTimestamp: latestGraphStateValues.runTimestamp || activeRunTimestamp,
+              stageStatuses: pausedStatuses,
               status: "paused",
               requiresApproval: true,
               nextStep: approvalTarget,
-              summary: `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`,
-              message: `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`,
+              summary: approvalSummary,
+              message: approvalSummary,
             };
             latestGraphStateValues = pausedValues;
             const pausedResult = buildResultFromGraphState({ values: pausedValues, next: graphState?.next }, threadId, connectorId);
             pausedResult.status = "paused";
             pausedResult.requiresApproval = true;
             pausedResult.nextStep = approvalTarget;
+            pausedResult.stageStatuses = pausedStatuses;
             if (options?.projectId) {
               await this.projectService.updateAgentState(options.projectId, pausedValues);
               pausedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
@@ -1041,18 +1408,21 @@ export class IngestionAgentService implements IIngestionAgentService {
                 latestGraphStateValues = {
                   ...latestGraphStateValues,
                   ...currentGraphState.values,
+                  runTimestamp: (currentGraphState.values.runTimestamp as string) || latestGraphStateValues.runTimestamp || activeRunTimestamp,
                   stageOutputs: { ...(latestGraphStateValues.stageOutputs || {}), ...(currentGraphState.values.stageOutputs || {}) },
                   stageStatuses: { ...currentStatuses, ...(currentGraphState.values.stageStatuses || {}) }
                 };
               } else {
                 latestGraphStateValues.stageStatuses = currentStatuses;
               }
+              latestGraphStateValues.runTimestamp = latestGraphStateValues.runTimestamp || activeRunTimestamp;
               const result = buildResultFromGraphState({ values: latestGraphStateValues, next: currentGraphState?.next }, threadId, connectorId);
               if (result.status === "running") {
                 result.requiresApproval = false;
               }
               if (options?.projectId) {
                 result.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+                await this.projectService.updateAgentState(options.projectId, latestGraphStateValues);
               }
               agentJobEvents.emit(`job:update:${threadId}`, result);
             }
@@ -1061,10 +1431,12 @@ export class IngestionAgentService implements IIngestionAgentService {
               latestGraphStateValues = {
                 ...latestGraphStateValues,
                 ...graphState.values,
+                runTimestamp: (graphState.values.runTimestamp as string) || latestGraphStateValues.runTimestamp || activeRunTimestamp,
                 stageOutputs: { ...(latestGraphStateValues.stageOutputs || {}), ...(graphState.values.stageOutputs || {}) },
                 stageStatuses: { ...(latestGraphStateValues.stageStatuses || {}), ...(graphState.values.stageStatuses || {}) }
               };
             }
+            latestGraphStateValues.runTimestamp = latestGraphStateValues.runTimestamp || activeRunTimestamp;
           }
 
           console.info(`[Workflow] State after invoke — next: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}], status: ${graphState?.values?.status || "unknown"}`);
@@ -1113,16 +1485,17 @@ export class IngestionAgentService implements IIngestionAgentService {
           const result = buildResultFromGraphState(graphState, threadId, connectorId);
           if (result.status === "running" || options?.action === "approve") {
             result.requiresApproval = false;
-            if (options?.action === "approve") {
-              result.message = "Data Ingestion approved. Moving to Feature Engineering stage.";
-            }
           }
 
           if (options?.projectId) {
             try {
+              const finalValuesToPersist = {
+                ...(graphState?.values ?? {}),
+                runTimestamp: (graphState?.values?.runTimestamp as string) || latestGraphStateValues.runTimestamp || activeRunTimestamp,
+              };
               await this.projectService.updateAgentState(
                 options.projectId,
-                graphState?.values ?? {},
+                finalValuesToPersist,
                 userPrompt ?? meta.userPrompt
               );
             } catch (persistError: any) {
@@ -1149,6 +1522,7 @@ export class IngestionAgentService implements IIngestionAgentService {
           console.error(`[Workflow] Execution error:`, err?.message || err);
           throw err;
         } finally {
+          this.activeRuns.delete(threadId);
           agentJobEvents.emit(`job:close:${threadId}`);
         }
       };
@@ -1353,11 +1727,20 @@ export class IngestionAgentService implements IIngestionAgentService {
 
     if (resolvedSessionId) {
       this.stoppedSessions.add(resolvedSessionId);
+      this.activeRuns.delete(resolvedSessionId);
       this.sessionAbortControllers.get(resolvedSessionId)?.abort();
       this.sessionAbortControllers.delete(resolvedSessionId);
       console.info(`[Workflow] Session ${resolvedSessionId} marked as stopped.`);
     } else {
       console.info(`[Workflow] Stop requested for project ${targetProjectId || "unknown"}`);
+    }
+
+    if (targetProjectId) {
+      for (const [sId, r] of this.activeRuns.entries()) {
+        if (r.projectId === targetProjectId) {
+          this.activeRuns.delete(sId);
+        }
+      }
     }
 
     try {
@@ -1428,10 +1811,19 @@ export class IngestionAgentService implements IIngestionAgentService {
     if (resolvedSessionId) {
       this.pausedSessions.add(resolvedSessionId);
       this.stoppedSessions.add(resolvedSessionId);
+      this.activeRuns.delete(resolvedSessionId);
       this.sessionAbortControllers.get(resolvedSessionId)?.abort();
       console.info(`[Workflow] Session ${resolvedSessionId} marked as paused.`);
     } else {
       console.info(`[Workflow] Pause requested for project ${targetProjectId || "unknown"}`);
+    }
+
+    if (targetProjectId) {
+      for (const [sId, r] of this.activeRuns.entries()) {
+        if (r.projectId === targetProjectId) {
+          this.activeRuns.delete(sId);
+        }
+      }
     }
 
     try {

@@ -90,11 +90,12 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
   const finalResult = normalizeAndEnforceFormSchema(mergedResult, relOutput, sourceId);
 
   // 4. Save Form Schema into Project Folder with timestamped filename
+  const effectiveRunTimestamp = state.runTimestamp || (services as any)?.runTimestamp;
   if (services?.projectService && services?.projectId) {
     try {
       const proj = await services.projectService.getProjectWithWorkspace(services.projectId);
       if (proj && proj.project) {
-        await saveModularFormSchema(proj.workspaceName || "DefaultWorkspace", proj.project.name, finalResult, state.runTimestamp);
+        await saveModularFormSchema(proj.workspaceName || "DefaultWorkspace", proj.project.name, finalResult, effectiveRunTimestamp);
       }
     } catch (err) {
       console.warn("[formBuilderNode] Warning saving Form Schema to project folder:", err);
@@ -103,6 +104,7 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
 
   return {
     formBuilder: finalResult as unknown as Record<string, unknown>,
+    runTimestamp: effectiveRunTimestamp,
     status: "running",
     summary: finalResult.summary,
     steps: [{ name: "Form Builder", status: "completed", summary: finalResult.summary }],

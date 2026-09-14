@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { IConnectorRepository } from "../../repositories/connector.repository.interface";
+import { IWorkspaceRepository } from "../../repositories/workspace.repository.interface";
 import { IFileService } from "../file/file.service.interface";
 import { IConnectionTesterService } from "./connectionTester.service.interface";
 import { Connector, ConnectorType, ConnectorStatus, ConnectorHealth, ConnectionConfig } from "../../models/connector.types";
@@ -11,7 +12,8 @@ export class ConnectorService {
     private repository: IConnectorRepository,
     private fileService: IFileService,
     private connectionTester: IConnectionTesterService,
-    private duckDBService: IDuckDBService
+    private duckDBService: IDuckDBService,
+    private workspaceRepository?: IWorkspaceRepository
   ) {}
 
   private formatDate(date: Date): string {
@@ -46,9 +48,20 @@ export class ConnectorService {
     let views: number | null = null;
     let pipelines = 0;
 
+    let wsName: string | undefined;
+    if (workspaceId && this.workspaceRepository) {
+      try {
+        const ws = await this.workspaceRepository.getById(workspaceId);
+        wsName = ws?.name;
+      } catch {}
+    }
+    if (!wsName && workspaceId && workspaceId !== "default") {
+      wsName = workspaceId;
+    }
+
     // 1. File upload check:
     if (["excel", "csv", "tsv"].includes(type) && connectionConfig.fileName && connectionConfig.fileContent) {
-      await this.fileService.saveFile(connectionConfig.fileName, connectionConfig.fileContent);
+      await this.fileService.saveDatasourceFile(name, connectionConfig.fileName, connectionConfig.fileContent, wsName);
     }
 
     // 2. Database metadata check:
@@ -130,10 +143,25 @@ export class ConnectorService {
 
   async delete(id: string): Promise<boolean> {
     const connector = await this.repository.getById(id);
-    if (connector && ["excel", "csv", "tsv"].includes(connector.type)) {
-      const fileName = connector.connectionConfig.fileName;
-      if (fileName) {
-        await this.fileService.deleteFile(fileName);
+    if (connector) {
+      let wsName: string | undefined;
+      if (connector.workspaceId && this.workspaceRepository) {
+        try {
+          const ws = await this.workspaceRepository.getById(connector.workspaceId);
+          wsName = ws?.name;
+        } catch {}
+      }
+      if (!wsName && connector.workspaceId && connector.workspaceId !== "default") {
+        wsName = connector.workspaceId;
+      }
+
+      if (["excel", "csv", "tsv"].includes(connector.type)) {
+        const fileName = connector.connectionConfig.fileName;
+        if (fileName) {
+          await this.fileService.deleteDatasourceFile(connector.name, fileName, wsName);
+          await this.fileService.deleteFile(fileName, undefined, wsName);
+        }
+        await this.fileService.deleteDatasourceDir(connector.name, wsName);
       }
     }
     return this.repository.delete(id);

@@ -94,6 +94,7 @@ interface ProjectDetailPageProps {
   pausedAtPhase?: string | null;
   onPause?: () => void;
   onResume?: () => void;
+  isApproving?: boolean;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   showAlert: (opts: { title: string; message?: string; type: AlertType; logs?: string }) => void;
 }
@@ -129,6 +130,7 @@ export default function ProjectDetailPage({
   pausedAtPhase,
   onPause,
   onResume,
+  isApproving,
   agentThinking,
   showAlert,
 }: ProjectDetailPageProps) {
@@ -432,6 +434,7 @@ export default function ProjectDetailPage({
             pausedAtPhase={pausedAtPhase}
             onPause={onPause}
             onResume={onResume}
+            isApproving={isApproving}
           />
         </div>
       </div>
@@ -464,17 +467,49 @@ export default function ProjectDetailPage({
           "Exogenous Scout": stageOutputs.exogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
-          "Model Selection": stageOutputs.modelTraining ? (
-            <ModelTrainingValidationStepOutput />
+          "Model Selection": (stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+            <ModelTrainingValidationStepOutput
+              modelSelection={stageOutputs.modelSelection}
+              modelTraining={stageOutputs.modelTraining}
+              projectId={project.id}
+              activeSubstep="Model Selection"
+            />
           ) : null,
-          "Training Configuration": stageOutputs.modelTraining ? (
-            <ModelTrainingValidationStepOutput />
+          "Training Configuration": (stageOutputs.trainingConfiguration || stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+            <ModelTrainingValidationStepOutput
+              modelSelection={stageOutputs.modelSelection}
+              trainingConfiguration={stageOutputs.trainingConfiguration}
+              projectId={project.id}
+              activeSubstep="Training Configuration"
+            />
           ) : null,
           "Model Training": stageOutputs.modelTraining ? (
-            <ModelTrainingValidationStepOutput />
+            <ModelTrainingValidationStepOutput
+              modelTraining={stageOutputs.modelTraining}
+              projectId={project.id}
+              activeSubstep="Model Training"
+            />
           ) : null,
-          "Model Validation": stageOutputs.modelTraining ? (
-            <ModelTrainingValidationStepOutput />
+          "Model Validation": (stageOutputs.modelValidation || stageOutputs.modelTraining) ? (
+            <ModelTrainingValidationStepOutput
+              modelValidation={stageOutputs.modelValidation}
+              modelTraining={stageOutputs.modelTraining}
+              projectId={project.id}
+              activeSubstep="Model Validation"
+            />
+          ) : null,
+          "Feature Engineering": stageOutputs.exogenousScout ? (
+            <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
+          ) : stageOutputs.featureArchitect ? (
+            <FeatureArchitectStepOutput featureArchitect={stageOutputs.featureArchitect} />
+          ) : null,
+          "Model Training & Validation": (stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+            <ModelTrainingValidationStepOutput
+              modelSelection={stageOutputs.modelSelection}
+              modelTraining={stageOutputs.modelTraining}
+              projectId={project.id}
+              activeSubstep="Model Selection"
+            />
           ) : null
         };
         console.log(stageOutputs)

@@ -77,6 +77,17 @@ export class AIController {
       return;
     }
 
+    const activeWorkflow = this.ingestionAgentService.getActiveWorkflow();
+    if (activeWorkflow.active && activeWorkflow.projectId && activeWorkflow.projectId !== projectId) {
+      console.warn(`[Workflow] Ingestion rejected: another project (${activeWorkflow.projectId}) is currently running`);
+      res.status(409).json({
+        success: false,
+        message: "Another pipeline is currently running and wait until the current progress is completed to run the workflow.",
+        activeProject: activeWorkflow,
+      });
+      return;
+    }
+
     // Set Server-Sent Events headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
@@ -154,6 +165,15 @@ export class AIController {
       res.json({ success: true, message: "Workflow stopped successfully", data });
     } catch (error: any) {
       res.status(500).json({ success: false, message: error.message || "Failed to stop workflow" });
+    }
+  };
+
+  getActiveWorkflow = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const active = this.ingestionAgentService.getActiveWorkflow();
+      res.json({ success: true, data: active });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || "Failed to check active workflow" });
     }
   };
 }

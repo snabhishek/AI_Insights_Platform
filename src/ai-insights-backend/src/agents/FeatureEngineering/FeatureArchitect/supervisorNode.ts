@@ -44,7 +44,7 @@ export async function supervisorNode(
   }
 
   const systemPrompt = await getPromptFromFile(
-    "featureSupervisor.md",
+    "FeatureArchitect/featureSupervisor.md",
     "You are an expert AI Feature Engineering Supervisor Agent."
   );
 

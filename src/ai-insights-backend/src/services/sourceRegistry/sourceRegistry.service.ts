@@ -97,7 +97,9 @@ export class SourceRegistryService implements ISourceRegistryService {
           connectionConfig: connector.connectionConfig,
           backingEngine,
           details: {
-            storagePath: safeFileName ? path.join(process.cwd(), "Projects", `${safeFileName}.duckdb`) : undefined,
+            storagePath: safeFileName
+              ? (this.duckDBService?.getDuckDbPath(safeFileName) || path.join(process.cwd(), "storage", `${safeFileName}.duckdb`))
+              : undefined,
             databaseName: connector.connectionConfig?.database,
             host: connector.connectionConfig?.host,
             port: connector.connectionConfig?.port ? Number(connector.connectionConfig.port) : undefined,
