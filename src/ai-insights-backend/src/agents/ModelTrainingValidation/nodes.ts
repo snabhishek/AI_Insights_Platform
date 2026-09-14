@@ -70,9 +70,10 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
     targetColumn: metadata.targetColumn,
     problemType: metadata.problemType,
     datasetPath: dataset ? path.join(runDirectory(state, services), dataset) : undefined,
+    services,
   };
 
-  const decisionRecord = await service.analyze(inputContext, projectId);
+  const decisionRecord = await service.analyze(inputContext, projectId, services);
   const decision = decisionRecord.decision;
 
   const effectiveRunTimestamp = state.runTimestamp || (services as any)?.runTimestamp;

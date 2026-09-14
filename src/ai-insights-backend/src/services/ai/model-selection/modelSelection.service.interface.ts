@@ -1,4 +1,5 @@
 import { ModelCapabilityRegistry } from "../../../agents/ModelTrainingValidation/ModelSelection/modelCapabilityRegistry";
+import { IngestionServices } from "../../../agents/state";
 import {
   ModelSelectionDecisionRecord,
 } from "../../../models/modelSelection.types";
@@ -8,7 +9,7 @@ export interface IModelSelectionService {
    * Runs the complete Model Selection pipeline:
    * context normalization -> candidate filtering -> LLM reasoning & web search -> validation -> persistence.
    */
-  analyze(inputContext: any, projectId?: string): Promise<ModelSelectionDecisionRecord>;
+  analyze(inputContext: any, projectId?: string, services?: IngestionServices): Promise<ModelSelectionDecisionRecord>;
 
   /**
    * Retrieves a decision record by ID.

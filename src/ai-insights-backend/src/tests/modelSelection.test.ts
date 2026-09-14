@@ -6,6 +6,14 @@ import {
   ModelSelectionContext,
   ModelSelectionDecision,
 } from "../models/modelSelection.types";
+import { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { RunnableBinding } from "@langchain/core/runnables";
+import { AIMessage, HumanMessage } from "@langchain/core/messages";
+import { tool } from "@langchain/core/tools";
+import { z } from "zod";
+import { createAgent } from "langchain";
+import { invokeAgentJson } from "../agents/utils/agentUtils";
+import { ModelSelectionLLMService } from "../services/ai/model-selection/modelSelectionLLM.service";
 
 async function runModelSelectionTests() {
   console.log("=================================================");
@@ -327,6 +335,159 @@ async function runModelSelectionTests() {
   assert(
     !userSelectedModels.includes("xgboost_classifier"),
     "Unselected candidate ('xgboost_classifier') is excluded from training candidate_models"
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────────
+  // 5. Automatic Tool Execution in Agent Loop (Exogenous Scout Parity)
+  // ─────────────────────────────────────────────────────────────────────────────
+  console.log("\n--- Category 5: Automatic Tool Execution in Agent Loop ---");
+
+  let toolExecuted: boolean = false;
+  let toolReceivedQuery = "";
+
+  const mockWebSearchTool = tool(
+    async (input: { query: string }) => {
+      toolExecuted = true;
+      toolReceivedQuery = input.query;
+      return JSON.stringify([
+        { title: "Top ML models for churn", snippet: "LightGBM and XGBoost outperform on tabular customer churn benchmarks." }
+      ]);
+    },
+    {
+      name: "web_search",
+      description: "Search web for state-of-the-art models",
+      schema: z.object({ query: z.string() })
+    }
+  );
+
+  class MockToolCallingChatModel extends BaseChatModel {
+    public callCount = 0;
+    constructor() { super({}); }
+    _llmType() { return "mock"; }
+    bindTools(tools: any[], kwargs?: Record<string, any>) {
+      return new RunnableBinding({ bound: this, kwargs: { tools, ...kwargs } as any, config: {} });
+    }
+    async _generate(_messages: any[]) {
+      this.callCount++;
+      if (this.callCount === 1) {
+        // First call: LLM decides to search the web
+        return {
+          generations: [{
+            message: new AIMessage({
+              content: "",
+              tool_calls: [{
+                name: "web_search",
+                args: { query: "state-of-the-art tabular classification models" },
+                id: "call_web_search_01"
+              }]
+            }),
+            text: ""
+          }]
+        };
+      } else {
+        // Second call: LLM receives the tool output from the agent loop and returns final JSON
+        return {
+          generations: [{
+            message: new AIMessage({
+              content: JSON.stringify({
+                status: "READY",
+                recommended_model: { model_id: "lightgbm_classifier", suitability_score: 0.96 },
+                exploredViaTool: true
+              }),
+              tool_calls: []
+            }),
+            text: JSON.stringify({
+              status: "READY",
+              recommended_model: { model_id: "lightgbm_classifier", suitability_score: 0.96 },
+              exploredViaTool: true
+            })
+          }]
+        };
+      }
+    }
+  }
+
+  // Test 5.1: createAgent automatically calls tools in the agent loop
+  const mockModel = new MockToolCallingChatModel();
+  const testAgent = createAgent({
+    model: mockModel as any,
+    tools: [mockWebSearchTool],
+    systemPrompt: "You are a model selection agent."
+  });
+
+  await testAgent.invoke({
+    messages: [new HumanMessage("Select the best model for churn classification")]
+  });
+
+  assert(
+    Boolean(toolExecuted) === true,
+    "createAgent agent loop automatically executes tool call when model requests it"
+  );
+  assert(
+    mockModel.callCount === 2,
+    "Model was reinvoked with tool execution results (call count = 2)",
+    `Actual calls: ${mockModel.callCount}`
+  );
+  assert(
+    toolReceivedQuery === "state-of-the-art tabular classification models",
+    "Tool received correct arguments from agent loop"
+  );
+
+  // Test 5.2: invokeAgentJson handles agent loop and returns parsed JSON
+  let invokeAgentToolCalled: boolean = false;
+  const mockSearchToolForInvoke = tool(
+    async (_input: { query: string }) => {
+      invokeAgentToolCalled = true;
+      return "Tool executed in invokeAgentJson";
+    },
+    {
+      name: "web_search",
+      description: "Search web",
+      schema: z.object({ query: z.string() })
+    }
+  );
+
+  const mockModelForInvoke = new MockToolCallingChatModel();
+  const abortController = new AbortController();
+  const mockServices = {
+    traceHelper: {
+      invokeWithTrace: async (_name: string, _ctx: any, fn: () => Promise<any>) => await fn()
+    },
+    isCancelled: () => false,
+    abortSignal: abortController.signal
+  } as any;
+
+  const invokeResult = await invokeAgentJson<any>(
+    "modelSelection",
+    mockModelForInvoke as any,
+    "Perform model selection",
+    { fallback: true },
+    mockServices,
+    {
+      systemPrompt: "System prompt",
+      tools: [mockSearchToolForInvoke],
+      traceLabel: "test:modelSelection",
+      recursionLimit: 50
+    }
+  );
+
+  assert(
+    Boolean(invokeAgentToolCalled) === true,
+    "invokeAgentJson automatically executes tools in agent loop with services"
+  );
+  assert(
+    invokeResult?.exploredViaTool === true && invokeResult?.status === "READY",
+    "invokeAgentJson returns final parsed JSON output from agent loop after tool execution"
+  );
+
+  // Test 5.3: ModelSelectionLLMService createFallbackDecision creates valid decision
+  const llmService = new ModelSelectionLLMService();
+  const fallbackDecision = llmService.createFallbackDecision(normClassContext, registry.getAllModels());
+  const fallbackValidation = ModelSelectionValidator.validate(fallbackDecision, registry);
+  assert(
+    fallbackValidation.isValid,
+    "createFallbackDecision produces a structurally valid ModelSelectionDecision",
+    fallbackValidation.errors.join("; ")
   );
 
   console.log("\n=================================================");
