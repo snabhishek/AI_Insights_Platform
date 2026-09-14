@@ -16,27 +16,27 @@ export interface ProjectSourceInput {
 
 export interface IDuckDBService {
   /** Ingests a single file source into DuckDB (optionally within a project folder). */
-  ingestFileSource(type: ConnectorType, config: ConnectionConfig, projectName?: string): Promise<string>;
+  ingestFileSource(type: ConnectorType, config: ConnectionConfig, projectName?: string, workspaceName?: string, folderPath?: string): Promise<string>;
 
   /** Ingests multiple data sources into a dedicated project directory and creates a unified project database. */
-  ingestProjectSources(projectName: string, sources: ProjectSourceInput[]): Promise<string>;
+  ingestProjectSources(projectName: string, sources: ProjectSourceInput[], workspaceName?: string, folderPath?: string): Promise<string>;
 
-  getSchema(type: ConnectorType, config: ConnectionConfig, projectName?: string): Promise<{ success: boolean; type: string; tables: any[] }>;
-  getPreview(type: ConnectorType, config: ConnectionConfig, tableName?: string, projectName?: string): Promise<{ success: boolean; headers: string[]; rows: any[] }>;
-  getRowCount(type: ConnectorType, config: ConnectionConfig, tableName: string, projectName?: string): Promise<number>;
-  getSampleWithOffset(type: ConnectorType, config: ConnectionConfig, tableName: string, limit: number, offset: number, projectName?: string): Promise<SampleResult>;
-  getRandomSample(type: ConnectorType, config: ConnectionConfig, tableName: string, limit: number, seed?: number, projectName?: string): Promise<SampleResult>;
-  getStratifiedSample(type: ConnectorType, config: ConnectionConfig, tableName: string, stratifyColumn: string, limitPerGroup: number, seed?: number, projectName?: string): Promise<SampleResult>;
-  applyCleaningOperations(type: ConnectorType, config: ConnectionConfig, tableName: string, operations: any[], projectName?: string): Promise<{ results: any[] }>;
+  getSchema(type: ConnectorType, config: ConnectionConfig, projectName?: string, workspaceName?: string, folderPath?: string): Promise<{ success: boolean; type: string; tables: any[] }>;
+  getPreview(type: ConnectorType, config: ConnectionConfig, tableName?: string, projectName?: string, workspaceName?: string, folderPath?: string): Promise<{ success: boolean; headers: string[]; rows: any[] }>;
+  getRowCount(type: ConnectorType, config: ConnectionConfig, tableName: string, projectName?: string, workspaceName?: string, folderPath?: string): Promise<number>;
+  getSampleWithOffset(type: ConnectorType, config: ConnectionConfig, tableName: string, limit: number, offset: number, projectName?: string, workspaceName?: string, folderPath?: string): Promise<SampleResult>;
+  getRandomSample(type: ConnectorType, config: ConnectionConfig, tableName: string, limit: number, seed?: number, projectName?: string, workspaceName?: string, folderPath?: string): Promise<SampleResult>;
+  getStratifiedSample(type: ConnectorType, config: ConnectionConfig, tableName: string, stratifyColumn: string, limitPerGroup: number, seed?: number, projectName?: string, workspaceName?: string, folderPath?: string): Promise<SampleResult>;
+  applyCleaningOperations(type: ConnectorType, config: ConnectionConfig, tableName: string, operations: any[], projectName?: string, workspaceName?: string, folderPath?: string): Promise<{ results: any[] }>;
 
   /** Resolve a fileName to its on-disk DuckDB storage path. */
-  getDuckDbPath(fileName: string, sheetName?: string, projectName?: string): string;
+  getDuckDbPath(fileName: string, sheetName?: string, projectName?: string, workspaceName?: string, folderPath?: string): string;
 
   /** Resolve a column's location across all available DuckDB databases */
   findColumnLocation(fieldId: string, preferredTable?: string): Promise<ColumnLocationResult | null>;
 
   /** Deletes the project folder and cleans up pooled connection handles. */
-  deleteProjectFolder(projectName: string): Promise<void>;
+  deleteProjectFolder(projectName: string, workspaceName?: string, folderPath?: string): Promise<void>;
 
   /** Run a SQL query against a pooled database connection for the given dbPath. */
   runQuery<T = any>(dbPath: string, sql: string, params?: any[]): Promise<T[]>;

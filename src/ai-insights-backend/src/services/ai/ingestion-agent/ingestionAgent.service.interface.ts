@@ -23,6 +23,7 @@ export interface IngestionAgentRunResult {
   stageStatuses?: Record<string, string>;
   message?: string;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
+  runTimestamp?: string;
 }
 
 export interface IIngestionAgentService {
@@ -34,5 +35,6 @@ export interface IIngestionAgentService {
   stop(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
   pause(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
   isProjectActive?(projectId?: string): boolean;
+  getActiveWorkflow(): { active: boolean; projectId: string | null; sessionId: string | null; status: string };
 }
 

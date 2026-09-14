@@ -95,11 +95,12 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
   const finalResult = enforceRelationshipStatusByPurity(mergedResult, fallbackResult);
 
   // 4. Save Relationship Schema into Project Folder with timestamped filename
+  const effectiveRunTimestamp = state.runTimestamp || (services as any)?.runTimestamp;
   if (services?.projectService && services?.projectId) {
     try {
       const proj = await services.projectService.getProjectWithWorkspace(services.projectId);
       if (proj && proj.project) {
-        await saveModularRelationshipSchema(proj.workspaceName || "DefaultWorkspace", proj.project.name, finalResult, state.runTimestamp);
+        await saveModularRelationshipSchema(proj.workspaceName || "DefaultWorkspace", proj.project.name, finalResult, effectiveRunTimestamp);
       }
     } catch (err) {
       console.warn("[relationshipBuilderNode] Warning saving Relationship Schema to project folder:", err);
@@ -110,6 +111,7 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
 
   return {
     relationshipBuilder: finalResult as unknown as Record<string, unknown>,
+    runTimestamp: effectiveRunTimestamp,
     status: "running",
     summary: summaryText,
     steps: [{ name: "Relationship Builder", status: "completed", summary: summaryText }],

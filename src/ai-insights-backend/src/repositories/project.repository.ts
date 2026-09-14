@@ -20,6 +20,7 @@ export class PostgresProjectRepository implements IProjectRepository {
       useCase: row.use_case ?? row.useCase ?? undefined,
       domain: row.domain ?? undefined,
       subDomain: row.sub_domain ?? row.subDomain ?? undefined,
+      folderPath: row.folder_path ?? row.folderPath ?? undefined,
       status: row.status || (row.agent_state?.status) || "idle",
       agentState: row.agent_state ?? row.agentState ?? {},
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
@@ -143,6 +144,7 @@ export class PostgresProjectRepository implements IProjectRepository {
     if (updates.name !== undefined) updatePayload.name = updates.name;
     if (updates.useCase !== undefined) updatePayload.useCase = updates.useCase;
     if (updates.dataSources !== undefined) updatePayload.dataSources = updates.dataSources;
+    if (updates.folderPath !== undefined) updatePayload.folderPath = updates.folderPath;
     if (updates.status !== undefined) updatePayload.status = updates.status;
 
     if (Object.keys(updatePayload).length > 0) {
@@ -203,6 +205,7 @@ export class PostgresProjectRepository implements IProjectRepository {
       useCase: project.useCase || null,
       domain: project.domain || null,
       subDomain: project.subDomain || null,
+      folderPath: project.folderPath || null,
       status: project.status || "idle",
       createdAt: now,
     });

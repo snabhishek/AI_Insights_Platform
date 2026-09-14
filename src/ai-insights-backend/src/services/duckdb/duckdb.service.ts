@@ -5,6 +5,13 @@ import { IDuckDBService, ProjectSourceInput } from "./duckdb.service.interface";
 import { IFileService } from "../file/file.service.interface";
 import { ConnectorType, ConnectionConfig } from "../../models/connector.types";
 import { SampleResult } from "../connector/connectionTester.service.interface";
+import {
+  computeProjectRelativePath,
+  ensureDirectoryExists,
+  getFileServerBasePath,
+  getWorkspacesBasePath,
+  resolveStoragePath,
+} from "../../config/fileServer.config";
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const duckdb = require("duckdb");
@@ -33,10 +40,8 @@ export class DuckDBService implements IDuckDBService {
   private static readonly SCHEMA_CACHE_TTL_MS = 30_000;
 
   constructor(private fileService: IFileService) {
-    this.dbStorageDir = path.join(process.cwd(), "Projects");
-    if (!fs.existsSync(this.dbStorageDir)) {
-      fs.mkdirSync(this.dbStorageDir, { recursive: true });
-    }
+    this.dbStorageDir = getWorkspacesBasePath();
+    ensureDirectoryExists(this.dbStorageDir);
   }
 
   // ─── path and identifier helpers ───────────────────────────────────
@@ -55,27 +60,54 @@ export class DuckDBService implements IDuckDBService {
   }
 
   /**
-   * Resolves project directory path inside Projects/
+   * Resolves project directory path inside workspaces or relative folder path.
    */
-  public getProjectPath(projectName: string): string {
+  public getProjectPath(projectName: string, workspaceName?: string, folderPath?: string): string {
+    if (folderPath) {
+      const abs = resolveStoragePath(folderPath);
+      ensureDirectoryExists(abs);
+      return abs;
+    }
     const safeProject = this.sanitizeFileName(projectName);
-    return path.join(this.dbStorageDir, safeProject);
+
+    // 1. Search existing projects under workspaces/
+    const workspacesBase = getWorkspacesBasePath();
+    if (fs.existsSync(workspacesBase)) {
+      try {
+        const wsDirs = fs.readdirSync(workspacesBase, { withFileTypes: true }).filter((d) => d.isDirectory());
+        for (const wsDir of wsDirs) {
+          const cand = path.join(workspacesBase, wsDir.name, "projects", safeProject);
+          if (fs.existsSync(cand)) return cand;
+        }
+      } catch {}
+    }
+
+    // 2. Check legacy Projects/<safeProject>
+    const legacyProj = path.join(process.cwd(), "Projects", safeProject);
+    if (fs.existsSync(legacyProj)) return legacyProj;
+
+    // 3. Construct standard path under requested or default workspace
+    const relative = computeProjectRelativePath(workspaceName || "Default_Workspace", projectName);
+    const resolved = resolveStoragePath(relative);
+    ensureDirectoryExists(resolved);
+    return resolved;
   }
 
   /**
    * Resolves the master DuckDB database path for a project.
    */
-  public getProjectDuckDbPath(projectName: string): string {
+  public getProjectDuckDbPath(projectName: string, workspaceName?: string, folderPath?: string): string {
     const safeProject = this.sanitizeFileName(projectName);
-    return path.join(this.dbStorageDir, safeProject, `${safeProject}.duckdb`);
+    const projectDir = this.getProjectPath(projectName, workspaceName, folderPath);
+    return path.join(projectDir, `${safeProject}.duckdb`);
   }
 
   /**
    * Resolves the primary DuckDB path for a file, sheet, or project.
    */
-  getDuckDbPath(fileName: string, sheetName?: string, projectName?: string): string {
+  getDuckDbPath(fileName: string, sheetName?: string, projectName?: string, workspaceName?: string, folderPath?: string): string {
     if (!fileName) {
-      return path.join(this.dbStorageDir, "default.duckdb");
+      return path.join(getFileServerBasePath(), "default.duckdb");
     }
 
     if (path.isAbsolute(fileName) && fs.existsSync(fileName)) {
@@ -84,61 +116,67 @@ export class DuckDBService implements IDuckDBService {
 
     const safeFile = this.sanitizeFileName(fileName);
 
-    if (projectName) {
-      const projectDir = this.getProjectPath(projectName);
+    if (projectName || folderPath) {
+      const projectDir = this.getProjectPath(projectName || "default", workspaceName, folderPath);
       const specificDb = path.join(projectDir, `${safeFile}.duckdb`);
       if (fs.existsSync(specificDb)) return specificDb;
-      const masterDb = this.getProjectDuckDbPath(projectName);
+      const masterDb = this.getProjectDuckDbPath(projectName || "default", workspaceName, folderPath);
       if (fs.existsSync(masterDb)) return masterDb;
     }
 
-    // Check across all subdirectories in Projects/ (e.g. Projects/Demand_Forecasting/carrier_forecast_dataset_xls.duckdb)
-    if (fs.existsSync(this.dbStorageDir)) {
+    // Check across all subdirectories in workspaces/
+    const workspacesBase = getWorkspacesBasePath();
+    if (fs.existsSync(workspacesBase)) {
       try {
-        const subDirs = fs.readdirSync(this.dbStorageDir, { withFileTypes: true }).filter((d) => d.isDirectory());
-        for (const subDir of subDirs) {
-          const dirPath = path.join(this.dbStorageDir, subDir.name);
-          const directInSub = path.join(dirPath, `${safeFile}.duckdb`);
-          if (fs.existsSync(directInSub)) return directInSub;
+        const wsDirs = fs.readdirSync(workspacesBase, { withFileTypes: true }).filter((d) => d.isDirectory());
+        for (const wsDir of wsDirs) {
+          const projsDir = path.join(workspacesBase, wsDir.name, "projects");
+          if (fs.existsSync(projsDir)) {
+            const projDirs = fs.readdirSync(projsDir, { withFileTypes: true }).filter((d) => d.isDirectory());
+            for (const projDir of projDirs) {
+              const directInSub = path.join(projsDir, projDir.name, `${safeFile}.duckdb`);
+              if (fs.existsSync(directInSub)) return directInSub;
 
-          const filesInSub = fs.readdirSync(dirPath).filter((f) => f.endsWith(".duckdb"));
-          const matchInSub = filesInSub.find((f) => {
-            const base = path.basename(f, ".duckdb").toLowerCase();
-            return (
-              base === safeFile.toLowerCase() ||
-              base.startsWith(`${safeFile.toLowerCase()}_`) ||
-              safeFile.toLowerCase().startsWith(base) ||
-              base.replace(/[^a-z0-9]/g, "") === safeFile.toLowerCase().replace(/[^a-z0-9]/g, "")
-            );
-          });
-          if (matchInSub) return path.join(dirPath, matchInSub);
+              const filesInSub = fs.readdirSync(path.join(projsDir, projDir.name)).filter((f) => f.endsWith(".duckdb"));
+              const matchInSub = filesInSub.find((f) => {
+                const base = path.basename(f, ".duckdb").toLowerCase();
+                return (
+                  base === safeFile.toLowerCase() ||
+                  base.startsWith(`${safeFile.toLowerCase()}_`) ||
+                  safeFile.toLowerCase().startsWith(base) ||
+                  base.replace(/[^a-z0-9]/g, "") === safeFile.toLowerCase().replace(/[^a-z0-9]/g, "")
+                );
+              });
+              if (matchInSub) return path.join(projsDir, projDir.name, matchInSub);
+            }
+          }
         }
       } catch {}
     }
 
-    // Check uploads/duckdb directory
+    // Check legacy Projects/ directory
+    const legacyProjects = path.join(process.cwd(), "Projects");
+    if (fs.existsSync(legacyProjects)) {
+      try {
+        const subDirs = fs.readdirSync(legacyProjects, { withFileTypes: true }).filter((d) => d.isDirectory());
+        for (const subDir of subDirs) {
+          const dirPath = path.join(legacyProjects, subDir.name);
+          const directInSub = path.join(dirPath, `${safeFile}.duckdb`);
+          if (fs.existsSync(directInSub)) return directInSub;
+        }
+      } catch {}
+    }
+
+    // Check legacy uploads/duckdb directory
     const uploadsDuckDb = path.join(process.cwd(), "uploads", "duckdb");
     if (fs.existsSync(uploadsDuckDb)) {
       try {
         const directUpload = path.join(uploadsDuckDb, `${safeFile}.duckdb`);
         if (fs.existsSync(directUpload)) return directUpload;
-
-        const subDirs = fs.readdirSync(uploadsDuckDb, { withFileTypes: true }).filter((d) => d.isDirectory());
-        for (const subDir of subDirs) {
-          const dirPath = path.join(uploadsDuckDb, subDir.name);
-          const directInSub = path.join(dirPath, `${safeFile}.duckdb`);
-          if (fs.existsSync(directInSub)) return directInSub;
-        }
       } catch {}
     }
 
-    // Direct match in Projects/
-    const directPath = path.join(this.dbStorageDir, `${safeFile}.duckdb`);
-    if (fs.existsSync(directPath)) {
-      return directPath;
-    }
-
-    return directPath;
+    return path.join(this.getProjectPath(projectName || "default", workspaceName, folderPath), `${safeFile}.duckdb`);
   }
 
   /**
@@ -276,26 +314,26 @@ export class DuckDBService implements IDuckDBService {
   private async refreshSchemaIndex(): Promise<void> {
     const colMap = new Map<string, Array<{ dbPath: string; tableName: string; columnName: string; colNames: string[] }>>();
     const tableMap = new Map<string, Array<{ dbPath: string; tableName: string; colNames: string[] }>>();
-    const searchDirs = [this.dbStorageDir, path.join(process.cwd(), "uploads", "duckdb")].filter((d) => fs.existsSync(d));
+    const searchDirs = [this.dbStorageDir, path.join(process.cwd(), "Projects"), path.join(process.cwd(), "uploads", "duckdb")].filter((d) => fs.existsSync(d));
 
     const dbFiles: string[] = [];
-    for (const sDir of searchDirs) {
+    const findDuckDbsRecursive = (dir: string, depth = 0) => {
+      if (depth > 4) return;
       try {
-        const entries = fs.readdirSync(sDir, { withFileTypes: true });
+        const entries = fs.readdirSync(dir, { withFileTypes: true });
         for (const entry of entries) {
+          const fullPath = path.join(dir, entry.name);
           if (entry.isFile() && entry.name.endsWith(".duckdb") && !entry.name.startsWith("_temp")) {
-            dbFiles.push(path.join(sDir, entry.name));
+            dbFiles.push(fullPath);
           } else if (entry.isDirectory()) {
-            const subDir = path.join(sDir, entry.name);
-            try {
-              const subFiles = fs.readdirSync(subDir).filter((f) => f.endsWith(".duckdb") && !f.startsWith("_temp"));
-              for (const sf of subFiles) {
-                dbFiles.push(path.join(subDir, sf));
-              }
-            } catch {}
+            findDuckDbsRecursive(fullPath, depth + 1);
           }
         }
       } catch {}
+    };
+
+    for (const sDir of searchDirs) {
+      findDuckDbsRecursive(sDir);
     }
 
     for (const dbPath of dbFiles) {
@@ -508,10 +546,10 @@ export class DuckDBService implements IDuckDBService {
     });
   }
 
-  private resolveFilePath(fileName?: string): string | null {
+  private resolveFilePath(fileName?: string, dataSourceName?: string): string | null {
     if (!fileName) return null;
     if (fs.existsSync(fileName)) return fileName;
-    if (this.fileService.fileExists(fileName)) return this.fileService.getFilePath(fileName);
+    if (this.fileService.fileExists(fileName, dataSourceName)) return this.fileService.getFilePath(fileName, dataSourceName);
 
     const baseName = path.basename(fileName);
     const directUpload = path.join(process.cwd(), "uploads", baseName);
@@ -673,7 +711,13 @@ export class DuckDBService implements IDuckDBService {
   /**
    * Ingests a single file source into DuckDB (optionally within a project folder).
    */
-  async ingestFileSource(type: ConnectorType, config: ConnectionConfig, projectName?: string): Promise<string> {
+  async ingestFileSource(
+    type: ConnectorType,
+    config: ConnectionConfig,
+    projectName?: string,
+    workspaceName?: string,
+    folderPath?: string
+  ): Promise<string> {
     const fileName = config.fileName;
     if (!fileName) return "";
 
@@ -684,7 +728,7 @@ export class DuckDBService implements IDuckDBService {
     }
 
     const safeFile = this.sanitizeFileName(fileName);
-    const targetDir = projectName ? this.getProjectPath(projectName) : this.dbStorageDir;
+    const targetDir = projectName || folderPath ? this.getProjectPath(projectName || "default", workspaceName, folderPath) : this.dbStorageDir;
     if (!fs.existsSync(targetDir)) {
       fs.mkdirSync(targetDir, { recursive: true });
     }
@@ -765,10 +809,9 @@ export class DuckDBService implements IDuckDBService {
 
   /**
    * Ingests multiple data sources into a dedicated project directory and creates a unified project database.
-   * When user creates a project, all connected data sources are stored in Projects/<projectName>/.
    */
-  async ingestProjectSources(projectName: string, sources: ProjectSourceInput[]): Promise<string> {
-    const key = projectName.toLowerCase().trim();
+  async ingestProjectSources(projectName: string, sources: ProjectSourceInput[], workspaceName?: string, folderPath?: string): Promise<string> {
+    const key = `${workspaceName || "default"}::${projectName}`.toLowerCase().trim();
     const existingPromise = this.ingestionPromises.get(key);
     if (existingPromise) {
       return existingPromise;
@@ -776,7 +819,7 @@ export class DuckDBService implements IDuckDBService {
 
     const promise = (async () => {
       try {
-        return await this.executeIngestProjectSources(projectName, sources);
+        return await this.executeIngestProjectSources(projectName, sources, workspaceName, folderPath);
       } finally {
         this.ingestionPromises.delete(key);
       }
@@ -786,13 +829,11 @@ export class DuckDBService implements IDuckDBService {
     return promise;
   }
 
-  private async executeIngestProjectSources(projectName: string, sources: ProjectSourceInput[]): Promise<string> {
-    const projectDir = this.getProjectPath(projectName);
-    if (!fs.existsSync(projectDir)) {
-      fs.mkdirSync(projectDir, { recursive: true });
-    }
+  private async executeIngestProjectSources(projectName: string, sources: ProjectSourceInput[], workspaceName?: string, folderPath?: string): Promise<string> {
+    const projectDir = this.getProjectPath(projectName, workspaceName, folderPath);
+    ensureDirectoryExists(projectDir);
 
-    const masterDbPath = this.getProjectDuckDbPath(projectName);
+    const masterDbPath = this.getProjectDuckDbPath(projectName, workspaceName, folderPath);
 
     await this.withConnection(masterDbPath, async (conn) => {
       for (const source of sources) {
@@ -801,7 +842,7 @@ export class DuckDBService implements IDuckDBService {
         const primaryTableName = this.sanitizeTableName(fileName || sourceName);
 
         if (["csv", "tsv"].includes(source.type) && fileName) {
-          const filePath = this.resolveFilePath(fileName);
+          const filePath = this.resolveFilePath(fileName, source.name);
           if (filePath) {
             const delim = source.type === "tsv" ? "\\t" : ",";
             const normPath = filePath.replace(/\\/g, "/");
@@ -823,7 +864,7 @@ export class DuckDBService implements IDuckDBService {
             });
           }
         } else if (source.type === "excel" && fileName) {
-          const filePath = this.resolveFilePath(fileName);
+          const filePath = this.resolveFilePath(fileName, source.name);
           if (filePath) {
             const workbook = xlsx.readFile(filePath, {
               cellFormula: false,
@@ -856,7 +897,7 @@ export class DuckDBService implements IDuckDBService {
             }
 
             // Also create individual excel duckdb file in project folder
-            await this.ingestFileSource(source.type, source.config, projectName);
+            await this.ingestFileSource(source.type, source.config, projectName, workspaceName, folderPath);
           }
         } else if (source.type === "restapi") {
           const tblName = this.sanitizeTableName(sourceName);
@@ -877,9 +918,9 @@ export class DuckDBService implements IDuckDBService {
   /**
    * Deletes the DuckDB folder and files for a project.
    */
-  async deleteProjectFolder(projectName: string): Promise<void> {
-    const projectDir = this.getProjectPath(projectName);
-    const masterDbPath = this.getProjectDuckDbPath(projectName);
+  async deleteProjectFolder(projectName: string, workspaceName?: string, folderPath?: string): Promise<void> {
+    const projectDir = this.getProjectPath(projectName, workspaceName, folderPath);
+    const masterDbPath = this.getProjectDuckDbPath(projectName, workspaceName, folderPath);
 
     const normProjDir = path.resolve(projectDir).toLowerCase();
     const normMaster = path.resolve(masterDbPath).toLowerCase();

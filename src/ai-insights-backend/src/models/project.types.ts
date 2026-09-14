@@ -8,6 +8,7 @@ export interface Project {
   useCase?: string;
   domain?: string;
   subDomain?: string;
+  folderPath?: string;
   status?: string;
   agentState?: Record<string, unknown>;
   createdAt: string;

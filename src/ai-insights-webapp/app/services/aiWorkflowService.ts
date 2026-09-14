@@ -21,6 +21,7 @@ export interface WorkflowResponseData {
   currentNode?: string;
   currentStage?: string;
   message?: string;
+  runTimestamp?: string;
 }
 
 export interface WorkflowApiResponse {
@@ -43,10 +44,35 @@ export async function executeWorkflowApi(
   });
 
   if (!res.ok) {
+    if (res.status === 409) {
+      const errData = await res.json().catch(() => ({}));
+      const error = new Error(
+        errData.message ||
+        "Another pipeline is currently running and wait until the current progress is completed to run the workflow."
+      );
+      (error as any).status = 409;
+      throw error;
+    }
     throw new Error(`Workflow request failed with status ${res.status}`);
   }
 
   return res;
+}
+
+/**
+  Checks if any AI workflow is currently active in the backend.
+ */
+export async function fetchActiveWorkflowApi(): Promise<{
+  success: boolean;
+  data: { active: boolean; projectId?: string | null; sessionId?: string | null; status?: string };
+}> {
+  try {
+    const res = await fetch(`${BACKEND_URL}/ai/active`);
+    if (res.ok) return await res.json();
+  } catch (e) {
+    console.warn("Failed to check active workflow:", e);
+  }
+  return { success: false, data: { active: false, projectId: null, sessionId: null, status: "idle" } };
 }
 
 /**

@@ -76,6 +76,8 @@ interface AppContextType {
   addWorkspace: (name: string) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   projects: Project[];
+  setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
+  refreshProjects: () => Promise<void>;
   addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string) => Promise<boolean>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
@@ -93,7 +95,7 @@ interface AppContextType {
   testConnection: (type: DataSource["type"], config: ConnectionConfig) => Promise<{ success: boolean; message: string; latencyMs: number }>;
   showToast: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
   showNotification: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
-  showAlert: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; logs?: string }) => void;
+  showAlert: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; logs?: string; isModal?: boolean }) => void;
   showConfirm: (config: { title: string; message: string; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
   openCreateWorkspace: () => void;
 }
@@ -193,11 +195,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       message?: string;
       type?: "success" | "error" | "info" | "warning";
       logs?: string;
+      isModal?: boolean;
     }) => {
-      // If diagnostic logs are provided, render full MessageModal
-      if (config.logs) {
+      // If diagnostic logs or isModal is requested, render full MessageModal
+      if (config.logs || config.isModal) {
         setAlertConfig({
-          title: config.title || "Diagnostic Logs",
+          title: config.title || "Notice",
           message: config.message || config.title || "",
           type: config.type === "warning" ? "info" : (config.type || "info"),
           logs: config.logs,
@@ -286,6 +289,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to load workspace data:", err);
     }
   }, []);
+
+  const refreshProjects = useCallback(async () => {
+    const wsId = activeWorkspaceId || "default";
+    try {
+      const res = await fetchWithRetry(`${BACKEND_URL}/workspaces/${wsId}/projects`);
+      if (res.ok) {
+        const fresh: Project[] = await res.json();
+        setProjects(fresh);
+      }
+    } catch (err) {
+      console.warn("Failed to refresh projects:", err);
+    }
+  }, [activeWorkspaceId]);
 
   useEffect(() => {
     if (activeWorkspaceId) fetchWorkspaceData(activeWorkspaceId);
@@ -579,6 +595,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addWorkspace,
         deleteWorkspace,
         projects,
+        setProjects,
+        refreshProjects,
         addProject,
         updateProject,
         deleteProject,
