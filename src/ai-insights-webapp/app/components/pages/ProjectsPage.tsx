@@ -713,6 +713,7 @@ export default function ProjectsPage() {
         payload.status === "completed" ||
         payload.status === "failed" ||
         payload.status === "stopped" ||
+        payload.status === "stopped" ||
         payload.status === "paused" ||
         payload.status === "running" ||
         payload.requiresApproval ||
@@ -931,6 +932,7 @@ export default function ProjectsPage() {
       }
       if (lastData && (lastData.status === "completed" || lastData.stageStatuses?.resolveSchema === "Completed")) {
         updateWorkflowState(lastData);
+        showAlert({ title: lastData.summary || "Data Ingestion completed successfully", type: "success" });
         showAlert({ title: lastData.summary || "Data Ingestion completed successfully", type: "success" });
         return;
       }
