@@ -3,7 +3,7 @@ import * as path from "path";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { IModelSelectionLLMService } from "./modelSelectionLLM.service.interface";
 import { ModelCapabilityRegistry } from "../../../agents/ModelTrainingValidation/ModelSelection/modelCapabilityRegistry";
-import { createModelWebSearchTool } from "../../../agents/ModelTrainingValidation/ModelSelection/modelWebSearch.tool";
+import { createWebSearchTool, createExtractUrlContentTool } from "../../../agents/tools/search";
 import { ModelSelectionContextNormalizer } from "../../../agents/ModelTrainingValidation/ModelSelection/contextNormalizer";
 import { getModel } from "../../../agents/utils/agentUtils";
 import {
@@ -78,10 +78,12 @@ export class ModelSelectionLLMService implements IModelSelectionLLMService {
       );
     }
 
-    // 3. Bind web search tool for model exploration
-    const searchTool = createModelWebSearchTool(registry);
+    // 3. Bind existing web search tools for model exploration (as used by Exogenous Scout)
+    const webSearchToolInstance = createWebSearchTool();
+    const extractUrlContentToolInstance = createExtractUrlContentTool();
+    const searchTools = [webSearchToolInstance, extractUrlContentToolInstance];
     const modelWithTools = (llm as any).bindTools
-      ? (llm as any).bindTools([searchTool])
+      ? (llm as any).bindTools(searchTools)
       : llm;
 
     // 4. Assemble system prompt with runtime context and candidate choices

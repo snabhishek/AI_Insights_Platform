@@ -1,45 +1,13 @@
-import { tool } from "@langchain/core/tools";
-import { z } from "zod";
-import { webSearchTool } from "../../tools/search/websearch";
+import { createWebSearchTool, createExtractUrlContentTool } from "../../tools/search";
 import { ModelCapabilityRegistry } from "./modelCapabilityRegistry";
 import { ModelDefinition, ModelFramework } from "../../../models/modelSelection.types";
 
 /**
- * Creates a web search tool specifically tuned for Model Selection exploration.
- * Allows the Model Selection Agent to explore state-of-the-art models, newly published
- * architectures (e.g., TimeGPT, Nixtla, Hugging Face transformers, TabNet), and domain-specific
- * benchmarks before making a final recommendation.
+ * Re-export existing web search tools from tools/search as used across agents (e.g., Exogenous Scout).
+ * Avoids creating duplicate customized search tools.
  */
-export function createModelWebSearchTool(registry?: ModelCapabilityRegistry) {
-  return tool(
-    async (arg: { query: string; purpose?: string }) => {
-      try {
-        const query = typeof arg === "string" ? arg : arg?.query;
-        if (!query || query.trim().length === 0) {
-          return "Please provide a specific search query for machine learning models or algorithms.";
-        }
-
-        console.info(`[ModelWebSearch] Searching for ML models: "${query}"`);
-        const searchResult = await webSearchTool.invoke({ query });
-        const resultString = typeof searchResult === "string" ? searchResult : JSON.stringify(searchResult);
-
-        return resultString;
-      } catch (error: any) {
-        console.warn(`[ModelWebSearch] Search failed:`, error?.message || error);
-        return `Web search failed: ${error?.message || "Unknown error"}`;
-      }
-    },
-    {
-      name: "model_web_search",
-      description:
-        "Search the web for state-of-the-art machine learning models, newly released architectures (such as TimeGPT, Nixtla, specialized Hugging Face models, foundation tabular models), and academic or Kaggle benchmark strategies for the specific use case and data structure.",
-      schema: z.object({
-        query: z.string().describe("The search query looking for state-of-the-art ML models or architectures for this task"),
-        purpose: z.string().optional().describe("Optional brief description of the modeling requirement or use case"),
-      }),
-    }
-  );
-}
+export { createWebSearchTool, createExtractUrlContentTool };
+export const createModelWebSearchTool = createWebSearchTool;
 
 /**
  * Helper to dynamically register a model discovered during web exploration.
