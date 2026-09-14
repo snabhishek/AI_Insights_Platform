@@ -1,11 +1,19 @@
 import * as fs from "fs";
 import * as path from "path";
-import { HumanMessage, SystemMessage } from "@langchain/core/messages";
+import { HumanMessage } from "@langchain/core/messages";
+import { createAgent } from "langchain";
 import { IModelSelectionLLMService } from "./modelSelectionLLM.service.interface";
+import { IngestionServices } from "../../../agents/state";
 import { ModelCapabilityRegistry } from "../../../agents/ModelTrainingValidation/ModelSelection/modelCapabilityRegistry";
 import { createWebSearchTool, createExtractUrlContentTool } from "../../../agents/tools/search";
 import { ModelSelectionContextNormalizer } from "../../../agents/ModelTrainingValidation/ModelSelection/contextNormalizer";
-import { getModel } from "../../../agents/utils/agentUtils";
+import {
+  extractModelText,
+  getLatestAgentMessage,
+  getModel,
+  invokeAgentJson,
+  parseJsonObject,
+} from "../../../agents/utils/agentUtils";
 import {
   ModelSelectionContext,
   ModelSelectionDecision,
@@ -54,10 +62,17 @@ export class ModelSelectionLLMService implements IModelSelectionLLMService {
     );
   }
 
+  public createFallbackDecision(
+    context: ModelSelectionContext,
+    availableModels: ModelDefinition[]
+  ): ModelSelectionDecision {
+    return this.normalizeLLMDecision({}, context, availableModels);
+  }
+
   public async generateDecision(
     context: ModelSelectionContext,
     registry: ModelCapabilityRegistry,
-    _options?: { temperature?: number; timeoutMs?: number }
+    options?: { temperature?: number; timeoutMs?: number; services?: IngestionServices }
   ): Promise<ModelSelectionDecision> {
     const promptTemplate = this.loadPromptTemplate();
 
@@ -78,13 +93,10 @@ export class ModelSelectionLLMService implements IModelSelectionLLMService {
       );
     }
 
-    // 3. Bind existing web search tools for model exploration (as used by Exogenous Scout)
+    // 3. Prepare existing web search tools for model exploration (as used by Exogenous Scout)
     const webSearchToolInstance = createWebSearchTool();
     const extractUrlContentToolInstance = createExtractUrlContentTool();
     const searchTools = [webSearchToolInstance, extractUrlContentToolInstance];
-    const modelWithTools = (llm as any).bindTools
-      ? (llm as any).bindTools(searchTools)
-      : llm;
 
     // 4. Assemble system prompt with runtime context and candidate choices
     const contextSnippet = JSON.stringify(
@@ -185,55 +197,37 @@ Ensure you output valid JSON matching this schema:
       context.businessContext.useCase || "Automated ML Pipeline"
     }". Determine target entity, derivation, prediction grain, select primary recommendation, rank candidates with suitability scores (0-1), determine training strategy, models list, feature requirements, and HPO recommendation.`;
 
-    // 5. Invoke LLM
-    const response = await modelWithTools.invoke([
-      new SystemMessage(fullSystemPrompt),
-      new HumanMessage(userMessage),
-    ]);
-
-    // 6. Extract response text safely from string, array of content blocks, or objects
-    let rawContent = response?.content;
-    let responseText = "";
-
-    if (typeof rawContent === "string") {
-      responseText = rawContent;
-    } else if (Array.isArray(rawContent)) {
-      responseText = rawContent
-        .map((part: any) => (typeof part === "string" ? part : part?.text || part?.content || ""))
-        .join("\n");
-    } else if (rawContent && typeof rawContent === "object") {
-      responseText = (rawContent as any).text || (rawContent as any).content || JSON.stringify(rawContent);
-    }
-
-    // Strip Markdown fences if present
-    responseText = responseText.replace(/```json/gi, "").replace(/```/g, "").trim();
+    // 5. Invoke LangGraph agent loop with tools (using invokeAgentJson / createAgent as in Feature Engineering)
+    const fallback = this.createFallbackDecision(context, availableModels);
 
     let parsed: any;
-    try {
-      parsed = JSON.parse(responseText);
-    } catch (parseError: any) {
-      const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        try {
-          parsed = JSON.parse(jsonMatch[0]);
-        } catch {
-          console.error("[ModelSelectionLLMService] Failed to parse LLM response JSON:", responseText);
-          throw new Error(`LLM output could not be parsed as valid JSON: ${parseError?.message || parseError}`);
+    if (options?.services) {
+      parsed = await invokeAgentJson<any>(
+        "modelSelection",
+        llm,
+        userMessage,
+        fallback,
+        options.services,
+        {
+          systemPrompt: fullSystemPrompt,
+          tools: searchTools,
+          traceLabel: "modelSelection:analysis",
+          recursionLimit: 50,
         }
-      } else {
-        console.error("[ModelSelectionLLMService] Failed to parse LLM response JSON:", responseText);
-        throw new Error(`LLM output could not be parsed as valid JSON: ${parseError?.message || parseError}`);
-      }
-    }
-
-    // If parsed is an array (e.g. from structured parts), extract inner object
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      parsed = parsed[0]?.text ? JSON.parse(parsed[0].text) : parsed[0];
-    }
-    if (parsed && typeof parsed.text === "string") {
-      try {
-        parsed = JSON.parse(parsed.text);
-      } catch {}
+      );
+    } else {
+      const agent = createAgent({
+        model: llm,
+        tools: searchTools as any,
+        systemPrompt: fullSystemPrompt,
+      });
+      const agentResult = await agent.invoke(
+        { messages: [new HumanMessage(userMessage)] },
+        { recursionLimit: 50 }
+      );
+      const latestMessage = getLatestAgentMessage(agentResult);
+      const rawText = extractModelText(latestMessage);
+      parsed = parseJsonObject(rawText, fallback as any);
     }
 
     return this.normalizeLLMDecision(parsed, context, availableModels);

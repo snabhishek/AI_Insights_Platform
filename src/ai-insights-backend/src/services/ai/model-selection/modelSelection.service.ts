@@ -10,6 +10,7 @@ import {
 } from "../../../agents/ModelTrainingValidation/ModelSelection/modelCapabilityRegistry";
 import { ModelSelectionContextNormalizer } from "../../../agents/ModelTrainingValidation/ModelSelection/contextNormalizer";
 import { ModelSelectionValidator } from "../../../agents/ModelTrainingValidation/ModelSelection/modelSelectionValidator";
+import { IngestionServices } from "../../../agents/state";
 import {
   ModelSelectionDecisionRecord,
   UserSelectionHandoff,
@@ -44,9 +45,14 @@ export class ModelSelectionService implements IModelSelectionService {
     }
   }
 
-  public async analyze(inputContext: any, projectId?: string): Promise<ModelSelectionDecisionRecord> {
+  public async analyze(
+    inputContext: any,
+    projectId?: string,
+    services?: IngestionServices
+  ): Promise<ModelSelectionDecisionRecord> {
     const startTime = Date.now();
     const effectiveProjectId = projectId || inputContext.projectId || "default-project";
+    const effectiveServices = services || inputContext?.services;
 
     console.info(`[ModelSelectionService] Starting Model Selection analysis for project ${effectiveProjectId}`);
 
@@ -59,8 +65,10 @@ export class ModelSelectionService implements IModelSelectionService {
       projectId: effectiveProjectId,
     });
 
-    // 3. Invoke LLM Service with prompt from prompts/ModelSelection/modelSelection.md and web search tool
-    const decision = await this.llmService.generateDecision(normalizedContext, this.registry);
+    // 3. Invoke LLM Service with prompt from prompts/ModelSelection/modelSelection.md and web search tool via agent loop
+    const decision = await this.llmService.generateDecision(normalizedContext, this.registry, {
+      services: effectiveServices,
+    });
 
     // 4. Auto-register any dynamically explored models if present in decision
     if (Array.isArray(decision.models)) {
