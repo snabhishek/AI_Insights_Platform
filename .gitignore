@@ -36,8 +36,8 @@ coverage/
 # Runtime & personalized project files
 src/ai-insights-backend/Projects/
 src/ai-insights-backend/uploads/
-src/packages/ProjectFiles
-src/ai-insights-backend/storage/
+src/ai-insights-backend/storage/packages/projectFiles
+src/ai-insights-backend/storage/workspaces
 drizzle/
 specs/
 docs/
