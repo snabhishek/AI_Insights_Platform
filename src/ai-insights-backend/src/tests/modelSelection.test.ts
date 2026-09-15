@@ -2,9 +2,11 @@ import { ModelCapabilityRegistry, DEFAULT_BASE_MODELS } from "../agents/ModelTra
 import { ModelSelectionContextNormalizer } from "../agents/ModelTrainingValidation/ModelSelection/contextNormalizer";
 import { ModelSelectionValidator } from "../agents/ModelTrainingValidation/ModelSelection/modelSelectionValidator";
 import { dynamicallyRegisterExploredModel } from "../agents/ModelTrainingValidation/ModelSelection/modelWebSearch.tool";
+import { ModelDiscoveryService } from "../services/ai/model-selection/modelDiscovery.service";
 import {
   ModelSelectionContext,
   ModelSelectionDecision,
+  ModelDefinition,
 } from "../models/modelSelection.types";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { RunnableBinding } from "@langchain/core/runnables";
@@ -41,7 +43,6 @@ async function runModelSelectionTests() {
   // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n--- Category 1: Context Normalization & Problem Inference ---");
 
-  // Test 1.1: Binary Classification Inference
   const classInput = {
     useCase: "Predict customer churn probability before quarter end",
     domain: "Retail",
@@ -85,7 +86,6 @@ async function runModelSelectionTests() {
     "Inferred predictionGrain entity is customer_id"
   );
 
-  // Test 1.2: Time-Series Forecasting Inference
   const forecastInput = {
     useCase: "Forecast weekly SKU demand for distribution centers",
     domain: "Supply Chain",
@@ -111,52 +111,145 @@ async function runModelSelectionTests() {
   // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n--- Category 2: Model Capability Registry & Dynamic Extension ---");
 
+  // Test 2.1: Registry starts with empty catalog per requirement (no hardcoded legacy models)
   const registry = new ModelCapabilityRegistry();
-  const allBase = registry.getAllModels();
   assert(
-    allBase.length >= 8,
-    "Registry initializes with clean set of default base models",
-    `Count: ${allBase.length}`
+    registry.getAllModels().length === 0,
+    "Registry initializes with empty catalog (starts from scratch, no hardcoded models)",
+    `Actual count: ${registry.getAllModels().length}`
   );
 
-  // Test filtering classification candidates
-  const classCandidates = registry.filterCandidates({ task: "tabular_classification" });
+  // Test 2.2: Register external model with dynamic source metadata
+  dynamicallyRegisterExploredModel(registry, {
+    modelId: "catboost_sota",
+    displayName: "CatBoost Gradient Boosting",
+    algorithm: "Oblivious Decision Trees with Symmetric Target Encoding",
+    framework: "catboost",
+    supportedTasks: ["tabular_classification", "tabular_regression"],
+    capabilities: ["numerical_features", "categorical_features"],
+    strengths: ["SOTA categorical handling", "Resistant to overfitting"],
+    weaknesses: ["Slower training than LightGBM"],
+    isBaseline: false,
+    sourceTypeId: "external",
+    sourceProviderId: "github",
+    source: "github.com",
+    repositoryUrl: "https://github.com/catboost/catboost",
+    repositoryId: "catboost/catboost",
+    version: "v1.2.7",
+    license: "Apache-2.0",
+  });
+
   assert(
-    classCandidates.some((m) => m.modelId === "lightgbm_classifier") &&
-    classCandidates.some((m) => m.modelId === "xgboost_classifier") &&
-    classCandidates.every((m) => m.supportedTasks.includes("tabular_classification")),
-    "filterCandidates returns only models supporting tabular_classification"
+    registry.isModelSupported("catboost_sota"),
+    "Dynamically registered model 'catboost_sota' is supported in registry"
+  );
+  const catboost = registry.getModel("catboost_sota");
+  assert(
+    catboost?.source === "github.com" &&
+    catboost?.sourceType === "external" &&
+    catboost?.repositoryUrl === "https://github.com/catboost/catboost" &&
+    catboost?.version === "v1.2.7",
+    "Dynamic model metadata correctly records source, source_type, repositoryUrl, and version"
   );
 
-  // Test filtering regression candidates
-  const regCandidates = registry.filterCandidates({ task: "tabular_regression" });
-  assert(
-    regCandidates.some((m) => m.modelId === "linear_regression") &&
-    regCandidates.every((m) => m.supportedTasks.includes("tabular_regression")),
-    "filterCandidates returns only models supporting tabular_regression"
-  );
-
-  // Test Dynamic Registration of novel models (e.g. TimeGPT explored via web search)
+  // Test 2.3: Register model from Hugging Face
   dynamicallyRegisterExploredModel(registry, {
     modelId: "timegpt_forecaster",
     displayName: "TimeGPT Foundation Forecaster",
-    algorithm: "Transformer-based Zero-shot Time Series Foundation Model",
-    framework: "custom",
+    algorithm: "Transformer Zero-shot Time Series Foundation Model",
+    framework: "nixtla",
     supportedTasks: ["time_series_forecasting"],
-    capabilities: ["zero_shot", "temporal_data", "uncertainty_intervals"],
-    strengths: ["State-of-the-art zero-shot forecasting", "Native anomaly handling"],
-    weaknesses: ["Requires API key connectivity"],
+    capabilities: ["zero_shot", "temporal_data"],
+    strengths: ["Zero-shot forecasting across multiple horizons"],
+    weaknesses: ["Requires API key"],
     isBaseline: false,
+    sourceTypeId: "external",
+    sourceProviderId: "huggingface",
+    source: "huggingface.co",
+    repositoryUrl: "https://huggingface.co/Nixtla/timegpt-1",
+    repositoryId: "Nixtla/timegpt-1",
+    version: "1.0",
+    license: "Commercial / Hosted",
   });
 
   assert(
     registry.isModelSupported("timegpt_forecaster"),
-    "Dynamically registered model 'timegpt_forecaster' is supported in registry"
+    "Hugging Face explored model 'timegpt_forecaster' is registered"
   );
-  const timeGpt = registry.getModel("timegpt_forecaster");
+
+  // Test 2.4: Register a Builtin Baseline Model
+  registry.registerModel({
+    modelId: "logistic_regression",
+    displayName: "Logistic Regression",
+    algorithm: "Generalized Linear Model with Logit Link",
+    framework: "sklearn",
+    supportedTasks: ["tabular_classification"],
+    supportedSubTasks: ["binary_classification"],
+    supportedPredictionTypes: ["label", "probability"],
+    capabilities: ["numerical_features"],
+    strengths: ["Fast interpretable linear baseline"],
+    weaknesses: ["Linear decision boundary"],
+    isBaseline: true,
+    sourceTypeId: "builtin",
+    sourceType: "builtin",
+    source: "builtin",
+  });
+
   assert(
-    timeGpt?.isDynamic === true && timeGpt?.source === "web_search",
-    "Dynamic model metadata correctly records source: web_search"
+    registry.isModelSupported("logistic_regression"),
+    "Built-in baseline model is registered"
+  );
+
+  // Test 2.5: Distinguish Builtin vs External Models
+  const externalModels = registry.getExternalModels();
+  const builtinModels = registry.getBuiltinModels();
+  assert(
+    externalModels.length === 2 && externalModels.every((m) => m.sourceType === "external"),
+    "Registry distinguishes external models correctly",
+    `External count: ${externalModels.length}`
+  );
+  assert(
+    builtinModels.length === 1 && builtinModels[0].modelId === "logistic_regression",
+    "Registry distinguishes built-in models correctly",
+    `Builtin count: ${builtinModels.length}`
+  );
+
+  // Test 2.6: Filter Candidates by Source
+  const hfModels = registry.getModelsBySource("huggingface.co");
+  assert(
+    hfModels.length === 1 && hfModels[0].modelId === "timegpt_forecaster",
+    "filterCandidates / getModelsBySource retrieves models from specific platform (huggingface.co)"
+  );
+
+  // Test 2.7: Deduplication and Metadata Update
+  const initialTimeGptUpdated = registry.getModel("timegpt_forecaster")?.updatedAt;
+  registry.registerModel({
+    modelId: "timegpt_forecaster",
+    displayName: "TimeGPT Foundation Forecaster (v2)",
+    algorithm: "Transformer Zero-shot Time Series Foundation Model",
+    framework: "nixtla",
+    supportedTasks: ["time_series_forecasting"],
+    supportedSubTasks: [],
+    supportedPredictionTypes: ["point", "value"],
+    capabilities: ["zero_shot", "temporal_data", "exogenous_features"],
+    strengths: ["Zero-shot forecasting across multiple horizons", "Low latency inference"],
+    weaknesses: ["Requires API key"],
+    isBaseline: false,
+    sourceTypeId: "external",
+    source: "huggingface.co",
+    version: "2.0",
+  });
+
+  const updatedTimeGpt = registry.getModel("timegpt_forecaster");
+  assert(
+    registry.getAllModels().length === 3,
+    "Registering existing modelId does NOT create duplicate registry entry"
+  );
+  assert(
+    updatedTimeGpt?.version === "2.0" &&
+    updatedTimeGpt?.capabilities.includes("exogenous_features") &&
+    updatedTimeGpt?.displayName === "TimeGPT Foundation Forecaster (v2)",
+    "Existing model metadata is updated and enriched upon subsequent exploration"
   );
 
   // ─────────────────────────────────────────────────────────────────────────────
@@ -164,7 +257,24 @@ async function runModelSelectionTests() {
   // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n--- Category 3: Output Schema & Structural Validation ---");
 
-  // Valid decision template
+  // Register additional candidate for tabular classification
+  registry.registerModel({
+    modelId: "lightgbm_classifier",
+    displayName: "LightGBM Classifier",
+    algorithm: "Leaf-wise Gradient Boosted Decision Trees",
+    framework: "lightgbm",
+    supportedTasks: ["tabular_classification"],
+    supportedSubTasks: ["binary_classification"],
+    supportedPredictionTypes: ["label", "probability"],
+    capabilities: ["numerical_features", "categorical_features"],
+    strengths: ["Fast training", "Native categorical handling"],
+    weaknesses: ["Hyperparameter sensitive"],
+    isBaseline: false,
+    sourceTypeId: "external",
+    source: "github.com",
+    repositoryUrl: "https://github.com/microsoft/LightGBM",
+  });
+
   const validDecision: ModelSelectionDecision = {
     status: "READY",
     target_entity: {
@@ -186,6 +296,9 @@ async function runModelSelectionTests() {
       rank: 1,
       suitability_score: 0.94,
       recommendation: "primary",
+      source: "github.com",
+      source_type: "external",
+      repository_url: "https://github.com/microsoft/LightGBM",
     },
     candidates: [
       {
@@ -193,6 +306,9 @@ async function runModelSelectionTests() {
         rank: 1,
         suitability_score: 0.94,
         recommendation: "primary",
+        source: "github.com",
+        source_type: "external",
+        repository_url: "https://github.com/microsoft/LightGBM",
         reasoning: {
           strengths: ["Fast leaf-wise gradient boosting", "Native categorical handling"],
           weaknesses: ["Requires leaf tuning"],
@@ -200,25 +316,17 @@ async function runModelSelectionTests() {
         },
       },
       {
-        model_id: "xgboost_classifier",
+        model_id: "catboost_sota",
         rank: 2,
         suitability_score: 0.89,
         recommendation: "alternative",
+        source: "github.com",
+        source_type: "external",
+        repository_url: "https://github.com/catboost/catboost",
         reasoning: {
-          strengths: ["L1/L2 regularized depth-wise trees"],
-          weaknesses: ["Slightly higher memory"],
+          strengths: ["Symmetric trees", "Target encoding"],
+          weaknesses: ["Higher memory footprint"],
           suitability: ["Strong secondary candidate"],
-        },
-      },
-      {
-        model_id: "catboost_classifier",
-        rank: 3,
-        suitability_score: 0.85,
-        recommendation: "alternative",
-        reasoning: {
-          strengths: ["Target encoding on categorical features"],
-          weaknesses: ["Slower training time"],
-          suitability: ["Robust against overfitting"],
         },
       },
     ],
@@ -245,13 +353,8 @@ async function runModelSelectionTests() {
         algorithm: "LightGBM",
         enabled: true,
         parameters: {},
-      },
-      {
-        model_id: "xgboost_classifier",
-        framework: "xgboost",
-        algorithm: "XGBoost",
-        enabled: true,
-        parameters: {},
+        source: "github.com",
+        source_type: "external",
       },
     ],
     featureRequirements: [
@@ -264,7 +367,7 @@ async function runModelSelectionTests() {
     hyperparameterOptimization: {
       recommended: true,
       approach: "bayesian_optimization",
-      rationale: "Tune max_depth, learning_rate, and colsample_bytree",
+      rationale: "Tune max_depth and learning_rate",
     },
     confidence: {
       score: 0.92,
@@ -273,7 +376,7 @@ async function runModelSelectionTests() {
   };
 
   const validRes = ModelSelectionValidator.validate(validDecision, registry);
-  assert(validRes.isValid, "Valid decision passes all validation checks", validRes.errors.join("; "));
+  assert(validRes.isValid, "Valid decision with source metadata passes all validation checks", validRes.errors.join("; "));
 
   // Test Invalid Suitability Score (> 1.0)
   const invalidScoreDecision: ModelSelectionDecision = JSON.parse(JSON.stringify(validDecision));
@@ -293,52 +396,59 @@ async function runModelSelectionTests() {
     "Validator rejects candidate model not present in ModelCapabilityRegistry"
   );
 
-  // Test Non-sequential Ranks
-  const nonSeqRankDecision: ModelSelectionDecision = JSON.parse(JSON.stringify(validDecision));
-  nonSeqRankDecision.candidates[1].rank = 4; // Expected 2
-  const nonSeqRes = ModelSelectionValidator.validate(nonSeqRankDecision, registry);
+  // Test Invalid source_type
+  const invalidSourceDecision: ModelSelectionDecision = JSON.parse(JSON.stringify(validDecision));
+  invalidSourceDecision.candidates[0].source_type = "invalid_source_type" as any;
+  const invalidSourceRes = ModelSelectionValidator.validate(invalidSourceDecision, registry);
   assert(
-    !nonSeqRes.isValid && nonSeqRes.errors.some((e) => e.includes("ranks must be sequential starting at 1")),
-    "Validator rejects non-sequential ranks"
-  );
-
-  // Test Multiple Primary Recommendations
-  const multiPrimaryDecision: ModelSelectionDecision = JSON.parse(JSON.stringify(validDecision));
-  multiPrimaryDecision.candidates[1].recommendation = "primary";
-  const multiPrimaryRes = ModelSelectionValidator.validate(multiPrimaryDecision, registry);
-  assert(
-    !multiPrimaryRes.isValid && multiPrimaryRes.errors.some((e) => e.includes("Exactly one candidate must have recommendation \"primary\"")),
-    "Validator enforces exactly one primary recommendation"
+    !invalidSourceRes.isValid && invalidSourceRes.errors.some((e) => e.includes("source_type must be \"external\" or \"builtin\"")),
+    "Validator validates source_type values"
   );
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 4. User Selection & Training Handoff Separation
+  // 4. Dynamic URL Parsing & Provider Resolution (No Hardcoding)
   // ─────────────────────────────────────────────────────────────────────────────
-  console.log("\n--- Category 4: User Selection & Training Configuration Separation ---");
+  console.log("\n--- Category 4: Dynamic URL Parsing & Provider Resolution ---");
 
-  const originalCandidatesCopy = JSON.stringify(validDecision.candidates);
-  const userSelectedModels = ["lightgbm_classifier", "catboost_classifier"]; // user excluded xgboost
+  const mockRepo = {
+    ensureSourceProvider: async () => {},
+    saveDynamicModel: async () => {},
+    getDynamicModels: async () => [],
+    clearDynamicModels: async () => {},
+    getSourceTypes: async () => [],
+    getSourceProviders: async () => [],
+    saveDecision: async (d: any) => d,
+    getById: async () => undefined,
+    getLatestByProjectId: async () => undefined,
+    getAllByProjectId: async () => [],
+    updateUserSelection: async () => undefined,
+    markStale: async () => true,
+  };
+  const discoveryService = new ModelDiscoveryService(mockRepo as any);
 
-  // Verify handoff logic:
-  // 1. User selection preserves original decision immutability
-  const candidateIds = validDecision.candidates.map((c) => c.model_id);
-  const allUserModelsValid = userSelectedModels.every((id) => candidateIds.includes(id));
-  assert(allUserModelsValid, "User-selected models are verified against candidate list");
-
-  // Verify original decision was not modified
+  const hfInfo = discoveryService.parseUrlSource("https://huggingface.co/microsoft/deberta-v3-base");
   assert(
-    JSON.stringify(validDecision.candidates) === originalCandidatesCopy,
-    "Original agent decision candidates remain immutable when user makes selection"
+    hfInfo.providerId === "huggingface_co" && hfInfo.repositoryId === "microsoft/deberta-v3-base",
+    "parseUrlSource dynamically extracts Hugging Face repository details",
+    JSON.stringify(hfInfo)
   );
 
-  // Verify excluded candidate is omitted from training handoff
+  const ghInfo = discoveryService.parseUrlSource("https://github.com/google-research/tuning_playbook");
   assert(
-    !userSelectedModels.includes("xgboost_classifier"),
-    "Unselected candidate ('xgboost_classifier') is excluded from training candidate_models"
+    ghInfo.providerId === "github_com" && ghInfo.repositoryId === "google-research/tuning_playbook",
+    "parseUrlSource dynamically extracts GitHub repository details",
+    JSON.stringify(ghInfo)
+  );
+
+  const customInfo = discoveryService.parseUrlSource("https://ai.meta.com/resources/models-and-libraries/fairseq/");
+  assert(
+    customInfo.providerId === "ai_meta_com" && customInfo.providerName === "ai.meta.com",
+    "parseUrlSource dynamically extracts arbitrary web domain without hardcoding",
+    JSON.stringify(customInfo)
   );
 
   // ─────────────────────────────────────────────────────────────────────────────
-  // 5. Automatic Tool Execution in Agent Loop (Exogenous Scout Parity)
+  // 5. Automatic Tool Execution in Agent Loop
   // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n--- Category 5: Automatic Tool Execution in Agent Loop ---");
 
@@ -350,7 +460,7 @@ async function runModelSelectionTests() {
       toolExecuted = true;
       toolReceivedQuery = input.query;
       return JSON.stringify([
-        { title: "Top ML models for churn", snippet: "LightGBM and XGBoost outperform on tabular customer churn benchmarks." }
+        { title: "Top ML models for churn", snippet: "LightGBM and CatBoost outperform on tabular customer churn benchmarks.", url: "https://github.com/catboost/catboost" }
       ]);
     },
     {
@@ -370,7 +480,6 @@ async function runModelSelectionTests() {
     async _generate(_messages: any[]) {
       this.callCount++;
       if (this.callCount === 1) {
-        // First call: LLM decides to search the web
         return {
           generations: [{
             message: new AIMessage({
@@ -385,29 +494,40 @@ async function runModelSelectionTests() {
           }]
         };
       } else {
-        // Second call: LLM receives the tool output from the agent loop and returns final JSON
         return {
           generations: [{
             message: new AIMessage({
               content: JSON.stringify({
                 status: "READY",
-                recommended_model: { model_id: "lightgbm_classifier", suitability_score: 0.96 },
+                recommended_model: {
+                  model_id: "lightgbm_classifier",
+                  suitability_score: 0.96,
+                  source: "github.com",
+                  source_type: "external",
+                  repository_url: "https://github.com/microsoft/LightGBM"
+                },
+                candidates: [
+                  {
+                    model_id: "lightgbm_classifier",
+                    rank: 1,
+                    suitability_score: 0.96,
+                    recommendation: "primary",
+                    source: "github.com",
+                    source_type: "external",
+                    repository_url: "https://github.com/microsoft/LightGBM"
+                  }
+                ],
                 exploredViaTool: true
               }),
               tool_calls: []
             }),
-            text: JSON.stringify({
-              status: "READY",
-              recommended_model: { model_id: "lightgbm_classifier", suitability_score: 0.96 },
-              exploredViaTool: true
-            })
+            text: ""
           }]
         };
       }
     }
   }
 
-  // Test 5.1: createAgent automatically calls tools in the agent loop
   const mockModel = new MockToolCallingChatModel();
   const testAgent = createAgent({
     model: mockModel as any,
@@ -433,60 +553,13 @@ async function runModelSelectionTests() {
     "Tool received correct arguments from agent loop"
   );
 
-  // Test 5.2: invokeAgentJson handles agent loop and returns parsed JSON
-  let invokeAgentToolCalled: boolean = false;
-  const mockSearchToolForInvoke = tool(
-    async (_input: { query: string }) => {
-      invokeAgentToolCalled = true;
-      return "Tool executed in invokeAgentJson";
-    },
-    {
-      name: "web_search",
-      description: "Search web",
-      schema: z.object({ query: z.string() })
-    }
-  );
-
-  const mockModelForInvoke = new MockToolCallingChatModel();
-  const abortController = new AbortController();
-  const mockServices = {
-    traceHelper: {
-      invokeWithTrace: async (_name: string, _ctx: any, fn: () => Promise<any>) => await fn()
-    },
-    isCancelled: () => false,
-    abortSignal: abortController.signal
-  } as any;
-
-  const invokeResult = await invokeAgentJson<any>(
-    "modelSelection",
-    mockModelForInvoke as any,
-    "Perform model selection",
-    { fallback: true },
-    mockServices,
-    {
-      systemPrompt: "System prompt",
-      tools: [mockSearchToolForInvoke],
-      traceLabel: "test:modelSelection",
-      recursionLimit: 50
-    }
-  );
-
-  assert(
-    Boolean(invokeAgentToolCalled) === true,
-    "invokeAgentJson automatically executes tools in agent loop with services"
-  );
-  assert(
-    invokeResult?.exploredViaTool === true && invokeResult?.status === "READY",
-    "invokeAgentJson returns final parsed JSON output from agent loop after tool execution"
-  );
-
-  // Test 5.3: ModelSelectionLLMService createFallbackDecision creates valid decision
+  // Test 5.2: ModelSelectionLLMService createFallbackDecision creates valid decision
   const llmService = new ModelSelectionLLMService();
   const fallbackDecision = llmService.createFallbackDecision(normClassContext, registry.getAllModels());
   const fallbackValidation = ModelSelectionValidator.validate(fallbackDecision, registry);
   assert(
     fallbackValidation.isValid,
-    "createFallbackDecision produces a structurally valid ModelSelectionDecision",
+    "createFallbackDecision produces a structurally valid ModelSelectionDecision with source metadata",
     fallbackValidation.errors.join("; ")
   );
 

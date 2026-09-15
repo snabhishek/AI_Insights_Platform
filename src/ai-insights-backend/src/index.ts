@@ -38,6 +38,8 @@ import { DomainController } from "./controllers/domain.controller";
 import createDomainRouter from "./routes/domains";
 import { SourceRegistryService } from "./services/sourceRegistry/sourceRegistry.service";
 import { PostgresModelSelectionRepository } from "./repositories/modelSelection.repository";
+import { ModelDiscoveryService } from "./services/ai/model-selection/modelDiscovery.service";
+import { defaultModelCapabilityRegistry } from "./agents/ModelTrainingValidation/ModelSelection/modelCapabilityRegistry";
 import { ModelSelectionLLMService } from "./services/ai/model-selection/modelSelectionLLM.service";
 import { ModelSelectionService } from "./services/ai/model-selection/modelSelection.service";
 import { ModelSelectionController } from "./controllers/modelSelection.controller";
@@ -111,7 +113,14 @@ async function bootstrap() {
 
   const modelSelectionRepository = new PostgresModelSelectionRepository(db);
   const modelSelectionLLMService = new ModelSelectionLLMService();
-  const modelSelectionService = new ModelSelectionService(modelSelectionRepository, modelSelectionLLMService, projectService);
+  const modelDiscoveryService = new ModelDiscoveryService(modelSelectionRepository);
+  const modelSelectionService = new ModelSelectionService(
+    modelSelectionRepository,
+    modelSelectionLLMService,
+    projectService,
+    defaultModelCapabilityRegistry,
+    modelDiscoveryService
+  );
   const modelSelectionController = new ModelSelectionController(modelSelectionService);
 
   // 4. Mount Main routers

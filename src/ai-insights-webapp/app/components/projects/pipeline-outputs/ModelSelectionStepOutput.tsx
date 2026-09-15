@@ -18,6 +18,15 @@ interface ModelCandidate {
   suitability_score: number;
   recommendation: "primary" | "alternative" | string;
   reasoning?: ModelCandidateReasoning;
+  source_type_id?: string;
+  source_type?: string;
+  source_provider_id?: string | null;
+  source?: string;
+  repository_url?: string | null;
+  repository_id?: string | null;
+  version?: string | null;
+  license?: string | null;
+  discovered_at?: string;
 }
 
 interface ModelSelectionProps {
@@ -228,6 +237,31 @@ export default function ModelSelectionStepOutput({
                 {primaryCandidate.framework && (
                   <Badge variant="primary">{primaryCandidate.framework.toUpperCase()}</Badge>
                 )}
+                {primaryCandidate.source && (
+                  <Badge variant="teal">{primaryCandidate.source}</Badge>
+                )}
+                {primaryCandidate.version && (
+                  <Badge variant="neutral">v{primaryCandidate.version}</Badge>
+                )}
+                {primaryCandidate.license && (
+                  <Badge variant="neutral">License: {primaryCandidate.license}</Badge>
+                )}
+                {primaryCandidate.repository_url && (
+                  <a
+                    href={primaryCandidate.repository_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    title={primaryCandidate.repository_url}
+                  >
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                    <span>External Repo</span>
+                  </a>
+                )}
               </div>
 
               <h3 className="text-xl font-black text-foreground mt-2 tracking-tight">
@@ -346,6 +380,28 @@ export default function ModelSelectionStepOutput({
                           Rank #{candidate.rank}
                         </span>
                         <Badge variant="neutral">{candidate.framework || "custom"}</Badge>
+                        {candidate.source && (
+                          <Badge variant="teal">{candidate.source}</Badge>
+                        )}
+                        {candidate.version && (
+                          <Badge variant="neutral">v{candidate.version}</Badge>
+                        )}
+                        {candidate.repository_url && (
+                          <a
+                            href={candidate.repository_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-semibold"
+                            title={candidate.repository_url}
+                          >
+                            <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                              <polyline points="15 3 21 3 21 9" />
+                              <line x1="10" y1="14" x2="21" y2="3" />
+                            </svg>
+                            <span>Repo</span>
+                          </a>
+                        )}
                       </div>
 
                       <h5 className="text-sm font-bold text-foreground mt-1.5 truncate">

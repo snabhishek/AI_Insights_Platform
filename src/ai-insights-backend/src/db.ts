@@ -542,7 +542,33 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS model_selection_decisions_status_idx ON model_selection_decisions(status);
     `);
 
-    // Dynamic Model Registry table for explored models
+    // Lookup tables for Model Sources & Providers
+    await query(`
+      CREATE TABLE IF NOT EXISTS model_source_types (
+        id VARCHAR(50) PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        description TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+
+      INSERT INTO model_source_types (id, name, description)
+      VALUES 
+        ('builtin', 'Built-in Model', 'Platform native algorithms and baseline implementations'),
+        ('external', 'External Model Source', 'Models discovered dynamically from external web and repository sources')
+      ON CONFLICT (id) DO NOTHING;
+
+      CREATE TABLE IF NOT EXISTS model_source_providers (
+        id VARCHAR(100) PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        source_type_id VARCHAR(50) NOT NULL REFERENCES model_source_types(id),
+        base_url TEXT,
+        metadata JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS model_source_providers_source_type_id_idx ON model_source_providers(source_type_id);
+    `);
+
+    // Dynamic Model Registry table for explored models with foreign keys
     await query(`
       CREATE TABLE IF NOT EXISTS dynamic_model_registry (
         model_id VARCHAR(100) PRIMARY KEY,
@@ -554,12 +580,33 @@ export async function initializeDatabaseSchemas() {
         strengths TEXT[] NOT NULL DEFAULT '{}',
         weaknesses TEXT[] NOT NULL DEFAULT '{}',
         is_baseline BOOLEAN NOT NULL DEFAULT FALSE,
-        source VARCHAR(50) NOT NULL DEFAULT 'web_search',
+        source_type_id VARCHAR(50) NOT NULL DEFAULT 'external' REFERENCES model_source_types(id),
+        source_provider_id VARCHAR(100) REFERENCES model_source_providers(id),
+        source VARCHAR(100) NOT NULL DEFAULT 'web_search',
+        repository_url TEXT,
+        repository_id VARCHAR(255),
+        version VARCHAR(100),
+        license VARCHAR(100),
         metadata JSONB DEFAULT '{}'::jsonb,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+        discovered_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
+
+      -- Defensive column migrations for existing tables
+      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS source_type_id VARCHAR(50) DEFAULT 'external';
+      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS source_provider_id VARCHAR(100);
+      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS repository_url TEXT;
+      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS repository_id VARCHAR(255);
+      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS version VARCHAR(100);
+      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS license VARCHAR(100);
+      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS discovered_at TIMESTAMP DEFAULT NOW();
+      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
+
       CREATE INDEX IF NOT EXISTS dynamic_model_registry_framework_idx ON dynamic_model_registry(framework);
       CREATE INDEX IF NOT EXISTS dynamic_model_registry_source_idx ON dynamic_model_registry(source);
+      CREATE INDEX IF NOT EXISTS dynamic_model_registry_source_type_idx ON dynamic_model_registry(source_type_id);
+      CREATE INDEX IF NOT EXISTS dynamic_model_registry_source_provider_idx ON dynamic_model_registry(source_provider_id);
     `);
 
     console.log("[DB] Database tables initialization and migrations completed successfully.");

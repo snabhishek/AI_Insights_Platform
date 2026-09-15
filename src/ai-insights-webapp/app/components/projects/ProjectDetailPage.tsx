@@ -17,52 +17,6 @@ import ModelTrainingValidationStepOutput from "./pipeline-outputs/ModelTrainingV
 
 type AlertType = "error" | "success" | "info";
 
-// ─── Mock fallback data sources ───────────────────────────────────────────────
-
-function buildMockSources(workspaceId: string): DataSource[] {
-  return [
-    {
-      id: "mock-pg",
-      name: "PostgreSQL Production",
-      subtext: "Database",
-      type: "postgres",
-      status: "Connected",
-      health: "Healthy",
-      lastSyncTime: "10:14 AM",
-      lastSyncDate: "July 12, 2026",
-      workspaceId,
-      assets: { tables: 42, views: 8, pipelines: 3 },
-      connectionConfig: { host: "192.168.1.10", port: "5432", database: "ERP Database" },
-    },
-    {
-      id: "mock-sf",
-      name: "Snowflake Warehouse",
-      subtext: "Data Warehouse",
-      type: "snowflake",
-      status: "Connected",
-      health: "Healthy",
-      lastSyncTime: "09:30 AM",
-      lastSyncDate: "July 12, 2026",
-      workspaceId,
-      assets: { tables: 110, views: 24, pipelines: 5 },
-      connectionConfig: { host: "us-west-2", database: "Analytics DB" },
-    },
-    {
-      id: "mock-csv",
-      name: "Sales Data CSV",
-      subtext: "File Upload",
-      type: "csv",
-      status: "Connected",
-      health: "Healthy",
-      lastSyncTime: "11:05 AM",
-      lastSyncDate: "July 12, 2026",
-      workspaceId,
-      assets: { tables: 1, views: 0, pipelines: 0 },
-      connectionConfig: { fileName: "sales_data_june.csv" },
-    },
-  ];
-}
-
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ProjectDetailPageProps {
@@ -156,10 +110,7 @@ export default function ProjectDetailPage({
   const projectSources = allDataSources.filter((ds) =>
     project.dataSources.includes(ds.id)
   );
-  const displaySources =
-    projectSources.length > 0
-      ? projectSources
-      : buildMockSources(project.workspaceId);
+  const displaySources = projectSources;
 
   return (
     <>
