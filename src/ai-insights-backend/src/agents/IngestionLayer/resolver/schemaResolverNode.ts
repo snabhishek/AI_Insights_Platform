@@ -92,7 +92,10 @@ export async function resolveSchema(
       projectWithWs = await services.projectService.getProjectWithWorkspace(projectId);
       if (projectWithWs) {
         workspaceName = projectWithWs.workspaceName;
-        projectName = projectWithWs.project.name;
+        projectName = projectWithWs.project.projectName;
+        if (projectWithWs.project.useCaseName) {
+          fallback.domainKnowledge.useCase = projectWithWs.project.useCaseName;
+        }
       }
     } catch (lookupErr: any) {
       console.warn(`[resolveSchema] Failed upfront project lookup for ${projectId}:`, lookupErr?.message || lookupErr);
@@ -140,6 +143,7 @@ export async function resolveSchema(
     systemPrompt,
     rawFieldSchemaYaml ? `${schemaHeader}\n\`\`\`yaml\n${rawFieldSchemaYaml}\n\`\`\`` : "",
     "## Context",
+    projectWithWs?.project?.useCaseName ? `### Target Use Case\n${projectWithWs.project.useCaseName}` : "",
     inspection ? `### Inspection Context\n\`\`\`json\n${JSON.stringify({ connector, inspection }, null, 2)}\n\`\`\`` : "",
     dataProfile ? `### Data Profile Context\n\`\`\`json\n${JSON.stringify(dataProfile, null, 2)}\n\`\`\`` : "",
     safeUserRequest ? `### User Request\n${safeUserRequest}` : ""
@@ -205,7 +209,7 @@ export async function resolveSchema(
     try {
       const saved = await saveModularResolvedSchemas(
         projectWithWs.workspaceName,
-        projectWithWs.project.name,
+        projectWithWs.project.projectName,
         modularPayload,
         activeRunTimestamp
       );
@@ -220,7 +224,7 @@ export async function resolveSchema(
       if (pWs) {
         const saved = await saveModularResolvedSchemas(
           pWs.workspaceName,
-          pWs.project.name,
+          pWs.project.projectName,
           modularPayload,
           activeRunTimestamp
         );

@@ -10,7 +10,7 @@ import {
   MongodbIcon,
   RestApiIcon,
 } from "../datasource/Icons";
-import { DataSource, ConnectionConfig, BACKEND_URL } from "../providers/AppContext";
+import { DataSource, ConnectionConfig, BACKEND_URL, Project } from "../providers/AppContext";
 import ConnectionModal from "../datasource/ConnectionModal";
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
@@ -152,25 +152,38 @@ function CustomSelect({
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ProjectCreatePageProps {
+  initialProject?: Project;
+  mode?: "create" | "edit";
   dataSources: DataSource[];
   onCancel: () => void;
-  onSubmit: (name: string, useCase: string, selectedSources: string[], domain?: string, subDomain?: string) => Promise<boolean | void> | void;
+  onSubmit: (
+    projectName: string,
+    useCaseName: string,
+    useCase: string,
+    selectedSources: string[],
+    domain?: string,
+    subDomain?: string
+  ) => Promise<boolean | void> | void;
   onAddDataSource: (name: string, type: DataSource["type"], subtext: string, config: ConnectionConfig) => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ProjectCreatePage({
+  initialProject,
+  mode = "create",
   dataSources,
   onCancel,
   onSubmit,
   onAddDataSource,
 }: ProjectCreatePageProps) {
-  const [projectName, setProjectName]         = useState("");
-  const [useCaseInfo, setUseCaseInfo]         = useState("");
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
+  const isEditMode = mode === "edit";
+  const [projectName, setProjectName]         = useState(initialProject?.projectName ?? "");
+  const [useCaseName, setUseCaseName]         = useState(initialProject?.useCaseName ?? "");
+  const [useCaseInfo, setUseCaseInfo]         = useState(initialProject?.useCase ?? "");
+  const [selectedSources, setSelectedSources] = useState<string[]>(initialProject?.dataSources ?? []);
   const [previewMode, setPreviewMode]         = useState(false);
-  const [history, setHistory]                 = useState<string[]>([""]);
+  const [history, setHistory]                 = useState<string[]>([initialProject?.useCase ?? ""]);
   const [historyIndex, setHistoryIndex]       = useState(0);
   const [sourceSearch, setSourceSearch]       = useState("");
   const [sourceTypeFilter, setSourceTypeFilter] = useState("All Types");
@@ -182,15 +195,29 @@ export default function ProjectCreatePage({
 
   // Domain & Sub-domain state
   const [domainList, setDomainList]           = useState<{ id: string; domain: string; subDomains: string[] }[]>([]);
-  const [selectedDomain, setSelectedDomain]   = useState("");
-  const [selectedSubDomain, setSelectedSubDomain] = useState("");
+  const [selectedDomain, setSelectedDomain]   = useState(initialProject?.domain ?? "");
+  const [selectedSubDomain, setSelectedSubDomain] = useState(initialProject?.subDomain ?? "");
   const [customSubDomain, setCustomSubDomain] = useState("");
 
   const [showConnectLibrary, setShowConnectLibrary] = useState(false);
+  const activeConnectTypeRef                  = useRef<DataSource["type"] | null>(null);
   const [activeConnectType, setActiveConnectType]   = useState<DataSource["type"] | null>(null);
   const wasSubmitClicked = useRef(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (initialProject) {
+      setProjectName(initialProject.projectName ?? "");
+      setUseCaseName(initialProject.useCaseName ?? "");
+      setUseCaseInfo(initialProject.useCase ?? "");
+      setSelectedSources(initialProject.dataSources ?? []);
+      setSelectedDomain(initialProject.domain ?? "");
+      setSelectedSubDomain(initialProject.subDomain ?? "");
+      setHistory([initialProject.useCase ?? ""]);
+      setHistoryIndex(0);
+    }
+  }, [initialProject]);
 
   useEffect(() => {
     fetch(`${BACKEND_URL}/domains`)
@@ -353,7 +380,7 @@ export default function ProjectCreatePage({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting) return;
+    if (!projectName.trim() || !useCaseName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting) return;
 
     setSubmitError(null);
     setIsSubmitting(true);
@@ -370,6 +397,7 @@ export default function ProjectCreatePage({
 
       const success = await onSubmit(
         projectName.trim(),
+        useCaseName.trim(),
         useCaseInfo.trim(),
         selectedSources,
         selectedDomain,
@@ -393,8 +421,14 @@ export default function ProjectCreatePage({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Create New Project</h1>
-          <p className="text-sm text-muted-foreground">Define your use case and connect the relevant data sources.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            {isEditMode ? "Edit Project" : "Create New Project"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {isEditMode
+              ? "Update your project details, use case, and data source connections."
+              : "Define your project, use case and connect the relevant data sources."}
+          </p>
         </div>
         <div className="flex items-center gap-3">
           <button
@@ -405,17 +439,17 @@ export default function ProjectCreatePage({
           </button>
           <button
             onClick={handleSubmit}
-            disabled={!projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
+            disabled={!projectName.trim() || !useCaseName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
             title={selectedSources.length === 0 ? "Please connect at least one data source to save" : undefined}
             className="px-6 py-2 bg-primary text-white hover:bg-primary/95 rounded-xl text-sm font-semibold cursor-pointer transition-all shadow-md hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed focus:outline-none focus:ring-0 flex items-center gap-2"
           >
             {isSubmitting ? (
               <>
                 <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                <span>Saving...</span>
+                <span>{isEditMode ? "Updating..." : "Saving..."}</span>
               </>
             ) : (
-              <span>Save Project</span>
+              <span>{isEditMode ? "Update Project" : "Save Project"}</span>
             )}
           </button>
         </div>
@@ -504,22 +538,41 @@ export default function ProjectCreatePage({
               </div>
             )}
 
-            {/* Name */}
+            {/* Project Name */}
             <div>
               <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
-                Use Case Title <span className="text-red-500">*</span>
+                Project Name <span className="text-red-500">*</span>
               </label>
               <input
                 type="text"
                 maxLength={150}
                 required
-                placeholder="e.g., Demand Forecasting, Predictive Maintenance, Customer Churn Analytics..."
+                placeholder="e.g., Supply Chain AI, Retail Intelligence 2026..."
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
                 className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm"
               />
               <div className="flex justify-end mt-1 text-[10px] text-muted-foreground font-semibold">
                 {projectName.length}/150
+              </div>
+            </div>
+
+            {/* Use Case Name */}
+            <div>
+              <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
+                Use Case Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                maxLength={150}
+                required
+                placeholder="e.g., Demand Forecasting, Predictive Maintenance, Customer Churn Analytics..."
+                value={useCaseName}
+                onChange={(e) => setUseCaseName(e.target.value)}
+                className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm"
+              />
+              <div className="flex justify-end mt-1 text-[10px] text-muted-foreground font-semibold">
+                {useCaseName.length}/150
               </div>
             </div>
 

@@ -30,7 +30,15 @@ export default function ProjectsListPage({
 
   const workspaceProjects = projects.filter((p) => p.workspaceId === activeWorkspaceId);
   const filtered = workspaceProjects
-    .filter((p) => p.name.toLowerCase().includes(searchTerm.toLowerCase()))
+    .filter((p) => {
+      const q = searchTerm.toLowerCase();
+      return (
+        (p.projectName && p.projectName.toLowerCase().includes(q)) ||
+        (p.useCaseName && p.useCaseName.toLowerCase().includes(q)) ||
+        (p.domain && p.domain.toLowerCase().includes(q)) ||
+        (p.subDomain && p.subDomain.toLowerCase().includes(q))
+      );
+    })
     .filter((p) => roleFilter === "all" || p.role === roleFilter);
 
   return (

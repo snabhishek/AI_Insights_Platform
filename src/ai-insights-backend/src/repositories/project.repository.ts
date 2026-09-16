@@ -9,32 +9,33 @@ import { Project, ProjectRun, ProjectWithWorkspace } from "../models/project.typ
 export class PostgresProjectRepository implements IProjectRepository {
   constructor(private db: NodePgDatabase<typeof schema>) {}
 
-  private mapRowToProject(row: any): Project {
+  private mapRowToProject(row: typeof schema.projects.$inferSelect): Project {
     return {
       id: row.id,
-      name: row.name,
+      projectName: row.projectName,
+      useCaseName: row.useCaseName,
       role: row.role as "OWNER" | "MEMBER",
-      dataSources: Array.isArray(row.data_sources) ? row.data_sources : row.dataSources || [],
+      dataSources: row.dataSources ?? [],
       initials: row.initials,
-      workspaceId: row.workspace_id || row.workspaceId,
-      useCase: row.use_case ?? row.useCase ?? undefined,
+      workspaceId: row.workspaceId,
+      useCase: row.useCase ?? undefined,
       domain: row.domain ?? undefined,
-      subDomain: row.sub_domain ?? row.subDomain ?? undefined,
-      folderPath: row.folder_path ?? row.folderPath ?? undefined,
-      status: row.status || (row.agent_state?.status) || "idle",
-      agentState: row.agent_state ?? row.agentState ?? {},
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
+      subDomain: row.subDomain ?? undefined,
+      folderPath: row.folderPath ?? undefined,
+      status: row.status ?? "idle",
+      agentState: {},
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     };
   }
 
-  private mapRowToProjectRun(row: any): ProjectRun {
+  private mapRowToProjectRun(row: typeof schema.projectRuns.$inferSelect): ProjectRun {
     return {
       id: row.id,
-      projectId: row.project_id || row.projectId,
-      useCase: row.use_case ?? row.useCase ?? undefined,
-      status: row.status || (row.agent_state?.status) || "idle",
-      agentState: row.agent_state ?? row.agentState ?? {},
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
+      projectId: row.projectId,
+      useCase: row.useCase ?? undefined,
+      status: row.status ?? "idle",
+      agentState: row.agentState ?? {},
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     };
   }
 
@@ -141,8 +142,11 @@ export class PostgresProjectRepository implements IProjectRepository {
 
   async updateProject(id: string, updates: Partial<Project>): Promise<Project | undefined> {
     const updatePayload: Record<string, any> = {};
-    if (updates.name !== undefined) updatePayload.name = updates.name;
+    if (updates.projectName !== undefined) updatePayload.projectName = updates.projectName;
+    if (updates.useCaseName !== undefined) updatePayload.useCaseName = updates.useCaseName;
     if (updates.useCase !== undefined) updatePayload.useCase = updates.useCase;
+    if (updates.domain !== undefined) updatePayload.domain = updates.domain;
+    if (updates.subDomain !== undefined) updatePayload.subDomain = updates.subDomain;
     if (updates.dataSources !== undefined) updatePayload.dataSources = updates.dataSources;
     if (updates.folderPath !== undefined) updatePayload.folderPath = updates.folderPath;
     if (updates.status !== undefined) updatePayload.status = updates.status;
@@ -197,7 +201,8 @@ export class PostgresProjectRepository implements IProjectRepository {
     const now = new Date(project.createdAt);
     await this.db.insert(schema.projects).values({
       id: project.id,
-      name: project.name,
+      projectName: project.projectName,
+      useCaseName: project.useCaseName,
       role: project.role,
       dataSources: project.dataSources,
       initials: project.initials,

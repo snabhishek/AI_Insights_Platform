@@ -33,7 +33,8 @@ async function testUnifiedRunFolder() {
   // 1. Simulate Project Creation (creates domain schema in parent project dir)
   console.log("[Step 1] Creating project initial schema file...");
   await createProjectSchemaFile(workspaceName, {
-    name: projectName,
+    projectName,
+    useCaseName: "Analyze customer orders and fulfillment trends",
     domain: "E-Commerce",
     subDomain: "Order Management",
     useCase: "Analyze customer orders and fulfillment trends",

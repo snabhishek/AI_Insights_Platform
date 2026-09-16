@@ -1,0 +1,14 @@
+
+stage: build_dataset
+inputs:
+  - transformed_features.parquet (or created_features.parquet / raw_ev_battery_dataset)
+outputs:
+  - dataset.parquet
+  - metadata.yaml
+operations:
+  - source table resolution and entity key alignment (vehicle_id)
+  - ground truth target validation and alignment (battery_failure: binary classification)
+  - leakage column exclusion (predicted_remaining_life_cycles)
+  - unified matrix consolidation of raw telemetry, domain features, and transformed indicators
+  - integrity checks (null target verification, row count sanity checks)
+  - atomic parquet dataset serialization

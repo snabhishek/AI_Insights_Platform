@@ -47,24 +47,41 @@ export async function initializeDatabaseSchemas() {
     await query(`
       CREATE TABLE IF NOT EXISTS projects (
         id VARCHAR(50) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
+        project_name VARCHAR(255) NOT NULL,
+        usecase_name VARCHAR(255) NOT NULL,
         role VARCHAR(50) NOT NULL DEFAULT 'OWNER',
         data_sources TEXT[] NOT NULL DEFAULT '{}',
         initials VARCHAR(10) NOT NULL DEFAULT 'US',
         workspace_id VARCHAR(50) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
         use_case TEXT,
+        domain VARCHAR(255),
+        sub_domain VARCHAR(255),
         folder_path VARCHAR(500),
+        status VARCHAR(50) DEFAULT 'idle',
         created_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
     `);
 
-    // Add use_case, domain, sub_domain, folder_path, status columns to existing projects table if they don't exist (migration)
+    // Add use_case, domain, sub_domain, folder_path, status, project_name, usecase_name columns to existing projects table if they don't exist (migration)
     await query(`
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS use_case TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS domain VARCHAR(255);
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS sub_domain VARCHAR(255);
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS folder_path VARCHAR(500);
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'idle';
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_name VARCHAR(255);
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS usecase_name VARCHAR(255);
+      DO $$
+      BEGIN
+        IF EXISTS (
+          SELECT 1 FROM information_schema.columns 
+          WHERE table_name = 'projects' AND column_name = 'name' AND is_nullable = 'NO'
+        ) THEN
+          ALTER TABLE projects ALTER COLUMN name DROP NOT NULL;
+        END IF;
+      END $$;
+      UPDATE projects SET usecase_name = name WHERE usecase_name IS NULL AND name IS NOT NULL;
+      UPDATE projects SET project_name = name WHERE project_name IS NULL AND name IS NOT NULL;
     `);
 
     // 3b. Domains table

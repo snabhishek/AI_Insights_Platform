@@ -6,7 +6,7 @@ import { FormSchema } from "../../hooks/useFilterForm";
 import { useApp } from "../providers/AppContext";
 
 interface ModernProjectSelectProps {
-  projects: Array<{ id: string; name: string }>;
+  projects: Array<{ id: string; projectName: string }>;
   selectedProjectId: string;
   onSelect: (id: string) => void;
 }
@@ -44,7 +44,7 @@ function ModernProjectSelect({ projects, selectedProjectId, onSelect }: ModernPr
           <span>📁</span>
           <span>Select Project:</span>
         </span>
-        <span className="text-foreground font-bold">{selectedProject?.name || "Choose a project"}</span>
+        <span className="text-foreground font-bold">{selectedProject?.projectName ?? "Choose a project"}</span>
         <svg
           className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ml-1 ${
             isOpen ? "rotate-180 text-primary" : ""
@@ -77,7 +77,7 @@ function ModernProjectSelect({ projects, selectedProjectId, onSelect }: ModernPr
               >
                 <div className="flex items-center gap-2">
                   <span>📊</span>
-                  <span className="truncate">{p.name}</span>
+                  <span className="truncate">{p.projectName}</span>
                 </div>
                 {isSelected && (
                   <svg
@@ -148,7 +148,7 @@ export default function ApplicationPage() {
       setActiveSchema({
         sourceId: primarySourceId,
         projectId: project.id,
-        projectName: project.name,
+        projectName: project.projectName,
         filterGroups: groups,
         forms: groups,
       });

@@ -262,9 +262,9 @@ export class IngestionAgentService implements IIngestionAgentService {
       if (options?.projectId) {
         try {
           pWs = await this.projectService.getProjectWithWorkspace(options.projectId);
-          if (pWs?.project?.name) {
+          if (pWs?.project?.projectName) {
             registerProjectMetadata(options.projectId, {
-              projectName: pWs.project.name,
+              projectName: pWs.project.projectName,
               workspaceName: pWs.workspaceName,
               folderPath: pWs.project.folderPath,
             });
@@ -296,8 +296,8 @@ export class IngestionAgentService implements IIngestionAgentService {
       if (isContinuing) {
         if (savedAgentState?.runTimestamp && String(savedAgentState.runTimestamp).trim().length > 0) {
           activeRunTimestamp = String(savedAgentState.runTimestamp).trim();
-        } else if (pWs?.project?.name && pWs?.workspaceName) {
-          const latestOnDisk = getLatestProjectRunTimestamp(pWs.workspaceName, pWs.project.name);
+        } else if (pWs?.project?.projectName && pWs?.workspaceName) {
+          const latestOnDisk = getLatestProjectRunTimestamp(pWs.workspaceName, pWs.project.projectName);
           if (latestOnDisk) {
             activeRunTimestamp = latestOnDisk;
           }
@@ -313,7 +313,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       // Ensure the unified project run folder exists before workflow execution begins
       if (pWs && pWs.project && pWs.workspaceName) {
         try {
-          await ensureProjectRunFolder(pWs.workspaceName, pWs.project.name, activeRunTimestamp);
+          await ensureProjectRunFolder(pWs.workspaceName, pWs.project.projectName, activeRunTimestamp);
         } catch (folderErr) {
           console.warn("[Workflow] Warning ensuring project run folder:", folderErr);
         }

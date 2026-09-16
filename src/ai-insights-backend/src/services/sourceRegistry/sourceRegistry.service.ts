@@ -164,13 +164,13 @@ export class SourceRegistryService implements ISourceRegistryService {
       const allProjects = await this.projectRepository.getAll();
 
       if (projectName) {
-        const byName = allProjects.find((p) => p.name.toLowerCase() === projectName.toLowerCase().trim());
+        const byName = allProjects.find((p) => p.projectName?.toLowerCase() === projectName.toLowerCase().trim());
         if (byName) return byName;
       }
 
       if (projectId) {
         const byNameOrId = allProjects.find(
-          (p) => p.id === projectId || p.name.toLowerCase() === projectId.toLowerCase().trim()
+          (p) => p.id === projectId || p.projectName?.toLowerCase() === projectId.toLowerCase().trim()
         );
         if (byNameOrId) return byNameOrId;
       }

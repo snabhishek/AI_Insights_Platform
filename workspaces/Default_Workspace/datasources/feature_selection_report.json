@@ -1,0 +1,455 @@
+{
+  "tableName": "ev_battery_failure_prediction_Dataset",
+  "timestamp": "2026-09-16T07:09:33.603271",
+  "inputRowCount": 20000,
+  "inputColumnCount": 121,
+  "selectedColumnCount": 37,
+  "selectedFeatureCount": 35,
+  "targetColumn": "battery_failure",
+  "entityColumn": "vehicle_id",
+  "selectedFeatures": [
+    "thermal_health_score",
+    "thermal_runaway_risk",
+    "battery_health_percent",
+    "pca_thermal_dynamics_comp_1",
+    "capacity_loss_percent",
+    "state_of_health",
+    "cooling_deficiency_index",
+    "cell_temperature_max",
+    "composite_battery_risk_score",
+    "internal_resistance",
+    "previous_faults",
+    "pca_cumulative_degradation_comp_1",
+    "cell_temperature_avg",
+    "bms_alert_density",
+    "health_to_age_ratio",
+    "battery_stress_index",
+    "charge_efficiency",
+    "BMS_warning_count",
+    "vehicle_age_years",
+    "discharge_efficiency",
+    "aging_score",
+    "pca_thermal_dynamics_comp_3",
+    "manufacturing_year",
+    "pca_cumulative_degradation_comp_2",
+    "abnormal_voltage_rate_per_cycle",
+    "ambient_cell_temp_gap",
+    "cycle_count",
+    "degradation_rate_per_km",
+    "abnormal_voltage_events",
+    "temp_delta_max_avg",
+    "remaining_capacity",
+    "pca_thermal_dynamics_comp_2",
+    "cooling_system_health",
+    "voltage_imbalance",
+    "odometer_km"
+  ],
+  "discardedFeaturesCount": 72,
+  "discardedFeatures": [
+    "pca_electrical_voltage_comp_1",
+    "capacity_loss_per_cycle",
+    "internal_resistance_per_cycle",
+    "pca_cumulative_degradation_comp_3",
+    "temperature_variance",
+    "dust_exposure",
+    "cell_voltage_std",
+    "maintenance_score",
+    "minimum_temperature",
+    "pca_electrical_voltage_comp_2",
+    "average_ambient_temperature",
+    "driving_dynamics_stress",
+    "cell_voltage_cv",
+    "voltage_spread_ratio",
+    "maximum_temperature",
+    "maintenance_neglect_factor",
+    "regenerative_braking_usage",
+    "hard_braking_score",
+    "average_charging_time",
+    "driving_stress_score",
+    "state_of_charge",
+    "depth_of_discharge",
+    "altitude",
+    "humidity",
+    "battery_capacity_kwh",
+    "ambient_temp_range",
+    "daily_distance",
+    "home_charging_ratio",
+    "last_service_days",
+    "aggressive_acceleration_score",
+    "overnight_charging_ratio",
+    "average_trip_distance",
+    "charging_cycles_last_month",
+    "slow_charge_ratio",
+    "average_speed",
+    "cell_voltage_avg",
+    "fast_to_slow_charge_ratio",
+    "highway_driving_ratio",
+    "average_charge_power_kw",
+    "high_power_charge_stress",
+    "pack_voltage",
+    "city_driving_ratio",
+    "charging_quality_score",
+    "fast_charge_ratio",
+    "firmware_updates",
+    "charge_interruption_rate",
+    "overcharge_risk_factor",
+    "thermal_stress_ratio",
+    "sensor_fault_count",
+    "charging_interruptions",
+    "overcharge_events",
+    "ohe_LFP",
+    "ohe_Fleet",
+    "ohe_NMC",
+    "ohe_Flat",
+    "ohe_AWD",
+    "ohe_Mountainous",
+    "ohe_SUV",
+    "ohe_LTO",
+    "ohe_Hatchback",
+    "ohe_Desert",
+    "ohe_FWD",
+    "ohe_Van",
+    "ohe_Coastal",
+    "ohe_Sedan",
+    "ohe_Crossover",
+    "ohe_NCA",
+    "ohe_Truck",
+    "ohe_Private",
+    "ohe_LMO",
+    "ohe_RWD",
+    "ohe_Hilly"
+  ],
+  "discardedDetails": {
+    "pca_electrical_voltage_comp_1": {
+      "reason": "High collinearity with voltage_spread_ratio (|r| > 0.95)",
+      "stage": "collinearity_pruning"
+    },
+    "capacity_loss_per_cycle": {
+      "reason": "High collinearity with pca_cumulative_degradation_comp_2 (|r| > 0.95)",
+      "stage": "collinearity_pruning"
+    },
+    "internal_resistance_per_cycle": {
+      "reason": "High collinearity with pca_cumulative_degradation_comp_2 (|r| > 0.95)",
+      "stage": "collinearity_pruning"
+    },
+    "pca_cumulative_degradation_comp_3": {
+      "reason": "High collinearity with odometer_km (|r| > 0.95)",
+      "stage": "collinearity_pruning"
+    },
+    "temperature_variance": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.004312)",
+      "stage": "tree_importance_ranking"
+    },
+    "dust_exposure": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.004251)",
+      "stage": "tree_importance_ranking"
+    },
+    "cell_voltage_std": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.004213)",
+      "stage": "tree_importance_ranking"
+    },
+    "maintenance_score": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003976)",
+      "stage": "tree_importance_ranking"
+    },
+    "minimum_temperature": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003939)",
+      "stage": "tree_importance_ranking"
+    },
+    "pca_electrical_voltage_comp_2": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003927)",
+      "stage": "tree_importance_ranking"
+    },
+    "average_ambient_temperature": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003736)",
+      "stage": "tree_importance_ranking"
+    },
+    "driving_dynamics_stress": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003659)",
+      "stage": "tree_importance_ranking"
+    },
+    "cell_voltage_cv": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003634)",
+      "stage": "tree_importance_ranking"
+    },
+    "voltage_spread_ratio": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003608)",
+      "stage": "tree_importance_ranking"
+    },
+    "maximum_temperature": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003574)",
+      "stage": "tree_importance_ranking"
+    },
+    "maintenance_neglect_factor": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.00356)",
+      "stage": "tree_importance_ranking"
+    },
+    "regenerative_braking_usage": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003538)",
+      "stage": "tree_importance_ranking"
+    },
+    "hard_braking_score": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003499)",
+      "stage": "tree_importance_ranking"
+    },
+    "average_charging_time": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003486)",
+      "stage": "tree_importance_ranking"
+    },
+    "driving_stress_score": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.00345)",
+      "stage": "tree_importance_ranking"
+    },
+    "state_of_charge": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003403)",
+      "stage": "tree_importance_ranking"
+    },
+    "depth_of_discharge": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003399)",
+      "stage": "tree_importance_ranking"
+    },
+    "altitude": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003375)",
+      "stage": "tree_importance_ranking"
+    },
+    "humidity": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003357)",
+      "stage": "tree_importance_ranking"
+    },
+    "battery_capacity_kwh": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.00334)",
+      "stage": "tree_importance_ranking"
+    },
+    "ambient_temp_range": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003336)",
+      "stage": "tree_importance_ranking"
+    },
+    "daily_distance": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003314)",
+      "stage": "tree_importance_ranking"
+    },
+    "home_charging_ratio": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003314)",
+      "stage": "tree_importance_ranking"
+    },
+    "last_service_days": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.00328)",
+      "stage": "tree_importance_ranking"
+    },
+    "aggressive_acceleration_score": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003257)",
+      "stage": "tree_importance_ranking"
+    },
+    "overnight_charging_ratio": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.00324)",
+      "stage": "tree_importance_ranking"
+    },
+    "average_trip_distance": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003227)",
+      "stage": "tree_importance_ranking"
+    },
+    "charging_cycles_last_month": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003207)",
+      "stage": "tree_importance_ranking"
+    },
+    "slow_charge_ratio": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003193)",
+      "stage": "tree_importance_ranking"
+    },
+    "average_speed": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003106)",
+      "stage": "tree_importance_ranking"
+    },
+    "cell_voltage_avg": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003105)",
+      "stage": "tree_importance_ranking"
+    },
+    "fast_to_slow_charge_ratio": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.003102)",
+      "stage": "tree_importance_ranking"
+    },
+    "highway_driving_ratio": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.00296)",
+      "stage": "tree_importance_ranking"
+    },
+    "average_charge_power_kw": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.00295)",
+      "stage": "tree_importance_ranking"
+    },
+    "high_power_charge_stress": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.002907)",
+      "stage": "tree_importance_ranking"
+    },
+    "pack_voltage": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.002854)",
+      "stage": "tree_importance_ranking"
+    },
+    "city_driving_ratio": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.002755)",
+      "stage": "tree_importance_ranking"
+    },
+    "charging_quality_score": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.002754)",
+      "stage": "tree_importance_ranking"
+    },
+    "fast_charge_ratio": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.002706)",
+      "stage": "tree_importance_ranking"
+    },
+    "firmware_updates": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.002342)",
+      "stage": "tree_importance_ranking"
+    },
+    "charge_interruption_rate": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.00187)",
+      "stage": "tree_importance_ranking"
+    },
+    "overcharge_risk_factor": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.001724)",
+      "stage": "tree_importance_ranking"
+    },
+    "thermal_stress_ratio": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.001479)",
+      "stage": "tree_importance_ranking"
+    },
+    "sensor_fault_count": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.001045)",
+      "stage": "tree_importance_ranking"
+    },
+    "charging_interruptions": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000893)",
+      "stage": "tree_importance_ranking"
+    },
+    "overcharge_events": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000703)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_LFP": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000432)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Fleet": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000431)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_NMC": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000404)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Flat": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000392)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_AWD": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000377)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Mountainous": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000358)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_SUV": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000353)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_LTO": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000347)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Hatchback": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000347)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Desert": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.00033)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_FWD": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000321)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Van": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000309)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Coastal": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000309)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Sedan": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.0003)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Crossover": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000291)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_NCA": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000284)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Truck": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000272)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Private": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000272)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_LMO": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000262)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_RWD": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.000258)",
+      "stage": "tree_importance_ranking"
+    },
+    "ohe_Hilly": {
+      "reason": "Ranked below Top-35 importance threshold (importance=0.00025)",
+      "stage": "tree_importance_ranking"
+    }
+  },
+  "featureImportances": {
+    "thermal_health_score": 0.072828,
+    "thermal_runaway_risk": 0.070484,
+    "battery_health_percent": 0.057749,
+    "pca_thermal_dynamics_comp_1": 0.057258,
+    "capacity_loss_percent": 0.055972,
+    "state_of_health": 0.04602,
+    "cooling_deficiency_index": 0.044515,
+    "cell_temperature_max": 0.040785,
+    "composite_battery_risk_score": 0.038265,
+    "internal_resistance": 0.035826,
+    "previous_faults": 0.034242,
+    "pca_cumulative_degradation_comp_1": 0.033012,
+    "cell_temperature_avg": 0.032235,
+    "bms_alert_density": 0.029022,
+    "health_to_age_ratio": 0.020773,
+    "battery_stress_index": 0.020315,
+    "charge_efficiency": 0.016468,
+    "BMS_warning_count": 0.016093,
+    "vehicle_age_years": 0.014925,
+    "discharge_efficiency": 0.013941,
+    "aging_score": 0.011578,
+    "pca_thermal_dynamics_comp_3": 0.008749,
+    "manufacturing_year": 0.007355,
+    "pca_cumulative_degradation_comp_2": 0.007132,
+    "abnormal_voltage_rate_per_cycle": 0.007058,
+    "ambient_cell_temp_gap": 0.006934,
+    "cycle_count": 0.006304,
+    "degradation_rate_per_km": 0.006216,
+    "abnormal_voltage_events": 0.00585,
+    "temp_delta_max_avg": 0.00536,
+    "remaining_capacity": 0.005181,
+    "pca_thermal_dynamics_comp_2": 0.005,
+    "cooling_system_health": 0.004912,
+    "voltage_imbalance": 0.004532,
+    "odometer_km": 0.004357
+  },
+  "selectionCriteria": {
+    "varianceThreshold": 0.0001,
+    "collinearityCorrelationThreshold": 0.95,
+    "topKFeatures": 35,
+    "methodology": "variance_filter + collinearity_pruning + random_forest_importance"
+  }
+}

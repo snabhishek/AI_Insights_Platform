@@ -1,6 +1,7 @@
 export interface Project {
   id: string;
-  name: string;
+  projectName: string;
+  useCaseName: string;
   role: "OWNER" | "MEMBER";
   dataSources: string[];
   initials: string;

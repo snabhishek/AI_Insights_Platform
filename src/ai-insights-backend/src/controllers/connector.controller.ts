@@ -271,8 +271,12 @@ export class ConnectorController {
   };
 
   getFilterOptions = async (req: Request, res: Response): Promise<void> => {
-    const projectName = (req.query.projectName as string) || (req.query.project_name as string);
-    const projectId = (req.query.projectId as string) || (req.query.project as string);
+    const projectName = typeof req.query.projectName === "string" ? req.query.projectName : undefined;
+    const projectId = typeof req.query.projectId === "string"
+      ? req.query.projectId
+      : typeof req.query.project === "string"
+        ? req.query.project
+        : undefined;
     const sourceId = (req.query.sourceId as string) || (req.query.schemaId as string) || (req.query.connectorId as string) || projectId;
     const fieldId = (req.query.fieldId as string) || (req.query.field as string);
     const tableName = req.query.table as string | undefined;
@@ -316,7 +320,6 @@ export class ConnectorController {
         "projectId",
         "project",
         "projectName",
-        "project_name",
         "schemaId",
         "connectorId",
         "fieldId",

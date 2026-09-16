@@ -70,9 +70,9 @@ export class WorkspaceService {
     try {
       const projects = await this.projectRepository.getByWorkspaceId(id);
       for (const p of projects) {
-        await deleteProjectSchemaFolder(ws.name, p.name);
+        await deleteProjectSchemaFolder(ws.name, p.projectName);
         if (this.duckDBService) {
-          await this.duckDBService.deleteProjectFolder(p.name, ws.name, p.folderPath);
+          await this.duckDBService.deleteProjectFolder(p.projectName, ws.name, p.folderPath);
         }
       }
       const wsDir = getWorkspaceDir(ws.name);
@@ -101,8 +101,9 @@ export class WorkspaceService {
       return { success: false, reason: "WORKSPACE_NOT_FOUND", message: "Workspace not found." };
     }
 
-    const name = projectData.name.trim();
-    const dataSources = projectData.dataSources || [];
+    const projectName = (projectData.projectName ?? "").trim();
+    const useCaseName = (projectData.useCaseName ?? "").trim();
+    const dataSources = projectData.dataSources ?? [];
 
     if (!Array.isArray(dataSources) || dataSources.length === 0) {
       return {
@@ -122,35 +123,36 @@ export class WorkspaceService {
 
     const isDuplicate = existingProjects.some(
       (p) =>
-        p.name.toLowerCase() === name.toLowerCase() &&
-        areSourceArraysEqual(p.dataSources || [], dataSources)
+        p.projectName?.toLowerCase() === projectName.toLowerCase() &&
+        areSourceArraysEqual(p.dataSources ?? [], dataSources)
     );
 
     if (isDuplicate) {
       return {
         success: false,
         reason: "DUPLICATE",
-        message: `A project with name "${name}" and the same selected data sources already exists in this workspace.`,
+        message: `A project with name "${projectName}" and the same selected data sources already exists in this workspace.`,
       };
     }
 
     const projectId = `proj-${uuidv4()}`;
-    const relativeFolderPath = computeProjectRelativePath(ws.name, name);
+    const relativeFolderPath = computeProjectRelativePath(ws.name, projectName);
     const absFolderPath = resolveStoragePath(relativeFolderPath);
     ensureDirectoryExists(absFolderPath);
     ensureDirectoryExists(path.join(absFolderPath, "python_script"));
 
     const newProject: Project = {
       id: projectId,
-      name,
-      role: projectData.role || "OWNER",
+      projectName,
+      useCaseName,
+      role: projectData.role ?? "OWNER",
       dataSources,
-      initials: projectData.initials || "US",
+      initials: projectData.initials ?? "US",
       workspaceId,
       folderPath: relativeFolderPath,
-      useCase: projectData.useCase || "",
-      domain: projectData.domain || "",
-      subDomain: projectData.subDomain || "",
+      useCase: projectData.useCase ?? "",
+      domain: projectData.domain ?? "",
+      subDomain: projectData.subDomain ?? "",
       agentState: {},
       createdAt: new Date().toISOString(),
     };
@@ -160,7 +162,8 @@ export class WorkspaceService {
       // 1. Create project schema YAML
       try {
         await createProjectSchemaFile(ws.name, {
-          name: newProject.name,
+          projectName: newProject.projectName,
+          useCaseName: newProject.useCaseName,
           domain: newProject.domain,
           subDomain: newProject.subDomain,
           useCase: newProject.useCase,
@@ -184,7 +187,7 @@ export class WorkspaceService {
             }
           }
           if (projectSourceInputs.length > 0) {
-            await this.duckDBService.ingestProjectSources(newProject.name, projectSourceInputs, ws.name, relativeFolderPath);
+            await this.duckDBService.ingestProjectSources(newProject.projectName, projectSourceInputs, ws.name, relativeFolderPath);
           }
         } catch (ingestErr: any) {
           console.warn(`[workspaceService] Warning during project DuckDB source ingestion:`, ingestErr?.message || ingestErr);
@@ -203,22 +206,48 @@ export class WorkspaceService {
       return { success: false, reason: "NOT_FOUND", message: "Project not found." };
     }
 
-    const updatedName =
-      typeof updateData.name === "string" && updateData.name.trim()
-        ? updateData.name.trim()
-        : existing.name;
+    const updatedUseCaseName =
+      typeof updateData.useCaseName === "string" && updateData.useCaseName.trim()
+        ? updateData.useCaseName.trim()
+        : existing.useCaseName;
+    const updatedProjectName =
+      typeof updateData.projectName === "string" && updateData.projectName.trim()
+        ? updateData.projectName.trim()
+        : existing.projectName;
     const updatedUseCase =
       updateData.useCase !== undefined ? updateData.useCase : existing.useCase;
+    const updatedDomain =
+      updateData.domain !== undefined ? updateData.domain : existing.domain;
+    const updatedSubDomain =
+      updateData.subDomain !== undefined ? updateData.subDomain : existing.subDomain;
     const updatedSources = Array.isArray(updateData.dataSources)
       ? updateData.dataSources
       : existing.dataSources;
 
     await this.projectRepository.updateProject(pid, {
-      name: updatedName,
+      projectName: updatedProjectName,
+      useCaseName: updatedUseCaseName,
       useCase: updatedUseCase,
+      domain: updatedDomain,
+      subDomain: updatedSubDomain,
       dataSources: updatedSources,
       status: updateData.status,
     });
+
+    const ws = await this.workspaceRepository.getById(existing.workspaceId);
+    if (ws) {
+      try {
+        await createProjectSchemaFile(ws.name, {
+          projectName: updatedProjectName,
+          useCaseName: updatedUseCaseName,
+          domain: updatedDomain,
+          subDomain: updatedSubDomain,
+          useCase: updatedUseCase,
+        });
+      } catch (schemaErr: any) {
+        console.warn(`[workspaceService] Warning updating project schema YAML file:`, schemaErr?.message || schemaErr);
+      }
+    }
 
     let updatedProject: Project | undefined;
 
@@ -264,15 +293,15 @@ export class WorkspaceService {
       try {
         await deleteProjectSchemaFolder(
           projectWithWs.workspaceName,
-          projectWithWs.project.name
+          projectWithWs.project.projectName
         );
       } catch (folderErr: any) {
         console.warn(`[workspaceService] Failed to delete project schema folder for ${pid}:`, folderErr?.message || folderErr);
       }
 
-      if (this.duckDBService && projectWithWs.project.name) {
+      if (this.duckDBService && projectWithWs.project.projectName) {
         try {
-          await this.duckDBService.deleteProjectFolder(projectWithWs.project.name);
+          await this.duckDBService.deleteProjectFolder(projectWithWs.project.projectName);
         } catch (duckDbCleanErr: any) {
           console.warn(`[workspaceService] Failed to delete project DuckDB folder for ${pid}:`, duckDbCleanErr?.message || duckDbCleanErr);
         }

@@ -40,7 +40,8 @@ export interface DataSource {
 
 export interface Project {
   id: string;
-  name: string;
+  projectName: string;
+  useCaseName: string;
   role: "OWNER" | "MEMBER";
   dataSources: string[];
   initials: string;
@@ -78,7 +79,15 @@ interface AppContextType {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   refreshProjects: () => Promise<void>;
-  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string) => Promise<boolean>;
+  addProject: (
+    projectName: string,
+    useCaseName: string,
+    role: "OWNER" | "MEMBER",
+    dataSources: string[],
+    useCase: string,
+    domain?: string,
+    subDomain?: string
+  ) => Promise<boolean>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   dataSources: DataSource[];
@@ -349,7 +358,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ─── Projects ───────────────────────────────────────────────────────────────
-  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string): Promise<boolean> => {
+  const addProject = async (
+    projectName: string,
+    useCaseName: string,
+    role: "OWNER" | "MEMBER",
+    dsSources: string[],
+    useCase: string,
+    domain?: string,
+    subDomain?: string
+  ): Promise<boolean> => {
     const initials = userProfile.name
       .split(" ")
       .map((n) => n[0])
@@ -362,7 +379,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, role, dataSources: dsSources, initials, useCase, domain, subDomain }),
+        body: JSON.stringify({
+          projectName,
+          useCaseName,
+          role,
+          dataSources: dsSources,
+          initials,
+          useCase,
+          domain,
+          subDomain,
+        }),
       });
       if (res.ok) {
         const newProject = await res.json();

@@ -54,12 +54,14 @@ async function runProjectIsolationTest() {
   const mockProjects: Record<string, any> = {
     "proj-ecom": {
       id: "proj-ecom",
-      name: "Ecommerce",
+      projectName: "Ecommerce",
+      useCaseName: "Ecommerce Analytics",
       dataSources: ["conn-ecom"],
     },
     "proj-demand": {
       id: "proj-demand",
-      name: "Demand Forecasting",
+      projectName: "Demand Forecasting",
+      useCaseName: "Demand Forecasting Analytics",
       dataSources: ["conn-demand"],
     },
   };
@@ -69,7 +71,7 @@ async function runProjectIsolationTest() {
   };
 
   const mockProjectRepo: any = {
-    getById: async (id: string) => mockProjects[id] || Object.values(mockProjects).find((p) => p.name === id),
+    getById: async (id: string) => mockProjects[id] || Object.values(mockProjects).find((p) => p.projectName === id),
     getAll: async () => Object.values(mockProjects),
   };
 

@@ -1,0 +1,320 @@
+{
+  "status": "OK",
+  "summary": "Feature validation completed successfully. Audited 35 features: 35 kept, 0 dropped (0 leaky, 0 collinear). 0 features flagged for drift monitoring.",
+  "leakageReport": {
+    "leakyFeatures": [],
+    "leakageFound": false
+  },
+  "multicollinearityReport": {
+    "highVifFeatures": [
+      {
+        "featureName": "thermal_health_score",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "thermal_runaway_risk",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "battery_health_percent",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "pca_thermal_dynamics_comp_1",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "capacity_loss_percent",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "cooling_deficiency_index",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "cell_temperature_max",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "internal_resistance",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "pca_cumulative_degradation_comp_1",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "cell_temperature_avg",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "health_to_age_ratio",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "vehicle_age_years",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "aging_score",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "pca_thermal_dynamics_comp_3",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "pca_cumulative_degradation_comp_2",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "ambient_cell_temp_gap",
+        "vif": 313.56
+      },
+      {
+        "featureName": "cycle_count",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "degradation_rate_per_km",
+        "vif": 152.83
+      },
+      {
+        "featureName": "temp_delta_max_avg",
+        "vif": 2787.2
+      },
+      {
+        "featureName": "pca_thermal_dynamics_comp_2",
+        "vif": 10000.0
+      },
+      {
+        "featureName": "odometer_km",
+        "vif": 10000.0
+      }
+    ],
+    "highCorrelationPairs": []
+  },
+  "driftReport": {
+    "driftedFeatures": []
+  },
+  "importanceRanking": [
+    {
+      "featureName": "thermal_runaway_risk",
+      "importanceScore": 0.109175,
+      "rank": 1
+    },
+    {
+      "featureName": "thermal_health_score",
+      "importanceScore": 0.090019,
+      "rank": 2
+    },
+    {
+      "featureName": "battery_health_percent",
+      "importanceScore": 0.08491,
+      "rank": 3
+    },
+    {
+      "featureName": "capacity_loss_percent",
+      "importanceScore": 0.058769,
+      "rank": 4
+    },
+    {
+      "featureName": "state_of_health",
+      "importanceScore": 0.056018,
+      "rank": 5
+    },
+    {
+      "featureName": "pca_thermal_dynamics_comp_1",
+      "importanceScore": 0.055363,
+      "rank": 6
+    },
+    {
+      "featureName": "cell_temperature_max",
+      "importanceScore": 0.054884,
+      "rank": 7
+    },
+    {
+      "featureName": "previous_faults",
+      "importanceScore": 0.047558,
+      "rank": 8
+    },
+    {
+      "featureName": "cooling_deficiency_index",
+      "importanceScore": 0.042516,
+      "rank": 9
+    },
+    {
+      "featureName": "internal_resistance",
+      "importanceScore": 0.040946,
+      "rank": 10
+    },
+    {
+      "featureName": "bms_alert_density",
+      "importanceScore": 0.038524,
+      "rank": 11
+    },
+    {
+      "featureName": "composite_battery_risk_score",
+      "importanceScore": 0.031807,
+      "rank": 12
+    },
+    {
+      "featureName": "pca_cumulative_degradation_comp_1",
+      "importanceScore": 0.029954,
+      "rank": 13
+    },
+    {
+      "featureName": "cell_temperature_avg",
+      "importanceScore": 0.026964,
+      "rank": 14
+    },
+    {
+      "featureName": "charge_efficiency",
+      "importanceScore": 0.022779,
+      "rank": 15
+    },
+    {
+      "featureName": "BMS_warning_count",
+      "importanceScore": 0.022017,
+      "rank": 16
+    },
+    {
+      "featureName": "battery_stress_index",
+      "importanceScore": 0.021253,
+      "rank": 17
+    },
+    {
+      "featureName": "health_to_age_ratio",
+      "importanceScore": 0.021104,
+      "rank": 18
+    },
+    {
+      "featureName": "discharge_efficiency",
+      "importanceScore": 0.017247,
+      "rank": 19
+    },
+    {
+      "featureName": "vehicle_age_years",
+      "importanceScore": 0.015343,
+      "rank": 20
+    },
+    {
+      "featureName": "aging_score",
+      "importanceScore": 0.010588,
+      "rank": 21
+    },
+    {
+      "featureName": "abnormal_voltage_rate_per_cycle",
+      "importanceScore": 0.009998,
+      "rank": 22
+    },
+    {
+      "featureName": "pca_thermal_dynamics_comp_3",
+      "importanceScore": 0.009023,
+      "rank": 23
+    },
+    {
+      "featureName": "ambient_cell_temp_gap",
+      "importanceScore": 0.008726,
+      "rank": 24
+    },
+    {
+      "featureName": "abnormal_voltage_events",
+      "importanceScore": 0.008697,
+      "rank": 25
+    },
+    {
+      "featureName": "degradation_rate_per_km",
+      "importanceScore": 0.007492,
+      "rank": 26
+    },
+    {
+      "featureName": "manufacturing_year",
+      "importanceScore": 0.007474,
+      "rank": 27
+    },
+    {
+      "featureName": "pca_cumulative_degradation_comp_2",
+      "importanceScore": 0.007378,
+      "rank": 28
+    },
+    {
+      "featureName": "voltage_imbalance",
+      "importanceScore": 0.007029,
+      "rank": 29
+    },
+    {
+      "featureName": "remaining_capacity",
+      "importanceScore": 0.006384,
+      "rank": 30
+    },
+    {
+      "featureName": "cycle_count",
+      "importanceScore": 0.006267,
+      "rank": 31
+    },
+    {
+      "featureName": "temp_delta_max_avg",
+      "importanceScore": 0.006228,
+      "rank": 32
+    },
+    {
+      "featureName": "cooling_system_health",
+      "importanceScore": 0.006136,
+      "rank": 33
+    },
+    {
+      "featureName": "pca_thermal_dynamics_comp_2",
+      "importanceScore": 0.005949,
+      "rank": 34
+    },
+    {
+      "featureName": "odometer_km",
+      "importanceScore": 0.005479,
+      "rank": 35
+    }
+  ],
+  "validatedFeatureSet": {
+    "kept": [
+      "thermal_health_score",
+      "thermal_runaway_risk",
+      "battery_health_percent",
+      "pca_thermal_dynamics_comp_1",
+      "capacity_loss_percent",
+      "state_of_health",
+      "cooling_deficiency_index",
+      "cell_temperature_max",
+      "composite_battery_risk_score",
+      "internal_resistance",
+      "previous_faults",
+      "pca_cumulative_degradation_comp_1",
+      "cell_temperature_avg",
+      "bms_alert_density",
+      "health_to_age_ratio",
+      "battery_stress_index",
+      "charge_efficiency",
+      "BMS_warning_count",
+      "vehicle_age_years",
+      "discharge_efficiency",
+      "aging_score",
+      "pca_thermal_dynamics_comp_3",
+      "manufacturing_year",
+      "pca_cumulative_degradation_comp_2",
+      "abnormal_voltage_rate_per_cycle",
+      "ambient_cell_temp_gap",
+      "cycle_count",
+      "degradation_rate_per_km",
+      "abnormal_voltage_events",
+      "temp_delta_max_avg",
+      "remaining_capacity",
+      "pca_thermal_dynamics_comp_2",
+      "cooling_system_health",
+      "voltage_imbalance",
+      "odometer_km"
+    ],
+    "dropped": [],
+    "totalKept": 35,
+    "totalDropped": 0
+  },
+  "yamlLineage": "\nstage: feature_validation\ninputs:\n  - selected_features.parquet (or extracted_features.parquet / dataset.parquet)\noutputs:\n  - validated_features.parquet\n  - feature_validation_report.json\noperations:\n  - baseline feature importance ranking fit strictly on training split\n  - hard target leakage detection (correlation > 0.90, single-feature AUC > 0.90) and auto-dropping\n  - pairwise multicollinearity pruning (|r| > 0.95) retaining highest-importance feature\n  - variance inflation factor (VIF > 10.0) auditing\n  - distributional drift assessment via Population Stability Index (PSI) and KS-test across splits\n  - validated feature set assembly and schema preservation\n  - atomic JSON report and Parquet dataset persistence\n"
+}

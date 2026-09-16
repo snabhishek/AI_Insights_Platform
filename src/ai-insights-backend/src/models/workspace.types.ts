@@ -10,7 +10,8 @@ export interface CreateWorkspaceDto {
 }
 
 export interface CreateProjectDto {
-  name: string;
+  projectName: string;
+  useCaseName: string;
   role?: "OWNER" | "MEMBER";
   dataSources?: string[];
   initials?: string;
@@ -20,8 +21,11 @@ export interface CreateProjectDto {
 }
 
 export interface UpdateProjectDto {
-  name?: string;
+  projectName?: string;
+  useCaseName?: string;
   useCase?: string;
+  domain?: string;
+  subDomain?: string;
   dataSources?: string[];
   status?: string;
   agentState?: Record<string, unknown>;

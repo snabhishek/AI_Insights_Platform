@@ -11,34 +11,34 @@ import {
 export class PostgresModelSelectionRepository implements IModelSelectionRepository {
   constructor(private db: NodePgDatabase<typeof schema>) {}
 
-  private mapRowToRecord(row: any): ModelSelectionDecisionRecord {
+  private mapRowToRecord(row: typeof schema.modelSelectionDecisions.$inferSelect): ModelSelectionDecisionRecord {
     return {
       id: row.id,
-      projectId: row.projectId || row.project_id,
-      useCase: row.useCase || row.use_case || undefined,
-      status: row.status,
-      datasetVersion: row.datasetVersion || row.dataset_version || undefined,
-      featureSetVersion: row.featureSetVersion || row.feature_set_version || undefined,
-      modelCatalogVersion: row.modelCatalogVersion || row.model_catalog_version || "1.0.0",
-      promptVersion: row.promptVersion || row.prompt_version || "1.0.0",
-      agentVersion: row.agentVersion || row.agent_version || "1.0.0",
-      llmProvider: row.llmProvider || row.llm_provider || undefined,
-      llmModel: row.llmModel || row.llm_model || undefined,
-      executionDurationMs: row.executionDurationMs || row.execution_duration_ms || undefined,
-      candidateCount: row.candidateCount ?? row.candidate_count ?? 0,
-      primaryModelId: row.primaryModelId || row.primary_model_id || "",
-      inputContextSnapshot: row.inputContextSnapshot || row.input_context_snapshot || {},
-      decision: row.decision || {},
-      userSelection: row.userSelection || row.user_selection || undefined,
-      isStale: Boolean(row.isStale ?? row.is_stale),
+      projectId: row.projectId,
+      useCase: row.useCase ?? undefined,
+      status: row.status as any,
+      datasetVersion: row.datasetVersion ?? undefined,
+      featureSetVersion: row.featureSetVersion ?? undefined,
+      modelCatalogVersion: row.modelCatalogVersion,
+      promptVersion: row.promptVersion,
+      agentVersion: row.agentVersion,
+      llmProvider: row.llmProvider ?? undefined,
+      llmModel: row.llmModel ?? undefined,
+      executionDurationMs: row.executionDurationMs ?? undefined,
+      candidateCount: row.candidateCount ?? 0,
+      primaryModelId: row.primaryModelId ?? "",
+      inputContextSnapshot: row.inputContextSnapshot ?? {},
+      decision: row.decision ?? {},
+      userSelection: row.userSelection ?? undefined,
+      isStale: Boolean(row.isStale),
       createdAt:
         row.createdAt instanceof Date
           ? row.createdAt.toISOString()
-          : row.createdAt || row.created_at || new Date().toISOString(),
+          : String(row.createdAt),
       updatedAt:
         row.updatedAt instanceof Date
           ? row.updatedAt.toISOString()
-          : row.updatedAt || row.updated_at || new Date().toISOString(),
+          : String(row.updatedAt),
     };
   }
 
@@ -170,21 +170,21 @@ export class PostgresModelSelectionRepository implements IModelSelectionReposito
 
   async getDynamicModels(): Promise<ModelDefinition[]> {
     const rows = await this.db.select().from(schema.dynamicModelRegistry);
-    return rows.map((r: any) => ({
-      modelId: r.modelId || r.model_id,
-      displayName: r.displayName || r.display_name,
+    return rows.map((r: typeof schema.dynamicModelRegistry.$inferSelect) => ({
+      modelId: r.modelId,
+      displayName: r.displayName,
       algorithm: r.algorithm,
-      framework: (r.framework as any) || "custom",
-      supportedTasks: (r.supportedTasks || r.supported_tasks || []) as any,
+      framework: (r.framework as any) ?? "custom",
+      supportedTasks: (r.supportedTasks ?? []) as any,
       supportedSubTasks: [],
       supportedPredictionTypes: ["value", "point"],
-      capabilities: r.capabilities || [],
-      strengths: r.strengths || [],
-      weaknesses: r.weaknesses || [],
-      isBaseline: Boolean(r.isBaseline || r.is_baseline),
+      capabilities: r.capabilities ?? [],
+      strengths: r.strengths ?? [],
+      weaknesses: r.weaknesses ?? [],
+      isBaseline: Boolean(r.isBaseline),
       isDynamic: true,
-      source: (r.source as any) || "web_search",
-      metadata: r.metadata || {},
+      source: (r.source as any) ?? "web_search",
+      metadata: (r.metadata as Record<string, unknown>) ?? {},
     }));
   }
 }

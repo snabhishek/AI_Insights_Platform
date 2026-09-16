@@ -166,7 +166,7 @@ export class ModelSelectionService implements IModelSelectionService {
         if (pWs && pWs.project) {
           await saveModularTrainingJobContract(
             pWs.workspaceName || "DefaultWorkspace",
-            pWs.project.name,
+            pWs.project.projectName,
             decision,
             inputContext.runTimestamp
           );
@@ -263,7 +263,7 @@ export class ModelSelectionService implements IModelSelectionService {
 
           await saveModularTrainingJobContract(
             pWs.workspaceName || "DefaultWorkspace",
-            pWs.project.name,
+            pWs.project.projectName,
             updatedDecision,
             record.datasetVersion
           );

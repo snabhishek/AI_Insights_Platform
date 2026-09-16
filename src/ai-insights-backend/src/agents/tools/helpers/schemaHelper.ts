@@ -365,7 +365,8 @@ export async function writeResolvedSchemaYaml(
 }
 
 export interface ProjectSchemaInput {
-  name: string;
+  projectName: string;
+  useCaseName?: string;
   domain?: string;
   subDomain?: string;
   useCase?: string;
@@ -384,8 +385,8 @@ export async function createProjectSchemaFile(
 ): Promise<string> {
   const packagesDir = getPackagesDir();
   const projectFilesParent = getProjectFilesParent(packagesDir);
-  const cleanProjectTitle = sanitizeName(projectInput.name);
-  const folderName = resolveProjectFolderName(projectFilesParent, projectInput.name, workspaceName);
+  const cleanProjectTitle = sanitizeName(projectInput.projectName);
+  const folderName = resolveProjectFolderName(projectFilesParent, projectInput.projectName, workspaceName);
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
   const timestamp = generateDateTimeStamp();
   const domainFileName = `${useCaseSlug}_domain_${timestamp}.yaml`;
@@ -423,10 +424,11 @@ export async function createProjectSchemaFile(
   }
 
   const dk = domainObj.DomainKnowledge;
-  dk.Tier1 = projectInput.domain && projectInput.domain.trim().length > 0 ? projectInput.domain.trim() : (dk.Tier1 || "User Provided");
-  dk.Tier2 = projectInput.subDomain && projectInput.subDomain.trim().length > 0 ? projectInput.subDomain.trim() : (dk.Tier2 || "User Provided");
-  dk.UseCase = projectInput.name && projectInput.name.trim().length > 0 ? projectInput.name.trim() : (dk.UseCase || "");
-  dk.UseCaseDescription = projectInput.useCase && projectInput.useCase.trim().length > 0 ? projectInput.useCase.trim() : (dk.UseCaseDescription || "");
+  dk.Tier1 = projectInput.domain?.trim() ? projectInput.domain.trim() : "User Provided";
+  dk.Tier2 = projectInput.subDomain?.trim() ? projectInput.subDomain.trim() : "User Provided";
+  dk.ProjectName = projectInput.projectName?.trim() ? projectInput.projectName.trim() : "User Provided";
+  dk.UseCase = projectInput.useCaseName?.trim() ? projectInput.useCaseName.trim() : "";
+  dk.UseCaseDescription = projectInput.useCase?.trim() ? projectInput.useCase.trim() : "";
   domainObj.generatedAt = new Date().toISOString();
 
   const domainTargetPath = path.resolve(targetDir, domainFileName);
@@ -518,10 +520,11 @@ export async function updateOrCreateProjectSchemaFile(
 
   if (!domainObj.DomainKnowledge) domainObj.DomainKnowledge = {};
   const dk = domainObj.DomainKnowledge;
-  if (projectInput.domain && projectInput.domain.trim().length > 0) dk.Tier1 = projectInput.domain.trim();
-  if (projectInput.subDomain && projectInput.subDomain.trim().length > 0) dk.Tier2 = projectInput.subDomain.trim();
-  if (projectInput.name && projectInput.name.trim().length > 0) dk.UseCase = projectInput.name.trim();
-  if (projectInput.useCase && projectInput.useCase.trim().length > 0) dk.UseCaseDescription = projectInput.useCase.trim();
+  if (projectInput.domain?.trim()) dk.Tier1 = projectInput.domain.trim();
+  if (projectInput.subDomain?.trim()) dk.Tier2 = projectInput.subDomain.trim();
+  if (projectInput.projectName?.trim()) dk.ProjectName = projectInput.projectName.trim();
+  if (projectInput.useCaseName?.trim()) dk.UseCase = projectInput.useCaseName.trim();
+  if (projectInput.useCase?.trim()) dk.UseCaseDescription = projectInput.useCase.trim();
 
   if (payload.domainKnowledge) {
     if (payload.domainKnowledge.tier1) dk.Tier1 = payload.domainKnowledge.tier1;

@@ -85,7 +85,7 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
       if (pWs && pWs.project) {
         await saveModularTrainingJobContract(
           pWs.workspaceName || "DefaultWorkspace",
-          pWs.project.name,
+          pWs.project.projectName,
           decision,
           effectiveRunTimestamp
         );

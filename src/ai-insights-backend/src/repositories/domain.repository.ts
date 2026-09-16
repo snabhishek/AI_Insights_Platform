@@ -1,19 +1,19 @@
-import { query } from "../db";
+import { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { asc } from "drizzle-orm";
 import { IDomainRepository } from "./domain.repository.interface";
 import { DomainModel } from "../models/domain.types";
+import * as schema from "../db/connectors";
 
 export class PostgresDomainRepository implements IDomainRepository {
+  constructor(private db: NodePgDatabase<typeof schema>) {}
+
   async getAllDomains(): Promise<DomainModel[]> {
-    const res = await query("SELECT * FROM domains ORDER BY domain ASC");
-    return res.rows.map((row: any) => ({
+    const rows = await this.db.select().from(schema.domains).orderBy(asc(schema.domains.domain));
+    return rows.map((row: typeof schema.domains.$inferSelect) => ({
       id: row.id,
       domain: row.domain,
-      subDomains: Array.isArray(row.sub_domains)
-        ? row.sub_domains
-        : typeof row.sub_domains === "string"
-        ? JSON.parse(row.sub_domains)
-        : [],
-      createdAt: row.created_at ? new Date(row.created_at).toISOString() : undefined,
+      subDomains: row.subDomains ?? [],
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     }));
   }
 }

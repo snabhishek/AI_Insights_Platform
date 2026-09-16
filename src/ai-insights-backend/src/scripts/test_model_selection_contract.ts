@@ -32,7 +32,8 @@ async function testModelSelectionContractPersistence() {
   // 1. Create project schema files
   console.log("[Step 1] Creating project initial schema file...");
   await createProjectSchemaFile(workspaceName, {
-    name: projectName,
+    projectName,
+    useCaseName: "Forecast store SKU inventory depletion",
     domain: "Retail",
     subDomain: "Inventory",
     useCase: "Forecast store SKU inventory depletion",

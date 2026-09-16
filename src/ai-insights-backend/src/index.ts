@@ -105,7 +105,7 @@ async function bootstrap() {
   aiController = new AIController(ingestionAgentService, agentThinkingService);
 
 
-  const domainRepository = new PostgresDomainRepository();
+  const domainRepository = new PostgresDomainRepository(db);
   const domainService = new DomainService(domainRepository);
   const domainController = new DomainController(domainService);
 

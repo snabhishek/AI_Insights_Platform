@@ -41,9 +41,9 @@ export class ProjectService {
     try {
       const pWs = await this.repository.getProjectWithWorkspace(id);
       if (pWs && pWs.project && pWs.workspaceName) {
-        await deleteProjectSchemaFolder(pWs.workspaceName, pWs.project.name);
+        await deleteProjectSchemaFolder(pWs.workspaceName, pWs.project.projectName);
         if (this.duckDBService) {
-          await this.duckDBService.deleteProjectFolder(pWs.project.name);
+          await this.duckDBService.deleteProjectFolder(pWs.project.projectName);
         }
       }
     } catch (e: any) {

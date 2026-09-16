@@ -59,7 +59,7 @@ function renderDataSourceIcon(type: string): React.ReactNode {
 
 // ─── View states ──────────────────────────────────────────────────────────────
 
-type View = "list" | "detail" | "create";
+type View = "list" | "detail" | "create" | "edit";
 
 // ─── Root Page Component ──────────────────────────────────────────────────────
 
@@ -1186,7 +1186,7 @@ export default function ProjectsPage() {
   const confirmDeleteProject = (project: Project) => {
     showConfirm({
       title: "Delete Project",
-      message: `Are you sure you want to delete the project "${project.name}"? This action cannot be undone.`,
+      message: `Are you sure you want to delete the project "${project.projectName}"? This action cannot be undone.`,
       confirmText: "Delete",
       cancelText: "Cancel",
       onConfirm: () => {
@@ -1203,12 +1203,38 @@ export default function ProjectsPage() {
       <ProjectCreatePage
         dataSources={dataSources}
         onCancel={goToList}
-        onSubmit={async (name, useCase, sources, domain, subDomain) => {
-          const success = await addProject(name, "OWNER", sources, useCase, domain, subDomain);
+        onSubmit={async (projName, ucName, useCase, sources, domain, subDomain) => {
+          const success = await addProject(projName, ucName, "OWNER", sources, useCase, domain, subDomain);
           if (success) {
             goToList();
           }
           return success;
+        }}
+        onAddDataSource={(name, type, subtext, config) =>
+          addDataSource(name, type, subtext, config)
+        }
+      />
+    );
+  }
+
+  if (view === "edit" && selectedProject) {
+    return (
+      <ProjectCreatePage
+        initialProject={selectedProject}
+        mode="edit"
+        dataSources={dataSources}
+        onCancel={() => setView("detail")}
+        onSubmit={async (projName, ucName, useCase, sources, domain, subDomain) => {
+          await updateProject(selectedProject.id, {
+            projectName: projName,
+            useCaseName: ucName,
+            useCase,
+            domain,
+            subDomain,
+            dataSources: sources,
+          });
+          setView("detail");
+          return true;
         }}
         onAddDataSource={(name, type, subtext, config) =>
           addDataSource(name, type, subtext, config)
@@ -1233,9 +1259,7 @@ export default function ProjectsPage() {
         onStopWorkflow={handleStopWorkflow}
         onGoBack={goToList}
         onDelete={() => confirmDeleteProject(selectedProject)}
-        onEdit={() =>
-          showAlert({ title: "Edit Project is being worked separately in the backend", type: "info" })
-        }
+        onEdit={() => setView("edit")}
         onViewHistory={() =>
           showAlert({ title: "Project execution logs are being worked separately in the backend", type: "info" })
         }

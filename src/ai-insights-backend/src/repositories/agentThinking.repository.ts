@@ -8,15 +8,15 @@ import { AgentThinking, ThinkingLog } from "../models/agentThinking.types";
 export class PostgresAgentThinkingRepository implements IAgentThinkingRepository {
   constructor(private db: NodePgDatabase<any>) {}
 
-  private mapRowToAgentThinking(row: any): AgentThinking {
+  private mapRowToAgentThinking(row: typeof agentThinking.$inferSelect): AgentThinking {
     return {
       id: row.id,
-      projectId: row.project_id || row.projectId,
+      projectId: row.projectId,
       pipeline: row.pipeline,
       substep: row.substep,
-      thinking: row.thinking || [],
-      createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
-      updatedAt: row.updated_at instanceof Date ? row.updated_at.toISOString() : (row.updated_at || row.updatedAt),
+      thinking: row.thinking ?? [],
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
+      updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : String(row.updatedAt),
     };
   }
 

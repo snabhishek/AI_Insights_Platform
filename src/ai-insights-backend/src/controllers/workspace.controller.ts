@@ -70,16 +70,20 @@ export class WorkspaceController {
 
   createProject = async (req: Request, res: Response): Promise<void> => {
     const workspaceId = req.params.id as string;
-    const { name, role, dataSources, initials, useCase, domain, subDomain } = req.body;
+    const { projectName, useCaseName, role, dataSources, initials, useCase, domain, subDomain } = req.body;
 
-    if (!name || !name.trim()) {
+    const effectiveProjectName = typeof projectName === "string" ? projectName.trim() : "";
+    const effectiveUseCaseName = typeof useCaseName === "string" ? useCaseName.trim() : "";
+
+    if (!effectiveProjectName) {
       res.status(400).json({ success: false, message: "Project name is required." });
       return;
     }
 
     try {
       const result = await this.workspaceService.createProject(workspaceId, {
-        name,
+        projectName: effectiveProjectName,
+        useCaseName: effectiveUseCaseName,
         role,
         dataSources,
         initials,
@@ -107,12 +111,15 @@ export class WorkspaceController {
 
   updateProject = async (req: Request, res: Response): Promise<void> => {
     const pid = req.params.pid as string;
-    const { name, useCase, dataSources, status, agentState } = req.body;
+    const { projectName, useCaseName, useCase, domain, subDomain, dataSources, status, agentState } = req.body;
 
     try {
       const result = await this.workspaceService.updateProject(pid, {
-        name,
+        projectName,
+        useCaseName,
         useCase,
+        domain,
+        subDomain,
         dataSources,
         status,
         agentState,

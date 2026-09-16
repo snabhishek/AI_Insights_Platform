@@ -11,7 +11,8 @@ export const workspaces = pgTable("workspaces", {
 
 export const projects = pgTable("projects", {
   id: varchar("id", { length: 50 }).primaryKey(),
-  name: varchar("name", { length: 255 }).notNull(),
+  projectName: varchar("project_name", { length: 255 }).notNull(),
+  useCaseName: varchar("usecase_name", { length: 255 }).notNull(),
   role: varchar("role", { length: 50 }).notNull().default("OWNER"),
   dataSources: text("data_sources").array().notNull().default(sql`'{}'::text[]`),
   initials: varchar("initials", { length: 10 }).notNull().default("US"),
@@ -67,6 +68,13 @@ export const projectRuns = pgTable("project_runs", {
   return {
     projectIdIdx: index("project_runs_project_id_idx").on(table.projectId),
   };
+});
+
+export const domains = pgTable("domains", {
+  id: varchar("id", { length: 50 }).primaryKey(),
+  domain: varchar("domain", { length: 255 }).notNull().unique(),
+  subDomains: jsonb("sub_domains").$type<string[]>().notNull().default(sql`'[]'::jsonb`),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 

@@ -173,7 +173,7 @@ export default function ProjectDetailPage({
             Projects
           </button>
           <span className="text-muted-foreground/50">/</span>
-          <span className="text-foreground">{project.name}</span>
+          <span className="text-foreground">{project.projectName}</span>
         </nav>
 
         {/* ── Project Header ── */}
@@ -181,7 +181,7 @@ export default function ProjectDetailPage({
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
-                {project.name}
+                {project.projectName}
               </h1>
               <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
@@ -189,27 +189,31 @@ export default function ProjectDetailPage({
               </span>
             </div>
 
-            {/* Domain & Sub-domain inline pills */}
-            {(project.domain || project.subDomain) && (
-              <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                {project.domain && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary text-white shadow-sm">
-                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-white">
-                      <circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
-                    </svg>
-                    {project.domain}
+            {/* Domain & Sub-domain & Use Case inline pills */}
+            <div className="flex items-center gap-2 flex-wrap mt-1.5">
+              {project.useCaseName && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-surface-muted text-foreground border border-border shadow-xs">
+                  <span className="w-1.5 h-1.5 rounded-full bg-primary shrink-0" />
+                  {project.useCaseName}
+                </span>
+              )}
+              {project.domain && (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary text-white shadow-sm">
+                  <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-white">
+                    <circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
+                  </svg>
+                  {project.domain}
+                </span>
+              )}
+              {project.subDomain && (
+                <>
+                  <span className="text-muted-foreground/40 text-xs select-none">›</span>
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/90 text-white shadow-sm">
+                    {project.subDomain}
                   </span>
-                )}
-                {project.subDomain && (
-                  <>
-                    <span className="text-muted-foreground/40 text-xs select-none">›</span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/90 text-white shadow-sm">
-                      {project.subDomain}
-                    </span>
-                  </>
-                )}
-              </div>
-            )}
+                </>
+              )}
+            </div>
           </div>
 
           {/* Icon action buttons */}
@@ -232,21 +236,6 @@ export default function ProjectDetailPage({
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <polyline points="3 6 5 6 21 6" />
                 <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-              </svg>
-            </button>
-
-            <button
-              onClick={() =>
-                showAlert({
-                  title: "Project actions are being worked separately in the backend",
-                  type: "info",
-                })
-              }
-              title="More Actions"
-              className="w-10 h-10 rounded-full border border-border bg-surface text-muted-foreground hover:text-foreground hover:bg-surface-muted flex items-center justify-center cursor-pointer transition-colors shadow-sm"
-            >
-              <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
               </svg>
             </button>
           </div>

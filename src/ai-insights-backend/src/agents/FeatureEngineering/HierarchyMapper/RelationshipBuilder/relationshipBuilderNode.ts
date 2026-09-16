@@ -100,7 +100,7 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
     try {
       const proj = await services.projectService.getProjectWithWorkspace(services.projectId);
       if (proj && proj.project) {
-        await saveModularRelationshipSchema(proj.workspaceName || "DefaultWorkspace", proj.project.name, finalResult, effectiveRunTimestamp);
+        await saveModularRelationshipSchema(proj.workspaceName || "DefaultWorkspace", proj.project.projectName, finalResult, effectiveRunTimestamp);
       }
     } catch (err) {
       console.warn("[relationshipBuilderNode] Warning saving Relationship Schema to project folder:", err);

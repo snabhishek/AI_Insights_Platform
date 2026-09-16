@@ -1,0 +1,749 @@
+{
+  "imputation": {
+    "numeric_medians": {
+      "manufacturing_year": 2019.0,
+      "battery_capacity_kwh": 87.315,
+      "odometer_km": 154394.09999999998,
+      "vehicle_age_years": 6.245,
+      "cycle_count": 1271.0,
+      "battery_health_percent": 82.32,
+      "state_of_charge": 48.33,
+      "depth_of_discharge": 42.715,
+      "state_of_health": 82.27,
+      "cell_voltage_avg": 3.592,
+      "cell_voltage_std": 0.0071,
+      "pack_voltage": 310.46,
+      "cell_temperature_avg": 26.405,
+      "cell_temperature_max": 39.66,
+      "internal_resistance": 0.421,
+      "charge_efficiency": 96.19,
+      "discharge_efficiency": 95.32,
+      "remaining_capacity": 68.98,
+      "capacity_loss_percent": 16.48,
+      "charging_cycles_last_month": 20.0,
+      "fast_charge_ratio": 0.3,
+      "slow_charge_ratio": 0.54,
+      "average_charge_power_kw": 33.82,
+      "average_charging_time": 164.49,
+      "overnight_charging_ratio": 0.44,
+      "home_charging_ratio": 0.47,
+      "charging_interruptions": 1.0,
+      "overcharge_events": 0.0,
+      "average_speed": 62.42,
+      "average_trip_distance": 70.02000000000001,
+      "aggressive_acceleration_score": 47.845,
+      "hard_braking_score": 48.39,
+      "regenerative_braking_usage": 47.635000000000005,
+      "highway_driving_ratio": 0.48,
+      "city_driving_ratio": 0.48,
+      "daily_distance": 53.93,
+      "average_ambient_temperature": 9.475000000000001,
+      "maximum_temperature": 21.98,
+      "minimum_temperature": 0.0,
+      "humidity": 50.72,
+      "altitude": 1249.025,
+      "dust_exposure": 48.25,
+      "last_service_days": 724.4,
+      "cooling_system_health": 89.235,
+      "firmware_updates": 15.0,
+      "previous_faults": 1.0,
+      "maintenance_score": 64.85,
+      "thermal_runaway_risk": 13.96,
+      "voltage_imbalance": 13.22,
+      "temperature_variance": 28.11,
+      "sensor_fault_count": 0.0,
+      "BMS_warning_count": 1.0,
+      "abnormal_voltage_events": 0.0,
+      "battery_stress_index": 47.504999999999995,
+      "aging_score": 60.495000000000005,
+      "thermal_health_score": 84.68,
+      "charging_quality_score": 87.52,
+      "driving_stress_score": 39.73,
+      "capacity_loss_per_cycle": 0.012987272923583556,
+      "internal_resistance_per_cycle": 0.0003340787518635463,
+      "health_to_age_ratio": 12.353199194037002,
+      "degradation_rate_per_km": 0.00010548533232584378,
+      "temp_delta_max_avg": 13.51,
+      "thermal_stress_ratio": 1.4957239423613076,
+      "ambient_cell_temp_gap": 15.93,
+      "ambient_temp_range": 23.775,
+      "cooling_deficiency_index": 151.3899,
+      "voltage_spread_ratio": 3.853652477867306,
+      "cell_voltage_cv": 0.002093594313482949,
+      "abnormal_voltage_rate_per_cycle": 0.0,
+      "fast_to_slow_charge_ratio": 0.55,
+      "charge_interruption_rate": 0.03333333333333333,
+      "overcharge_risk_factor": 0.0,
+      "high_power_charge_stress": 9.2684,
+      "driving_dynamics_stress": 1636.2195000000002,
+      "composite_battery_risk_score": 7391.64603,
+      "bms_alert_density": 0.001979055014693998,
+      "maintenance_neglect_factor": 11.366217550035081
+    },
+    "categorical_modes": {
+      "cycle_count_bin": "High_Cycles",
+      "battery_health_category": "Moderate_Health",
+      "chemistry_fleet_combo": "NMC_Private",
+      "battery_chemistry": "NMC",
+      "fleet_or_private": "Private",
+      "terrain_type": "Coastal",
+      "vehicle_type": "Hatchback",
+      "drive_type": "AWD"
+    }
+  },
+  "winsorization": {
+    "manufacturing_year": {
+      "q01": 2015.0,
+      "q99": 2024.0
+    },
+    "battery_capacity_kwh": {
+      "q01": 26.3799,
+      "q99": 147.8602
+    },
+    "odometer_km": {
+      "q01": 0.0,
+      "q99": 12.891507036489674
+    },
+    "vehicle_age_years": {
+      "q01": 0.0,
+      "q99": 11.37
+    },
+    "cycle_count": {
+      "q01": 0.0,
+      "q99": 2910.019999999997
+    },
+    "battery_health_percent": {
+      "q01": 0.0,
+      "q99": 98.03009999999999
+    },
+    "state_of_charge": {
+      "q01": 0.0,
+      "q99": 98.99
+    },
+    "depth_of_discharge": {
+      "q01": 0.0,
+      "q99": 81.38009999999998
+    },
+    "state_of_health": {
+      "q01": 0.0,
+      "q99": 98.35
+    },
+    "cell_voltage_avg": {
+      "q01": 0.0,
+      "q99": 3.85
+    },
+    "cell_voltage_std": {
+      "q01": 0.0,
+      "q99": 0.05020099999999984
+    },
+    "pack_voltage": {
+      "q01": 0.0,
+      "q99": 388.0405999999999
+    },
+    "cell_temperature_avg": {
+      "q01": 0.0,
+      "q99": 52.8
+    },
+    "cell_temperature_max": {
+      "q01": 0.0,
+      "q99": 68.38009999999998
+    },
+    "internal_resistance": {
+      "q01": 0.0,
+      "q99": 0.6296747576043717
+    },
+    "charge_efficiency": {
+      "q01": 0.0,
+      "q99": 98.32
+    },
+    "discharge_efficiency": {
+      "q01": 0.0,
+      "q99": 98.08
+    },
+    "remaining_capacity": {
+      "q01": 0.0,
+      "q99": 132.55
+    },
+    "capacity_loss_percent": {
+      "q01": 0.0,
+      "q99": 40.340199999999975
+    },
+    "charging_cycles_last_month": {
+      "q01": 0.0,
+      "q99": 41.0
+    },
+    "fast_charge_ratio": {
+      "q01": 0.0,
+      "q99": 0.78
+    },
+    "slow_charge_ratio": {
+      "q01": 0.0,
+      "q99": 0.9
+    },
+    "average_charge_power_kw": {
+      "q01": 0.0,
+      "q99": 140.46719999999885
+    },
+    "average_charging_time": {
+      "q01": 0.0,
+      "q99": 600.0
+    },
+    "overnight_charging_ratio": {
+      "q01": 0.0,
+      "q99": 0.93
+    },
+    "home_charging_ratio": {
+      "q01": 0.0,
+      "q99": 0.99
+    },
+    "charging_interruptions": {
+      "q01": 0.0,
+      "q99": 1.6094379124341003
+    },
+    "overcharge_events": {
+      "q01": 0.0,
+      "q99": 1.3862943611198906
+    },
+    "average_speed": {
+      "q01": 0.0,
+      "q99": 118.58
+    },
+    "average_trip_distance": {
+      "q01": 0.0,
+      "q99": 142.74009999999998
+    },
+    "aggressive_acceleration_score": {
+      "q01": 0.0,
+      "q99": 98.89
+    },
+    "hard_braking_score": {
+      "q01": 0.0,
+      "q99": 99.05
+    },
+    "regenerative_braking_usage": {
+      "q01": 0.0,
+      "q99": 98.84009999999999
+    },
+    "highway_driving_ratio": {
+      "q01": 0.0,
+      "q99": 0.99
+    },
+    "city_driving_ratio": {
+      "q01": 0.0,
+      "q99": 0.99
+    },
+    "daily_distance": {
+      "q01": 0.0,
+      "q99": 205.3
+    },
+    "average_ambient_temperature": {
+      "q01": -24.27,
+      "q99": 47.22009999999998
+    },
+    "maximum_temperature": {
+      "q01": -15.370099999999999,
+      "q99": 63.00009999999998
+    },
+    "minimum_temperature": {
+      "q01": -40.1501,
+      "q99": 39.76009999999998
+    },
+    "humidity": {
+      "q01": 0.0,
+      "q99": 98.98
+    },
+    "altitude": {
+      "q01": 0.0,
+      "q99": 2591.8902
+    },
+    "dust_exposure": {
+      "q01": 0.0,
+      "q99": 99.0
+    },
+    "last_service_days": {
+      "q01": 0.0,
+      "q99": 7.303508714220812
+    },
+    "cooling_system_health": {
+      "q01": 0.0,
+      "q99": 97.97
+    },
+    "firmware_updates": {
+      "q01": 0.0,
+      "q99": 30.0
+    },
+    "previous_faults": {
+      "q01": 0.0,
+      "q99": 1.6094379124341003
+    },
+    "maintenance_score": {
+      "q01": 0.0,
+      "q99": 100.0
+    },
+    "thermal_runaway_risk": {
+      "q01": 0.0,
+      "q99": 66.96019999999996
+    },
+    "voltage_imbalance": {
+      "q01": 0.0,
+      "q99": 4.25293108893653
+    },
+    "temperature_variance": {
+      "q01": 0.0,
+      "q99": 3.52459425980608
+    },
+    "sensor_fault_count": {
+      "q01": 0.0,
+      "q99": 1.3862943611198906
+    },
+    "BMS_warning_count": {
+      "q01": 0.0,
+      "q99": 1.6094379124341003
+    },
+    "abnormal_voltage_events": {
+      "q01": 0.0,
+      "q99": 1.3862943611198906
+    },
+    "battery_stress_index": {
+      "q01": 0.0,
+      "q99": 74.71009999999998
+    },
+    "aging_score": {
+      "q01": 0.0,
+      "q99": 100.0
+    },
+    "thermal_health_score": {
+      "q01": 0.0,
+      "q99": 100.0
+    },
+    "charging_quality_score": {
+      "q01": 0.0,
+      "q99": 100.0
+    },
+    "driving_stress_score": {
+      "q01": 0.0,
+      "q99": 71.17019999999997
+    },
+    "capacity_loss_per_cycle": {
+      "q01": 0.0,
+      "q99": 3.1751579436695914
+    },
+    "internal_resistance_per_cycle": {
+      "q01": 0.0,
+      "q99": 0.43113935047242913
+    },
+    "health_to_age_ratio": {
+      "q01": 0.0,
+      "q99": 877.4019999999996
+    },
+    "degradation_rate_per_km": {
+      "q01": 0.0,
+      "q99": 3.1983137508984574
+    },
+    "temp_delta_max_avg": {
+      "q01": -35.100100000000005,
+      "q99": 46.72009999999998
+    },
+    "thermal_stress_ratio": {
+      "q01": 0.0,
+      "q99": 4672009.999999997
+    },
+    "ambient_cell_temp_gap": {
+      "q01": -37.200300000000006,
+      "q99": 64.08009999999999
+    },
+    "ambient_temp_range": {
+      "q01": -17.6702,
+      "q99": 39.19009999999998
+    },
+    "cooling_deficiency_index": {
+      "q01": 0.0,
+      "q99": 7.971085753505607
+    },
+    "voltage_spread_ratio": {
+      "q01": 0.0,
+      "q99": 2570049.9999999916
+    },
+    "cell_voltage_cv": {
+      "q01": 0.0,
+      "q99": 1700.099999999984
+    },
+    "abnormal_voltage_rate_per_cycle": {
+      "q01": 0.0,
+      "q99": 0.6931471805599453
+    },
+    "fast_to_slow_charge_ratio": {
+      "q01": 0.0,
+      "q99": 53.0
+    },
+    "charge_interruption_rate": {
+      "q01": 0.0,
+      "q99": 2.0
+    },
+    "overcharge_risk_factor": {
+      "q01": 0.0,
+      "q99": 0.7975071958841881
+    },
+    "high_power_charge_stress": {
+      "q01": 0.0,
+      "q99": 4.119453684644593
+    },
+    "driving_dynamics_stress": {
+      "q01": 0.0,
+      "q99": 9.051488155916761
+    },
+    "composite_battery_risk_score": {
+      "q01": 0.0,
+      "q99": 11.646802741665905
+    },
+    "bms_alert_density": {
+      "q01": 0.0,
+      "q99": 1.6094379124341003
+    },
+    "maintenance_neglect_factor": {
+      "q01": 0.0,
+      "q99": 7.015997824659092
+    }
+  },
+  "skewness": {
+    "skewed_cols": [
+      "odometer_km",
+      "internal_resistance",
+      "abnormal_voltage_events",
+      "charging_interruptions",
+      "overcharge_events",
+      "previous_faults",
+      "sensor_fault_count",
+      "BMS_warning_count",
+      "last_service_days",
+      "capacity_loss_per_cycle",
+      "internal_resistance_per_cycle",
+      "degradation_rate_per_km",
+      "cooling_deficiency_index",
+      "abnormal_voltage_rate_per_cycle",
+      "overcharge_risk_factor",
+      "high_power_charge_stress",
+      "driving_dynamics_stress",
+      "composite_battery_risk_score",
+      "bms_alert_density",
+      "maintenance_neglect_factor",
+      "temperature_variance",
+      "voltage_imbalance"
+    ]
+  },
+  "standardization": {
+    "manufacturing_year": {
+      "mean": 2019.46735,
+      "std": 2.795071483652956
+    },
+    "battery_capacity_kwh": {
+      "mean": 87.132651,
+      "std": 35.18506664631949
+    },
+    "odometer_km": {
+      "mean": 11.421551808951728,
+      "std": 2.4728386588236946
+    },
+    "vehicle_age_years": {
+      "mean": 6.256319,
+      "std": 3.0893172521275982
+    },
+    "cycle_count": {
+      "mean": 1304.2138,
+      "std": 572.681929628643
+    },
+    "battery_health_percent": {
+      "mean": 78.223144,
+      "std": 19.092494892324176
+    },
+    "state_of_charge": {
+      "mean": 48.48039,
+      "std": 29.670414271662146
+    },
+    "depth_of_discharge": {
+      "mean": 42.5544,
+      "std": 18.83200077588043
+    },
+    "state_of_health": {
+      "mean": 77.9579505,
+      "std": 19.589858521755456
+    },
+    "cell_voltage_avg": {
+      "mean": 3.4288009000000006,
+      "std": 0.771427189924401
+    },
+    "cell_voltage_std": {
+      "mean": 0.010376194999999998,
+      "std": 0.010465861051263393
+    },
+    "pack_voltage": {
+      "mean": 303.1499975,
+      "std": 65.7203704323331
+    },
+    "cell_temperature_avg": {
+      "mean": 25.8138745,
+      "std": 11.86705367820504
+    },
+    "cell_temperature_max": {
+      "mean": 38.4256425,
+      "std": 14.472417602489806
+    },
+    "internal_resistance": {
+      "mean": 0.3468942393915361,
+      "std": 0.13748873188959682
+    },
+    "charge_efficiency": {
+      "mean": 91.715841,
+      "std": 20.28135520943252
+    },
+    "discharge_efficiency": {
+      "mean": 92.077572,
+      "std": 17.32831176007169
+    },
+    "remaining_capacity": {
+      "mean": 69.077816,
+      "std": 32.47593072267459
+    },
+    "capacity_loss_percent": {
+      "mean": 17.2288685,
+      "std": 9.534680240127186
+    },
+    "charging_cycles_last_month": {
+      "mean": 20.14435,
+      "std": 12.301836441624959
+    },
+    "fast_charge_ratio": {
+      "mean": 0.3168085,
+      "std": 0.18640087604965705
+    },
+    "slow_charge_ratio": {
+      "mean": 0.5152275000000001,
+      "std": 0.21842997465192665
+    },
+    "average_charge_power_kw": {
+      "mean": 39.603211999999985,
+      "std": 26.496495827297803
+    },
+    "average_charging_time": {
+      "mean": 205.8456055,
+      "std": 153.6468628300176
+    },
+    "overnight_charging_ratio": {
+      "mean": 0.447392,
+      "std": 0.2793463979658639
+    },
+    "home_charging_ratio": {
+      "mean": 0.47571949999999996,
+      "std": 0.3011503891705851
+    },
+    "charging_interruptions": {
+      "mean": 0.5440288374268092,
+      "std": 0.4904346269508497
+    },
+    "overcharge_events": {
+      "mean": 0.3034227856687076,
+      "std": 0.4037201037587548
+    },
+    "average_speed": {
+      "mean": 61.9420245,
+      "std": 34.09822328916821
+    },
+    "average_trip_distance": {
+      "mean": 70.0859245,
+      "std": 42.91501147309513
+    },
+    "aggressive_acceleration_score": {
+      "mean": 48.035917999999995,
+      "std": 29.71189188613288
+    },
+    "hard_braking_score": {
+      "mean": 48.0843625,
+      "std": 30.08622054291502
+    },
+    "regenerative_braking_usage": {
+      "mean": 47.953348000000005,
+      "std": 29.88134415094825
+    },
+    "highway_driving_ratio": {
+      "mean": 0.4842985000000001,
+      "std": 0.2980451802063275
+    },
+    "city_driving_ratio": {
+      "mean": 0.48275599999999996,
+      "std": 0.2981443760453119
+    },
+    "daily_distance": {
+      "mean": 63.932877000000005,
+      "std": 50.09704418311189
+    },
+    "average_ambient_temperature": {
+      "mean": 10.706968,
+      "std": 20.654450086664017
+    },
+    "maximum_temperature": {
+      "mean": 22.7497075,
+      "std": 21.48175650599301
+    },
+    "minimum_temperature": {
+      "mean": -0.2679600000000002,
+      "std": 21.207460386321646
+    },
+    "humidity": {
+      "mean": 50.3667325,
+      "std": 28.8646044964777
+    },
+    "altitude": {
+      "mean": 1253.4082544999999,
+      "std": 783.8296584712547
+    },
+    "dust_exposure": {
+      "mean": 48.374241500000004,
+      "std": 29.755106258289516
+    },
+    "last_service_days": {
+      "mean": 6.139994396781059,
+      "std": 1.4588905816745596
+    },
+    "cooling_system_health": {
+      "mean": 84.4153795,
+      "std": 19.765232010927726
+    },
+    "firmware_updates": {
+      "mean": 14.6079,
+      "std": 9.153258802051587
+    },
+    "previous_faults": {
+      "mean": 0.5094380509058793,
+      "std": 0.48333280749765656
+    },
+    "maintenance_score": {
+      "mean": 63.26491100000001,
+      "std": 22.064810687282417
+    },
+    "thermal_runaway_risk": {
+      "mean": 18.533238,
+      "std": 15.007144710282956
+    },
+    "voltage_imbalance": {
+      "mean": 2.593578141139657,
+      "std": 0.8636966617944515
+    },
+    "temperature_variance": {
+      "mean": 2.6264820064534455,
+      "std": 1.297076905603945
+    },
+    "sensor_fault_count": {
+      "mean": 0.40291348690199014,
+      "std": 0.4477097394092001
+    },
+    "BMS_warning_count": {
+      "mean": 0.6376142922679188,
+      "std": 0.5051644865007208
+    },
+    "abnormal_voltage_events": {
+      "mean": 0.3542326643600392,
+      "std": 0.42754633061248687
+    },
+    "battery_stress_index": {
+      "mean": 45.620870999999994,
+      "std": 15.263365816171113
+    },
+    "aging_score": {
+      "mean": 59.198024,
+      "std": 24.917298815771296
+    },
+    "thermal_health_score": {
+      "mean": 78.09183399999999,
+      "std": 20.632312802083582
+    },
+    "charging_quality_score": {
+      "mean": 84.13374,
+      "std": 18.256254302114034
+    },
+    "driving_stress_score": {
+      "mean": 39.028255,
+      "std": 14.855045731150028
+    },
+    "capacity_loss_per_cycle": {
+      "mean": 0.11244800922232155,
+      "std": 0.5184329284212235
+    },
+    "internal_resistance_per_cycle": {
+      "mean": 0.012581922896001208,
+      "std": 0.06519321336673607
+    },
+    "health_to_age_ratio": {
+      "mean": 45.18016648431699,
+      "std": 149.96053324109357
+    },
+    "degradation_rate_per_km": {
+      "mean": 0.11387850845902892,
+      "std": 0.5562483282950856
+    },
+    "temp_delta_max_avg": {
+      "mean": 12.6336045,
+      "std": 10.910464290044258
+    },
+    "thermal_stress_ratio": {
+      "mean": 138754.5780427694,
+      "std": 730181.4543184888
+    },
+    "ambient_cell_temp_gap": {
+      "mean": 15.113507,
+      "std": 23.690909651002336
+    },
+    "ambient_temp_range": {
+      "mean": 23.0212045,
+      "std": 8.97246488992795
+    },
+    "cooling_deficiency_index": {
+      "mean": 4.805479846507654,
+      "std": 1.6225266771168507
+    },
+    "voltage_spread_ratio": {
+      "mean": 68365.63013424208,
+      "std": 357467.89673090953
+    },
+    "cell_voltage_cv": {
+      "mean": 39.45176442356635,
+      "std": 222.86994402781286
+    },
+    "abnormal_voltage_rate_per_cycle": {
+      "mean": 0.011847672714389086,
+      "std": 0.08797865908287637
+    },
+    "fast_to_slow_charge_ratio": {
+      "mean": 2.4938234270390023,
+      "std": 7.903885796893784
+    },
+    "charge_interruption_rate": {
+      "mean": 0.108119619677817,
+      "std": 0.26446259611421774
+    },
+    "overcharge_risk_factor": {
+      "mean": 0.12016273039326086,
+      "std": 0.1917361979249237
+    },
+    "high_power_charge_stress": {
+      "mean": 2.1886608505542275,
+      "std": 1.0108168607109829
+    },
+    "driving_dynamics_stress": {
+      "mean": 6.63594069592846,
+      "std": 2.381941424363895
+    },
+    "composite_battery_risk_score": {
+      "mean": 8.058393589166226,
+      "std": 3.018568547388755
+    },
+    "bms_alert_density": {
+      "mean": 0.04658354968773874,
+      "std": 0.23923911211765556
+    },
+    "maintenance_neglect_factor": {
+      "mean": 2.453032132445366,
+      "std": 1.2620997626617767
+    }
+  },
+  "categorical_encodings": {}
+}

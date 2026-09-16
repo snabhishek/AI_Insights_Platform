@@ -7,16 +7,12 @@ import * as schema from "../db/connectors";
 export class PostgresWorkspaceRepository implements IWorkspaceRepository {
   constructor(private db: NodePgDatabase<typeof schema>) {}
 
-  private mapRowToWorkspace(row: any): Workspace {
+  private mapRowToWorkspace(row: typeof schema.workspaces.$inferSelect): Workspace {
     return {
       id: row.id,
       name: row.name,
-      isDefault: row.isDefault ?? row.is_default ?? false,
-      createdAt: row.createdAt instanceof Date
-        ? row.createdAt.toISOString()
-        : row.created_at instanceof Date
-        ? row.created_at.toISOString()
-        : String(row.createdAt || row.created_at),
+      isDefault: row.isDefault,
+      createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : String(row.createdAt),
     };
   }
 
