@@ -2,6 +2,12 @@ import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import {
+  getProjectDir,
+  getProjectSchemasDir,
+  getLatestProjectTimestamp,
+  getWorkspacesBasePath,
+} from '../../../config/fileServer.config';
 
 export interface RelationshipDetails {
   relatedField: string;
@@ -167,26 +173,74 @@ export async function loadFieldSchemaYaml(): Promise<string> {
 }
 
 /**
- * Resolves the path of an existing schema file for a project inside packages/projectFiles/<Project>/Schemas/.
+ * Resolves the path of existing schema files for a project inside workspaces/<workspace>/projects/<project>/<timestamp>/schemas/
+ * or legacy packages/projectFiles/<Project>/Schemas/.
  */
 export async function getProjectSchemaDirs(
   workspaceName?: string,
   projectName?: string
 ): Promise<string[]> {
   if (!workspaceName && !projectName) return [];
+  const results: string[] = [];
+
+  // 1. Scan workspaces/<workspace>/projects/<projectName>/<timestamp>/schemas/
+  if (workspaceName && projectName) {
+    const projectDir = getProjectDir(workspaceName, projectName);
+    if (fsSync.existsSync(projectDir)) {
+      try {
+        const entries = await fs.readdir(projectDir, { withFileTypes: true });
+        const timestampDirs = entries
+          .filter((d) => d.isDirectory())
+          .map((d) => d.name)
+          .sort((a, b) => b.localeCompare(a)); // Sort latest first
+
+        for (const ts of timestampDirs) {
+          const schemaDir = path.resolve(projectDir, ts, "schemas");
+          if (fsSync.existsSync(schemaDir) && !results.includes(schemaDir)) {
+            results.push(schemaDir);
+          }
+          const schemaDirUpper = path.resolve(projectDir, ts, "Schemas");
+          if (fsSync.existsSync(schemaDirUpper) && !results.includes(schemaDirUpper)) {
+            results.push(schemaDirUpper);
+          }
+        }
+
+        const directSchemas = path.resolve(projectDir, "schemas");
+        if (fsSync.existsSync(directSchemas) && !results.includes(directSchemas)) {
+          results.push(directSchemas);
+        }
+      } catch (err) {
+        console.warn(`[getProjectSchemaDirs] Warning reading project directory at ${projectDir}:`, err);
+      }
+    }
+  } else if (projectName) {
+    const workspacesBase = getWorkspacesBasePath();
+    if (fsSync.existsSync(workspacesBase)) {
+      try {
+        const wsDirs = fsSync.readdirSync(workspacesBase, { withFileTypes: true }).filter((d) => d.isDirectory());
+        for (const ws of wsDirs) {
+          const cand = getProjectDir(ws.name, projectName);
+          if (fsSync.existsSync(cand)) {
+            const dirs = await getProjectSchemaDirs(ws.name, projectName);
+            for (const d of dirs) {
+              if (!results.includes(d)) results.push(d);
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 2. Legacy fallback to packages/projectFiles/<Project>/Schemas
   const packagesDir = getPackagesDir();
   const projectFilesParent = getProjectFilesParent(packagesDir);
   const cleanWsName = workspaceName ? sanitizeName(workspaceName) : "";
   const cleanProjectTitle = projectName ? sanitizeName(projectName) : "";
 
-  // Check both cleanProjectTitle (projectName) and legacy cleanWsName-cleanProjectTitle
   const candidateFolderNames: string[] = [];
   if (cleanProjectTitle) candidateFolderNames.push(cleanProjectTitle);
   if (cleanWsName && cleanProjectTitle) candidateFolderNames.push(`${cleanWsName}-${cleanProjectTitle}`);
 
-  const results: string[] = [];
-
-  // 1. Scan nested run subfolders inside projectFilesParent/<folderName>/
   for (const parentFolderName of candidateFolderNames) {
     const projectParentDir = path.resolve(projectFilesParent, parentFolderName);
     if (fsSync.existsSync(projectParentDir)) {
@@ -197,45 +251,14 @@ export async function getProjectSchemaDirs(
           const subSchemaDir = path.resolve(projectParentDir, subEntry, "Schemas");
           if (fsSync.existsSync(subSchemaDir) && !results.includes(subSchemaDir)) {
             results.push(subSchemaDir);
-          } else {
-            const directSubDir = path.resolve(projectParentDir, subEntry);
-            if (fsSync.existsSync(directSubDir) && fsSync.statSync(directSubDir).isDirectory() && !results.includes(directSubDir)) {
-              results.push(directSubDir);
-            }
           }
         }
-
-        // Check Schemas directly under main project dir
         const directParentSchemas = path.resolve(projectParentDir, "Schemas");
         if (fsSync.existsSync(directParentSchemas) && !results.includes(directParentSchemas)) {
           results.push(directParentSchemas);
         }
       } catch {}
     }
-  }
-
-  // 2. Scan legacy flat directories matching projectFilesParent/<folderName>_*
-  if (fsSync.existsSync(projectFilesParent)) {
-    try {
-      const entries = await fs.readdir(projectFilesParent);
-      for (const parentFolderName of candidateFolderNames) {
-        const matchingFlat = entries
-          .filter((e) => e.startsWith(`${parentFolderName}_`) || e.toLowerCase().startsWith(`${parentFolderName.toLowerCase()}_`))
-          .sort((a, b) => b.localeCompare(a));
-
-        for (const entry of matchingFlat) {
-          const schemaDir = path.resolve(projectFilesParent, entry, "Schemas");
-          if (fsSync.existsSync(schemaDir) && !results.includes(schemaDir)) {
-            results.push(schemaDir);
-          } else {
-            const directDir = path.resolve(projectFilesParent, entry);
-            if (fsSync.existsSync(directDir) && !results.includes(directDir)) {
-              results.push(directDir);
-            }
-          }
-        }
-      }
-    } catch {}
   }
 
   return results;
@@ -372,41 +395,23 @@ export interface ProjectSchemaInput {
 }
 
 /**
- * Creates the project folder inside packages/projectFiles/<Project>/Schemas
- * and updates the Domain.yaml modular schema with domain knowledge from project creation.
- * The Domain file is named `<usecasetitle>_domain_<timestamp>.yaml`.
- * Remaining modular schema templates (DataIngestion.yaml, FeatureEngineering.yaml) are copied into the folder.
- * Any legacy single schema file (*_schema_*.yaml) is removed.
+ * Creates the initial Domain.yaml modular schema with domain knowledge inside
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/<usecasetitle>_domain_<timestamp>.yaml
  */
 export async function createProjectSchemaFile(
   workspaceName: string,
-  projectInput: ProjectSchemaInput
+  projectInput: ProjectSchemaInput,
+  runTimestamp?: string
 ): Promise<string> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
+  const timestamp = runTimestamp && runTimestamp.trim().length > 0 ? runTimestamp.trim() : generateDateTimeStamp();
   const cleanProjectTitle = sanitizeName(projectInput.name);
-  const folderName = resolveProjectFolderName(projectFilesParent, projectInput.name, workspaceName);
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-  const timestamp = generateDateTimeStamp();
   const domainFileName = `${useCaseSlug}_domain_${timestamp}.yaml`;
 
-  const targetDir = path.resolve(projectFilesParent, folderName, "Schemas");
+  const targetDir = getProjectSchemasDir(workspaceName, projectInput.name, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
-  // Remove any old legacy single schema files (*_schema_*.yaml) inside targetDir
-  try {
-    const existingFiles = await fs.readdir(targetDir);
-    for (const f of existingFiles) {
-      if (f.includes("_schema_") && (f.endsWith(".yaml") || f.endsWith(".yml"))) {
-        await fs.unlink(path.resolve(targetDir, f));
-        console.info(`[createProjectSchemaFile] Removed legacy single schema file: ${f}`);
-      }
-    }
-  } catch (cleanErr) {
-    console.warn(`[createProjectSchemaFile] Warning during cleanup of old single schema files:`, cleanErr);
-  }
-
-  // Load Domain.yaml template from packages/Schemas
+  // Load Domain.yaml template from packages/Schemas or codebase
   const domainTemplatePath = resolvePackageFilePath("Domain.yaml");
   let domainObj: any = {};
   if (fsSync.existsSync(domainTemplatePath)) {
@@ -438,60 +443,27 @@ export async function createProjectSchemaFile(
 }
 
 /**
- * Searches for modular schema files under packages/projectFiles for the given project folder convention.
+ * Searches for modular schema files for the given project.
  * Updates <usecasetitle>_domain_<timestamp>.yaml with domain knowledge and updates modular schemas with resolved mappings.
- * Removes legacy single schema files if present.
  */
 export async function updateOrCreateProjectSchemaFile(
   workspaceName: string,
   projectTitle: string,
   projectInput: ProjectSchemaInput,
-  payload: ResolvedSchemaPayload
+  payload: ResolvedSchemaPayload,
+  runTimestamp?: string
 ): Promise<string> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
-  const cleanWsName = sanitizeName(workspaceName);
   const cleanProjectTitle = sanitizeName(projectTitle);
-  const folderName = resolveProjectFolderName(projectFilesParent, projectTitle, workspaceName);
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
+  const timestamp = resolveProjectRunTimestamp(workspaceName, projectTitle, runTimestamp);
 
-  const candidateDirs = [
-    path.resolve(projectFilesParent, folderName, "Schemas"),
-    path.resolve(projectFilesParent, cleanProjectTitle, "Schemas"),
-    path.resolve(projectFilesParent, `${cleanWsName}-${cleanProjectTitle}`, "Schemas"),
-    path.resolve(packagesDir, folderName, "Schemas"),
-  ];
-
-  let targetDir: string | null = null;
-  for (const cDir of candidateDirs) {
-    if (fsSync.existsSync(cDir)) {
-      targetDir = cDir;
-      break;
-    }
-  }
-
-  if (!targetDir) {
-    targetDir = path.resolve(projectFilesParent, folderName, "Schemas");
-  }
+  const targetDir = getProjectSchemasDir(workspaceName, projectTitle, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
-
-  // Clean up legacy single schema files (*_schema_*.yaml)
-  try {
-    const files = await fs.readdir(targetDir);
-    for (const f of files) {
-      if (f.includes("_schema_") && (f.endsWith(".yaml") || f.endsWith(".yml"))) {
-        await fs.unlink(path.resolve(targetDir, f));
-      }
-    }
-  } catch (e) {
-    // ignore
-  }
 
   // Update or create the domain file
   const filesInDir = await fs.readdir(targetDir);
   let domainFileName = filesInDir.find((f) => f.includes("_domain_") && (f.endsWith(".yaml") || f.endsWith(".yml")));
   if (!domainFileName) {
-    const timestamp = generateDateTimeStamp();
     domainFileName = `${useCaseSlug}_domain_${timestamp}.yaml`;
   }
 
@@ -535,7 +507,7 @@ export async function updateOrCreateProjectSchemaFile(
   console.info(`[updateOrCreateProjectSchemaFile] Updated domain schema file at ${domainFilePath}`);
 
   // Update DataIngestion.yaml with mapped fields
-  const dataIngestionPath = path.resolve(targetDir, "DataIngestion.yaml");
+  const dataIngestionPath = path.resolve(targetDir, `${useCaseSlug}_data_ingestion_${timestamp}.yaml`);
   let dataIngestionObj: any = { version: "1.0", generatedAt: new Date().toISOString(), resolvedTables: payload.resolvedTables || [], fields: {} };
   if (fsSync.existsSync(dataIngestionPath)) {
     try {
@@ -567,6 +539,8 @@ export async function updateOrCreateProjectSchemaFile(
   for (const [topic, fields] of Object.entries(groupedTopics)) {
     dataIngestionObj.fields[topic] = fields;
   }
+
+  await fs.writeFile(dataIngestionPath, yaml.dump(dataIngestionObj, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
   return domainFilePath;
 }
 
@@ -586,6 +560,10 @@ export function getLatestProjectRunTimestamp(
   workspaceName: string,
   projectName: string
 ): string | undefined {
+  const fromConfig = getLatestProjectTimestamp(workspaceName, projectName);
+  if (fromConfig) return fromConfig;
+
+  // Legacy fallback check
   try {
     const packagesDir = getPackagesDir();
     const projectFilesParent = getProjectFilesParent(packagesDir);
@@ -599,7 +577,7 @@ export function getLatestProjectRunTimestamp(
         .sort((a, b) => b.localeCompare(a));
       if (subEntries.length > 0) {
         const latestFolder = subEntries[0];
-        const match = latestFolder.match(/(\d{8}-\d{6})$/);
+        const match = latestFolder.match(/(\d{8}[-_]\d{6})$/);
         if (match) {
           return match[1];
         }
@@ -610,7 +588,7 @@ export function getLatestProjectRunTimestamp(
       }
     }
   } catch (err) {
-    console.warn("[getLatestProjectRunTimestamp] Warning checking latest run folder:", err);
+    console.warn("[getLatestProjectRunTimestamp] Warning checking legacy run folder:", err);
   }
   return undefined;
 }
@@ -637,33 +615,22 @@ export function resolveProjectRunTimestamp(
 }
 
 /**
- * Ensures the project run folder exists inside packages/projectFiles/<Project>/<RunSlug>-<Timestamp>/Schemas/
- * and copies any domain knowledge schema from the parent project directory into the run folder so all schemas are unified.
+ * Ensures the project run folder exists inside workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/
+ * and copies any domain knowledge schema from prior schemas if present so all schemas are unified.
  */
 export async function ensureProjectRunFolder(
   workspaceName: string,
   projectName: string,
   runTimestamp: string
 ): Promise<string> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
-  const cleanWsName = sanitizeName(workspaceName);
-  const cleanProjectTitle = sanitizeName(projectName);
-  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
-  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-  const runFolderName = `${runSlug}-${timestamp}`;
-
-  const runSchemasDir = path.resolve(projectFilesParent, parentFolderName, runFolderName, "Schemas");
+  const runSchemasDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
   await fs.mkdir(runSchemasDir, { recursive: true });
 
-  // Copy domain YAML from parent project schemas if exists
-  const candidateParentSchemas = [
-    path.resolve(projectFilesParent, parentFolderName, "Schemas"),
-    path.resolve(projectFilesParent, cleanProjectTitle, "Schemas"),
-    path.resolve(projectFilesParent, `${cleanWsName}-${cleanProjectTitle}`, "Schemas"),
-  ];
-  for (const parentSchemasDir of candidateParentSchemas) {
+  // Copy domain YAML from prior existing schemas if exists
+  const candidateDirs = await getProjectSchemaDirs(workspaceName, projectName);
+  for (const parentSchemasDir of candidateDirs) {
+    if (path.resolve(parentSchemasDir) === path.resolve(runSchemasDir)) continue;
     if (fsSync.existsSync(parentSchemasDir)) {
       try {
         const files = await fs.readdir(parentSchemasDir);
@@ -673,7 +640,7 @@ export async function ensureProjectRunFolder(
             const destFile = path.resolve(runSchemasDir, file);
             if (!fsSync.existsSync(destFile)) {
               await fs.copyFile(srcFile, destFile);
-              console.info(`[ensureProjectRunFolder] Copied domain schema ${file} into run folder ${runFolderName}`);
+              console.info(`[ensureProjectRunFolder] Copied domain schema ${file} into run folder ${timestamp}`);
             }
           }
         }
@@ -688,7 +655,7 @@ export async function ensureProjectRunFolder(
 
 /**
  * Saves resolved Schema Resolver output into modular Data Ingestion YAML file inside
- * packages/projectFiles/<Project>/Schemas/:
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
  * <usecasetitle>_data_ingestion_<timestamp>.yaml
  */
 export async function saveModularResolvedSchemas(
@@ -697,20 +664,13 @@ export async function saveModularResolvedSchemas(
   payload: ModularSchemaPayload,
   runTimestamp?: string
 ): Promise<{ dataIngestionPath: string }> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
   const cleanProjectTitle = sanitizeName(projectName);
-  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
-  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-
   const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-  const runFolderName = `${runSlug}-${timestamp}`;
 
-  const targetDir = path.resolve(projectFilesParent, parentFolderName, runFolderName, "Schemas");
+  const targetDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
-  // Data Ingestion Schema: <usecasetitle>_data_ingestion_<timestamp>.yaml
   const dataIngestionFileName = `${useCaseSlug}_data_ingestion_${timestamp}.yaml`;
   const dataIngestionPath = path.resolve(targetDir, dataIngestionFileName);
 
@@ -728,7 +688,7 @@ export async function saveModularResolvedSchemas(
 
 /**
  * Saves resolved Relationship Schema output into modular Relationship Schema YAML file inside
- * packages/projectFiles/<Project>/Schemas/:
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
  * <usecasetitle>_relationship_schema_<timestamp>.yaml
  */
 export async function saveModularRelationshipSchema(
@@ -737,17 +697,11 @@ export async function saveModularRelationshipSchema(
   relationshipSchemaPayload: any,
   runTimestamp?: string
 ): Promise<{ relationshipSchemaPath: string }> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
   const cleanProjectTitle = sanitizeName(projectName);
-  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
-  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-
   const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-  const runFolderName = `${runSlug}-${timestamp}`;
 
-  const targetDir = path.resolve(projectFilesParent, parentFolderName, runFolderName, "Schemas");
+  const targetDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
   const relationshipFileName = `${useCaseSlug}_relationship_schema_${timestamp}.yaml`;
@@ -761,7 +715,7 @@ export async function saveModularRelationshipSchema(
 
 /**
  * Saves resolved Form Schema output into modular Form Schema YAML file inside
- * packages/projectFiles/<Project>/<RunFolder>/Schemas/:
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
  * <usecasetitle>_form_schema_<timestamp>.yaml
  */
 export async function saveModularFormSchema(
@@ -770,17 +724,11 @@ export async function saveModularFormSchema(
   formSchemaPayload: any,
   runTimestamp?: string
 ): Promise<{ formSchemaPath: string }> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
   const cleanProjectTitle = sanitizeName(projectName);
-  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
-  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-
   const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-  const runFolderName = `${runSlug}-${timestamp}`;
 
-  const targetDir = path.resolve(projectFilesParent, parentFolderName, runFolderName, "Schemas");
+  const targetDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
   const formFileName = `${useCaseSlug}_form_schema_${timestamp}.yaml`;
@@ -794,12 +742,8 @@ export async function saveModularFormSchema(
 
 /**
  * Saves or updates the modular Training Job Contract YAML file inside
- * packages/projectFiles/<Project>/<RunFolder>/Schemas/:
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
  * <usecasetitle>_training_job_contract_<timestamp>.yaml
- *
- * Copies the TrainingJobContract.yaml template from packages/Schemas,
- * and updates ONLY the model_selection section from the agent response,
- * keeping all other sections untouched.
  */
 export async function saveModularTrainingJobContract(
   workspaceName: string,
@@ -807,17 +751,11 @@ export async function saveModularTrainingJobContract(
   modelSelectionPayload: any,
   runTimestamp?: string
 ): Promise<{ trainingJobContractPath: string }> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
   const cleanProjectTitle = sanitizeName(projectName);
-  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
-  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-
   const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-  const runFolderName = `${runSlug}-${timestamp}`;
 
-  const targetDir = path.resolve(projectFilesParent, parentFolderName, runFolderName, "Schemas");
+  const targetDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
   const contractFileName = `${useCaseSlug}_training_job_contract_${timestamp}.yaml`;
@@ -991,18 +929,6 @@ export async function saveModularTrainingJobContract(
   await fs.writeFile(contractPath, updatedYaml, "utf-8");
   console.info(`[saveModularTrainingJobContract] Saved Training Job Contract schema to ${contractPath}`);
 
-  // Also copy to parent Schemas dir if it exists
-  const parentSchemasDir = path.resolve(projectFilesParent, parentFolderName, "Schemas");
-  if (fsSync.existsSync(parentSchemasDir)) {
-    try {
-      const parentContractPath = path.resolve(parentSchemasDir, contractFileName);
-      await fs.writeFile(parentContractPath, updatedYaml, "utf-8");
-      console.info(`[saveModularTrainingJobContract] Also copied Training Job Contract to parent Schemas dir: ${parentContractPath}`);
-    } catch (parentErr) {
-      console.warn(`[saveModularTrainingJobContract] Warning writing to parent schemas dir:`, parentErr);
-    }
-  }
-
   return { trainingJobContractPath: contractPath };
 }
 
@@ -1055,11 +981,21 @@ export async function deleteProjectSchemaFolder(
     ];
 
     let deletedAny = false;
+    if (workspaceName && projectName) {
+      const projectDir = getProjectDir(workspaceName, projectName);
+      if (fsSync.existsSync(projectDir)) {
+        await fs.rm(projectDir, { recursive: true, force: true });
+        console.info(`[deleteProjectSchemaFolder] Deleted project directory at ${projectDir}`);
+        deletedAny = true;
+      }
+    }
+
+    let deletedAnyLegacy = false;
     for (const dir of candidateDirs) {
       if (fsSync.existsSync(dir)) {
         await fs.rm(dir, { recursive: true, force: true });
-        console.info(`[deleteProjectSchemaFolder] Deleted project folder at ${dir}`);
-        deletedAny = true;
+        console.info(`[deleteProjectSchemaFolder] Deleted legacy project folder at ${dir}`);
+        deletedAnyLegacy = true;
       }
     }
 

@@ -4,7 +4,12 @@ import path from "path";
 import { exec } from "child_process";
 import { IngestionServices } from "../../state";
 import { getPythonScriptDirectory } from "../filesystem/mcpFilesystemClient";
-import { getDatasourcesBasePath } from "../../../config/fileServer.config";
+import {
+  getDatasourcesBasePath,
+  getProjectDir,
+  getProjectPythonScriptDir,
+  resolveProjectEffectiveTimestamp,
+} from "../../../config/fileServer.config";
 
 export interface ExecutionResult {
   success: boolean;
@@ -239,19 +244,43 @@ export async function executePythonScript(
   services: IngestionServices,
   connectorIdList?: string[]
 ): Promise<ExecutionResult> {
-  const baseDir = getPythonScriptDirectory(projectId, runTimestamp);
+  let workspaceName = "Default_Workspace";
+  let projectName = projectId || "default";
+
+  if (services?.projectService && projectId) {
+    try {
+      const pWs = await services.projectService.getProjectWithWorkspace(projectId);
+      if (pWs) {
+        workspaceName = pWs.workspaceName || workspaceName;
+        projectName = pWs.project.name || projectName;
+      }
+    } catch {}
+  }
+
+  const effectiveTimestamp = resolveProjectEffectiveTimestamp(workspaceName, projectName, runTimestamp) || runTimestamp || "default";
+  const baseDir = getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
   if (!fs.existsSync(baseDir)) {
     fs.mkdirSync(baseDir, { recursive: true });
   }
 
-  const scriptPath = path.join(baseDir, scriptName);
+  // Format script filename with effective timestamp if not already present
+  let effectiveScriptName = scriptName;
+  const ext = path.extname(scriptName) || ".py";
+  const baseName = path.basename(scriptName, ext);
+  if (!baseName.includes(effectiveTimestamp) && effectiveTimestamp !== "default") {
+    effectiveScriptName = `${baseName}_${effectiveTimestamp}${ext}`;
+  }
+
+  const scriptPath = path.join(baseDir, effectiveScriptName);
   fs.writeFileSync(scriptPath, code, "utf-8");
 
-  const datasourcesDir = getDatasourcesBasePath();
+  const datasourcesDir = getDatasourcesBasePath(workspaceName);
   if (!fs.existsSync(datasourcesDir)) {
     fs.mkdirSync(datasourcesDir, { recursive: true });
   }
 
+  const projectRootDir = getProjectDir(workspaceName, projectName);
+  const normProjectDir = path.resolve(projectRootDir).replace(/\\/g, "/");
   const normRunDir = path.resolve(baseDir).replace(/\\/g, "/");
   const normDatasourcesDir = path.resolve(datasourcesDir).replace(/\\/g, "/");
 
@@ -296,7 +325,7 @@ export async function executePythonScript(
     };
   }
 
-  const sessionKey = `${projectId || "default"}__${runTimestamp || "default"}`;
+  const sessionKey = `${projectId || "default"}__${effectiveTimestamp}`;
   let session = activeRunContainers.get(sessionKey);
 
   // Check if existing session container is still alive and running
@@ -323,7 +352,7 @@ export async function executePythonScript(
     const safeProj = (projectId || "default").replace(/[^a-zA-Z0-9_-]/g, "_");
     const containerName = `ai-insights-exec-${safeProj}-${Date.now().toString(36)}`;
 
-    console.info(`[DockerExecutor] Creating container session [${containerName}] for run [${runTimestamp}]`);
+    console.info(`[DockerExecutor] Creating container session [${containerName}] for run [${effectiveTimestamp}]`);
     const container = (await docker.createContainer({
       name: containerName,
       Image: imageName,
@@ -332,7 +361,7 @@ export async function executePythonScript(
       HostConfig: {
         Binds: [
           `${normRunDir}:/workspace`,
-          `${normRunDir}:/workspace/duckdb`,
+          `${normProjectDir}:/workspace/duckdb`,
           `${normDatasourcesDir}:/workspace/datasources`,
           `${normDatasourcesDir}:/workspace/uploads`,
         ],
@@ -347,20 +376,20 @@ export async function executePythonScript(
       container,
       name: containerName,
       projectId: projectId || "default",
-      runTimestamp: runTimestamp || "default",
+      runTimestamp: effectiveTimestamp,
       installedPackages: new Set<string>(),
       createdAt: Date.now(),
     };
     activeRunContainers.set(sessionKey, session);
   } else {
-    console.info(`[DockerExecutor] Reusing existing container session [${session.name}] for run [${runTimestamp}]`);
+    console.info(`[DockerExecutor] Reusing existing container session [${session.name}] for run [${effectiveTimestamp}]`);
   }
 
   // Detect and install required packages that haven't been installed yet
   const requiredPackages = parseRequiredPackages(code);
   const packagesToInstall = requiredPackages.filter((pkg) => !session!.installedPackages.has(pkg));
 
-  let scriptExecCmd = `python "${scriptName}" ${args.join(" ")}`;
+  let scriptExecCmd = `python "${effectiveScriptName}" ${args.join(" ")}`;
   if (packagesToInstall.length > 0) {
     const pipFlags = "--no-cache-dir --disable-pip-version-check --root-user-action=ignore";
     scriptExecCmd = `pip install ${pipFlags} ${packagesToInstall.join(" ")} && ${scriptExecCmd}`;

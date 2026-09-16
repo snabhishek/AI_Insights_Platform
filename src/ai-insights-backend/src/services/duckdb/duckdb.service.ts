@@ -9,6 +9,7 @@ import {
   computeProjectRelativePath,
   ensureDirectoryExists,
   getFileServerBasePath,
+  getProjectDir,
   getWorkspacesBasePath,
   resolveStoragePath,
 } from "../../config/fileServer.config";
@@ -31,6 +32,7 @@ export class DuckDBService implements IDuckDBService {
   private openingPromises = new Map<string, Promise<any>>();
   private ingestionPromises = new Map<string, Promise<string>>();
   private static readonly IDLE_TIMEOUT_MS = 5_000;
+  private dbPool: Map<string, any> = new Map();
 
   private schemaCache: {
     timestamp: number;
@@ -40,13 +42,13 @@ export class DuckDBService implements IDuckDBService {
   private static readonly SCHEMA_CACHE_TTL_MS = 30_000;
 
   constructor(private fileService: IFileService) {
-    this.dbStorageDir = getWorkspacesBasePath();
+    this.dbStorageDir = getFileServerBasePath();
     ensureDirectoryExists(this.dbStorageDir);
   }
 
   // ─── path and identifier helpers ───────────────────────────────────
 
-  private sanitizeFileName(fileName: string): string {
+  public sanitizeFileName(fileName: string): string {
     return fileName.replace(/[^a-zA-Z0-9_-]/g, "_");
   }
 
@@ -60,15 +62,20 @@ export class DuckDBService implements IDuckDBService {
   }
 
   /**
-   * Resolves project directory path inside workspaces or relative folder path.
+   * Resolves project directory path inside workspaces or relative folder path on demand.
    */
   public getProjectPath(projectName: string, workspaceName?: string, folderPath?: string): string {
+    if (workspaceName && projectName) {
+      const dir = getProjectDir(workspaceName, projectName);
+      ensureDirectoryExists(dir);
+      return dir;
+    }
     if (folderPath) {
       const abs = resolveStoragePath(folderPath);
       ensureDirectoryExists(abs);
       return abs;
     }
-    const safeProject = this.sanitizeFileName(projectName);
+    const safeProject = this.sanitizeFileName(projectName || "default_project");
 
     // 1. Search existing projects under workspaces/
     const workspacesBase = getWorkspacesBasePath();
@@ -82,12 +89,8 @@ export class DuckDBService implements IDuckDBService {
       } catch {}
     }
 
-    // 2. Check legacy Projects/<safeProject>
-    const legacyProj = path.join(process.cwd(), "Projects", safeProject);
-    if (fs.existsSync(legacyProj)) return legacyProj;
-
-    // 3. Construct standard path under requested or default workspace
-    const relative = computeProjectRelativePath(workspaceName || "Default_Workspace", projectName);
+    // 2. Construct standard path under requested or default workspace
+    const relative = computeProjectRelativePath(workspaceName || "Default_Workspace", projectName || "default_project");
     const resolved = resolveStoragePath(relative);
     ensureDirectoryExists(resolved);
     return resolved;

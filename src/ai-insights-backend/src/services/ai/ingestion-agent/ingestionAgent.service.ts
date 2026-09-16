@@ -15,7 +15,7 @@ import { WorkflowSessionMeta } from "../../../agents/state";
 import { IAgentThinkingService } from "../agent-thinking/agentThinking.service.interface";
 import { QueueService } from "../../queue/queue.service";
 import { agentJobEvents } from "../../queue/queueEvents";
-import { generateDateTimeStamp, ensureProjectRunFolder, getLatestProjectRunTimestamp } from "../../../agents/tools/helpers";
+import { generateDateTimeStamp, ensureProjectRunFolder, getLatestProjectRunTimestamp, createProjectSchemaFile } from "../../../agents/tools/helpers";
 import { registerProjectMetadata } from "../../../agents/tools/filesystem/mcpFilesystemClient";
 
 const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
@@ -314,6 +314,16 @@ export class IngestionAgentService implements IIngestionAgentService {
       if (pWs && pWs.project && pWs.workspaceName) {
         try {
           await ensureProjectRunFolder(pWs.workspaceName, pWs.project.name, activeRunTimestamp);
+          await createProjectSchemaFile(
+            pWs.workspaceName,
+            {
+              name: pWs.project.name,
+              domain: pWs.project.domain,
+              subDomain: pWs.project.subDomain,
+              useCase: pWs.project.useCase,
+            },
+            activeRunTimestamp
+          );
         } catch (folderErr) {
           console.warn("[Workflow] Warning ensuring project run folder:", folderErr);
         }
