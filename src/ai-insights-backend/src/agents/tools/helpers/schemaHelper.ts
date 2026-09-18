@@ -923,22 +923,21 @@ export async function saveModularTrainingJobContract(
   }
 
   let mergedModels: any[] = [];
-  const modelMap = new Map<string, any>();
-  for (const m of (existingModelSel.models || [])) {
-    if (m.model_id) modelMap.set(m.model_id, { ...m });
-  }
-  for (const m of (incomingModelSel.models || [])) {
-    if (m.model_id) {
-      const prev = modelMap.get(m.model_id) || {};
-      modelMap.set(m.model_id, {
+  if (Array.isArray(incomingModelSel.models)) {
+    const existingModelMap = new Map<string, any>();
+    for (const m of (existingModelSel.models || [])) {
+      if (m.model_id) existingModelMap.set(m.model_id, m);
+    }
+    mergedModels = incomingModelSel.models.map((m: any) => {
+      const prev = existingModelMap.get(m.model_id) || {};
+      return {
         ...prev,
         ...m,
         ...(m.training_steps ? { training_steps: m.training_steps } : (prev.training_steps ? { training_steps: prev.training_steps } : {})),
-      });
-    }
-  }
-  if (modelMap.size > 0) {
-    mergedModels = Array.from(modelMap.values());
+      };
+    });
+  } else if (Array.isArray(existingModelSel.models) && existingModelSel.models.length > 0) {
+    mergedModels = existingModelSel.models;
   }
 
   const modelSelectionData: Record<string, any> = {

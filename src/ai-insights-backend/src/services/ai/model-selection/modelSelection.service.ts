@@ -295,23 +295,28 @@ export class ModelSelectionService implements IModelSelectionService {
         // Update Training Job Contract schema with user-selected models
         const pWs = await this.projectService.getProjectWithWorkspace(record.projectId);
         if (pWs && pWs.project) {
+          const selectedCandidates = (record.decision.candidates || []).filter((c) =>
+            selectedModelIds.some((s) => s.toLowerCase().trim() === c.model_id.toLowerCase().trim())
+          );
           const updatedDecision = {
             ...record.decision,
-            models: (record.decision.candidates || []).map((c) => ({
+            models: selectedCandidates.map((c) => ({
               model_id: c.model_id,
               framework: c.framework || "custom",
               algorithm: c.algorithm || c.displayName || c.model_id,
-              enabled: selectedModelIds.some((s) => s.toLowerCase().trim() === c.model_id.toLowerCase().trim()),
+              enabled: true,
               parameters: {},
             })),
           };
 
+          const effectiveTimestamp = existingState.runTimestamp || record.datasetVersion;
           await saveModularTrainingJobContract(
             pWs.workspaceName || "DefaultWorkspace",
             pWs.project.name,
             updatedDecision,
-            record.datasetVersion
+            effectiveTimestamp
           );
+          console.info(`[ModelSelectionService] Updated Training Job Contract schema with ${selectedCandidates.length} selected models for project ${record.projectId}`);
         }
       } catch (e: any) {
         console.warn(`[ModelSelectionService] Training handoff state update or contract save failed for project ${record.projectId}:`, e?.message || e);
@@ -319,5 +324,74 @@ export class ModelSelectionService implements IModelSelectionService {
     }
 
     return updatedRecord || record;
+  }
+
+  public async recordUserSelectionByProject(
+    projectId: string,
+    selectedModelIds: string[]
+  ): Promise<ModelSelectionDecisionRecord | { success: boolean; selectedModelIds: string[] }> {
+    const record = await this.repository.getLatestByProjectId(projectId);
+    if (record) {
+      return this.recordUserSelection(record.id, selectedModelIds);
+    }
+
+    // Fallback if decision record not directly in repository but project exists in DB
+    const project = await this.projectService.getById(projectId);
+    if (!project) {
+      throw new Error(`Project "${projectId}" not found`);
+    }
+
+    const existingState = (project.agentState as any) || {};
+    const modelSelection = existingState.stageOutputs?.modelSelection || existingState.modelSelection || {};
+    const candidates = modelSelection.candidates || [];
+    const selectedCandidates = candidates.filter((c: any) =>
+      selectedModelIds.some((s) => s.toLowerCase().trim() === (c.model_id || "").toLowerCase().trim())
+    );
+
+    const trainingConfigPayload = {
+      ...(existingState.trainingConfiguration || {}),
+      status: "Pending",
+      models: selectedModelIds,
+      candidate_models: selectedModelIds,
+      selectedByUserAt: new Date().toISOString(),
+    };
+
+    const updatedState = {
+      ...existingState,
+      trainingConfiguration: trainingConfigPayload,
+      stageOutputs: {
+        ...(existingState.stageOutputs || {}),
+        trainingConfiguration: trainingConfigPayload,
+      },
+      stageStatuses: {
+        ...(existingState.stageStatuses || {}),
+        trainingConfiguration: "Pending",
+      },
+    };
+
+    await this.projectService.updateAgentState(projectId, updatedState);
+
+    const pWs = await this.projectService.getProjectWithWorkspace(projectId);
+    if (pWs && pWs.project) {
+      const updatedDecision = {
+        ...modelSelection,
+        models: selectedCandidates.map((c: any) => ({
+          model_id: c.model_id,
+          framework: c.framework || "custom",
+          algorithm: c.algorithm || c.displayName || c.model_id,
+          enabled: true,
+          parameters: {},
+        })),
+      };
+
+      await saveModularTrainingJobContract(
+        pWs.workspaceName || "DefaultWorkspace",
+        pWs.project.name,
+        updatedDecision,
+        existingState.runTimestamp
+      );
+    }
+
+    return { success: true, selectedModelIds };
   }
 }

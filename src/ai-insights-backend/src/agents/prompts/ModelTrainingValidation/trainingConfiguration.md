@@ -265,12 +265,12 @@ Return this when you have sufficient information and have researched the trainin
     "prediction_timestamp": "<Identify the point in time at which the information available for making the prediction should be considered valid.>"
   },
   "upstream_artifacts": {
-    "dataset_id": "<Write the identifier of the finalized dataset that will be used for training. Get it from the directory>",
+    "dataset_path": "<Write the identifier of the finalized dataset that will be used for training. Get it from the directory>",
     "dataset_version": "<Write the version of the finalized dataset used for this training job. Get it from the directory>",
-    "feature_set_id": "<Write the identifier of the finalized feature set used for training. Get it from the directory>",
+    "feature_set_path": "<Write the identifier of the finalized feature set used for training. Get it from the directory>",
     "feature_set_version": "<Write the version of the finalized feature set used for this training job. Get it from the directory>",
-    "profiling_report_id": "<Write the identifier of the profiling information used when making training decisions. Get it from the directory>",
-    "relationship_schema_id": "<Write the identifier of the finalized relationship information used to understand relationships between the training data entities, when applicable. Get it from the directory>",
+    "profiling_report_path": "<Write the identifier of the profiling information used when making training decisions. Get it from the directory>",
+    "relationship_schema_path": "<Write the identifier of the finalized relationship information used to understand relationships between the training data entities, when applicable. Get it from the directory>",
     "row_count": "<Write the number of records available in the finalized training dataset.>",
     "column_count": "<Write the number of columns available in the finalized training dataset.>"
   },

@@ -44,6 +44,9 @@ import { ModelSelectionLLMService } from "./services/ai/model-selection/modelSel
 import { ModelSelectionService } from "./services/ai/model-selection/modelSelection.service";
 import { ModelSelectionController } from "./controllers/modelSelection.controller";
 import createModelSelectionRouter from "./routes/modelSelection";
+import { TrainingConfigService } from "./services/ai/training-config/trainingConfig.service";
+import { TrainingConfigController } from "./controllers/trainingConfig.controller";
+import createTrainingConfigRouter from "./routes/trainingConfig";
 
 
 dotenv.config();
@@ -122,12 +125,15 @@ async function bootstrap() {
     modelDiscoveryService
   );
   const modelSelectionController = new ModelSelectionController(modelSelectionService);
+  const trainingConfigService = new TrainingConfigService(projectService);
+  const trainingConfigController = new TrainingConfigController(trainingConfigService);
 
   // 4. Mount Main routers
   app.get("/api/filter-options", connectorController.getFilterOptions);
   app.use("/api/connectors", createConnectorRouter(connectorController));
   app.use("/api/domains", createDomainRouter(domainController));
   app.use("/api/model-selection", createModelSelectionRouter(modelSelectionController));
+  app.use("/api/training-config", createTrainingConfigRouter(trainingConfigController));
 
   // Agent Router
   const agentRouter = express.Router();

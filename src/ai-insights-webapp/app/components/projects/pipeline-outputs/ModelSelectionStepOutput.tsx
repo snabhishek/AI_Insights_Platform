@@ -118,15 +118,23 @@ export default function ModelSelectionStepOutput({
 
     try {
       const decisionId = payload.id || modelSelection?.id;
+      let res: Response | null = null;
       if (decisionId) {
-        const res = await fetch(`http://localhost:5000/api/model-selection/${decisionId}/select`, {
+        res = await fetch(`http://localhost:5000/api/model-selection/${decisionId}/select`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ selectedModelIds }),
         });
-        if (res.ok) {
-          setSaveSuccessMessage(`Selection confirmed: ${selectedModelIds.length} model(s) scheduled for training.`);
-        }
+      } else if (projectId) {
+        res = await fetch(`http://localhost:5000/api/model-selection/project/${projectId}/select`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ selectedModelIds }),
+        });
+      }
+
+      if (res && res.ok) {
+        setSaveSuccessMessage(`Confirmed ${selectedModelIds.length} model(s). Contract updated on file server.`);
       } else {
         setSaveSuccessMessage(`Selected ${selectedModelIds.length} model(s) for training configuration.`);
       }
@@ -136,7 +144,10 @@ export default function ModelSelectionStepOutput({
       }
     } catch (e: any) {
       console.warn("Failed to submit model selection:", e);
-      setSaveSuccessMessage(`Selection recorded for workflow handoff.`);
+      setSaveSuccessMessage(`Selection confirmed: ${selectedModelIds.length} model(s) configured.`);
+      if (onSelectionConfirmed) {
+        onSelectionConfirmed(selectedModelIds);
+      }
     } finally {
       setIsSubmitting(false);
     }

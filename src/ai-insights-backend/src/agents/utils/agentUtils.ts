@@ -907,8 +907,6 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
 
   for (const node of [
     "finalModelSelectionNode",
-    "modelSelectionNode",
-    "modelSelection",
     "modelValidationNode",
     "modelValidation",
     "modelEvaluationNode",
@@ -917,6 +915,8 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     "modelTraining",
     "trainingConfigurationNode",
     "trainingConfiguration",
+    "modelSelectionNode",
+    "modelSelection",
   ]) {
     if (isRunningOrDone(stageStatuses[node]) || nextNodes.includes(node)) return node;
   }
@@ -950,14 +950,18 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
   const isRunning = (v?: string) => v === "In Progress" || v === "Running" || v === "Retrying";
   const isCompleted = (v?: string) => v === "Completed" || v === "Success";
 
-  if (status === "completed" || isCompleted(stageStatuses?.modelSelection)) {
+  if (status === "completed" || isCompleted(stageStatuses?.modelValidation)) {
     return "Model Training & Validation completed successfully.";
   }
-  if (isRunning(stageStatuses?.modelSelection)) return "Selecting and persisting the best validated model...";
   if (isRunning(stageStatuses?.modelValidation)) return "Validating the leading model on held-out data...";
   if (isRunning(stageStatuses?.modelEvaluation)) return "Evaluating and ranking candidate models...";
   if (isRunning(stageStatuses?.modelTraining)) return "Training candidate models...";
   if (isRunning(stageStatuses?.trainingConfiguration)) return "Configuring model training parameters...";
+  if (isCompleted(stageStatuses?.trainingConfiguration)) return "Training configuration completed. Ready to begin model training.";
+  if (isRunning(stageStatuses?.modelSelection)) return "Selecting and ranking candidate models...";
+  if (isCompleted(stageStatuses?.modelSelection) || isCompleted(stageStatuses?.modelSelectionNode)) {
+    return "Model selection completed. Please confirm candidate models for training.";
+  }
   if (isRunning(stageStatuses?.exogenousScout) || isRunning(stageStatuses?.exogenous)) {
     return "Scouting and ranking exogenous variables and external signals...";
   }
@@ -1032,7 +1036,8 @@ export function buildResultFromGraphState(
   const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted && isIngestionComplete;
   const ss = stageStatuses as Record<string, string>;
   const isAtModelApproval = (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) && (ss.exogenousScout === "Completed" || ss.exogenous === "Completed");
-  const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval);
+  const isAtTrainingConfigApproval = (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration")) && (ss.modelSelection === "Completed" || ss.modelSelectionNode === "Completed");
+  const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval || isAtTrainingConfigApproval);
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
   return {
@@ -1056,7 +1061,7 @@ export function buildResultFromGraphState(
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
-    nextStep: isAtModelApproval ? "Model Training & Validation" : (isIngestionComplete && !isFeatureEngineeringStarted ? "Feature Engineering" : (nextNodes[0] || "inspect")),
+    nextStep: isAtTrainingConfigApproval ? "Training Configuration" : (isAtModelApproval ? "Model Training & Validation" : (isIngestionComplete && !isFeatureEngineeringStarted ? "Feature Engineering" : (nextNodes[0] || "inspect"))),
     currentNode: currentStage,
     currentStage,
     stageOutputs: (values.stageOutputs && typeof values.stageOutputs === "object") ? values.stageOutputs : {},

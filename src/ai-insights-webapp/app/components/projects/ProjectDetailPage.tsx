@@ -424,6 +424,12 @@ export default function ProjectDetailPage({
               modelTraining={stageOutputs.modelTraining}
               projectId={project.id}
               activeSubstep="Model Selection"
+              activeRunTimestamp={(project.agentState as any)?.runTimestamp}
+              onSelectionConfirmed={(_models) => {
+                if (requiresApproval && onApprove) {
+                  onApprove();
+                }
+              }}
             />
           ) : null,
           "Training Configuration": (stageOutputs.trainingConfiguration || stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
@@ -432,6 +438,7 @@ export default function ProjectDetailPage({
               trainingConfiguration={stageOutputs.trainingConfiguration}
               projectId={project.id}
               activeSubstep="Training Configuration"
+              activeRunTimestamp={(project.agentState as any)?.runTimestamp}
             />
           ) : null,
           "Model Training": stageOutputs.modelTraining ? (
@@ -439,6 +446,7 @@ export default function ProjectDetailPage({
               modelTraining={stageOutputs.modelTraining}
               projectId={project.id}
               activeSubstep="Model Training"
+              activeRunTimestamp={(project.agentState as any)?.runTimestamp}
             />
           ) : null,
           "Model Validation": (stageOutputs.modelValidation || stageOutputs.modelTraining) ? (
@@ -447,6 +455,7 @@ export default function ProjectDetailPage({
               modelTraining={stageOutputs.modelTraining}
               projectId={project.id}
               activeSubstep="Model Validation"
+              activeRunTimestamp={(project.agentState as any)?.runTimestamp}
             />
           ) : null,
           "Feature Engineering": stageOutputs.exogenousScout ? (
@@ -454,12 +463,19 @@ export default function ProjectDetailPage({
           ) : stageOutputs.featureArchitect ? (
             <FeatureArchitectStepOutput featureArchitect={stageOutputs.featureArchitect} />
           ) : null,
-          "Model Training & Validation": (stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+          "Model Training & Validation": (stageOutputs.modelSelection || stageOutputs.modelTraining || stageOutputs.trainingConfiguration) ? (
             <ModelTrainingValidationStepOutput
               modelSelection={stageOutputs.modelSelection}
+              trainingConfiguration={stageOutputs.trainingConfiguration}
               modelTraining={stageOutputs.modelTraining}
               projectId={project.id}
-              activeSubstep="Model Selection"
+              activeSubstep={stageOutputs.trainingConfiguration ? "Training Configuration" : "Model Selection"}
+              activeRunTimestamp={(project.agentState as any)?.runTimestamp}
+              onSelectionConfirmed={(_models) => {
+                if (requiresApproval && onApprove) {
+                  onApprove();
+                }
+              }}
             />
           ) : null
         };

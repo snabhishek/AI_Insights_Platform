@@ -98,22 +98,22 @@ task:
 
 upstream_artifacts:
 
-  dataset_id:
+  dataset_path:
     "<Write the identifier of the finalized dataset that will be used for training. Get it from the directory>"
 
   dataset_version:
     "<Write the version of the finalized dataset used for this training job. Get it from the directory>"
 
-  feature_set_id:
+  feature_set_path:
     "<Write the identifier of the finalized feature set used for training. Get it from the directory>"
 
   feature_set_version:
     "<Write the version of the finalized feature set used for this training job. Get it from the directory>"
 
-  profiling_report_id:
+  profiling_report_path:
     "<Write the identifier of the profiling information used when making training decisions. Get it from the directory>"
 
-  relationship_schema_id:
+  relationship_schema_path:
     "<Write the identifier of the finalized relationship information used to understand relationships between the training data entities, when applicable. Get it from the directory>"
 
   row_count:
@@ -194,39 +194,6 @@ imbalance:
 
     sampling_ratio:
       "<Specify the desired class distribution after sampling when resampling is used.>"
-
-
-# -----------------------------------------------------------------------------
-# HYPERPARAMETER OPTIMIZATION
-# -----------------------------------------------------------------------------
-
-hyperparameter_optimization:
-
-  enabled:
-    "<Determine whether searching for better model parameter values is warranted for this training job.>"
-
-  method:
-    "<Select the parameter search approach that is appropriate for the number of candidate parameters, available compute, and training objective.>"
-
-  objective_metric:
-    *primary_metric_name
-
-  direction:
-    "<Determine whether improvement in the primary metric corresponds to increasing or decreasing its value.>"
-
-  max_trials:
-    "<Specify the maximum number of model configurations that should be evaluated during parameter optimization.>"
-
-  timeout:
-    "<Specify the maximum amount of time that should be allocated to parameter optimization, when a limit is appropriate.>"
-
-  search_space:
-    "<Define the model parameters whose values should be explored and describe the useful range or set of values for each parameter.>"
-
-  pruning:
-
-    enabled:
-      "<Determine whether poorly performing training trials should be stopped before completion to conserve resources.>"
 
 
 # -----------------------------------------------------------------------------
@@ -567,6 +534,35 @@ model_selection:
 
       parameters:
         "<Specify the model parameters that should remain fixed during training rather than being searched automatically.>"
+
+      hyperparameter_optimization:
+
+        enabled:
+          "<Determine whether searching for better model parameter values is warranted for this training job.>"
+
+        method:
+          "<Select the parameter search approach that is appropriate for the number of candidate parameters, available compute, and training objective.>"
+
+        objective_metric:
+          *primary_metric_name
+
+        direction:
+          "<Determine whether improvement in the primary metric corresponds to increasing or decreasing its value.>"
+
+        max_trials:
+          "<Specify the maximum number of model configurations that should be evaluated during parameter optimization.>"
+
+        timeout:
+          "<Specify the maximum amount of time that should be allocated to parameter optimization, when a limit is appropriate.>"
+
+        search_space:
+          "<Define the model parameters whose values should be explored and describe the useful range or set of values for each parameter.>"
+
+        pruning:
+
+          enabled:
+            "<Determine whether poorly performing training trials should be stopped before completion to conserve resources.>"
+
 
 
 # -----------------------------------------------------------------------------

@@ -148,7 +148,8 @@ export async function profileData(connector: any, inspection: Record<string, unk
           }
         ),
       fallback,
-      services
+      services,
+      3
     );
     await logMilestoneThinking(services, "Data Profiling", `Data profiling successfully completed for ${tableNames.length} tables.`);
 
