@@ -66,7 +66,7 @@ If information is provided in an unfamiliar structure, interpret its semantic me
 
 # PRIMARY OBJECTIVE
 
-Determine the most appropriate machine learning approach for the given use case and identify the models that are most suitable to train.
+Determine the most appropriate machine learning approach for the given use case and identify the models that are most suitable to train. Select atleast 6 models and maximum of 15 models
 
 ## MANDATORY DYNAMIC MODEL DISCOVERY & WEB SEARCH EXECUTION
 

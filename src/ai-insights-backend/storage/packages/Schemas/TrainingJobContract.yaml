@@ -21,25 +21,26 @@
 # -----------------------------------------------------------------------------
 # PRIMARY METRIC
 # -----------------------------------------------------------------------------
-# Single source of truth for the metric used throughout training, optimization,
-# evaluation, and model selection. The same definition must not be duplicated.
-# -----------------------------------------------------------------------------
 
-x-primary-metric-name: &primary_metric_name "<string>"
+x-primary-metric-name: &primary_metric_name
+  "<Write the metric that most appropriately measures success for the prediction objective and business goal.>"
 
 x-primary-metric-def: &primary_metric_def
   value: *primary_metric_name
-  source: "<enum: llm_inference|user_override|platform_default>"
-  confidence: 0.0
-  confirmation_threshold: 0.85
-  requires_confirmation: false
+  source:
+    "<State whether the metric was derived from the use case, explicitly provided by the user, or selected as a general platform choice.>"
+  confidence:
+    "<State how confident you are that the selected metric correctly represents the business objective.>"
+  confirmation_threshold:
+    "<State the confidence level above which explicit confirmation of the metric is not required.>"
+  requires_confirmation:
+    "<State whether the selected metric requires confirmation before training proceeds.>"
 
-  # Explain why this metric best represents the business objective.
-  rationale: "<string>"
+  rationale:
+    "<Explain why this metric best represents the business objective and prediction goal.>"
 
-  # Evidence used by the agent when selecting the metric.
   evidence:
-    - "<string>"
+    - "<Describe the business requirement, prediction objective, target behavior, or other evidence that supports selecting this metric.>"
 
 
 # -----------------------------------------------------------------------------
@@ -47,12 +48,23 @@ x-primary-metric-def: &primary_metric_def
 # -----------------------------------------------------------------------------
 
 training_job:
-  job_id: "<string>"
-  experiment_name: "<string>"
-  version: "<semver>"
-  created_at: "<ISO-8601 timestamp>"
-  created_by: "<string>"
-  description: "<string>"
+  job_id:
+    "<Write the identifier assigned to this training job.>"
+
+  experiment_name:
+    "<Write a meaningful name that identifies the training experiment and its purpose.>"
+
+  version:
+    "<Write the version of this training configuration.>"
+
+  created_at:
+    "<Write the timestamp when this training configuration was created.>"
+
+  created_by:
+    "<Write the agent, user, or system responsible for creating this training configuration.>"
+
+  description:
+    "<Summarize the purpose of this training job and what the resulting model is expected to accomplish.>"
 
 
 # -----------------------------------------------------------------------------
@@ -60,45 +72,55 @@ training_job:
 # -----------------------------------------------------------------------------
 
 task:
-  task_type: "<enum: classification|regression|clustering|ranking|forecasting>"
 
-  # Classification: binary|multiclass|multilabel
-  # Regression: single|multioutput
-  # Other task types use only applicable values.
-  task_subtype: "<string>"
+  task_type:
+    "<Identify the machine learning problem represented by the use case, target, and prediction objective.>"
 
-  learning_type: "<enum: supervised|unsupervised|semi_supervised|self_supervised>"
+  task_subtype:
+    "<Describe the specific form of the identified machine learning problem.>"
 
-  # Defines what the trained model must return.
-  prediction_type: "<enum: label|probability|probability_thresholded|score|value>"
+  learning_type:
+    "<Identify how the model should learn based on the availability and nature of the target and training information.>"
 
-  # How far into the future the prediction applies.
-  prediction_horizon: "<string|null>"
+  prediction_type:
+    "<Describe what the trained model should return to satisfy the prediction requirement.>"
 
-  # Event/time at which the available information is considered valid.
-  prediction_timestamp: "<string|null>"
+  prediction_horizon:
+    "<Describe the future period or point for which the prediction is intended, when the use case involves a future outcome.>"
+
+  prediction_timestamp:
+    "<Identify the point in time at which the information available for making the prediction should be considered valid.>"
 
 
 # -----------------------------------------------------------------------------
 # UPSTREAM ARTIFACTS
 # -----------------------------------------------------------------------------
-# References finalized outputs from upstream agents.
-# These are identifiers, not definitions of those artifacts.
-# -----------------------------------------------------------------------------
 
 upstream_artifacts:
-  dataset_id: "<string>"
-  dataset_version: "<string>"
 
-  feature_set_id: "<string>"
-  feature_set_version: "<string>"
+  dataset_id:
+    "<Write the identifier of the finalized dataset that will be used for training. Get it from the directory>"
 
-  profiling_report_id: "<string>"
+  dataset_version:
+    "<Write the version of the finalized dataset used for this training job. Get it from the directory>"
 
-  relationship_schema_id: "<string|null>"
+  feature_set_id:
+    "<Write the identifier of the finalized feature set used for training. Get it from the directory>"
 
-  row_count: 0
-  column_count: 0
+  feature_set_version:
+    "<Write the version of the finalized feature set used for this training job. Get it from the directory>"
+
+  profiling_report_id:
+    "<Write the identifier of the profiling information used when making training decisions. Get it from the directory>"
+
+  relationship_schema_id:
+    "<Write the identifier of the finalized relationship information used to understand relationships between the training data entities, when applicable. Get it from the directory>"
+
+  row_count:
+    "<Write the number of records available in the finalized training dataset.>"
+
+  column_count:
+    "<Write the number of columns available in the finalized training dataset.>"
 
 
 # -----------------------------------------------------------------------------
@@ -106,40 +128,43 @@ upstream_artifacts:
 # -----------------------------------------------------------------------------
 
 split:
-  strategy: "<enum: random|stratified|temporal|stratified_temporal|group>"
 
-  train_ratio: 0.0
-  validation_ratio: 0.0
-  test_ratio: 0.0
+  strategy:
+    "<Select the data splitting approach that most closely represents how the model will encounter data in its intended usage.>"
+
+  train_ratio:
+    "<Specify the proportion of available data that should be used for model training.>"
+
+  validation_ratio:
+    "<Specify the proportion of available data that should be used for model validation and model or parameter selection.>"
+
+  test_ratio:
+    "<Specify the proportion of available data that should be reserved for final unbiased model evaluation.>"
 
   random_seed: 42
 
-  # Required for stratified strategies.
-  stratify_by: "<string|null>"
+  stratify_by:
+    "<Identify the target or other variable whose distribution should be preserved across the data splits, when needed.>"
 
-  # Required when related rows must not appear across multiple splits.
-  group_by: "<string|null>"
+  group_by:
+    "<Identify the entity or grouping attribute whose related records must remain within the same data split, when needed.>"
 
-  # Required for temporal strategies.
-  time_column: "<string|null>"
-
-  temporal:
-    train_start: "<date|null>"
-    train_end: "<date|null>"
-    validation_start: "<date|null>"
-    validation_end: "<date|null>"
-    test_start: "<date|null>"
-    test_end: "<date|null>"
+  time_column:
+    "<Identify the time attribute that should determine the ordering of records for a time-dependent split, when needed.>"
 
   cross_validation:
-    enabled: false
 
-    strategy: "<enum: kfold|stratified_kfold|time_series>"
+    enabled:
+      "<Determine whether repeated validation across multiple subsets of the training data is appropriate for this use case.>"
 
-    folds: 0
+    strategy:
+      "<Select the cross-validation approach that best matches the characteristics of the dataset and prediction problem.>"
 
-    # Must be false for time-aware validation.
-    shuffle: false
+    folds:
+      "<Specify the number of validation folds to use when cross-validation is enabled.>"
+
+    shuffle:
+      "<Determine whether records should be reordered before creating cross-validation folds.>"
 
     random_seed: 42
 
@@ -149,59 +174,80 @@ split:
 # -----------------------------------------------------------------------------
 
 imbalance:
-  detected: false
 
-  # Ratio of minority/positive samples to majority/negative samples.
-  ratio: null
+  detected:
+    "<Determine whether the target distribution contains a meaningful imbalance that could affect model training.>"
 
-  strategy: "<enum: class_weighting|oversampling|undersampling|smote|none>"
+  ratio:
+    "<Write the observed proportion of the minority or positive outcome relative to the majority or negative outcome.>"
 
-  class_weights: "<enum: balanced|custom|none>"
+  strategy:
+    "<Determine how the observed class imbalance should be addressed during model training.>"
+
+  class_weights:
+    "<Determine whether different classes should receive different importance during model training and describe the chosen weighting approach.>"
 
   sampling:
-    method: "<enum: none|smote|random_oversample|random_undersample>"
-    sampling_ratio: null
+
+    method:
+      "<Determine whether the training records should be resampled to address the observed class distribution and describe the selected approach.>"
+
+    sampling_ratio:
+      "<Specify the desired class distribution after sampling when resampling is used.>"
+
 
 # -----------------------------------------------------------------------------
 # HYPERPARAMETER OPTIMIZATION
 # -----------------------------------------------------------------------------
 
 hyperparameter_optimization:
-  enabled: false
 
-  method: "<enum: grid|random|bayesian|hyperband>"
+  enabled:
+    "<Determine whether searching for better model parameter values is warranted for this training job.>"
 
-  # Optimization always targets the primary metric.
-  objective_metric: *primary_metric_name
+  method:
+    "<Select the parameter search approach that is appropriate for the number of candidate parameters, available compute, and training objective.>"
 
-  direction: "<enum: maximize|minimize>"
+  objective_metric:
+    *primary_metric_name
 
-  max_trials: 0
+  direction:
+    "<Determine whether improvement in the primary metric corresponds to increasing or decreasing its value.>"
 
-  timeout: "<duration|null>"
+  max_trials:
+    "<Specify the maximum number of model configurations that should be evaluated during parameter optimization.>"
 
-  search_space: {}
+  timeout:
+    "<Specify the maximum amount of time that should be allocated to parameter optimization, when a limit is appropriate.>"
+
+  search_space:
+    "<Define the model parameters whose values should be explored and describe the useful range or set of values for each parameter.>"
 
   pruning:
-    enabled: false
+
+    enabled:
+      "<Determine whether poorly performing training trials should be stopped before completion to conserve resources.>"
 
 
 # -----------------------------------------------------------------------------
 # SEARCH SPACE
 # -----------------------------------------------------------------------------
-# Generic representation used by the training engine. The actual parameters
-# depend on the selected model family.
-# -----------------------------------------------------------------------------
 
 search_space:
-  "<parameter_name>":
-    type: "<enum: uniform|log_uniform|integer|categorical>"
 
-    min: null
-    max: null
+  "<Write the name of a model parameter whose value should be optimized.>":
 
-    # Used when type = categorical.
-    values: []
+    type:
+      "<Describe the way the parameter values should be explored.>"
+
+    min:
+      "<Specify the lower boundary of the parameter values to explore, when applicable.>"
+
+    max:
+      "<Specify the upper boundary of the parameter values to explore, when applicable.>"
+
+    values:
+      "<List the parameter values that should be considered when the parameter has a defined set of alternatives.>"
 
 
 # -----------------------------------------------------------------------------
@@ -209,17 +255,23 @@ search_space:
 # -----------------------------------------------------------------------------
 
 objective:
-  # Loss function directly optimized by the model during training.
-  training_loss: "<string>"
 
-  # Must reference the single primary metric definition.
-  optimization_metric: *primary_metric_name
+  training_loss:
+    "<Identify the loss function that should be optimized during model training for the selected prediction problem.>"
 
-  direction: "<enum: maximize|minimize>"
+  optimization_metric:
+    *primary_metric_name
+
+  direction:
+    "<Determine whether improvement in the optimization objective corresponds to increasing or decreasing its value.>"
 
   custom_objective:
-    enabled: false
-    definition: "<string|null>"
+
+    enabled:
+      "<Determine whether the standard training objective is insufficient and a custom training objective is needed.>"
+
+    definition:
+      "<Describe the custom objective that should be optimized and how it relates to the prediction goal, when applicable.>"
 
 
 # -----------------------------------------------------------------------------
@@ -227,256 +279,294 @@ objective:
 # -----------------------------------------------------------------------------
 
 evaluation:
-  # Single source of truth for the metric used to evaluate the final models.
-  primary_metric: *primary_metric_def
 
-  # Additional metrics reported for comparison but not optimized.
+  primary_metric:
+    *primary_metric_def
+
   secondary_metrics:
-    - "<string>"
+    - "<Identify an additional performance metric that provides useful information beyond the primary metric.>"
 
   # Optional metrics translating model performance into business impact.
   # business_metrics:
   #   - name: "<string>"
   #     description: "<string>"
 
-  # Business/technical minimum requirements for model acceptance.
   thresholds:
-    primary_metric_min: null
 
-    # Applicable only when relevant to the task.
-    secondary_metric_constraints: {}
+    primary_metric_min:
+      "<Specify the minimum primary metric performance required for a model to be considered acceptable.>"
 
-  # Evaluate performance independently across important business segments.
+    secondary_metric_constraints:
+      "<Define any minimum or maximum performance requirements for secondary metrics that are important to the use case.>"
+
   segment_analysis:
-    - "<string>"
+    - "<Identify a business or data segment for which model performance should be evaluated separately.>"
 
   confidence_intervals:
-    enabled: false
+
+    enabled:
+      "<Determine whether uncertainty around the reported model performance should be estimated.>"
 
   bootstrap:
-    enabled: false
-    samples: null
+
+    enabled:
+      "<Determine whether repeated resampling should be used to estimate uncertainty in the evaluation results.>"
+
+    samples:
+      "<Specify the number of resampling iterations to use when estimating evaluation uncertainty.>"
 
   fairness_scope:
+
     protected_attributes:
-      - "<string>"
+      - "<Identify an attribute across which model performance or outcomes should be examined for potential disparity, when applicable.>"
 
-    metric: "<enum: false_positive_rate_parity|demographic_parity|equal_opportunity|null>"
+    metric:
+      "<Identify the fairness measure that should be used to compare outcomes across the relevant groups.>"
 
-    max_disparity: null
+    max_disparity:
+      "<Specify the largest acceptable difference in the selected fairness measure between the relevant groups.>"
 
 
 # -----------------------------------------------------------------------------
 # THRESHOLD OPTIMIZATION
 # -----------------------------------------------------------------------------
-# Applicable primarily to classification models producing probabilities or
-# scores that must be converted into business decisions.
-# -----------------------------------------------------------------------------
 
 thresholding:
-  enabled: false
 
-  default_threshold: null
+  enabled:
+    "<Determine whether model outputs need a decision threshold to convert predicted scores or probabilities into business decisions.>"
+
+  default_threshold:
+    "<Specify the default decision threshold to use when converting model scores or probabilities into decisions.>"
 
   optimization:
-    enabled: false
 
-    metric: "<string|null>"
+    enabled:
+      "<Determine whether the decision threshold should be optimized using the evaluation objective or business requirements.>"
 
-    constraints: {}
+    metric:
+      "<Identify the performance measure that should guide selection of the decision threshold.>"
 
-
-# -----------------------------------------------------------------------------
-# COMPUTE
-# -----------------------------------------------------------------------------
-
-compute:
-  device: "<enum: cpu|gpu>"
-
-  cpu_count: 0
-
-  gpu_count: 0
-
-  gpu_type: "<string|null>"
-
-  memory_limit: "<string|null>"
-
-  distributed_training:
-    enabled: false
-    workers: 1
-
-  precision: "<enum: fp16|fp32|bf16>"
-
-  batch_size: null
-
-  # Relevant when the selected framework/model supports parallel data loading.
-  num_workers: null
-
-
-# -----------------------------------------------------------------------------
-# RESOURCE / BUSINESS CONSTRAINTS
-# -----------------------------------------------------------------------------
-
-constraints:
-  max_runtime_minutes: null
-
-  max_memory_gb: null
-
-  max_gpu_hours: null
-
-  max_trials: null
-
-  max_model_size_mb: null
-
-  # Maximum allowed p99 inference latency.
-  max_inference_latency_ms: null
-
-  minimum_performance:
-    metric: *primary_metric_name
-    value: null
-
-  maximum_cost:
-    amount: null
-    currency: "<ISO-4217|null>"
+    constraints:
+      "<Define the business or performance conditions that the selected threshold must satisfy.>"
 
 
 # -----------------------------------------------------------------------------
 # VALIDATION GATES
 # -----------------------------------------------------------------------------
-# Hard requirements that a trained model must satisfy before it can be
-# considered a successful training result.
-# -----------------------------------------------------------------------------
 
 validation_gates:
-  minimum_primary_metric: null
 
-  # Difference between training and validation performance that indicates
-  # unacceptable overfitting.
-  maximum_overfitting_gap: null
+  minimum_primary_metric:
+    "<Specify the minimum primary metric performance that a trained model must achieve to be accepted.>"
 
-  maximum_latency: null
+  maximum_overfitting_gap:
+    "<Specify the largest acceptable difference between training and validation performance.>"
 
-  maximum_model_size: null
+  maximum_latency:
+    "<Specify the maximum prediction latency acceptable for the intended model usage.>"
 
-  fairness_requirements: null
+  maximum_model_size:
+    "<Specify the largest acceptable size of the trained model for its intended deployment environment.>"
+
+  fairness_requirements:
+    "<Describe the fairness conditions that the trained model must satisfy before acceptance, when applicable.>"
 
   data_quality_requirements:
-    max_null_rate: null
 
-    schema_match: "<enum: strict|lenient>"
+    max_null_rate:
+      "<Specify the maximum acceptable proportion of missing values in data presented to the trained model.>"
+
+    schema_match:
+      "<Describe how closely incoming prediction data must correspond to the data structure expected by the trained model.>"
 
   calibration_requirement:
-    method: "<enum: isotonic|platt|none>"
 
-    max_calibration_error: null
+    method:
+      "<Identify the probability calibration approach that should be applied when calibrated predictions are required.>"
+
+    max_calibration_error:
+      "<Specify the maximum acceptable difference between predicted probabilities and observed outcomes.>"
 
   stability_requirement:
-    metric_variance_across_folds_max: null
 
-  pass_condition: "<enum: all_gates_must_pass|weighted_score>"
+    metric_variance_across_folds_max:
+      "<Specify the maximum acceptable variation in model performance across validation folds.>"
+
+  pass_condition:
+    "<Describe how the validation results should determine whether the trained model is accepted.>"
 
 
 # -----------------------------------------------------------------------------
 # MODEL SELECTION
 # -----------------------------------------------------------------------------
-# Determines which candidate becomes the final model after all candidates
-# have been trained and evaluated.
-# -----------------------------------------------------------------------------
 
 model_selection:
 
   target_entity:
-    name: "<string|null>"
-    datatype: "<enum: boolean|categorical|numeric|null>"
-    description: "<string|null>"
-    source: "<string|null>"
 
-  # Business/data rule used to produce the target.
-  derivation: "<string|null>"
+    name:
+      "<Identify the variable that represents the outcome the model is expected to predict.>"
 
-  positive_class: "<string|null>"
-  negative_class: "<string|null>"
+    datatype:
+      "<Describe the nature of the values represented by the prediction target.>"
+
+    description:
+      "<Explain what the target represents in the business context.>"
+
+    source:
+      "<Identify where the target information originates in the available data.>"
+
+  derivation:
+    "<Describe how the target is derived from the available business or data information.>"
+
+  positive_class:
+    "<Identify the outcome that represents the positive case, when the prediction problem has a positive outcome.>"
+
+  negative_class:
+    "<Identify the outcome that represents the negative case, when the prediction problem has a negative outcome.>"
 
   prediction_grain:
-    entity: "<string>"
-    keys: []
-    frequency: "<string|null>"
+
+    entity:
+      "<Identify the real-world entity for which each prediction is generated.>"
+
+    keys:
+      - "<Identify a field that uniquely identifies the prediction entity or prediction instance.>"
+
+    frequency:
+      "<Describe how frequently predictions are expected to be generated for each prediction entity, when applicable.>"
 
   recommended_model:
-    model_id: [example - lightgbm]
-    rank: 1
-    suitability_score: 0.92
-    recommendation: "primary"
+
+    model_id:
+      "<Identify the model that should be considered the primary candidate based on the data characteristics, prediction problem, and training objective.>"
+
+    rank:
+      "<State the relative position of this candidate among the considered models.>"
+
+    suitability_score:
+      "<Estimate how suitable this model is for the identified prediction problem based on the available evidence.>"
+
+    recommendation:
+      "<Describe the role this model should play among the considered model candidates.>"
 
   candidates:
-    - model_id: [example - lightgbm]
-      rank: 1
-      suitability_score: 0.92
-      recommendation: "primary"
+
+    - model_id:
+        "<Identify a model that should be considered for training.>"
+
+      rank:
+        "<State the relative position of this candidate among the considered models.>"
+
+      suitability_score:
+        "<Estimate how suitable this model is for the identified prediction problem based on the available evidence.>"
+
+      recommendation:
+        "<Describe the role this model should play among the considered model candidates.>"
+
       reasoning:
+
         strengths:
-          - "..."
+          - "<Describe the characteristics of this model that are particularly suitable for the available data and use case.>"
+
         weaknesses:
-          - "..."
+          - "<Describe the characteristics of this model that could limit its suitability for the available data or use case.>"
+
         suitability:
-          - "..."
+          - "<Explain why this model is appropriate for the prediction problem and available training information.>"
 
-    - model_id: [example - lightgbm]
-      rank: 2
-      suitability_score: 0.89
-      recommendation: "alternative"
+    - model_id:
+        "<Identify another model that should be considered for training.>"
 
-    - model_id: [example - lightgbm]
-      rank: 3
-      suitability_score: 0.86
-      recommendation: "alternative"
+      rank:
+        "<State the relative position of this candidate among the considered models.>"
 
-  primary_metric: *primary_metric_name
+      suitability_score:
+        "<Estimate how suitable this model is for the identified prediction problem based on the available evidence.>"
 
-  direction: "<enum: maximize|minimize>"
+      recommendation:
+        "<Describe the role this model should play among the considered model candidates.>"
 
-  # Applied only after candidates satisfy validation gates.
+    - model_id:
+        "<Identify another model that should be considered for training.>"
+
+      rank:
+        "<State the relative position of this candidate among the considered models.>"
+
+      suitability_score:
+        "<Estimate how suitable this model is for the identified prediction problem based on the available evidence.>"
+
+      recommendation:
+        "<Describe the role this model should play among the considered model candidates.>"
+
+  primary_metric:
+    *primary_metric_name
+
+  direction:
+    "<Determine whether higher or lower values of the primary metric represent better model performance.>"
+
   tie_breakers:
-    - "<string>"
+    - "<Identify an additional factor that should be considered when candidate models have comparable primary metric performance.>"
 
   constraints:
-    "<constraint_name>": "<value>"
+    "<Define any conditions that candidate models must satisfy before they can be selected.>"
 
-  selection_strategy: "<string>"
+  selection_strategy:
+    "<Describe how the final model should be chosen from the trained and validated candidates.>"
 
   training:
-    mode: "<enum: automl_search|single_model|ensemble>"
 
-    baseline_model: "<string|null>"
+    mode:
+      "<Describe the overall approach for training and comparing the selected model candidates.>"
+
+    baseline_model:
+      "<Identify the model or simple reference approach that should be used as the baseline for comparison, when applicable.>"
 
     ensemble:
-      enabled: false
-      strategy: "<enum: stacking|voting|blending|null>"
+
+      enabled:
+        "<Determine whether combining multiple trained models is appropriate for improving the final prediction performance.>"
+
+      strategy:
+        "<Describe how the selected models should be combined when an ensemble is used.>"
 
     random_seed: 42
 
     early_stopping:
-      enabled: false
 
-      # Number of evaluation rounds without improvement before stopping.
-      patience: null
+      enabled:
+        "<Determine whether training should stop when the monitored validation performance stops improving.>"
 
-      # Always follows the primary metric.
-      metric: *primary_metric_name
+      patience:
+        "<Specify how many evaluation rounds without meaningful improvement should be tolerated before training stops.>"
 
-  max_training_time: "<duration|null>"
+      metric:
+        *primary_metric_name
 
-  model_selection_strategy: "<string>"
+  max_training_time:
+    "<Specify the maximum amount of time that may be spent training the models, when a training limit is required.>"
+
+  model_selection_strategy:
+    "<Describe the overall approach for comparing trained models and determining which model should become the final model.>"
 
   # Model Selection
-  models:                     
-  - model_id: "<string>"
-    framework: "<enum: xgboost|lightgbm|sklearn|pytorch|tensorflow>"
-    algorithm: "<string>"
-    enabled: true
+  models:
 
-    # Parameters fixed by the agent/user and not optimized.
-    parameters: {}
+    - model_id:
+        "<Identify the specific model that should be trained.>"
+
+      framework:
+        "<Identify the software framework that should be used to train the selected model.>"
+
+      algorithm:
+        "<Identify the specific machine learning algorithm represented by the selected model.>"
+
+      enabled:
+        "<Determine whether this model should be included in the training process.>"
+
+      parameters:
+        "<Specify the model parameters that should remain fixed during training rather than being searched automatically.>"
 
 
 # -----------------------------------------------------------------------------
@@ -484,7 +574,9 @@ model_selection:
 # -----------------------------------------------------------------------------
 
 artifacts:
-  output_path: "<string>"
+
+  output_path:
+    "<Specify where the outputs generated by this training job should be stored.>"
 
   save:
     model: true
@@ -493,22 +585,9 @@ artifacts:
     explainability: false
     training_config: true
 
-  # serialization_format: "<enum: pickle|joblib|onnx|safetensors|framework_native>" # :CHECK: need to check the common serialization format to support all the OS
+  # serialization_format: "<enum: pickle|joblib|onnx|safetensors|framework_native>"
+  # :CHECK: need to check the common serialization format to support all the OS
   serialization_format: "onnx"
 
-  explainability_method: "<enum: shap|lime|none>"
-
-
-# -----------------------------------------------------------------------------
-# REPRODUCIBILITY
-# -----------------------------------------------------------------------------
-
-reproducibility:
-  python_version: "<string>"
-
-  # Lockfile hash, environment snapshot, or package-version reference.
-  library_versions: "<string>"
-
-  container_image: "<string>"
-
-  pipeline_git_commit: "<string>"
+  explainability_method:
+    "<Identify the approach that should be used to explain the trained model when explainability is required.>"

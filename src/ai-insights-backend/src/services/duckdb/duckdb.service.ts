@@ -1156,6 +1156,27 @@ export class DuckDBService implements IDuckDBService {
       }
     }
 
+    if (fileName && type === "excel") {
+      let dbPath = this.getDuckDbPath(fileName, tableName, projectName);
+      if (!fs.existsSync(dbPath)) {
+        try {
+          dbPath = await this.ingestFileSource(type, config, projectName);
+        } catch {}
+      }
+
+      if (dbPath && fs.existsSync(dbPath)) {
+        return this.withConnection(dbPath, async (conn) => {
+          try {
+            const safeTable = await this.resolveTableName(conn, tableName, fileName);
+            const res = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${this.sanitizeIdentifier(safeTable)}"`);
+            return res[0]?.count ?? 0;
+          } catch {
+            return 0;
+          }
+        });
+      }
+    }
+
     return 0;
   }
 
@@ -1165,12 +1186,14 @@ export class DuckDBService implements IDuckDBService {
     tableName: string,
     limit: number,
     offset: number,
-    projectName?: string
+    projectName?: string,
+    workspaceName?: string,
+    folderPath?: string
   ): Promise<SampleResult> {
     const fileName = config.fileName;
 
     if (projectName) {
-      const projDbPath = this.getProjectDuckDbPath(projectName);
+      const projDbPath = this.getProjectDuckDbPath(projectName, workspaceName, folderPath);
       if (fs.existsSync(projDbPath)) {
         return this.withConnection(projDbPath, async (conn) => {
           const safeTable = await this.resolveTableName(conn, tableName, fileName);
@@ -1203,6 +1226,36 @@ export class DuckDBService implements IDuckDBService {
             const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
             return { success: true, headers, rows, totalRowCount };
           } catch {
+            return { success: false, headers: [], rows: [], totalRowCount: 0 };
+          }
+        });
+      }
+    }
+
+    if (fileName && type === "excel") {
+      // 1. Resolve or ingest Excel into isolated DuckDB in the project folder
+      let dbPath = this.getDuckDbPath(fileName, tableName, projectName, workspaceName, folderPath);
+      if (!fs.existsSync(dbPath)) {
+        try {
+          dbPath = await this.ingestFileSource(type, config, projectName, workspaceName, folderPath);
+        } catch (ingestErr) {
+          console.warn(`[DuckDBService] getSampleWithOffset: Could not ingest Excel "${fileName}" to project DuckDB:`, ingestErr);
+        }
+      }
+
+      // 2. Query data using the converted DuckDB in the project folder
+      if (dbPath && fs.existsSync(dbPath)) {
+        return this.withConnection(dbPath, async (conn) => {
+          try {
+            const safeTable = await this.resolveTableName(conn, tableName, fileName);
+            const qTableName = `"${this.sanitizeIdentifier(safeTable)}"`;
+            const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM ${qTableName}`);
+            const totalRowCount = countRes[0]?.count ?? 0;
+            const rows = await this.query(conn, `SELECT * FROM ${qTableName} LIMIT ${limit} OFFSET ${offset}`);
+            const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+            return { success: true, headers, rows, totalRowCount };
+          } catch (err: any) {
+            console.warn(`[DuckDBService] getSampleWithOffset query on Excel DuckDB "${dbPath}" failed:`, err?.message || err);
             return { success: false, headers: [], rows: [], totalRowCount: 0 };
           }
         });

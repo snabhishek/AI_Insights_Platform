@@ -150,7 +150,7 @@ export function resolveProjectEffectiveTimestamp(
  */
 export function computeProjectRunRelativePath(workspaceName: string, projectName: string, timestamp?: string): string {
   const effectiveTs = resolveProjectEffectiveTimestamp(workspaceName, projectName, timestamp) || timestamp || "default";
-  const safeTs = sanitizeFolderName(effectiveTs);
+  const safeTs = effectiveTs;
   return path.posix.join(computeProjectRelativePath(workspaceName, projectName), safeTs);
 }
 
