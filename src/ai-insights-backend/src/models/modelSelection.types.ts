@@ -33,16 +33,36 @@ export type MLPredictionType =
 
 export type MLLearningType = "supervised" | "unsupervised" | "semi_supervised";
 
-export type ModelFramework =
-  | "xgboost"
-  | "lightgbm"
-  | "sklearn"
-  | "pytorch"
-  | "tensorflow"
-  | "prophet"
-  | "statsmodels"
-  | "nixtla"
-  | "custom";
+export type ModelFramework = string;
+
+export interface ModelSourceTypeRecord {
+  id: string;
+  name: string;
+  description?: string | null;
+  createdAt?: string;
+}
+
+export interface ModelSourceProviderRecord {
+  id: string;
+  name: string;
+  sourceTypeId: string;
+  baseUrl?: string | null;
+  metadata?: Record<string, unknown>;
+  createdAt?: string;
+}
+
+export interface ModelSourceMetadata {
+  sourceTypeId: string;
+  sourceType?: string;
+  sourceProviderId?: string | null;
+  source: string;
+  repositoryUrl?: string | null;
+  repositoryId?: string | null;
+  version?: string | null;
+  license?: string | null;
+  discoveredAt?: string;
+  provider?: string | null;
+}
 
 export interface TargetEntitySpec {
   name: string | null;
@@ -72,6 +92,15 @@ export interface ModelSelectionCandidate {
   suitability_score: number;
   recommendation: "primary" | "alternative";
   reasoning: ModelCandidateReasoning;
+  source_type_id?: string;
+  source_type?: string;
+  source_provider_id?: string | null;
+  source?: string;
+  repository_url?: string | null;
+  repository_id?: string | null;
+  version?: string | null;
+  license?: string | null;
+  discovered_at?: string;
 }
 
 export interface RecommendedModel {
@@ -81,6 +110,15 @@ export interface RecommendedModel {
   recommendation: "primary";
   displayName?: string;
   reasoning?: ModelCandidateReasoning;
+  source_type_id?: string;
+  source_type?: string;
+  source_provider_id?: string | null;
+  source?: string;
+  repository_url?: string | null;
+  repository_id?: string | null;
+  version?: string | null;
+  license?: string | null;
+  discovered_at?: string;
 }
 
 export interface TrainingStrategySpec {
@@ -104,6 +142,9 @@ export interface ModelConfigItem {
   algorithm: string;
   enabled: boolean;
   parameters: Record<string, unknown>;
+  source?: string;
+  source_type?: string;
+  repository_url?: string | null;
 }
 
 export interface FeatureRequirement {
@@ -155,16 +196,28 @@ export interface ModelDefinition {
   modelId: string;
   displayName: string;
   algorithm: string;
-  framework: ModelFramework;
-  supportedTasks: MLTaskType[];
-  supportedSubTasks: MLTaskSubtype[];
-  supportedPredictionTypes: MLPredictionType[];
+  framework: string;
+  supportedTasks: (MLTaskType | string)[];
+  supportedSubTasks: (MLTaskSubtype | string)[];
+  supportedPredictionTypes: (MLPredictionType | string)[];
   capabilities: string[];
   strengths: string[];
   weaknesses: string[];
   isBaseline: boolean;
   isDynamic?: boolean;
-  source?: "builtin" | "web_search" | "user" | "huggingface";
+  sourceTypeId?: string;
+  sourceType?: string;
+  sourceProviderId?: string | null;
+  source?: string;
+  repositoryUrl?: string | null;
+  repositoryId?: string | null;
+  version?: string | null;
+  license?: string | null;
+  discoveredAt?: string;
+  updatedAt?: string;
+  modalities?: string[];
+  benchmarkResults?: Record<string, unknown>;
+  suitabilityDetails?: Record<string, unknown>;
   defaultParameters?: Record<string, unknown>;
   metadata?: Record<string, unknown>;
 }

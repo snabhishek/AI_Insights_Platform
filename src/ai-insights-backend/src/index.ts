@@ -38,10 +38,15 @@ import { DomainController } from "./controllers/domain.controller";
 import createDomainRouter from "./routes/domains";
 import { SourceRegistryService } from "./services/sourceRegistry/sourceRegistry.service";
 import { PostgresModelSelectionRepository } from "./repositories/modelSelection.repository";
+import { ModelDiscoveryService } from "./services/ai/model-selection/modelDiscovery.service";
+import { defaultModelCapabilityRegistry } from "./agents/ModelTrainingValidation/ModelSelection/modelCapabilityRegistry";
 import { ModelSelectionLLMService } from "./services/ai/model-selection/modelSelectionLLM.service";
 import { ModelSelectionService } from "./services/ai/model-selection/modelSelection.service";
 import { ModelSelectionController } from "./controllers/modelSelection.controller";
 import createModelSelectionRouter from "./routes/modelSelection";
+import { TrainingConfigService } from "./services/ai/training-config/trainingConfig.service";
+import { TrainingConfigController } from "./controllers/trainingConfig.controller";
+import createTrainingConfigRouter from "./routes/trainingConfig";
 
 
 dotenv.config();
@@ -111,14 +116,24 @@ async function bootstrap() {
 
   const modelSelectionRepository = new PostgresModelSelectionRepository(db);
   const modelSelectionLLMService = new ModelSelectionLLMService();
-  const modelSelectionService = new ModelSelectionService(modelSelectionRepository, modelSelectionLLMService, projectService);
+  const modelDiscoveryService = new ModelDiscoveryService(modelSelectionRepository);
+  const modelSelectionService = new ModelSelectionService(
+    modelSelectionRepository,
+    modelSelectionLLMService,
+    projectService,
+    defaultModelCapabilityRegistry,
+    modelDiscoveryService
+  );
   const modelSelectionController = new ModelSelectionController(modelSelectionService);
+  const trainingConfigService = new TrainingConfigService(projectService);
+  const trainingConfigController = new TrainingConfigController(trainingConfigService);
 
   // 4. Mount Main routers
   app.get("/api/filter-options", connectorController.getFilterOptions);
   app.use("/api/connectors", createConnectorRouter(connectorController));
   app.use("/api/domains", createDomainRouter(domainController));
   app.use("/api/model-selection", createModelSelectionRouter(modelSelectionController));
+  app.use("/api/training-config", createTrainingConfigRouter(trainingConfigController));
 
   // Agent Router
   const agentRouter = express.Router();

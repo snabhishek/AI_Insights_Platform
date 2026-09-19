@@ -12,6 +12,8 @@ const expectedMap: Record<string, string[]> = {
   programRectifier: ["status", "rectifiedCode", "explanation"],
   profileData: ["status", "tables"],
   profiledata: ["status", "tables"],
+  trainingConfiguration: ["status", "summary", "configuration"],
+  trainingConfigurationNode: ["status", "summary", "configuration"],
 };
 
 export function looksLikeError(stepName: string, payload: unknown): boolean {
@@ -56,33 +58,64 @@ export function looksLikeError(stepName: string, payload: unknown): boolean {
   }
 }
 
+type CustomValidatorResult = { isValid: boolean; errors?: string[]; reason?: string }
+
 export async function validateWithRetry<T extends Record<string, unknown>>(
   stepName: string,
-  invokeFn: () => Promise<T>,
+  invokeFn: (feedbackPrompt?: string) => Promise<T>,
   fallback: T,
   services?: IngestionServices,
-  maxRetries = 1
+  maxRetries = 1,
+  validatorPrompt?: string,
+  customValidator?: (output: T) => CustomValidatorResult
 ): Promise<T> {
   let attempt = 0;
+  let lastFeedback: string | undefined = undefined;
   const model = getModel();
-  const evaluatorPrompt =
+  const defaultEvaluatorPrompt =
     `You are an assistant validator.
 Given the agent output JSON (below) and the expected keys for the node, decide whether the agent should retry the same node or accept the output.
 Return a single JSON object with the shape: { "shouldRetry": true|false, "reason": "short explanation" }.
 Do not return any other text.`;
 
+  const evaluatorPrompt = validatorPrompt && validatorPrompt.trim().length > 0
+    ? `${defaultEvaluatorPrompt}\n\nSpecific Validation Criteria:\n${validatorPrompt.trim()}`
+    : defaultEvaluatorPrompt;
+
   while (attempt <= maxRetries) {
     attempt += 1;
 
     try {
-      const result = await invokeFn();
+      const result = await invokeFn(lastFeedback);
 
-      // 1. Structural validation first — if valid, accept immediately without extra LLM delay
-      if (!looksLikeError(stepName, result)) {
-        return result;
+      // 1. If custom deterministic validator is supplied, check it first
+      if (typeof customValidator === "function") {
+        const check = customValidator(result);
+        if (check.isValid) {
+          return result; // Shows green immediately
+        }
+
+        const errorsJoined = Array.isArray(check.errors) && check.errors.length > 0
+          ? check.errors.join("; ")
+          : (check.reason || "Validation criteria not satisfied");
+
+        lastFeedback = `Previous attempt had validation errors: ${errorsJoined}. Please rectify these issues in your output.`;
+        if (services) {
+          await logMilestoneThinking(services, "Validation", `Validator identified issues in ${stepName} (attempt ${attempt}/${maxRetries + 1}): ${errorsJoined}`);
+        }
+
+        if (attempt > maxRetries) {
+          return result;
+        }
+        continue;
       }
 
-      // 2. If structural checks flagged potential issue and model is available, consult validator agent
+      // 2. Structural validation first — if valid, accept immediately
+      // if (!looksLikeError(stepName, result)) {
+      //   return result;
+      // }
+
+      // 3. If structural checks flagged potential issue and model is available, consult validator agent
       if (model && services && attempt <= maxRetries) {
         try {
           const expected = expectedMap[stepName] || expectedMap[stepName.toLowerCase()] || [];
@@ -90,8 +123,9 @@ Do not return any other text.`;
             `Step: ${stepName}`,
             `Agent output: ${JSON.stringify(result, null, 2)}`,
             `Expected keys: ${JSON.stringify(expected, null, 2)}`,
+            validatorPrompt ? `Validation Rules: ${validatorPrompt}` : "",
             "Return: JSON {\"shouldRetry\": true|false, \"reason\": \"...\"} only.",
-          ].join("\n\n");
+          ].filter(Boolean).join("\n\n");
 
           const agentEval = await invokeAgentJson(
             "validator",
@@ -107,15 +141,20 @@ Do not return any other text.`;
             return result; // Agent validator approved output
           }
 
+          const retryReason = (parsed as any)?.reason || "imperfect output";
+          lastFeedback = `Validator requested retry: ${retryReason}. Please rectify the output.`;
           if (services) {
-            await logMilestoneThinking(services, "Validation", `Agent requested retry for ${stepName}: ${(parsed as any)?.reason || "imperfect output"}`);
+            await logMilestoneThinking(services, "Validation", `Agent requested retry for ${stepName}: ${retryReason}`);
           }
         } catch (err) {
           console.warn("[Validator] Evaluator call failed, falling back to output", err);
           return result;
         }
+      } else {
+        return result;
       }
     } catch (err) {
+      lastFeedback = `Execution failed with error: ${String(err)}`;
       if (services) {
         await logMilestoneThinking(
           services,

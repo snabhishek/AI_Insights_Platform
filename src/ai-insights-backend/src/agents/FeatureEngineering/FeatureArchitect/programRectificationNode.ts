@@ -13,6 +13,7 @@ interface RectifierOutput extends Record<string, unknown> {
   status: string;
   rectifiedCode: string;
   explanation: string;
+  requiredPackages?: string[];
 }
 
 export async function programRectificationNode(
@@ -31,6 +32,7 @@ export async function programRectificationNode(
   let fragment = "";
   let historyKey = "";
   let stateField = "";
+  let stagePackages: string[] = [];
   const aggregatedName = state.aggregatedScriptPath || "aggregated_feature_pipeline.py";
 
   const historyWorkers = state.history.map((h) => h.worker);
@@ -40,6 +42,7 @@ export async function programRectificationNode(
     fragment = state.featureCreation.pythonCode || "";
     historyKey = "featureCreation_executed";
     stateField = "featureCreation";
+    stagePackages = state.featureCreation.requiredPackages || [];
   } else if (
     state.featureTransformation?.pythonCode &&
     !historyWorkers.includes("featureTransformation_executed")
@@ -48,31 +51,37 @@ export async function programRectificationNode(
     fragment = state.featureTransformation.pythonCode || "";
     historyKey = "featureTransformation_executed";
     stateField = "featureTransformation";
+    stagePackages = state.featureTransformation.requiredPackages || [];
   } else if (state.buildDataset?.pythonCode && !historyWorkers.includes("buildDataset_executed")) {
     region = "BUILD_DATASET";
     fragment = state.buildDataset.pythonCode || "";
     historyKey = "buildDataset_executed";
     stateField = "buildDataset";
+    stagePackages = state.buildDataset.requiredPackages || [];
   } else if (state.dataValidation?.pythonCode && !historyWorkers.includes("dataValidation_executed")) {
     region = "DATA_VALIDATION";
     fragment = state.dataValidation.pythonCode || "";
     historyKey = "dataValidation_executed";
     stateField = "dataValidation";
+    stagePackages = state.dataValidation.requiredPackages || [];
   } else if (state.featureExtraction?.pythonCode && !historyWorkers.includes("featureExtraction_executed")) {
     region = "FEATURE_EXTRACTION";
     fragment = state.featureExtraction.pythonCode || "";
     historyKey = "featureExtraction_executed";
     stateField = "featureExtraction";
+    stagePackages = state.featureExtraction.requiredPackages || [];
   } else if (state.featureSelection?.pythonCode && !historyWorkers.includes("featureSelection_executed")) {
     region = "FEATURE_SELECTION";
     fragment = state.featureSelection.pythonCode || "";
     historyKey = "featureSelection_executed";
     stateField = "featureSelection";
+    stagePackages = state.featureSelection.requiredPackages || [];
   } else if (state.featureValidator?.pythonCode && !historyWorkers.includes("featureValidator_executed")) {
     region = "FEATURE_VALIDATION";
     fragment = state.featureValidator.pythonCode || "";
     historyKey = "featureValidator_executed";
     stateField = "featureValidator";
+    stagePackages = state.featureValidator.requiredPackages || [];
   }
 
   if (!region) {
@@ -157,7 +166,8 @@ export async function programRectificationNode(
       services.projectId || "default",
       state.runTimestamp || "default",
       services,
-      state.connectorId
+      state.connectorId,
+      stagePackages
     );
 
     lastStdout = res.stdout;
@@ -232,7 +242,7 @@ export async function programRectificationNode(
       try {
         const fsTools = await getMcpFilesystemTools(services);
 
-        await invokeAgentJson<RectifierOutput>(
+        const rectifierRes = await invokeAgentJson<RectifierOutput>(
           "featureArchitect",
           model,
           userMessage,
@@ -245,6 +255,10 @@ export async function programRectificationNode(
             recursionLimit: 100,
           }
         );
+
+        if (Array.isArray(rectifierRes?.requiredPackages) && rectifierRes.requiredPackages.length > 0) {
+          stagePackages = Array.from(new Set([...stagePackages, ...rectifierRes.requiredPackages]));
+        }
 
         // Re-read the updated script from disk after rectifier tool execution
         if (fs.existsSync(scriptPath)) {
@@ -266,6 +280,7 @@ export async function programRectificationNode(
       ...(state as any)[stateField],
       status: "Success",
       pythonCode: fragment,
+      requiredPackages: stagePackages,
     };
 
     // persist aggregated script and release lock
@@ -288,6 +303,7 @@ export async function programRectificationNode(
       ...(state as any)[stateField],
       status: "Failed",
       pythonCode: fragment,
+      requiredPackages: stagePackages,
     };
 
     // persist aggregated script and release lock

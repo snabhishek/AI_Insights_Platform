@@ -2,6 +2,7 @@
 
 import React from "react";
 import ModelSelectionStepOutput from "./ModelSelectionStepOutput";
+import TrainingConfigurationStepOutput from "./TrainingConfigurationStepOutput";
 
 interface ModelTrainingValidationOutputProps {
   modelSelection?: any;
@@ -10,6 +11,7 @@ interface ModelTrainingValidationOutputProps {
   trainingConfiguration?: any;
   projectId?: string;
   activeSubstep?: string;
+  activeRunTimestamp?: string;
   onSelectionConfirmed?: (selectedModels: string[]) => void;
 }
 
@@ -20,51 +22,18 @@ export default function ModelTrainingValidationStepOutput({
   trainingConfiguration,
   projectId,
   activeSubstep,
+  activeRunTimestamp,
   onSelectionConfirmed,
 }: ModelTrainingValidationOutputProps) {
-  // If activeSubstep is Training Configuration and trainingConfiguration is present
-  if (activeSubstep === "Training Configuration" && trainingConfiguration) {
-    const config = trainingConfiguration.configuration || {};
-    const models = Array.isArray(config.models) ? config.models : (config.candidate_models || []);
+  // If activeSubstep is Training Configuration or trainingConfiguration is active
+  if (activeSubstep === "Training Configuration" || (Boolean(trainingConfiguration) && !modelTraining && !modelValidation && activeSubstep !== "Model Selection")) {
     return (
-      <div className="p-6 space-y-4">
-        <div className="rounded-xl border border-border bg-surface p-5">
-          <h4 className="text-sm font-bold text-foreground">Training Configuration</h4>
-          <p className="text-xs text-muted-foreground mt-1">
-            {trainingConfiguration.summary || "Training environment and dataset splits configured."}
-          </p>
-          <div className="mt-4 pt-3 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-2.5 rounded-lg bg-surface-muted border border-border text-center">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground block">Target Column</span>
-              <span className="text-xs font-bold text-foreground">{trainingConfiguration.targetColumn || "N/A"}</span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-surface-muted border border-border text-center">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground block">Problem Type</span>
-              <span className="text-xs font-bold text-foreground uppercase">{trainingConfiguration.problemType || "N/A"}</span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-surface-muted border border-border text-center">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground block">CV Folds</span>
-              <span className="text-xs font-bold text-foreground">{config.cvFolds ?? 5}</span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-surface-muted border border-border text-center">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground block">Test Split</span>
-              <span className="text-xs font-bold text-foreground">{((config.testSplitRatio ?? 0.3) * 100).toFixed(0)}%</span>
-            </div>
-          </div>
-          {models.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-border">
-              <span className="text-xs font-semibold text-foreground block mb-2">Models Configured for Training:</span>
-              <div className="flex flex-wrap gap-2">
-                {models.map((m: string) => (
-                  <span key={m} className="px-2.5 py-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-semibold">
-                    {m}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
+      <TrainingConfigurationStepOutput
+        projectId={projectId}
+        trainingConfiguration={trainingConfiguration}
+        modelSelection={modelSelection}
+        activeRunTimestamp={activeRunTimestamp}
+      />
     );
   }
 
