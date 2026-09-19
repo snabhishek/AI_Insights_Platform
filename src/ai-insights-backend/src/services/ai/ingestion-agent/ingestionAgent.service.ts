@@ -15,7 +15,7 @@ import { WorkflowSessionMeta } from "../../../agents/state";
 import { IAgentThinkingService } from "../agent-thinking/agentThinking.service.interface";
 import { QueueService } from "../../queue/queue.service";
 import { agentJobEvents } from "../../queue/queueEvents";
-import { generateDateTimeStamp, ensureProjectRunFolder, getLatestProjectRunTimestamp } from "../../../agents/tools/helpers";
+import { generateDateTimeStamp, ensureProjectRunFolder, getLatestProjectRunTimestamp, createProjectSchemaFile } from "../../../agents/tools/helpers";
 import { registerProjectMetadata } from "../../../agents/tools/filesystem/mcpFilesystemClient";
 
 const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
@@ -314,6 +314,16 @@ export class IngestionAgentService implements IIngestionAgentService {
       if (pWs && pWs.project && pWs.workspaceName) {
         try {
           await ensureProjectRunFolder(pWs.workspaceName, pWs.project.name, activeRunTimestamp);
+          await createProjectSchemaFile(
+            pWs.workspaceName,
+            {
+              name: pWs.project.name,
+              domain: pWs.project.domain,
+              subDomain: pWs.project.subDomain,
+              useCase: pWs.project.useCase,
+            },
+            activeRunTimestamp
+          );
         } catch (folderErr) {
           console.warn("[Workflow] Warning ensuring project run folder:", folderErr);
         }
@@ -1340,21 +1350,29 @@ export class IngestionAgentService implements IIngestionAgentService {
             ? "Feature Engineering"
             : (nextNode === "modelSelectionNode" || nextNode === "modelSelection")
               ? "Model Training & Validation"
-              : undefined;
+              : (nextNode === "trainingConfigurationNode" || nextNode === "trainingConfiguration")
+                ? "Training Configuration"
+                : undefined;
           const isAtApprovalGate = Boolean(approvalTarget);
 
           if (isAtApprovalGate) {
             console.info(`[Workflow] Pausing for user approval before ${approvalTarget}.`);
             const completedPhase = approvalTarget === "Feature Engineering"
               ? "Data Ingestion"
-              : "Feature Engineering";
+              : approvalTarget === "Training Configuration"
+                ? "Model Selection"
+                : "Feature Engineering";
             const pausedStatuses = { ...(latestGraphStateValues.stageStatuses || {}) };
             if (approvalTarget === "Feature Engineering") {
               pausedStatuses.hierarchyMapper = "Pending";
             } else if (approvalTarget === "Model Training & Validation") {
               pausedStatuses.modelSelection = "Pending";
+            } else if (approvalTarget === "Training Configuration") {
+              pausedStatuses.trainingConfiguration = "Pending";
             }
-            const approvalSummary = `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`;
+            const approvalSummary = approvalTarget === "Training Configuration"
+              ? "Model Selection completed successfully. Please select candidate models and confirm for Training Configuration."
+              : `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`;
             const pausedValues = {
               ...latestGraphStateValues,
               runTimestamp: latestGraphStateValues.runTimestamp || activeRunTimestamp,
@@ -1437,6 +1455,57 @@ export class IngestionAgentService implements IIngestionAgentService {
               };
             }
             latestGraphStateValues.runTimestamp = latestGraphStateValues.runTimestamp || activeRunTimestamp;
+
+            const loopNextNode = Array.isArray(graphState?.next) ? graphState.next[0] : undefined;
+            const loopApprovalTarget = loopNextNode === "hierarchyMapperNode"
+              ? "Feature Engineering"
+              : (loopNextNode === "modelSelectionNode" || loopNextNode === "modelSelection")
+                ? "Model Training & Validation"
+                : (loopNextNode === "trainingConfigurationNode" || loopNextNode === "trainingConfiguration")
+                  ? "Training Configuration"
+                  : undefined;
+
+            if (loopApprovalTarget) {
+              console.info(`[Workflow] Reached approval gate before ${loopApprovalTarget}. Halting advance stream loop.`);
+              const completedPhase = loopApprovalTarget === "Feature Engineering"
+                ? "Data Ingestion"
+                : loopApprovalTarget === "Training Configuration"
+                  ? "Model Selection"
+                  : "Feature Engineering";
+              const pausedStatuses = { ...(latestGraphStateValues.stageStatuses || {}) };
+              if (loopApprovalTarget === "Feature Engineering") {
+                pausedStatuses.hierarchyMapper = "Pending";
+              } else if (loopApprovalTarget === "Model Training & Validation") {
+                pausedStatuses.modelSelection = "Pending";
+              } else if (loopApprovalTarget === "Training Configuration") {
+                pausedStatuses.trainingConfiguration = "Pending";
+              }
+              const approvalSummary = loopApprovalTarget === "Training Configuration"
+                ? "Model Selection completed successfully. Please select candidate models and confirm for Training Configuration."
+                : `${completedPhase} completed successfully. Approve to proceed to ${loopApprovalTarget}.`;
+              const pausedValues = {
+                ...latestGraphStateValues,
+                runTimestamp: latestGraphStateValues.runTimestamp || activeRunTimestamp,
+                stageStatuses: pausedStatuses,
+                status: "paused",
+                requiresApproval: true,
+                nextStep: loopApprovalTarget,
+                summary: approvalSummary,
+                message: approvalSummary,
+              };
+              latestGraphStateValues = pausedValues;
+              const pausedResult = buildResultFromGraphState({ values: pausedValues, next: graphState?.next }, threadId, connectorId);
+              pausedResult.status = "paused";
+              pausedResult.requiresApproval = true;
+              pausedResult.nextStep = loopApprovalTarget;
+              pausedResult.stageStatuses = pausedStatuses;
+              if (options?.projectId) {
+                await this.projectService.updateAgentState(options.projectId, pausedValues);
+                pausedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+              }
+              agentJobEvents.emit(`job:update:${threadId}`, pausedResult);
+              return;
+            }
           }
 
           console.info(`[Workflow] State after invoke — next: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}], status: ${graphState?.values?.status || "unknown"}`);

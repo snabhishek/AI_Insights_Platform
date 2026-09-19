@@ -1012,9 +1012,14 @@ export default function ProjectsPage() {
       pipelineStatuses["Exogenous Scout"] === "Completed" ||
       stageOutputs?.exogenousScout !== undefined;
 
+    const isModelSelectionCompleted =
+      pipelineStatuses["Model Selection"] === "Completed" ||
+      stageOutputs?.modelSelection !== undefined;
+
     const nextStepLower = (approvalNextStep || "").toLowerCase();
     let targetPhase = "Feature Engineering";
     if (
+      isModelSelectionCompleted ||
       nextStepLower.includes("training") ||
       nextStepLower.includes("config")
     ) {

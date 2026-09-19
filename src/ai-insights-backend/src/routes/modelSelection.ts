@@ -9,6 +9,7 @@ export default function createModelSelectionRouter(controller: ModelSelectionCon
   router.get("/project/:projectId", controller.getProjectDecision);
   router.get("/:id", controller.getDecision);
   router.post("/:id/select", controller.selectModels);
+  router.post("/project/:projectId/select", controller.selectProjectModels);
 
   return router;
 }

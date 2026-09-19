@@ -13,6 +13,7 @@ import {
   getWorkspacesBasePath,
   resolveStoragePath,
   computeProjectRelativePath,
+  getProjectDir,
   sanitizeFolderName,
 } from "../../config/fileServer.config";
 
@@ -129,6 +130,11 @@ export class LocalFileService implements IFileService {
   }
 
   getProjectDirectory(folderPathOrProjectName: string, workspaceName?: string): string {
+    if (workspaceName && !folderPathOrProjectName.includes("/") && !folderPathOrProjectName.includes("\\")) {
+      const absPath = getProjectDir(workspaceName, folderPathOrProjectName);
+      ensureDirectoryExists(absPath);
+      return absPath;
+    }
     if (folderPathOrProjectName.includes("/") || folderPathOrProjectName.includes("\\")) {
       const absPath = resolveStoragePath(folderPathOrProjectName);
       ensureDirectoryExists(absPath);
