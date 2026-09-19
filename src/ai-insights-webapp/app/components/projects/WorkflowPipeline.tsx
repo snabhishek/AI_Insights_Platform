@@ -26,6 +26,7 @@ interface WorkflowPipelineProps {
   onPause?: () => void;
   onResume?: () => void;
   isApproving?: boolean;
+  isAwaitingResponse?: boolean;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -186,6 +187,9 @@ const MAIN_STEP_MAPPING: Record<string, string> = {
   "Training Configuration": "Model Training & Validation",
   "trainingConfiguration": "Model Training & Validation",
   "trainingConfigurationNode": "Model Training & Validation",
+  "Pre Flight": "Model Training & Validation",
+  "preFlight": "Model Training & Validation",
+  "preFlightNode": "Model Training & Validation",
   "Model Training": "Model Training & Validation",
   "modelTraining": "Model Training & Validation",
   "modelTrainingNode": "Model Training & Validation",
@@ -220,6 +224,8 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
     pipelineStatuses["Model Selection"] === "In Progress" ||
     pipelineStatuses["Training Configuration"] === "Completed" ||
     pipelineStatuses["Training Configuration"] === "In Progress" ||
+    pipelineStatuses["Pre Flight"] === "Completed" ||
+    pipelineStatuses["Pre Flight"] === "In Progress" ||
     pipelineStatuses["Model Training"] === "Completed" ||
     pipelineStatuses["Model Training"] === "In Progress" ||
     pipelineStatuses["Model Validation"] === "Completed" ||
@@ -262,6 +268,8 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
     pipelineStatuses["Model Selection"] === "In Progress" ||
     pipelineStatuses["Training Configuration"] === "Completed" ||
     pipelineStatuses["Training Configuration"] === "In Progress" ||
+    pipelineStatuses["Pre Flight"] === "Completed" ||
+    pipelineStatuses["Pre Flight"] === "In Progress" ||
     pipelineStatuses["Model Training"] === "Completed" ||
     pipelineStatuses["Model Training"] === "In Progress" ||
     pipelineStatuses["Model Validation"] === "Completed" ||
@@ -292,6 +300,7 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
 const MODEL_SUBSTEPS = [
   "Model Selection",
   "Training Configuration",
+  "Pre Flight",
   "Model Training",
   "Model Validation",
 ] as const;
@@ -360,7 +369,8 @@ export default function WorkflowPipeline({
   pausedAtPhase,
   onPause,
   onResume,
-  isApproving
+  isApproving,
+  isAwaitingResponse,
 }: WorkflowPipelineProps) {
   const currentStage = activeStage || "inspect";
   const mainSelectedStage = getMainStepId(currentStage);
@@ -381,6 +391,24 @@ export default function WorkflowPipeline({
 
   return (
     <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-background border border-border rounded-lg p-6 shadow-soft">
+      {/* HITL Notification Pill */}
+      {isAwaitingResponse && (
+        <div className="mb-5 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-surface border border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-sm animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+            </span>
+            <span className="text-xs font-bold tracking-wide">
+              This process is awaiting your response.
+            </span>
+          </div>
+          <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
+            Please confirm candidate models in the Model Selection view below to proceed.
+          </span>
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-4 border-b border-border pb-4 mb-6 select-none">
         <div className="flex flex-col gap-1">
           <h2 className="text-base font-bold text-foreground leading-tight">Data Insights Workflow</h2>
@@ -388,7 +416,24 @@ export default function WorkflowPipeline({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {runStatus === "Running" ? (
+          {isAwaitingResponse ? (
+            <div className="flex items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs font-bold border border-amber-500/20">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                Awaiting Input
+              </span>
+              <button
+                type="button"
+                onClick={onStopWorkflow}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0"
+              >
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                  <rect x="5" y="5" width="14" height="14" rx="2" />
+                </svg>
+                Stop Workflow
+              </button>
+            </div>
+          ) : runStatus === "Running" ? (
             <>
               <button
                 type="button"
@@ -448,7 +493,7 @@ export default function WorkflowPipeline({
                 Stop Workflow
               </button>
             </>
-          ) : isPaused ? (
+          ) : isPaused && !isAwaitingResponse ? (
             <>
               <button
                 type="button"

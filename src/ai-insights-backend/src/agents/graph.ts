@@ -6,7 +6,7 @@ import { schemaResolverNode } from "./IngestionLayer/resolver/schemaResolverNode
 import { hierarchyMapperNode } from "./FeatureEngineering/HierarchyMapper/hierarchyMapperNode";
 import { featureArchitectNode } from "./FeatureEngineering/FeatureArchitect/featureArchitectNode";
 import { exogenousScoutNode } from "./FeatureEngineering/ExogenousScout/exogenousScoutNode";
-import { modelSelectionNode, trainingConfigurationNode, modelTrainingNode, modelValidationNode } from "./ModelTrainingValidation/nodes";
+import { modelSelectionNode, trainingConfigurationNode, preFlightNode, modelTrainingNode, modelValidationNode } from "./ModelTrainingValidation/nodes";
 
 export function createAgentGraph(checkpointer: any) {
   const workflow = new StateGraph(AgentState)
@@ -18,6 +18,7 @@ export function createAgentGraph(checkpointer: any) {
     .addNode("exogenous", exogenousScoutNode)
     .addNode("modelSelectionNode", modelSelectionNode)
     .addNode("trainingConfigurationNode", trainingConfigurationNode)
+    .addNode("preFlightNode", preFlightNode)
     .addNode("modelTrainingNode", modelTrainingNode)
     .addNode("modelValidationNode", modelValidationNode)
     .addEdge("__start__", "inspect")
@@ -28,7 +29,8 @@ export function createAgentGraph(checkpointer: any) {
     .addEdge("featureArchitectNode", "exogenous")
     .addEdge("exogenous", "modelSelectionNode")
     .addEdge("modelSelectionNode", "trainingConfigurationNode")
-    .addEdge("trainingConfigurationNode", "modelTrainingNode")
+    .addEdge("trainingConfigurationNode", "preFlightNode")
+    .addEdge("preFlightNode", "modelTrainingNode")
     .addEdge("modelTrainingNode", "modelValidationNode")
     .addEdge("modelValidationNode", "__end__");
 

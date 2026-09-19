@@ -49,6 +49,7 @@ interface ProjectDetailPageProps {
   onPause?: () => void;
   onResume?: () => void;
   isApproving?: boolean;
+  isAwaitingResponse?: boolean;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   showAlert: (opts: { title: string; message?: string; type: AlertType; logs?: string }) => void;
 }
@@ -85,6 +86,7 @@ export default function ProjectDetailPage({
   onPause,
   onResume,
   isApproving,
+  isAwaitingResponse,
   agentThinking,
   showAlert,
 }: ProjectDetailPageProps) {
@@ -386,6 +388,7 @@ export default function ProjectDetailPage({
             onPause={onPause}
             onResume={onResume}
             isApproving={isApproving}
+            isAwaitingResponse={isAwaitingResponse}
           />
         </div>
       </div>
@@ -418,26 +421,33 @@ export default function ProjectDetailPage({
           "Exogenous Scout": stageOutputs.exogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
           ) : null,
-          "Model Selection": (stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+          "Model Selection": stageOutputs.modelSelection ? (
             <ModelTrainingValidationStepOutput
               modelSelection={stageOutputs.modelSelection}
-              modelTraining={stageOutputs.modelTraining}
               projectId={project.id}
               activeSubstep="Model Selection"
               activeRunTimestamp={(project.agentState as any)?.runTimestamp}
               onSelectionConfirmed={(_models) => {
-                if (requiresApproval && onApprove) {
+                if (onApprove) {
                   onApprove();
                 }
               }}
             />
           ) : null,
-          "Training Configuration": (stageOutputs.trainingConfiguration || stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+          "Training Configuration": stageOutputs.trainingConfiguration ? (
             <ModelTrainingValidationStepOutput
               modelSelection={stageOutputs.modelSelection}
               trainingConfiguration={stageOutputs.trainingConfiguration}
               projectId={project.id}
               activeSubstep="Training Configuration"
+              activeRunTimestamp={(project.agentState as any)?.runTimestamp}
+            />
+          ) : null,
+          "Pre Flight": stageOutputs.preFlight ? (
+            <ModelTrainingValidationStepOutput
+              preFlight={stageOutputs.preFlight}
+              projectId={project.id}
+              activeSubstep="Pre Flight"
               activeRunTimestamp={(project.agentState as any)?.runTimestamp}
             />
           ) : null,
@@ -449,10 +459,9 @@ export default function ProjectDetailPage({
               activeRunTimestamp={(project.agentState as any)?.runTimestamp}
             />
           ) : null,
-          "Model Validation": (stageOutputs.modelValidation || stageOutputs.modelTraining) ? (
+          "Model Validation": stageOutputs.modelValidation ? (
             <ModelTrainingValidationStepOutput
               modelValidation={stageOutputs.modelValidation}
-              modelTraining={stageOutputs.modelTraining}
               projectId={project.id}
               activeSubstep="Model Validation"
               activeRunTimestamp={(project.agentState as any)?.runTimestamp}
@@ -463,16 +472,28 @@ export default function ProjectDetailPage({
           ) : stageOutputs.featureArchitect ? (
             <FeatureArchitectStepOutput featureArchitect={stageOutputs.featureArchitect} />
           ) : null,
-          "Model Training & Validation": (stageOutputs.modelSelection || stageOutputs.modelTraining || stageOutputs.trainingConfiguration) ? (
+          "Model Training & Validation": (stageOutputs.modelSelection || stageOutputs.trainingConfiguration || stageOutputs.preFlight || stageOutputs.modelTraining || stageOutputs.modelValidation) ? (
             <ModelTrainingValidationStepOutput
               modelSelection={stageOutputs.modelSelection}
               trainingConfiguration={stageOutputs.trainingConfiguration}
+              preFlight={stageOutputs.preFlight}
               modelTraining={stageOutputs.modelTraining}
+              modelValidation={stageOutputs.modelValidation}
               projectId={project.id}
-              activeSubstep={stageOutputs.trainingConfiguration ? "Training Configuration" : "Model Selection"}
+              activeSubstep={
+                stageOutputs.modelValidation
+                  ? "Model Validation"
+                  : stageOutputs.modelTraining
+                  ? "Model Training"
+                  : stageOutputs.preFlight
+                  ? "Pre Flight"
+                  : stageOutputs.trainingConfiguration
+                  ? "Training Configuration"
+                  : "Model Selection"
+              }
               activeRunTimestamp={(project.agentState as any)?.runTimestamp}
               onSelectionConfirmed={(_models) => {
-                if (requiresApproval && onApprove) {
+                if (onApprove) {
                   onApprove();
                 }
               }}

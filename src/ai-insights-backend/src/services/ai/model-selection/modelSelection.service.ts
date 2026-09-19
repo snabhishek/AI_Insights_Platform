@@ -276,17 +276,25 @@ export class ModelSelectionService implements IModelSelectionService {
           sourceDecisionId: decisionId,
         };
 
+        const cleanStageOutputs = { ...(existingState.stageOutputs || {}) };
+        delete cleanStageOutputs.preFlight;
+        delete cleanStageOutputs.modelTraining;
+        delete cleanStageOutputs.modelValidation;
+
+        const cleanStageStatuses = { ...(existingState.stageStatuses || {}) };
+        cleanStageStatuses.trainingConfiguration = "In Progress";
+        cleanStageStatuses.preFlight = "Pending";
+        cleanStageStatuses.modelTraining = "Pending";
+        cleanStageStatuses.modelValidation = "Pending";
+
         const updatedState = {
           ...existingState,
           trainingConfiguration: trainingConfigPayload,
           stageOutputs: {
-            ...(existingState.stageOutputs || {}),
+            ...cleanStageOutputs,
             trainingConfiguration: trainingConfigPayload,
           },
-          stageStatuses: {
-            ...(existingState.stageStatuses || {}),
-            trainingConfiguration: "In Progress",
-          },
+          stageStatuses: cleanStageStatuses,
         };
 
         await this.projectService.updateAgentState(record.projectId, updatedState);

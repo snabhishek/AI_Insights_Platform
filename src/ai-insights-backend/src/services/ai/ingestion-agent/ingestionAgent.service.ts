@@ -82,6 +82,11 @@ const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
     "Preparing feature encoders and model hyperparameter search spaces...",
     "Setting up training execution environment and hardware resources..."
   ],
+  "Pre Flight": [
+    "Validating compute accelerators, system memory, and runtime environment...",
+    "Verifying dataset partitions and asynchronous DataLoader configurations...",
+    "Auditing data optimization strategies and pre-flight execution readiness..."
+  ],
   "Model Training": [
     "Fitting candidate models against training partitions...",
     "Executing hyperparameter optimization trials...",
@@ -476,6 +481,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               exogenousScout: "Completed",
               modelSelection: "In Progress",
               trainingConfiguration: "Pending",
+              preFlight: "Pending",
               modelTraining: "Pending",
               modelValidation: "Pending",
             }
@@ -491,6 +497,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 exogenousScout: "Pending",
                 modelSelection: "Pending",
                 trainingConfiguration: "Pending",
+                preFlight: "Pending",
                 modelTraining: "Pending",
                 modelValidation: "Pending",
               }
@@ -505,6 +512,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 exogenousScout: "Pending",
                 modelSelection: "Pending",
                 trainingConfiguration: "Pending",
+                preFlight: "Pending",
                 modelTraining: "Pending",
                 modelValidation: "Pending",
               };
@@ -553,7 +561,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         schemaResolution: savedAgentState?.schemaResolution || {},
         dataProfile: savedAgentState?.dataProfile || {},
         preprocessing: savedAgentState?.preprocessing || {},
-        stageOutputs: savedAgentState?.stageOutputs || {},
+        stageOutputs: options?.action ? (savedAgentState?.stageOutputs || {}) : {},
         message: options?.action === "approve"
           ? approveMessage
           : buildMessage([], "running", initialStageStatuses),
@@ -599,6 +607,9 @@ export class IngestionAgentService implements IIngestionAgentService {
               updated.modelSelection = "Completed";
             } else if (nodeName === "trainingConfiguration" || nodeName === "trainingConfigurationNode") {
               updated.trainingConfiguration = "Completed";
+              updated.preFlight = "In Progress";
+            } else if (nodeName === "preFlight" || nodeName === "preFlightNode") {
+              updated.preFlight = "Completed";
               updated.modelTraining = "In Progress";
             } else if (nodeName === "modelTraining" || nodeName === "modelTrainingNode") {
               updated.modelTraining = "Completed";
@@ -641,6 +652,9 @@ export class IngestionAgentService implements IIngestionAgentService {
                 "Training Configuration": "Training Configuration",
                 trainingConfiguration: "Training Configuration",
                 trainingConfigurationNode: "Training Configuration",
+                "Pre Flight": "Pre Flight",
+                preFlight: "Pre Flight",
+                preFlightNode: "Pre Flight",
                 "Model Training": "Model Training",
                 modelTraining: "Model Training",
                 modelTrainingNode: "Model Training",
@@ -802,7 +816,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               const currentGraphState = await workflow.getState(config).catch(() => null);
               const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
 
-              const isModelSubstep = activeSubstep === "Model Selection" || activeSubstep === "Training Configuration" || activeSubstep === "Model Training" || activeSubstep === "Model Validation" || activeSubstep === "Model Training & Validation";
+              const isModelSubstep = activeSubstep === "Model Selection" || activeSubstep === "Training Configuration" || activeSubstep === "Pre Flight" || activeSubstep === "Model Training" || activeSubstep === "Model Validation" || activeSubstep === "Model Training & Validation";
               const isFESubstep = activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering";
 
               const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || isFESubstep || isModelSubstep) ? "Completed" : "In Progress";
@@ -815,8 +829,9 @@ export class IngestionAgentService implements IIngestionAgentService {
               const featureValidatorStatus = isModelSubstep || activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Feature Validator" ? "In Progress" : "Pending");
               const exogenousStatus = isModelSubstep ? "Completed" : (activeSubstep === "Exogenous Scout" ? "In Progress" : "Pending");
 
-              const modelSelectionStatus = (activeSubstep === "Training Configuration" || activeSubstep === "Model Training" || activeSubstep === "Model Validation") ? "Completed" : (activeSubstep === "Model Selection" || activeSubstep === "Model Training & Validation" ? "In Progress" : "Pending");
-              const trainingConfigStatus = (activeSubstep === "Model Training" || activeSubstep === "Model Validation") ? "Completed" : (activeSubstep === "Training Configuration" ? "In Progress" : "Pending");
+              const modelSelectionStatus = (activeSubstep === "Training Configuration" || activeSubstep === "Pre Flight" || activeSubstep === "Model Training" || activeSubstep === "Model Validation") ? "Completed" : (activeSubstep === "Model Selection" || activeSubstep === "Model Training & Validation" ? "In Progress" : "Pending");
+              const trainingConfigStatus = (activeSubstep === "Pre Flight" || activeSubstep === "Model Training" || activeSubstep === "Model Validation") ? "Completed" : (activeSubstep === "Training Configuration" ? "In Progress" : "Pending");
+              const preFlightStatus = (activeSubstep === "Model Training" || activeSubstep === "Model Validation") ? "Completed" : (activeSubstep === "Pre Flight" ? "In Progress" : "Pending");
               const modelTrainingStatus = activeSubstep === "Model Validation" ? "Completed" : (activeSubstep === "Model Training" ? "In Progress" : "Pending");
               const modelValidationStatus = activeSubstep === "Model Validation" ? "In Progress" : "Pending";
 
@@ -832,6 +847,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 exogenousScout: exogenousStatus,
                 modelSelection: modelSelectionStatus,
                 trainingConfiguration: trainingConfigStatus,
+                preFlight: preFlightStatus,
                 modelTraining: modelTrainingStatus,
                 modelValidation: modelValidationStatus,
               };
@@ -845,6 +861,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 : activeSubstep === "Exogenous Scout" ? "exogenousScout"
                 : (activeSubstep === "Model Selection" || activeSubstep === "Model Training & Validation") ? "modelSelectionNode"
                 : activeSubstep === "Training Configuration" ? "trainingConfigurationNode"
+                : activeSubstep === "Pre Flight" ? "preFlightNode"
                 : activeSubstep === "Model Training" ? "modelTrainingNode"
                 : activeSubstep === "Model Validation" ? "modelValidationNode"
                 : "inspect";
@@ -950,8 +967,10 @@ export class IngestionAgentService implements IIngestionAgentService {
                   modelSelectionNode: "exogenous",
                   trainingConfiguration: "modelSelectionNode",
                   trainingConfigurationNode: "modelSelectionNode",
-                  modelTraining: "trainingConfigurationNode",
-                  modelTrainingNode: "trainingConfigurationNode",
+                  preFlight: "trainingConfigurationNode",
+                  preFlightNode: "trainingConfigurationNode",
+                  modelTraining: "preFlightNode",
+                  modelTrainingNode: "preFlightNode",
                   modelValidation: "modelTrainingNode",
                   modelValidationNode: "modelTrainingNode",
                 };
@@ -975,14 +994,21 @@ export class IngestionAgentService implements IIngestionAgentService {
                   // Reset downstream and target stage outputs and statuses
                   const stagesToReset: string[] = [];
                   if (targetNode === "modelSelectionNode" || targetNode === "modelSelection") {
-                    stagesToReset.push("modelSelection", "trainingConfiguration", "modelTraining", "modelValidation");
+                    stagesToReset.push("modelSelection", "trainingConfiguration", "preFlight", "modelTraining", "modelValidation");
                     delete stateToRestore.modelSelection;
                     delete stateToRestore.trainingConfiguration;
+                    delete stateToRestore.preFlight;
                     delete stateToRestore.modelTraining;
                     delete stateToRestore.modelValidation;
                   } else if (targetNode === "trainingConfigurationNode" || targetNode === "trainingConfiguration") {
-                    stagesToReset.push("trainingConfiguration", "modelTraining", "modelValidation");
+                    stagesToReset.push("trainingConfiguration", "preFlight", "modelTraining", "modelValidation");
                     delete stateToRestore.trainingConfiguration;
+                    delete stateToRestore.preFlight;
+                    delete stateToRestore.modelTraining;
+                    delete stateToRestore.modelValidation;
+                  } else if (targetNode === "preFlightNode" || targetNode === "preFlight") {
+                    stagesToReset.push("preFlight", "modelTraining", "modelValidation");
+                    delete stateToRestore.preFlight;
                     delete stateToRestore.modelTraining;
                     delete stateToRestore.modelValidation;
                   } else if (targetNode === "modelTrainingNode" || targetNode === "modelTraining") {
@@ -1163,9 +1189,12 @@ export class IngestionAgentService implements IIngestionAgentService {
               "trainingConfiguration": "modelSelectionNode",
               "trainingConfigurationNode": "modelSelectionNode",
               "Training Configuration": "modelSelectionNode",
-              "modelTraining": "trainingConfigurationNode",
-              "modelTrainingNode": "trainingConfigurationNode",
-              "Model Training": "trainingConfigurationNode",
+              "preFlight": "trainingConfigurationNode",
+              "preFlightNode": "trainingConfigurationNode",
+              "Pre Flight": "trainingConfigurationNode",
+              "modelTraining": "preFlightNode",
+              "modelTrainingNode": "preFlightNode",
+              "Model Training": "preFlightNode",
               "modelValidation": "modelTrainingNode",
               "modelValidationNode": "modelTrainingNode",
               "Model Validation": "modelTrainingNode",
