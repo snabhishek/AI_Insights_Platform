@@ -1,11 +1,87 @@
 from importlib import import_module
 
-COMMON_MODULES = ['common.training.batch_size_optimization', 'common.training.gradient_accumulation', 'common.training.gradient_clipping', 'common.training.optimizer_selection', 'common.training.optimizer_state_reduction', 'common.training.learning_rate_optimization', 'common.training.learning_rate_scheduling', 'common.training.learning_rate_warmup', 'common.training.early_stopping', 'common.training.reduce_training_epochs', 'common.training.dynamic_epoch_allocation', 'common.training.validation_frequency_optimization', 'common.training.logging_optimization', 'common.training.checkpoint_frequency_optimization', 'common.training.checkpoint_resume', 'common.training.reproducibility_optimization', 'common.data.data_loading_optimization', 'common.data.parallel_data_loading', 'common.data.data_prefetching', 'common.data.dataset_caching', 'common.data.feature_caching', 'common.data.data_format_optimization', 'common.data.data_type_optimization', 'common.data.memory_mapping', 'common.data.feature_selection', 'common.data.feature_dimensionality_reduction', 'common.data.feature_sparsity_optimization', 'common.data.data_sampling', 'common.data.progressive_dataset_scaling', 'common.data.data_augmentation_optimization', 'common.data.class_balancing', 'common.data.sequence_length_optimization', 'common.data.sliding_window_optimization', 'common.data.padding_optimization', 'common.data.sequence_length_bucketing', 'common.data.data_pipeline_parallelism', 'common.data.io_optimization', 'common.model.model_architecture_simplification', 'common.model.model_width_depth_scaling', 'common.model.transfer_learning', 'common.model.layer_freezing', 'common.model.parameter_efficient_finetuning', 'common.model.knowledge_distillation', 'common.model.model_quantization', 'common.model.quantization_aware_training', 'common.model.model_specific_optimization', 'common.model.framework_specific_optimization', 'common.hyperparameter.random_search', 'common.hyperparameter.bayesian_optimization', 'common.hyperparameter.optuna_optimization', 'common.hyperparameter.hyperband', 'common.hyperparameter.asha', 'common.hyperparameter.successive_halving', 'common.hyperparameter.trial_pruning', 'common.hyperparameter.warm_start_hyperparameter_search', 'common.hyperparameter.parallel_experiment_execution', 'common.hyperparameter.hyperparameter_budget_control', 'common.memory.memory_cleanup', 'common.memory.garbage_collection_optimization', 'common.memory.memory_fragmentation_control', 'common.memory.checkpoint_memory_management', 'common.memory.temporary_buffer_optimization', 'common.memory.duplicate_memory_copy_reduction', 'common.reliability.automatic_retry', 'common.reliability.automatic_recovery', 'common.reliability.automatic_optimization_rollback', 'common.reliability.training_divergence_detection', 'common.reliability.nan_infinity_detection', 'common.reliability.numerical_stability_checks', 'common.reliability.out_of_memory_recovery', 'common.reliability.failed_worker_recovery', 'common.reliability.checkpoint_integrity_validation', 'common.resource_management.resource_aware_scheduling', 'common.resource_management.dynamic_resource_scaling', 'common.resource_management.resource_isolation', 'common.resource_management.job_priority_scheduling', 'common.resource_management.cost_aware_optimization', 'common.resource_management.constraint_based_optimization', 'common.resource_management.accuracy_preserving_optimization', 'common.resource_management.optimization_ordering', 'common.resource_management.optimization_impact_estimation', 'common.resource_management.resource_budget_control']
+COMMON_MODULES = [
+    'training.batch_size_optimization',
+    'training.gradient_accumulation',
+    'training.gradient_clipping',
+    'training.optimizer_selection',
+    'training.optimizer_state_reduction',
+    'training.learning_rate_optimization',
+    'training.learning_rate_scheduling',
+    'training.learning_rate_warmup',
+    'training.early_stopping',
+    'training.reduce_training_epochs',
+    'training.dynamic_epoch_allocation',
+    'training.validation_frequency_optimization',
+    'training.logging_optimization',
+    'training.checkpoint_frequency_optimization',
+    'training.checkpoint_resume',
+    'training.reproducibility_optimization',
+    'data.data_loading_optimization',
+    'data.parallel_data_loading',
+    'data.data_prefetching',
+    'data.dataset_caching',
+    'data.memory_mapping',
+    'data.sequence_length_optimization',
+    'data.sliding_window_optimization',
+    'data.padding_optimization',
+    'data.sequence_length_bucketing',
+    'data.data_pipeline_parallelism',
+    'data.io_optimization',
+    'model.model_architecture_simplification',
+    'model.model_width_depth_scaling',
+    'model.transfer_learning',
+    'model.layer_freezing',
+    'model.parameter_efficient_finetuning',
+    'model.knowledge_distillation',
+    'model.model_quantization',
+    'model.quantization_aware_training',
+    'model.model_specific_optimization',
+    'model.framework_specific_optimization',
+    'hyperparameter.random_search',
+    'hyperparameter.bayesian_optimization',
+    'hyperparameter.optuna_optimization',
+    'hyperparameter.hyperband',
+    'hyperparameter.asha',
+    'hyperparameter.successive_halving',
+    'hyperparameter.trial_pruning',
+    'hyperparameter.warm_start_hyperparameter_search',
+    'hyperparameter.parallel_experiment_execution',
+    'hyperparameter.hyperparameter_budget_control',
+    'memory.memory_cleanup',
+    'memory.garbage_collection_optimization',
+    'memory.memory_fragmentation_control',
+    'memory.checkpoint_memory_management',
+    'memory.temporary_buffer_optimization',
+    'memory.duplicate_memory_copy_reduction',
+    'reliability.automatic_retry',
+    'reliability.automatic_recovery',
+    'reliability.automatic_optimization_rollback',
+    'reliability.training_divergence_detection',
+    'reliability.nan_infinity_detection',
+    'reliability.numerical_stability_checks',
+    'reliability.out_of_memory_recovery',
+    'reliability.failed_worker_recovery',
+    'reliability.checkpoint_integrity_validation',
+    'resource_management.resource_aware_scheduling',
+    'resource_management.dynamic_resource_scaling',
+    'resource_management.resource_isolation',
+    'resource_management.job_priority_scheduling',
+    'resource_management.cost_aware_optimization',
+    'resource_management.constraint_based_optimization',
+    'resource_management.accuracy_preserving_optimization',
+    'resource_management.optimization_ordering',
+    'resource_management.optimization_impact_estimation',
+    'resource_management.resource_budget_control',
+]
+
 
 def load_common_strategies():
     result = {}
     for module_name in COMMON_MODULES:
-        module = import_module(f'.{module_name}', package=__package__)
+        clean_name = module_name.removeprefix('common.')
+        module = import_module(f'.{clean_name}', package=__package__)
         strategy = module.create_strategy()
         result[strategy.spec.name] = strategy
     return result
+
