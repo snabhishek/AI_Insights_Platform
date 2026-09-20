@@ -328,7 +328,8 @@ export function getMainStepStatus(stepId: string, pipelineStatuses: PipelineStat
 
 export function getMainStepStatuses(
   pipelineStatuses: PipelineStatuses,
-  runStatus?: RunStatus
+  runStatus?: RunStatus,
+  requiresApproval?: boolean
 ): Record<string, PipelineStatus> {
   const result: Record<string, PipelineStatus> = {};
   let foundActiveRunning = false;
@@ -336,7 +337,7 @@ export function getMainStepStatuses(
   for (const step of PIPELINE_STEPS) {
     let rawStatus = getMainStepStatus(step.id, pipelineStatuses);
 
-    if (runStatus === "Running" && !foundActiveRunning) {
+    if (runStatus === "Running" && !requiresApproval && !foundActiveRunning) {
       if (rawStatus !== "Completed") {
         rawStatus = "In Progress";
         foundActiveRunning = true;
@@ -376,7 +377,7 @@ export default function WorkflowPipeline({
   const mainSelectedStage = getMainStepId(currentStage);
 
   // Compute top-level phase statuses and progress across the connections between them.
-  const mainStatusMap = getMainStepStatuses(pipelineStatuses, runStatus);
+  const mainStatusMap = getMainStepStatuses(pipelineStatuses, runStatus, requiresApproval);
   const mainStatuses = PIPELINE_STEPS.map((step) => mainStatusMap[step.id]);
 
   const hasExistingRun =
@@ -387,7 +388,13 @@ export default function WorkflowPipeline({
     Object.values(pipelineStatuses).some((s) => s === "Completed" || s === "In Progress");
 
   const runButtonText = hasExistingRun ? "Re-Run Workflow" : "Run Workflow";
-  const handleRunClick = hasExistingRun && onReRunWorkflow ? onReRunWorkflow : onRunWorkflow;
+  const handleRunClick = () => {
+    if (hasExistingRun && onReRunWorkflow) {
+      onReRunWorkflow();
+    } else {
+      onRunWorkflow();
+    }
+  };
 
   return (
     <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-background border border-border rounded-lg p-6 shadow-soft">
@@ -433,35 +440,11 @@ export default function WorkflowPipeline({
                 Stop Workflow
               </button>
             </div>
-          ) : runStatus === "Running" ? (
-            <>
-              <button
-                type="button"
-                onClick={onPause}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer shrink-0"
-              >
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-                  <rect x="5" y="5" width="5" height="14" rx="1" />
-                  <rect x="14" y="5" width="5" height="14" rx="1" />
-                </svg>
-                Pause
-              </button>
-              <button
-                type="button"
-                onClick={onStopWorkflow}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0"
-              >
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-                  <rect x="5" y="5" width="14" height="14" rx="2" />
-                </svg>
-                Stop Workflow
-              </button>
-            </>
           ) : requiresApproval ? (
             <>
               <button
                 type="button"
-                onClick={onApprove}
+                onClick={() => onApprove()}
                 disabled={isApproving}
                 className={`inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
               >
@@ -486,6 +469,30 @@ export default function WorkflowPipeline({
                 onClick={onStopWorkflow}
                 disabled={isApproving}
                 className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50"
+              >
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                  <rect x="5" y="5" width="14" height="14" rx="2" />
+                </svg>
+                Stop Workflow
+              </button>
+            </>
+          ) : runStatus === "Running" ? (
+            <>
+              <button
+                type="button"
+                onClick={onPause}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer shrink-0"
+              >
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                  <rect x="5" y="5" width="5" height="14" rx="1" />
+                  <rect x="14" y="5" width="5" height="14" rx="1" />
+                </svg>
+                Pause
+              </button>
+              <button
+                type="button"
+                onClick={onStopWorkflow}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0"
               >
                 <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
                   <rect x="5" y="5" width="14" height="14" rx="2" />
@@ -622,10 +629,10 @@ export default function WorkflowPipeline({
           <span className="text-muted-foreground">Last run: {lastRunTime}</span>
 
           <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${runStatus === "Running"
-                ? "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
-                : requiresApproval || runStatus === "Paused"
-                  ? "bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${requiresApproval || runStatus === "Paused"
+                ? "bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+                : runStatus === "Running"
+                  ? "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
                   : runStatus === "Success"
                     ? "bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
                     : runStatus === "Stopped"
@@ -636,10 +643,10 @@ export default function WorkflowPipeline({
               }`}
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${runStatus === "Running"
-                  ? "bg-indigo-500 animate-ping"
-                  : requiresApproval || runStatus === "Paused"
-                    ? "bg-amber-500 animate-pulse"
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${requiresApproval || runStatus === "Paused"
+                  ? "bg-amber-500 animate-pulse"
+                  : runStatus === "Running"
+                    ? "bg-indigo-500 animate-ping"
                     : runStatus === "Success"
                       ? "bg-emerald-500"
                       : runStatus === "Stopped"
@@ -649,10 +656,10 @@ export default function WorkflowPipeline({
                           : "bg-muted-foreground"
                 }`}
             />
-            {runStatus === "Running"
-              ? "Running"
-              : requiresApproval
-                ? "Awaiting Approval"
+            {requiresApproval
+              ? "Awaiting Approval"
+              : runStatus === "Running"
+                ? "Running"
                 : runStatus === "Paused"
                   ? "Paused"
                   : runStatus === "Success"

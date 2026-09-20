@@ -70,6 +70,10 @@ export const TrainingConfigGraphAnnotation = Annotation.Root({
     reducer: (left, right) => right ?? left,
     default: () => [],
   }),
+  userSelectedIds: Annotation<string[]>({
+    reducer: (left, right) => right ?? left,
+    default: () => [],
+  }),
   projectId: Annotation<string>({
     reducer: (left, right) => right ?? left,
     default: () => "",
@@ -101,7 +105,7 @@ export interface ModelTrainingSteps {
  * researching candidate execution steps via web search (Mode 2: CONFIG_SYNTHESIZED).
  */
 async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
-  const { services, projectId, runTimestamp, modelSelection, allCandidates, feedbackPrompt, parentState } = state;
+  const { services, projectId, runTimestamp, modelSelection, allCandidates, userSelectedIds, feedbackPrompt, parentState } = state;
 
   const primaryMetric = modelSelection?.primary_metric || "f1_score";
   const direction = modelSelection?.direction || "maximize";
@@ -127,14 +131,18 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
   const fallbackModels = (modelSelection?.models && modelSelection.models.length > 0
     ? modelSelection.models
     : fallbackCandidates
-  ).map((m: any) => ({
-    ...m,
-    framework: m.framework || "lightgbm",
-    algorithm: m.algorithm || m.model_id,
-    enabled: m.enabled !== undefined ? m.enabled : true,
-    parameters: m.parameters || {},
-    training_steps: m.training_steps || m.access_and_training_steps || {},
-  }));
+  ).map((m: any) => {
+    const id = typeof m === "string" ? m : (m.model_id || m.id);
+    return {
+      ...(typeof m === "string" ? {} : m),
+      model_id: id,
+      framework: typeof m === "string" ? "sklearn" : (m.framework || "lightgbm"),
+      algorithm: typeof m === "string" ? m : (m.algorithm || id),
+      enabled: m.enabled !== undefined ? m.enabled : true,
+      parameters: m.parameters || {},
+      training_steps: m.training_steps || m.access_and_training_steps || {},
+    };
+  });
 
   const fallbackConfig: Record<string, any> = {
     "x-primary-metric-name": primaryMetric,
@@ -289,6 +297,10 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     "=== 2. Candidate Models & ML Objective ===",
     `Candidate Models: ${JSON.stringify(allCandidates, null, 2)}`,
     `Recommended Model: ${JSON.stringify(modelSelection?.recommended_model || allCandidates[0] || {})}`,
+    ...(userSelectedIds && userSelectedIds.length > 0 ? [
+      `USER-SELECTED CANDIDATE MODELS FOR TRAINING (${userSelectedIds.length} models): ${JSON.stringify(userSelectedIds)}`,
+      `CRITICAL REQUIREMENT: The user has confirmed ${userSelectedIds.length} models for training: ${userSelectedIds.join(", ")}. You MUST include every single one of these user-selected models inside model_selection.models with enabled: true. Do not omit any of these models.`,
+    ] : []),
     `Primary Metric: ${primaryMetric}`,
     `Direction: ${direction}`,
     `Problem Type Context: ${probType}`,
@@ -404,8 +416,77 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
 
     finalConfig.model_selection.models = rawModels.map((m: any) => ({
       ...m,
+      model_id: typeof m === "string" ? m : (m.model_id || m.id),
+      framework: typeof m === "string" ? "sklearn" : (m.framework || "sklearn"),
+      algorithm: typeof m === "string" ? m : (m.algorithm || m.model_id),
+      enabled: m.enabled !== undefined ? m.enabled : true,
       training_steps: m.training_steps || m.access_and_training_steps || {},
     }));
+  }
+
+  // Strictly enforce user-selected models: Every user-selected model MUST be present in finalConfig.model_selection.models
+  const effectiveUserSelectedIds = (Array.isArray(userSelectedIds) && userSelectedIds.length > 0)
+    ? userSelectedIds
+    : (Array.isArray(modelSelection?.userSelection?.selectedModelIds) && modelSelection.userSelection.selectedModelIds.length > 0)
+    ? modelSelection.userSelection.selectedModelIds
+    : (Array.isArray(modelSelection?.selectedModelIds) && modelSelection.selectedModelIds.length > 0)
+    ? modelSelection.selectedModelIds
+    : [];
+
+  if (effectiveUserSelectedIds.length > 0) {
+    const existingModelMap = new Map<string, any>();
+    for (const m of (finalConfig.model_selection.models || [])) {
+      const id = typeof m === "string" ? m : (m.model_id || m.id);
+      if (id) existingModelMap.set(id.toLowerCase().trim(), typeof m === "string" ? { model_id: m } : m);
+    }
+
+    const candidateMap = new Map<string, any>();
+    for (const c of (allCandidates || [])) {
+      const id = typeof c === "string" ? c : (c.model_id || c.id);
+      if (id) candidateMap.set(id.toLowerCase().trim(), c);
+    }
+
+    const enforcedModels: any[] = [];
+    for (const selId of effectiveUserSelectedIds) {
+      const cleanId = selId.toLowerCase().trim();
+      const existing = existingModelMap.get(cleanId);
+      const candidate = candidateMap.get(cleanId);
+      if (existing) {
+        enforcedModels.push({
+          ...existing,
+          model_id: typeof existing === "string" ? existing : (existing.model_id || selId),
+          framework: existing.framework || candidate?.framework || "sklearn",
+          algorithm: existing.algorithm || candidate?.algorithm || selId,
+          enabled: true,
+          training_steps: existing.training_steps || candidate?.training_steps || candidate?.access_and_training_steps || {},
+        });
+      } else if (candidate) {
+        enforcedModels.push({
+          model_id: candidate.model_id || selId,
+          framework: candidate.framework || "sklearn",
+          algorithm: candidate.algorithm || candidate.displayName || selId,
+          enabled: true,
+          parameters: candidate.parameters || {},
+          training_steps: candidate.training_steps || candidate.access_and_training_steps || {},
+        });
+      } else {
+        enforcedModels.push({
+          model_id: selId,
+          framework: "sklearn",
+          algorithm: selId,
+          enabled: true,
+          parameters: {},
+          training_steps: {},
+        });
+      }
+    }
+
+    finalConfig.model_selection.models = enforcedModels;
+    finalConfig.model_selection.selectedModelIds = effectiveUserSelectedIds;
+    finalConfig.model_selection.userSelection = {
+      selectedModelIds: effectiveUserSelectedIds,
+      confirmedAt: new Date().toISOString(),
+    };
   }
 
   // Persist Contract to YAML

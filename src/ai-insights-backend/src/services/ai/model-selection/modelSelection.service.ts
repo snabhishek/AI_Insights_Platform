@@ -267,10 +267,22 @@ export class ModelSelectionService implements IModelSelectionService {
         const project = await this.projectService.getById(record.projectId);
         const existingState = (project?.agentState as any) || {};
 
+        const selectedCandidates = (record.decision.candidates || []).filter((c) =>
+          selectedModelIds.some((s) => s.toLowerCase().trim() === c.model_id.toLowerCase().trim())
+        );
+        const selectedModelObjects = selectedCandidates.map((c) => ({
+          model_id: c.model_id,
+          framework: c.framework || "custom",
+          algorithm: c.algorithm || c.displayName || c.model_id,
+          enabled: true,
+          parameters: {},
+        }));
+
         const trainingConfigPayload = {
           ...(existingState.trainingConfiguration || {}),
           status: "Pending",
-          models: selectedModelIds,
+          models: selectedModelObjects,
+          selectedModelIds: selectedModelIds,
           candidate_models: selectedModelIds,
           selectedByUserAt: userSelection.confirmedAt,
           sourceDecisionId: decisionId,
@@ -287,11 +299,20 @@ export class ModelSelectionService implements IModelSelectionService {
         cleanStageStatuses.modelTraining = "Pending";
         cleanStageStatuses.modelValidation = "Pending";
 
+        const updatedModelSelection = {
+          ...(existingState.stageOutputs?.modelSelection || existingState.modelSelection || record.decision || {}),
+          userSelection,
+          selectedModelIds,
+          models: selectedModelObjects,
+        };
+
         const updatedState = {
           ...existingState,
+          modelSelection: updatedModelSelection,
           trainingConfiguration: trainingConfigPayload,
           stageOutputs: {
             ...cleanStageOutputs,
+            modelSelection: updatedModelSelection,
             trainingConfiguration: trainingConfigPayload,
           },
           stageStatuses: cleanStageStatuses,
@@ -303,18 +324,11 @@ export class ModelSelectionService implements IModelSelectionService {
         // Update Training Job Contract schema with user-selected models
         const pWs = await this.projectService.getProjectWithWorkspace(record.projectId);
         if (pWs && pWs.project) {
-          const selectedCandidates = (record.decision.candidates || []).filter((c) =>
-            selectedModelIds.some((s) => s.toLowerCase().trim() === c.model_id.toLowerCase().trim())
-          );
           const updatedDecision = {
             ...record.decision,
-            models: selectedCandidates.map((c) => ({
-              model_id: c.model_id,
-              framework: c.framework || "custom",
-              algorithm: c.algorithm || c.displayName || c.model_id,
-              enabled: true,
-              parameters: {},
-            })),
+            userSelection,
+            selectedModelIds,
+            models: selectedModelObjects,
           };
 
           const effectiveTimestamp = existingState.runTimestamp || record.datasetVersion;
@@ -353,28 +367,62 @@ export class ModelSelectionService implements IModelSelectionService {
     const modelSelection = existingState.stageOutputs?.modelSelection || existingState.modelSelection || {};
     const candidates = modelSelection.candidates || [];
     const selectedCandidates = candidates.filter((c: any) =>
-      selectedModelIds.some((s) => s.toLowerCase().trim() === (c.model_id || "").toLowerCase().trim())
+      selectedModelIds.some((s: string) => s.toLowerCase().trim() === (c.model_id || "").toLowerCase().trim())
     );
+
+    const selectedModelObjects = (selectedCandidates.length > 0
+      ? selectedCandidates
+      : selectedModelIds.map((id: string) => ({ model_id: id, algorithm: id, framework: "custom" }))
+    ).map((c: any) => ({
+      model_id: c.model_id,
+      framework: c.framework || "custom",
+      algorithm: c.algorithm || c.displayName || c.model_id,
+      enabled: true,
+      parameters: {},
+    }));
+
+    const userSelection = {
+      selectedModelIds,
+      confirmedAt: new Date().toISOString(),
+    };
 
     const trainingConfigPayload = {
       ...(existingState.trainingConfiguration || {}),
       status: "Pending",
-      models: selectedModelIds,
+      models: selectedModelObjects,
+      selectedModelIds: selectedModelIds,
       candidate_models: selectedModelIds,
-      selectedByUserAt: new Date().toISOString(),
+      selectedByUserAt: userSelection.confirmedAt,
     };
+
+    const updatedModelSelection = {
+      ...modelSelection,
+      userSelection,
+      selectedModelIds,
+      models: selectedModelObjects,
+    };
+
+    const cleanStageOutputs = { ...(existingState.stageOutputs || {}) };
+    delete cleanStageOutputs.preFlight;
+    delete cleanStageOutputs.modelTraining;
+    delete cleanStageOutputs.modelValidation;
+
+    const cleanStageStatuses = { ...(existingState.stageStatuses || {}) };
+    cleanStageStatuses.trainingConfiguration = "In Progress";
+    cleanStageStatuses.preFlight = "Pending";
+    cleanStageStatuses.modelTraining = "Pending";
+    cleanStageStatuses.modelValidation = "Pending";
 
     const updatedState = {
       ...existingState,
+      modelSelection: updatedModelSelection,
       trainingConfiguration: trainingConfigPayload,
       stageOutputs: {
-        ...(existingState.stageOutputs || {}),
+        ...cleanStageOutputs,
+        modelSelection: updatedModelSelection,
         trainingConfiguration: trainingConfigPayload,
       },
-      stageStatuses: {
-        ...(existingState.stageStatuses || {}),
-        trainingConfiguration: "Pending",
-      },
+      stageStatuses: cleanStageStatuses,
     };
 
     await this.projectService.updateAgentState(projectId, updatedState);
@@ -383,20 +431,17 @@ export class ModelSelectionService implements IModelSelectionService {
     if (pWs && pWs.project) {
       const updatedDecision = {
         ...modelSelection,
-        models: selectedCandidates.map((c: any) => ({
-          model_id: c.model_id,
-          framework: c.framework || "custom",
-          algorithm: c.algorithm || c.displayName || c.model_id,
-          enabled: true,
-          parameters: {},
-        })),
+        userSelection,
+        selectedModelIds,
+        models: selectedModelObjects,
       };
 
+      const effectiveTimestamp = existingState.runTimestamp || (project as any).datasetVersion;
       await saveModularTrainingJobContract(
         pWs.workspaceName || "DefaultWorkspace",
         pWs.project.name,
         updatedDecision,
-        existingState.runTimestamp
+        effectiveTimestamp
       );
     }
 

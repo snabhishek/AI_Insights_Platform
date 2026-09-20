@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Badge } from "./utils";
+import { BACKEND_URL } from "../../providers/AppContext";
 
 interface ModelCandidateReasoning {
   strengths?: string[];
@@ -83,6 +84,7 @@ export default function ModelSelectionStepOutput({
   const [expandedCandidateIds, setExpandedCandidateIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+  const initializedDecisionIdRef = React.useRef<string | null>(null);
 
   const toggleCandidateExpanded = (modelId: string) => {
     setExpandedCandidateIds((prev) =>
@@ -92,8 +94,25 @@ export default function ModelSelectionStepOutput({
 
   // Initialize selection with primary model and any pre-existing user selection
   useEffect(() => {
-    if (Array.isArray(payload.userSelection?.selectedModelIds) && payload.userSelection.selectedModelIds.length > 0) {
-      setSelectedModelIds(payload.userSelection.selectedModelIds);
+    const decisionKey = payload.id || modelSelection?.id || recommendedModel?.model_id || "default";
+    const existingUserSelection =
+      payload.userSelection?.selectedModelIds ||
+      payload.selectedModelIds ||
+      (Array.isArray(payload.models) && typeof payload.models[0] === "string" ? payload.models : undefined) ||
+      (Array.isArray(payload.models) && payload.models[0]?.model_id ? payload.models.map((m: any) => m.model_id) : undefined);
+
+    // If already initialized for this decision and user has an active selection, do not overwrite during background polling
+    if (initializedDecisionIdRef.current === decisionKey) {
+      if (Array.isArray(existingUserSelection) && existingUserSelection.length > 0) {
+        setSelectedModelIds((current) => (current.length === 0 ? existingUserSelection : current));
+      }
+      return;
+    }
+
+    initializedDecisionIdRef.current = decisionKey;
+
+    if (Array.isArray(existingUserSelection) && existingUserSelection.length > 0) {
+      setSelectedModelIds(existingUserSelection);
     } else if (recommendedModel?.model_id) {
       // Default select the primary model and the top alternative
       const initial = [recommendedModel.model_id];
@@ -103,7 +122,7 @@ export default function ModelSelectionStepOutput({
       }
       setSelectedModelIds(initial);
     }
-  }, [payload]);
+  }, [payload, modelSelection, recommendedModel, candidates]);
 
   const toggleModelSelection = (modelId: string) => {
     setSelectedModelIds((prev) =>
@@ -118,22 +137,22 @@ export default function ModelSelectionStepOutput({
 
     try {
       const decisionId = payload.id || modelSelection?.id;
-      let res: Response | null = null;
-      if (decisionId) {
-        res = await fetch(`http://localhost:5000/api/model-selection/${decisionId}/select`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ selectedModelIds }),
-        });
-      } else if (projectId) {
-        res = await fetch(`http://localhost:5000/api/model-selection/project/${projectId}/select`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ selectedModelIds }),
-        });
-      }
+      const endpoint = decisionId
+        ? `${BACKEND_URL}/model-selection/${decisionId}/select`
+        : `${BACKEND_URL}/model-selection/project/${projectId}/select`;
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selectedModelIds }),
+      });
 
       if (res && res.ok) {
+        if (payload.userSelection) {
+          payload.userSelection.selectedModelIds = selectedModelIds;
+        } else {
+          payload.userSelection = { selectedModelIds, confirmedAt: new Date().toISOString() };
+        }
         setSaveSuccessMessage(`Confirmed ${selectedModelIds.length} model(s). Contract updated on file server.`);
       } else {
         setSaveSuccessMessage(`Selected ${selectedModelIds.length} model(s) for training configuration.`);

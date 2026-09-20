@@ -329,7 +329,16 @@ export default function ProjectsPage() {
 
       const rawStatus = (state.status || (projectToHydrate as any).status || "").toLowerCase();
 
-      if (isRunningLocally || rawStatus === "running") {
+      const isStillRunningLocally =
+        rawStatus === "running" ||
+        (isRunningLocally &&
+          rawStatus !== "paused" &&
+          rawStatus !== "completed" &&
+          rawStatus !== "success" &&
+          rawStatus !== "stopped" &&
+          rawStatus !== "failed");
+
+      if (isStillRunningLocally) {
         setRunStatus("Running");
         setIsPaused(false);
         setRequiresApproval(false);
@@ -403,7 +412,7 @@ export default function ProjectsPage() {
         if (isAtOrPastModelPhase) {
           setRequiresApproval(false);
           setApprovalNextStep(null);
-        } else if (state.status !== "running" && !isRunningLocally) {
+        } else if (state.status !== "running" && !isStillRunningLocally) {
           setRequiresApproval(Boolean(state.requiresApproval));
           setApprovalNextStep(state.requiresApproval ? (state.nextStep || "Feature Engineering") : null);
         }
@@ -580,7 +589,16 @@ export default function ProjectsPage() {
           freshState.stageStatuses?.modelTraining === "Completed" ||
           freshState.stageOutputs?.modelSelection !== undefined;
 
-        if (isBackendStillActive || isClientStillExecuting || freshStatus === "running") {
+        const isStillRunning =
+          freshStatus === "running" ||
+          ((isBackendStillActive || isClientStillExecuting) &&
+            freshStatus !== "paused" &&
+            freshStatus !== "completed" &&
+            freshStatus !== "success" &&
+            freshStatus !== "failed" &&
+            freshStatus !== "stopped");
+
+        if (isStillRunning) {
           setRunStatus("Running");
           setIsPaused(false);
           setRequiresApproval(false);
@@ -600,6 +618,7 @@ export default function ProjectsPage() {
           setApprovalNextStep(null);
         } else if (freshStatus === "paused") {
           activeRunningProjectIdRef.current = null;
+          isExecutingRef.current = false;
           const pollStageOutputs = freshState.stageOutputs as Record<string, any> | undefined;
           const isWaitingForModel =
             (freshState.stageStatuses?.modelSelection === "Completed" || pollStageOutputs?.modelSelection !== undefined) &&
@@ -615,7 +634,7 @@ export default function ProjectsPage() {
             setApprovalNextStep(null);
           } else if (freshState.requiresApproval && !isAtOrPastModel) {
             setIsAwaitingResponse(false);
-            setRunStatus("Running");
+            setRunStatus("Paused");
             setIsPaused(false);
             setRequiresApproval(true);
             setApprovalNextStep(freshState.nextStep || null);
@@ -684,7 +703,7 @@ export default function ProjectsPage() {
         setApprovalNextStep(null);
       } else if (rawStatus === "paused") {
         if (payload.requiresApproval) {
-          setRunStatus("Running");
+          setRunStatus("Paused");
           setIsPaused(false);
           setRequiresApproval(true);
           setApprovalNextStep(payload.nextStep || null);
@@ -878,7 +897,7 @@ export default function ProjectsPage() {
       if (action) {
         payload.action = action;
       }
-      if (step) {
+      if (step && typeof step === "string") {
         const stepMap: Record<string, string> = {
           "Data Inspection": "inspect",
           "Data Profiling": "profileData",
@@ -1049,7 +1068,7 @@ export default function ProjectsPage() {
     void runWorkflow();
   };
 
-  const handleApprove = () => {
+  const handleApprove = (overrideTargetPhase?: unknown) => {
     if (isApproving || isExecutingRef.current) return;
     setIsApproving(true);
 
@@ -1069,7 +1088,14 @@ export default function ProjectsPage() {
     const nextStepLower = (approvalNextStep || "").toLowerCase();
     let targetPhase = "Feature Engineering";
 
-    if (
+    const validOverride =
+      typeof overrideTargetPhase === "string" && overrideTargetPhase.trim().length > 0
+        ? overrideTargetPhase.trim()
+        : undefined;
+
+    if (validOverride) {
+      targetPhase = validOverride;
+    } else if (
       isTrainingConfigCompleted &&
       pipelineStatuses["Pre Flight"] !== "Completed"
     ) {
@@ -1085,6 +1111,23 @@ export default function ProjectsPage() {
       nextStepLower.includes("selection")
     ) {
       targetPhase = "Model Selection";
+    }
+
+    if (targetPhase === "Training Configuration") {
+      setPipelineStatuses((prev) => ({
+        ...prev,
+        "Training Configuration": "In Progress",
+        "Pre Flight": "Pending",
+        "Model Training": "Pending",
+        "Model Validation": "Pending",
+      }));
+      setStageOutputs((prev) => {
+        const next = { ...prev };
+        delete next.preFlight;
+        delete next.modelTraining;
+        delete next.modelValidation;
+        return next;
+      });
     }
 
     // Clear pause state
@@ -1213,8 +1256,9 @@ export default function ProjectsPage() {
 
   const handleReRunWorkflow = async (newUseCase?: string) => {
     if (!selectedProject) return;
-    if (newUseCase !== undefined && newUseCase !== selectedProject.useCase) {
-      await updateProject(selectedProject.id, { useCase: newUseCase });
+    const validUseCase = typeof newUseCase === "string" && newUseCase.trim().length > 0 ? newUseCase.trim() : undefined;
+    if (validUseCase && validUseCase !== selectedProject.useCase) {
+      await updateProject(selectedProject.id, { useCase: validUseCase });
     }
     // Clear workflow session ID to start a fresh execution run
     setWorkflowSessionId(null);
@@ -1248,7 +1292,7 @@ export default function ProjectsPage() {
       },
     });
 
-    void runWorkflow(undefined, undefined, newUseCase ?? selectedProject.useCase);
+    void runWorkflow(undefined, undefined, validUseCase ?? selectedProject.useCase);
   };
 
   // ── Navigation helpers ────────────────────────────────────────────────────
@@ -1330,13 +1374,14 @@ export default function ProjectsPage() {
         requiresApproval={requiresApproval}
         workflowMessage={workflowMessage}
         onSelectStage={handleStageSelect}
-        onApprove={handleApprove}
+        onApprove={(override) => handleApprove(typeof override === "string" ? override : undefined)}
         isApproving={isApproving}
         onRetry={(stepId) => handleRetry(stepId)}
         isPaused={isPaused}
         pausedAtPhase={pausedAtPhase}
         onPause={handlePauseWorkflow}
         onResume={handleResumeWorkflow}
+        approvalNextStep={approvalNextStep}
         isAwaitingResponse={isAwaitingResponse}
         agentThinking={agentThinking}
         showAlert={showAlert}

@@ -816,6 +816,30 @@ export class IngestionAgentService implements IIngestionAgentService {
               const currentGraphState = await workflow.getState(config).catch(() => null);
               const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
 
+              // Preserve database stageOutputs (such as user-confirmed modelSelection and trainingConfiguration)
+              if (options?.projectId) {
+                try {
+                  const project = await this.projectService.getById(options.projectId);
+                  const savedAgentState = project?.agentState as any;
+                  if (savedAgentState) {
+                    if (savedAgentState.modelSelection) {
+                      calculatedBase.stageOutputs = {
+                        ...(calculatedBase.stageOutputs || {}),
+                        modelSelection: savedAgentState.modelSelection,
+                      };
+                    }
+                    if (savedAgentState.trainingConfiguration) {
+                      calculatedBase.stageOutputs = {
+                        ...(calculatedBase.stageOutputs || {}),
+                        trainingConfiguration: savedAgentState.trainingConfiguration,
+                      };
+                    }
+                  }
+                } catch (err: any) {
+                  console.warn("[Workflow] Could not read saved project state for initial calculatedBase:", err?.message || err);
+                }
+              }
+
               const isModelSubstep = activeSubstep === "Model Selection" || activeSubstep === "Training Configuration" || activeSubstep === "Pre Flight" || activeSubstep === "Model Training" || activeSubstep === "Model Validation" || activeSubstep === "Model Training & Validation";
               const isFESubstep = activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering";
 
@@ -1097,34 +1121,59 @@ export class IngestionAgentService implements IIngestionAgentService {
             let graphState = await workflow.getState(config).catch(() => null);
             let hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
 
-            if (!hasState && options?.projectId) {
+            if (options?.projectId) {
               try {
                 const project = await this.projectService.getById(options.projectId);
                 const savedAgentState = project?.agentState as any;
-                if (savedAgentState && (savedAgentState.schemaResolution || savedAgentState.stageOutputs)) {
-                  console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
+                if (savedAgentState) {
+                  if (hasState) {
+                    // Update in-memory graph checkpointer with latest DB state before resuming
+                    const stateUpdates: Record<string, any> = {};
+                    if (savedAgentState.modelSelection) {
+                      stateUpdates.modelSelection = savedAgentState.modelSelection;
+                    }
+                    if (savedAgentState.trainingConfiguration) {
+                      stateUpdates.trainingConfiguration = savedAgentState.trainingConfiguration;
+                    }
+                    if (savedAgentState.stageOutputs) {
+                      stateUpdates.stageOutputs = {
+                        ...(graphState?.values?.stageOutputs || {}),
+                        ...savedAgentState.stageOutputs,
+                      };
+                    }
+                    if (savedAgentState.userPrompt) {
+                      stateUpdates.userPrompt = savedAgentState.userPrompt;
+                    }
+                    if (Object.keys(stateUpdates).length > 0) {
+                      console.info(`[Workflow] Syncing project DB state into graph checkpointer for thread ${threadId}: ${Object.keys(stateUpdates).join(", ")}`);
+                      await workflow.updateState(config, stateUpdates);
+                      graphState = await workflow.getState(config).catch(() => null);
+                    }
+                  } else if (savedAgentState.schemaResolution || savedAgentState.stageOutputs) {
+                    console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
 
-                  const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" || options.step === "Model Selection"
-                    ? "exogenous"
-                    : options.step === "Training Configuration" || options.step === "trainingConfigurationNode" || options.step === "Model Training" || options.step === "modelTrainingNode"
-                    ? "modelSelectionNode"
-                    : "resolveSchema";
-                  const restoredState = {
-                    ...savedAgentState,
-                    connectorId,
-                    projectId: options.projectId,
-                    userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
-                    runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
-                    status: "running",
-                    requiresApproval: false,
-                    nextStep: undefined,
-                    summary: `Advancing to ${options.step || "Feature Engineering"}`,
-                  };
+                    const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" || options.step === "Model Selection"
+                      ? "exogenous"
+                      : options.step === "Training Configuration" || options.step === "trainingConfigurationNode" || options.step === "Model Training" || options.step === "modelTrainingNode"
+                      ? "modelSelectionNode"
+                      : "resolveSchema";
+                    const restoredState = {
+                      ...savedAgentState,
+                      connectorId,
+                      projectId: options.projectId,
+                      userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
+                      runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
+                      status: "running",
+                      requiresApproval: false,
+                      nextStep: undefined,
+                      summary: `Advancing to ${options.step || "Feature Engineering"}`,
+                    };
 
-                  await workflow.updateState(config, restoredState, predecessorNode);
-                  graphState = await workflow.getState(config).catch(() => null);
-                  hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
-                  console.info(`[Workflow] Restored graph state. Next node to execute: [${graphState?.next?.join(", ")}]`);
+                    await workflow.updateState(config, restoredState, predecessorNode);
+                    graphState = await workflow.getState(config).catch(() => null);
+                    hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+                    console.info(`[Workflow] Restored graph state. Next node to execute: [${graphState?.next?.join(", ")}]`);
+                  }
                 }
               } catch (restoreErr: any) {
                 console.warn(`[Workflow] Failed to restore state from project:`, restoreErr?.message);
@@ -1204,28 +1253,52 @@ export class IngestionAgentService implements IIngestionAgentService {
             let graphState = await workflow.getState(config).catch(() => null);
             let hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
 
-            if (!hasState && options?.projectId) {
+            if (options?.projectId) {
               try {
                 const project = await this.projectService.getById(options.projectId);
                 const savedAgentState = project?.agentState as any;
                 if (savedAgentState) {
-                  console.info(`[Workflow] Restoring graph checkpointer state from project database for resume on thread ${threadId}`);
+                  if (hasState) {
+                    const stateUpdates: Record<string, any> = {};
+                    if (savedAgentState.modelSelection) {
+                      stateUpdates.modelSelection = savedAgentState.modelSelection;
+                    }
+                    if (savedAgentState.trainingConfiguration) {
+                      stateUpdates.trainingConfiguration = savedAgentState.trainingConfiguration;
+                    }
+                    if (savedAgentState.stageOutputs) {
+                      stateUpdates.stageOutputs = {
+                        ...(graphState?.values?.stageOutputs || {}),
+                        ...savedAgentState.stageOutputs,
+                      };
+                    }
+                    if (savedAgentState.userPrompt) {
+                      stateUpdates.userPrompt = savedAgentState.userPrompt;
+                    }
+                    if (Object.keys(stateUpdates).length > 0) {
+                      console.info(`[Workflow] Syncing project DB state into graph checkpointer for resume on thread ${threadId}: ${Object.keys(stateUpdates).join(", ")}`);
+                      await workflow.updateState(config, stateUpdates);
+                      graphState = await workflow.getState(config).catch(() => null);
+                    }
+                  } else {
+                    console.info(`[Workflow] Restoring graph checkpointer state from project database for resume on thread ${threadId}`);
 
-                  const restoredState = {
-                    ...savedAgentState,
-                    connectorId,
-                    projectId: options.projectId,
-                    userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
-                    runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
-                    status: "running",
-                    summary: `Resuming from ${targetStep} phase`,
-                  };
+                    const restoredState = {
+                      ...savedAgentState,
+                      connectorId,
+                      projectId: options.projectId,
+                      userPrompt: userPrompt ?? meta.userPrompt ?? savedAgentState.userPrompt ?? "",
+                      runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
+                      status: "running",
+                      summary: `Resuming from ${targetStep} phase`,
+                    };
 
-                  if (predecessorNode !== "__start__") {
-                    await workflow.updateState(config, restoredState, predecessorNode);
-                    graphState = await workflow.getState(config).catch(() => null);
-                    hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
-                    console.info(`[Workflow] Resume state restored. Next nodes: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}]`);
+                    if (predecessorNode !== "__start__") {
+                      await workflow.updateState(config, restoredState, predecessorNode);
+                      graphState = await workflow.getState(config).catch(() => null);
+                      hasState = Array.isArray(graphState?.next) && graphState.next.length > 0;
+                      console.info(`[Workflow] Resume state restored. Next nodes: [${Array.isArray(graphState?.next) ? graphState.next.join(", ") : "none"}]`);
+                    }
                   }
                 }
               } catch (e) {
@@ -1296,13 +1369,29 @@ export class IngestionAgentService implements IIngestionAgentService {
 
             const graphState = await workflow.getState(config);
             if (graphState?.values) {
+              const prevModelSel = latestGraphStateValues.stageOutputs?.modelSelection || latestGraphStateValues.modelSelection;
+              const incomingModelSel = (graphState.values.stageOutputs as any)?.modelSelection || (graphState.values as any)?.modelSelection;
+              const mergedModelSel = incomingModelSel ? {
+                ...incomingModelSel,
+                userSelection: incomingModelSel.userSelection || prevModelSel?.userSelection,
+                selectedModelIds: incomingModelSel.selectedModelIds || prevModelSel?.selectedModelIds,
+                models: incomingModelSel.models || prevModelSel?.models,
+              } : prevModelSel;
+
               latestGraphStateValues = {
                 ...latestGraphStateValues,
                 ...graphState.values,
                 runTimestamp: (graphState.values.runTimestamp as string) || latestGraphStateValues.runTimestamp || activeRunTimestamp,
-                stageOutputs: { ...(latestGraphStateValues.stageOutputs || {}), ...(graphState.values.stageOutputs || {}) },
+                stageOutputs: {
+                  ...(latestGraphStateValues.stageOutputs || {}),
+                  ...(graphState.values.stageOutputs || {}),
+                  ...(mergedModelSel ? { modelSelection: mergedModelSel } : {}),
+                },
                 stageStatuses: { ...currentStatuses, ...(graphState.values.stageStatuses || {}) }
               };
+              if (mergedModelSel) {
+                latestGraphStateValues.modelSelection = mergedModelSel;
+              }
             } else {
               latestGraphStateValues.stageStatuses = currentStatuses;
             }

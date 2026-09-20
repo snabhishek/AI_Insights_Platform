@@ -19,9 +19,44 @@ export class TrainingConfigurationAgent {
       "Initiating multi-agent conversational workflow between Training Configuration Agent and Dataset Analyser Agent..."
     );
 
-    const modelSelection = (state.modelSelection || {}) as any;
+    let modelSelection = (state.modelSelection || {}) as any;
     const projectId = services.projectId || state.projectId || "default-project";
     const runTimestamp = state.runTimestamp || (services as any)?.runTimestamp;
+
+    let savedAgentState: any = null;
+    if (services.projectService && projectId) {
+      try {
+        const project = await services.projectService.getById(projectId);
+        savedAgentState = project?.agentState as any;
+      } catch (err: any) {
+        console.warn("[TrainingConfigurationAgent] Warning loading project agentState:", err?.message || err);
+      }
+    }
+
+    if (savedAgentState?.modelSelection) {
+      modelSelection = {
+        ...modelSelection,
+        ...savedAgentState.modelSelection,
+        userSelection: savedAgentState.modelSelection.userSelection || modelSelection.userSelection,
+        selectedModelIds: savedAgentState.modelSelection.selectedModelIds || modelSelection.selectedModelIds,
+        models: savedAgentState.modelSelection.models || modelSelection.models,
+      };
+    }
+
+    const userSelectedIds: string[] = Array.from(
+      new Set(
+        [
+          ...(modelSelection.userSelection?.selectedModelIds || []),
+          ...(modelSelection.selectedModelIds || []),
+          ...(Array.isArray(modelSelection.models)
+            ? modelSelection.models.map((m: any) => (typeof m === "string" ? m : m?.model_id))
+            : []),
+          ...(Array.isArray(savedAgentState?.trainingConfiguration?.models)
+            ? savedAgentState.trainingConfiguration.models.map((m: any) => (typeof m === "string" ? m : m?.model_id))
+            : []),
+        ].filter(Boolean)
+      )
+    );
 
     // Discover candidate models from modelSelection
     let allCandidates: Array<{ model_id: string; rank?: number; score?: number; framework?: string; algorithm?: string; isDynamic?: boolean }> = [];
@@ -37,11 +72,11 @@ export class TrainingConfigurationAgent {
       }));
     } else if (Array.isArray(modelSelection.models) && modelSelection.models.length > 0) {
       allCandidates = modelSelection.models.map((m: any, idx: number) => ({
-        model_id: m.model_id,
+        model_id: typeof m === "string" ? m : m.model_id,
         rank: idx + 1,
         score: 0.9,
-        framework: m.framework,
-        algorithm: m.algorithm || m.model_id,
+        framework: typeof m === "string" ? "sklearn" : m.framework,
+        algorithm: typeof m === "string" ? m : (m.algorithm || m.model_id),
         isDynamic: false,
       }));
     } else if (modelSelection.recommended_model?.model_id) {
@@ -77,6 +112,7 @@ export class TrainingConfigurationAgent {
       feedbackPrompt,
       modelSelection,
       allCandidates,
+      userSelectedIds,
       projectId,
       runTimestamp,
     });
