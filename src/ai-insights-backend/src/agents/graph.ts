@@ -36,6 +36,6 @@ export function createAgentGraph(checkpointer: any) {
 
   return workflow.compile({
     checkpointer,
-    interruptBefore: ["hierarchyMapperNode", "modelSelectionNode", "trainingConfigurationNode"],
+    interruptBefore: ["hierarchyMapperNode", "trainingConfigurationNode"],
   });
 }

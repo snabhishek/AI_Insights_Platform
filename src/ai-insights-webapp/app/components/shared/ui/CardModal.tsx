@@ -16,6 +16,11 @@ interface CardModalProps {
   projectId?: string;
   agentState?: Record<string, any>;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
+  requiresApproval?: boolean;
+  approvalNextStep?: string | null;
+  isApproving?: boolean;
+  isAwaitingResponse?: boolean;
+  onApprove?: (overrideTargetPhase?: string) => void;
 }
 
 // Map color strings to active Tailwind text/border/bg classes for step circles
@@ -69,6 +74,11 @@ export default function CardModal({
   projectId,
   agentState,
   agentThinking,
+  requiresApproval = false,
+  approvalNextStep = null,
+  isApproving = false,
+  isAwaitingResponse = false,
+  onApprove,
 }: CardModalProps) {
   const [activeStepIndex, setActiveStepIndex] = useState<number>(0);
   const [thinkingLogs, setThinkingLogs] = useState<Array<{ time: string; text: string; done: boolean }>>([]);
@@ -304,13 +314,42 @@ export default function CardModal({
               </div>
             </div>
 
-            <button 
-              onClick={onClose} 
-              className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-background border border-border text-muted-foreground transition-colors cursor-pointer"
-              title="Close Details"
-            >
-              ✕
-            </button>
+            <div className="flex items-center gap-2">
+              {requiresApproval && (
+                <button
+                  type="button"
+                  onClick={() => onApprove?.(approvalNextStep || undefined)}
+                  disabled={isApproving}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ${
+                    isApproving ? "opacity-75 cursor-not-allowed" : "animate-pulse"
+                  }`}
+                >
+                  {isApproving ? (
+                    <>
+                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                      </svg>
+                      <span>Advancing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>Proceed to Next Phase</span>
+                    </>
+                  )}
+                </button>
+              )}
+
+              <button 
+                onClick={onClose} 
+                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-background border border-border text-muted-foreground transition-colors cursor-pointer"
+                title="Close Details"
+              >
+                ✕
+              </button>
+            </div>
           </div>
 
           {/* Tab Selection Bar */}
@@ -355,11 +394,55 @@ export default function CardModal({
                     </div>
                   ) : (
                     <div className="flex-1 flex flex-col justify-center items-center p-8 text-center text-sm text-muted-foreground bg-surface-muted/10 select-none">
-                      <span className="text-3xl mb-2">📥</span>
-                      <strong className="text-foreground">Output is not received yet.</strong>
-                      <span className="text-xs max-w-sm mt-1 leading-normal">
-                        The execution results will be displayed here as soon as this pipeline step completes and provides output.
-                      </span>
+                      {requiresApproval ? (
+                        <div className="flex flex-col items-center max-w-md p-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-foreground animate-fadeIn">
+                          <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500 mb-3">
+                            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <circle cx="12" cy="12" r="10" />
+                              <line x1="12" y1="8" x2="12" y2="12" />
+                              <line x1="12" y1="16" x2="12.01" y2="16" />
+                            </svg>
+                          </div>
+                          <strong className="text-base font-bold text-foreground">
+                            Awaiting Approval
+                          </strong>
+                          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed text-center">
+                            {workflowMessage || `This pipeline stage is paused awaiting your approval to proceed to ${approvalNextStep || activeStep?.title || "the next phase"}.`}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => onApprove?.(approvalNextStep || undefined)}
+                            disabled={isApproving}
+                            className={`mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer ${
+                              isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105"
+                            }`}
+                          >
+                            {isApproving ? (
+                              <>
+                                <svg className="animate-spin" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3">
+                                  <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                                </svg>
+                                <span>Advancing Workflow...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3">
+                                  <polyline points="20 6 9 17 4 12" />
+                                </svg>
+                                <span>Proceed to Next Phase</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <span className="text-3xl mb-2">📥</span>
+                          <strong className="text-foreground">Output is not received yet.</strong>
+                          <span className="text-xs max-w-sm mt-1 leading-normal">
+                            The execution results will be displayed here as soon as this pipeline step completes and provides output.
+                          </span>
+                        </>
+                      )}
                     </div>
                   )}
                 </div>

@@ -39,9 +39,14 @@ async function runVerificationTests() {
     "trainingConfigurationNode is included in interruptBefore"
   );
   assert(
-    interruptNodes.includes("modelSelectionNode"),
-    "modelSelectionNode is included in interruptBefore"
+    interruptNodes.includes("hierarchyMapperNode"),
+    "hierarchyMapperNode is included in interruptBefore"
   );
+  assert(
+    !interruptNodes.includes("modelSelectionNode"),
+    "modelSelectionNode is NOT in interruptBefore (executes automatically to produce candidate models before training configuration pause)"
+  );
+
 
   // Test 2: Model Selection Confirmation & Only Selected Models in Contract
   console.log("\n--- TEST 2: Only Selected Models Saved to Contract on File Server ---");

@@ -926,14 +926,29 @@ export async function saveModularTrainingJobContract(
   if (Array.isArray(incomingModelSel.models)) {
     const existingModelMap = new Map<string, any>();
     for (const m of (existingModelSel.models || [])) {
-      if (m.model_id) existingModelMap.set(m.model_id, m);
+      const id = typeof m === "string" ? m : m?.model_id;
+      if (id) existingModelMap.set(id.toLowerCase().trim(), typeof m === "string" ? { model_id: m } : m);
     }
     mergedModels = incomingModelSel.models.map((m: any) => {
-      const prev = existingModelMap.get(m.model_id) || {};
+      const id = typeof m === "string" ? m : m?.model_id;
+      const cleanId = (id || "").toLowerCase().trim();
+      const prev = existingModelMap.get(cleanId) || {};
+      const baseObj = typeof m === "string"
+        ? {
+            model_id: m,
+            framework: prev.framework || "custom",
+            algorithm: prev.algorithm || m,
+            enabled: true,
+            parameters: prev.parameters || {},
+          }
+        : m;
       return {
         ...prev,
-        ...m,
-        ...(m.training_steps ? { training_steps: m.training_steps } : (prev.training_steps ? { training_steps: prev.training_steps } : {})),
+        ...baseObj,
+        enabled: baseObj.enabled !== undefined ? baseObj.enabled : true,
+        ...(baseObj.training_steps
+          ? { training_steps: baseObj.training_steps }
+          : (prev.training_steps ? { training_steps: prev.training_steps } : {})),
       };
     });
   } else if (Array.isArray(existingModelSel.models) && existingModelSel.models.length > 0) {
@@ -972,6 +987,10 @@ export async function saveModularTrainingJobContract(
     max_training_time: incomingModelSel.max_training_time ?? existingModelSel.max_training_time ?? null,
     model_selection_strategy: incomingModelSel.model_selection_strategy ?? existingModelSel.model_selection_strategy ?? "highest_validation_score",
     models: mergedModels.length > 0 ? mergedModels : (incomingModelSel.models || []),
+    userSelection: incomingModelSel.userSelection || existingModelSel.userSelection || null,
+    selectedModelIds: incomingModelSel.selectedModelIds || existingModelSel.selectedModelIds || (
+      mergedModels.length > 0 ? mergedModels.map((m: any) => typeof m === "string" ? m : m.model_id).filter(Boolean) : null
+    ),
     ...(incomingModelSel.feature_requirements || incomingModelSel.featureRequirements ? {
       feature_requirements: incomingModelSel.feature_requirements || incomingModelSel.featureRequirements,
     } : (existingModelSel.feature_requirements ? { feature_requirements: existingModelSel.feature_requirements } : {})),
