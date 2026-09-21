@@ -27,6 +27,7 @@ interface WorkflowPipelineProps {
   onResume?: () => void;
   isApproving?: boolean;
   isAwaitingResponse?: boolean;
+  approvalNextStep?: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -162,48 +163,9 @@ function getStageTitle(stepId: string): string {
 }
 
 // Data-driven map associating internal stage/sub-step keys to top-level pipeline card IDs
-const MAIN_STEP_MAPPING: Record<string, string> = {
-  "Data Inspection": "Data Ingestion",
-  "Data Ingestion": "Data Ingestion",
-  "Data Profiling": "Data Ingestion",
-  "Schema Resolver": "Data Ingestion",
-  "inspect": "Data Ingestion",
-  "profileData": "Data Ingestion",
-  "preprocess": "Data Ingestion",
-  "resolveSchema": "Data Ingestion",
-  "Exogenous Scout": "Feature Engineering",
-  "exogenousScout": "Feature Engineering",
-  "exogenous": "Feature Engineering",
-  "Hierarchy Mapper": "Feature Engineering",
-  "hierarchyMapper": "Feature Engineering",
-  "hierarchyMapperNode": "Feature Engineering",
-  "Feature Architect": "Feature Engineering",
-  "featureArchitect": "Feature Engineering",
-  "featureArchitectNode": "Feature Engineering",
-  "Feature Validator": "Feature Engineering",
-  "featureValidator": "Feature Engineering",
-  "featureValidatorNode": "Feature Engineering",
-  "Feature Engineering": "Feature Engineering",
-  "Training Configuration": "Model Training & Validation",
-  "trainingConfiguration": "Model Training & Validation",
-  "trainingConfigurationNode": "Model Training & Validation",
-  "Pre Flight": "Model Training & Validation",
-  "preFlight": "Model Training & Validation",
-  "preFlightNode": "Model Training & Validation",
-  "Model Training": "Model Training & Validation",
-  "modelTraining": "Model Training & Validation",
-  "modelTrainingNode": "Model Training & Validation",
-  "Model Evaluation": "Model Training & Validation",
-  "modelEvaluation": "Model Training & Validation",
-  "modelEvaluationNode": "Model Training & Validation",
-  "Model Validation": "Model Training & Validation",
-  "modelValidation": "Model Training & Validation",
-  "modelValidationNode": "Model Training & Validation",
-  "Model Selection": "Model Training & Validation",
-  "modelSelection": "Model Training & Validation",
-  "modelSelectionNode": "Model Training & Validation",
-  "Model Training & Validation": "Model Training & Validation",
-};
+import { SUBSTEP_TO_PIPELINE_MAP } from "./pipelineFlowConfig";
+
+const MAIN_STEP_MAPPING = SUBSTEP_TO_PIPELINE_MAP;
 
 const DEFAULT_MAIN_STEP_ID = "Data Ingestion";
 const DATA_INGESTION_SUBSTEPS = ["Data Inspection", "Data Profiling", "Schema Resolver"] as const;
@@ -372,6 +334,7 @@ export default function WorkflowPipeline({
   onResume,
   isApproving,
   isAwaitingResponse,
+  approvalNextStep,
 }: WorkflowPipelineProps) {
   const currentStage = activeStage || "inspect";
   const mainSelectedStage = getMainStepId(currentStage);
@@ -411,8 +374,11 @@ export default function WorkflowPipeline({
             </span>
           </div>
           <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
-            Please confirm candidate models in the Model Selection view below to proceed.
+            {workflowMessage && (workflowMessage.toLowerCase().includes("confirm") || workflowMessage.toLowerCase().includes("select"))
+              ? workflowMessage
+              : "Please confirm candidate models in the Model Selection view below to proceed."}
           </span>
+
         </div>
       )}
 
@@ -442,28 +408,44 @@ export default function WorkflowPipeline({
             </div>
           ) : requiresApproval ? (
             <>
-              <button
-                type="button"
-                onClick={() => onApprove()}
-                disabled={isApproving}
-                className={`inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
-              >
-                {isApproving ? (
-                  <>
-                    <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                      <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
-                    </svg>
-                    Advancing...
-                  </>
-                ) : (
-                  <>
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    Proceed to Next Phase
-                  </>
-                )}
-              </button>
+              {approvalNextStep === "Training Configuration" || pausedAtPhase === "Training Configuration" ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectStage("Model Training & Validation")}
+                  disabled={isApproving}
+                  className={`inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
+                  title="Open Model Selection to review and confirm candidate models for training"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M9 11l3 3L22 4" />
+                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                  </svg>
+                  <span>Select & Confirm Models</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onApprove()}
+                  disabled={isApproving}
+                  className={`inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
+                >
+                  {isApproving ? (
+                    <>
+                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                      </svg>
+                      <span>Advancing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>Proceed to Next Phase</span>
+                    </>
+                  )}
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onStopWorkflow}

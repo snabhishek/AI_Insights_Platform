@@ -17,6 +17,7 @@ import { QueueService } from "../../queue/queue.service";
 import { agentJobEvents } from "../../queue/queueEvents";
 import { generateDateTimeStamp, ensureProjectRunFolder, getLatestProjectRunTimestamp, createProjectSchemaFile } from "../../../agents/tools/helpers";
 import { registerProjectMetadata } from "../../../agents/tools/filesystem/mcpFilesystemClient";
+import { getPipelineForSubstep, resolveSafePredecessorNode } from "../../../agents/pipelineFlowConfig";
 
 const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Data Ingestion": [
@@ -353,15 +354,18 @@ export class IngestionAgentService implements IIngestionAgentService {
         projectName: pWs?.project?.name,
         workspaceName: pWs?.workspaceName,
         folderPath: pWs?.project?.folderPath,
-        pipeline: "Data Ingestion",
+        pipeline: getPipelineForSubstep(options?.step) || "Data Ingestion",
         runTimestamp: activeRunTimestamp,
         isCancelled: () => this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId),
         abortSignal: sessionAbortController.signal,
         onThinkingUpdate: async (substep: string) => {
           if (this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId)) return;
           try {
+            const currentPipeline = getPipelineForSubstep(substep);
+            services.pipeline = currentPipeline;
+            pipeline = currentPipeline;
             const allThinking = options?.projectId
-              ? await this.getAllProjectPipelineThinking(options.projectId, "Data Ingestion")
+              ? await this.getAllProjectPipelineThinking(options.projectId, currentPipeline)
               : {};
 
             const currentStageStatuses = { ...(latestGraphStateValues.stageStatuses || {}) };
@@ -427,6 +431,34 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStageStatuses.featureArchitect = "Completed";
               currentStageStatuses.featureValidator = "Completed";
               currentStageStatuses.exogenousScout = "In Progress";
+            } else if (substep === "Model Selection" || substep === "modelSelection" || substep === "modelSelectionNode") {
+              currentNode = "modelSelectionNode";
+              currentStage = "modelSelectionNode";
+              currentStageStatuses.hierarchyMapper = "Completed";
+              currentStageStatuses.featureArchitect = "Completed";
+              currentStageStatuses.featureValidator = "Completed";
+              currentStageStatuses.exogenousScout = "Completed";
+              currentStageStatuses.modelSelection = "In Progress";
+            } else if (substep === "Training Configuration" || substep === "trainingConfiguration" || substep === "trainingConfigurationNode") {
+              currentNode = "trainingConfigurationNode";
+              currentStage = "trainingConfigurationNode";
+              currentStageStatuses.modelSelection = "Completed";
+              currentStageStatuses.trainingConfiguration = "In Progress";
+            } else if (substep === "Pre Flight" || substep === "preFlight" || substep === "preFlightNode") {
+              currentNode = "preFlightNode";
+              currentStage = "preFlightNode";
+              currentStageStatuses.trainingConfiguration = "Completed";
+              currentStageStatuses.preFlight = "In Progress";
+            } else if (substep === "Model Training" || substep === "modelTraining" || substep === "modelTrainingNode") {
+              currentNode = "modelTrainingNode";
+              currentStage = "modelTrainingNode";
+              currentStageStatuses.preFlight = "Completed";
+              currentStageStatuses.modelTraining = "In Progress";
+            } else if (substep === "Model Validation" || substep === "modelValidation" || substep === "modelValidationNode") {
+              currentNode = "modelValidationNode";
+              currentStage = "modelValidationNode";
+              currentStageStatuses.modelTraining = "Completed";
+              currentStageStatuses.modelValidation = "In Progress";
             }
 
             const mergedValues = {
@@ -460,7 +492,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         signal: sessionAbortController.signal,
       };
 
-      const pipeline = "Data Ingestion";
+      let pipeline = getPipelineForSubstep(options?.step) || "Data Ingestion";
 
       const isApprovingModel = options?.action === "approve" && (
         Boolean(options.step?.toLowerCase().includes("model")) ||
@@ -789,6 +821,11 @@ export class IngestionAgentService implements IIngestionAgentService {
                 featureArchitect: {},
                 featureValidator: {},
                 exogenousScout: {},
+                modelSelection: {},
+                trainingConfiguration: {},
+                preFlight: {},
+                modelTraining: {},
+                modelValidation: {},
                 status: "running",
                 summary: "Ingestion workflow started",
                 steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
@@ -801,7 +838,12 @@ export class IngestionAgentService implements IIngestionAgentService {
                   hierarchyMapper: "Pending",
                   featureArchitect: "Pending",
                   featureValidator: "Pending",
-                  exogenousScout: "Pending"
+                  exogenousScout: "Pending",
+                  modelSelection: "Pending",
+                  trainingConfiguration: "Pending",
+                  preFlight: "Pending",
+                  modelTraining: "Pending",
+                  modelValidation: "Pending"
                 }
               };
               try {
@@ -816,8 +858,12 @@ export class IngestionAgentService implements IIngestionAgentService {
               const currentGraphState = await workflow.getState(config).catch(() => null);
               const calculatedBase = buildResultFromGraphState(currentGraphState, threadId, connectorId);
 
-              // Preserve database stageOutputs (such as user-confirmed modelSelection and trainingConfiguration)
-              if (options?.projectId) {
+              const isModelSubstep = activeSubstep === "Model Selection" || activeSubstep === "Training Configuration" || activeSubstep === "Pre Flight" || activeSubstep === "Model Training" || activeSubstep === "Model Validation" || activeSubstep === "Model Training & Validation";
+              const isFESubstep = activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering";
+
+              // Only preserve database stageOutputs (such as user-confirmed modelSelection and trainingConfiguration)
+              // if we are actively executing or resuming within the model phase
+              if (options?.projectId && isModelSubstep) {
                 try {
                   const project = await this.projectService.getById(options.projectId);
                   const savedAgentState = project?.agentState as any;
@@ -839,9 +885,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                   console.warn("[Workflow] Could not read saved project state for initial calculatedBase:", err?.message || err);
                 }
               }
-
-              const isModelSubstep = activeSubstep === "Model Selection" || activeSubstep === "Training Configuration" || activeSubstep === "Pre Flight" || activeSubstep === "Model Training" || activeSubstep === "Model Validation" || activeSubstep === "Model Training & Validation";
-              const isFESubstep = activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering";
 
               const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || isFESubstep || isModelSubstep) ? "Completed" : "In Progress";
               const profileStatus = (activeSubstep === "Schema Resolver" || isFESubstep || isModelSubstep) ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
@@ -1152,11 +1195,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                   } else if (savedAgentState.schemaResolution || savedAgentState.stageOutputs) {
                     console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
 
-                    const predecessorNode = options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" || options.step === "Model Selection"
-                      ? "exogenous"
-                      : options.step === "Training Configuration" || options.step === "trainingConfigurationNode" || options.step === "Model Training" || options.step === "modelTrainingNode"
-                      ? "modelSelectionNode"
-                      : "resolveSchema";
+                    const predecessorNode = resolveSafePredecessorNode(options.step, savedAgentState);
                     const restoredState = {
                       ...savedAgentState,
                       connectorId,
@@ -1524,7 +1563,11 @@ export class IngestionAgentService implements IIngestionAgentService {
             !this.pausedSessions.has(threadId)
           ) {
             const nextNodes = graphState.next;
-            console.info(`[Workflow] Node [${nextNodes.join(", ")}] started`);
+            const activeNodeName = nextNodes[0];
+            const nodePipeline = getPipelineForSubstep(activeNodeName);
+            services.pipeline = nodePipeline;
+            pipeline = nodePipeline;
+            console.info(`[Workflow] Node [${nextNodes.join(", ")}] started (pipeline: ${nodePipeline})`);
             const advanceStream = await workflow.stream(null, config);
             for await (const chunk of advanceStream) {
               if (this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId)) {

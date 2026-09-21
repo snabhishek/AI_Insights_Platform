@@ -3,6 +3,7 @@
 import React from "react";
 import ModelSelectionStepOutput from "./ModelSelectionStepOutput";
 import TrainingConfigurationStepOutput from "./TrainingConfigurationStepOutput";
+import PreFlightStepOutput from "./PreFlightStepOutput";
 
 interface ModelTrainingValidationOutputProps {
   modelSelection?: any;
@@ -70,7 +71,7 @@ export default function ModelTrainingValidationStepOutput({
     );
   }
 
-  // 3. Pre Flight (Maintained simply like Model Training, no fake defaults)
+  // 3. Pre Flight (Comprehensive 10-Stage Dashboard)
   if (activeSubstep === "Pre Flight" || (preFlight && !modelTraining && !modelValidation)) {
     if (!preFlight) {
       return (
@@ -83,37 +84,14 @@ export default function ModelTrainingValidationStepOutput({
       );
     }
     return (
-      <div className="p-6 space-y-4">
-        <div className="rounded-xl border border-border bg-surface p-5">
-          <h4 className="text-sm font-bold text-foreground">Pre Flight Overview</h4>
-          <p className="text-xs text-muted-foreground mt-1">
-            {preFlight.summary || "Pre-flight validation completed."}
-          </p>
-          {preFlight.checks && Array.isArray(preFlight.checks) && preFlight.checks.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-border space-y-2">
-              {preFlight.checks.map((check: any, idx: number) => (
-                <div key={check.id || idx} className="p-2.5 rounded-lg bg-surface-muted border border-border flex items-center justify-between">
-                  <div>
-                    <span className="text-xs font-medium text-foreground block">{check.name || check.id}</span>
-                    {check.details && <span className="text-[11px] text-muted-foreground">{check.details}</span>}
-                  </div>
-                  {check.status && (
-                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
-                      check.status === "PASSED"
-                        ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                        : "bg-surface text-muted-foreground border border-border"
-                    }`}>
-                      {check.status}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      <PreFlightStepOutput
+        preFlight={preFlight}
+        projectId={projectId}
+        activeRunTimestamp={activeRunTimestamp}
+      />
     );
   }
+
 
   // 4. Model Training or Model Validation
   if (activeSubstep === "Model Training" || activeSubstep === "Model Validation" || modelTraining || modelValidation) {

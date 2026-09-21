@@ -204,21 +204,6 @@ export class ModelSelectionService implements IModelSelectionService {
       } catch (projErr: any) {
         console.warn(`[ModelSelectionService] Could not update project agentState for ${effectiveProjectId}:`, projErr?.message || projErr);
       }
-
-      // Persist modular Training Job Contract YAML into project run folder
-      try {
-        const pWs = await this.projectService.getProjectWithWorkspace(effectiveProjectId);
-        if (pWs && pWs.project) {
-          await saveModularTrainingJobContract(
-            pWs.workspaceName || "DefaultWorkspace",
-            pWs.project.name,
-            decision,
-            inputContext.runTimestamp
-          );
-        }
-      } catch (contractErr: any) {
-        console.warn(`[ModelSelectionService] Warning saving Training Job Contract for ${effectiveProjectId}:`, contractErr?.message || contractErr);
-      }
     }
 
     return record;
