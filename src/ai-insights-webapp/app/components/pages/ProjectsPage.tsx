@@ -13,6 +13,7 @@ import {
 import { useApp, Project, BACKEND_URL } from "../providers/AppContext";
 import { PipelineStatuses, RunStatus } from "../projects/types";
 import { INITIAL_PIPELINE_STATUSES } from "../projects/constants";
+import { resolveNextWorkflowPhase, STEP_TO_NODE_MAP } from "../projects/pipelineFlowConfig";
 import ProjectsListPage from "../projects/ProjectsListPage";
 import ProjectDetailPage from "../projects/ProjectDetailPage";
 import ProjectCreatePage from "../projects/ProjectCreatePage";
@@ -393,7 +394,7 @@ export default function ProjectsPage() {
         (nextStatuses["Model Selection"] === "Completed" || state.stageOutputs?.modelSelection !== undefined) &&
         !(state.stageOutputs as Record<string, any> | undefined)?.trainingConfiguration?.contractPath &&
         nextStatuses["Training Configuration"] !== "Completed" &&
-        (state.nextStep === "Training Configuration" || state.nextStep === "trainingConfigurationNode" || state.requiresApproval);
+        (state.nextStep === "Training Configuration" || state.nextStep === "trainingConfigurationNode");
 
       if (isWaitingForModelConfirmation) {
         setIsAwaitingResponse(true);
@@ -402,6 +403,7 @@ export default function ProjectsPage() {
         setRequiresApproval(false);
         setApprovalNextStep(null);
       } else {
+
         setIsAwaitingResponse(false);
         const isAtOrPastModelPhase =
           nextStatuses["Training Configuration"] === "Completed" ||
@@ -624,7 +626,7 @@ export default function ProjectsPage() {
             (freshState.stageStatuses?.modelSelection === "Completed" || pollStageOutputs?.modelSelection !== undefined) &&
             !pollStageOutputs?.trainingConfiguration?.contractPath &&
             freshState.stageStatuses?.trainingConfiguration !== "Completed" &&
-            (freshState.nextStep === "Training Configuration" || freshState.nextStep === "trainingConfigurationNode" || freshState.requiresApproval);
+            (freshState.nextStep === "Training Configuration" || freshState.nextStep === "trainingConfigurationNode");
 
           if (isWaitingForModel) {
             setIsAwaitingResponse(true);
@@ -675,7 +677,7 @@ export default function ProjectsPage() {
       (payload.stageStatuses?.modelSelection === "Completed" || stageOutputs?.modelSelection !== undefined) &&
       !stageOutputs?.trainingConfiguration?.contractPath &&
       payload.stageStatuses?.trainingConfiguration !== "Completed" &&
-      (payload.nextStep === "Training Configuration" || payload.nextStep === "trainingConfigurationNode" || payload.requiresApproval);
+      (payload.nextStep === "Training Configuration" || payload.nextStep === "trainingConfigurationNode");
 
     if (isWaitingForModelConfirmation) {
       setIsAwaitingResponse(true);
@@ -898,30 +900,7 @@ export default function ProjectsPage() {
         payload.action = action;
       }
       if (step && typeof step === "string") {
-        const stepMap: Record<string, string> = {
-          "Data Inspection": "inspect",
-          "Data Profiling": "profileData",
-          "Schema Resolver": "resolveSchema",
-          "Hierarchy Mapper": "hierarchyMapperNode",
-          "Feature Architect": "featureArchitectNode",
-          "Feature Validator": "featureArchitectNode",
-          "Exogenous Scout": "exogenous",
-          "Feature Engineering": "hierarchyMapperNode",
-          "Model Training & Validation": "modelSelectionNode",
-          "Model Training": "modelTrainingNode",
-          "Model Evaluation": "modelEvaluationNode",
-          "Model Validation": "modelValidationNode",
-          "Model Selection": "modelSelectionNode",
-          "Training Configuration": "trainingConfigurationNode",
-          "Pre Flight": "preFlightNode",
-          preFlight: "preFlightNode",
-          preFlightNode: "preFlightNode",
-          modelSelection: "modelSelectionNode",
-          modelSelectionNode: "modelSelectionNode",
-          trainingConfiguration: "trainingConfigurationNode",
-          trainingConfigurationNode: "trainingConfigurationNode",
-        };
-        payload.step = stepMap[step] || step;
+        payload.step = STEP_TO_NODE_MAP[step] || step;
       }
       const response = await executeWorkflowApi(payload, controller.signal);
       const reader = response.body?.getReader();
@@ -1072,60 +1051,28 @@ export default function ProjectsPage() {
     if (isApproving || isExecutingRef.current) return;
     setIsApproving(true);
 
-    const isFeatureEngineeringCompleted =
-      pipelineStatuses["Feature Engineering"] === "Completed" ||
-      pipelineStatuses["Exogenous Scout"] === "Completed" ||
-      stageOutputs?.exogenousScout !== undefined;
+    const resolution = resolveNextWorkflowPhase({
+      approvalNextStep,
+      overrideTargetPhase,
+      currentStatuses: pipelineStatuses,
+      stageOutputs,
+    });
 
-    const isModelSelectionCompleted =
-      pipelineStatuses["Model Selection"] === "Completed" ||
-      stageOutputs?.modelSelection !== undefined;
+    const { targetPhase, statusesToUpdate, outputsToClear } = resolution;
 
-    const isTrainingConfigCompleted =
-      pipelineStatuses["Training Configuration"] === "Completed" ||
-      (stageOutputs?.trainingConfiguration as Record<string, any> | undefined)?.contractPath !== undefined;
-
-    const nextStepLower = (approvalNextStep || "").toLowerCase();
-    let targetPhase = "Feature Engineering";
-
-    const validOverride =
-      typeof overrideTargetPhase === "string" && overrideTargetPhase.trim().length > 0
-        ? overrideTargetPhase.trim()
-        : undefined;
-
-    if (validOverride) {
-      targetPhase = validOverride;
-    } else if (
-      isTrainingConfigCompleted &&
-      pipelineStatuses["Pre Flight"] !== "Completed"
-    ) {
-      targetPhase = "Pre Flight";
-    } else if (
-      (isModelSelectionCompleted || nextStepLower === "training configuration" || nextStepLower === "trainingconfigurationnode") &&
-      pipelineStatuses["Training Configuration"] !== "Completed"
-    ) {
-      targetPhase = "Training Configuration";
-    } else if (
-      isFeatureEngineeringCompleted ||
-      nextStepLower.includes("model") ||
-      nextStepLower.includes("selection")
-    ) {
-      targetPhase = "Model Selection";
-    }
-
-    if (targetPhase === "Training Configuration") {
+    if (Object.keys(statusesToUpdate).length > 0) {
       setPipelineStatuses((prev) => ({
         ...prev,
-        "Training Configuration": "In Progress",
-        "Pre Flight": "Pending",
-        "Model Training": "Pending",
-        "Model Validation": "Pending",
+        ...statusesToUpdate,
       }));
+    }
+
+    if (outputsToClear.length > 0) {
       setStageOutputs((prev) => {
         const next = { ...prev };
-        delete next.preFlight;
-        delete next.modelTraining;
-        delete next.modelValidation;
+        for (const key of outputsToClear) {
+          delete next[key];
+        }
         return next;
       });
     }
@@ -1140,31 +1087,7 @@ export default function ProjectsPage() {
   };
 
   const handleRetry = (step?: string) => {
-    const stepMap: Record<string, string> = {
-      inspect: "inspect",
-      profileData: "profileData",
-      preprocess: "preprocess",
-      resolveSchema: "resolveSchema",
-      exogenous: "exogenous",
-      exogenousScout: "exogenous",
-      "Data Inspection": "inspect",
-      "Data Profiling": "profileData",
-      "Schema Resolver": "resolveSchema",
-      "Exogenous Scout": "exogenous",
-      "Feature Engineering": "exogenous",
-      "Model Training & Validation": "modelSelection",
-      "Model Training": "modelTraining",
-      "Model Evaluation": "modelEvaluation",
-      "Model Validation": "modelValidation",
-      "Model Selection": "modelSelection",
-      "Training Configuration": "trainingConfigurationNode",
-      "Pre Flight": "preFlightNode",
-      preFlight: "preFlightNode",
-      preFlightNode: "preFlightNode",
-      trainingConfiguration: "trainingConfigurationNode",
-      trainingConfigurationNode: "trainingConfigurationNode",
-    };
-    const normalizedStep = typeof step === "string" ? stepMap[step] || step : undefined;
+    const normalizedStep = typeof step === "string" ? STEP_TO_NODE_MAP[step] || step : undefined;
     void runWorkflow("retry", normalizedStep);
   };
 

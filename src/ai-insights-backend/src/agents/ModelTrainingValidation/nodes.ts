@@ -4,7 +4,6 @@ import * as path from "path";
 import { AgentState, IngestionServices } from "../state";
 import { cleanupRunContainer, executePythonScript } from "../tools/helpers/pythonExecutor";
 import { getPythonScriptDirectory } from "../tools/filesystem";
-import { saveModularTrainingJobContract } from "../tools/helpers/schemaHelper";
 
 import { drizzle } from "drizzle-orm/node-postgres";
 import { pool } from "../../db";
@@ -13,7 +12,9 @@ import { PostgresModelSelectionRepository } from "../../repositories/modelSelect
 import { ModelSelectionLLMService } from "../../services/ai/model-selection/modelSelectionLLM.service";
 import { ModelSelectionService } from "../../services/ai/model-selection/modelSelection.service";
 import { TrainingConfigurationAgent, TrainingConfigValidator } from "./TrainingConfiguration";
+import { PreFlightAgent } from "./PreFlight";
 import { validateWithRetry } from "../validator/validatorNode";
+
 
 type State = typeof AgentState.State;
 
@@ -79,23 +80,6 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
   const decision = decisionRecord.decision;
 
   const effectiveRunTimestamp = state.runTimestamp || (services as any)?.runTimestamp;
-
-  // Persist modular Training Job Contract YAML into project run folder
-  if (services?.projectService && projectId) {
-    try {
-      const pWs = await services.projectService.getProjectWithWorkspace(projectId);
-      if (pWs && pWs.project) {
-        await saveModularTrainingJobContract(
-          pWs.workspaceName || "DefaultWorkspace",
-          pWs.project.name,
-          decision,
-          effectiveRunTimestamp
-        );
-      }
-    } catch (contractErr: any) {
-      console.warn("[modelSelectionNode] Warning saving Training Job Contract to project folder:", contractErr?.message || contractErr);
-    }
-  }
 
   const candidateNames = (decision.candidates || []).map((c) => c.displayName || c.model_id);
   const summary = `Model selection completed for ${decision.target_entity?.name || metadata.targetColumn || "target"}. Recommended: ${decision.recommended_model?.model_id || "None"} (${((decision.recommended_model?.suitability_score || 0) * 100).toFixed(0)}%). Candidates: ${candidateNames.join(", ")}`;
@@ -184,63 +168,76 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
   }
 
   const trainingConfig = (state.trainingConfiguration || {}) as any;
-  const models = trainingConfig.models || trainingConfig.candidate_models || [];
-  const modelCount = Array.isArray(models) ? models.length : 1;
+  const runDir = runDirectory(state, services);
+  const metadata = featureMetadata(state);
+  const datasetFileName = findDataset(runDir);
+  const datasetPath = datasetFileName ? path.join(runDir, datasetFileName) : undefined;
 
-  const preFlightOutput = {
-    status: "Completed",
-    phase: "Pre Flight",
-    summary: `Pre-flight validation cleared for ${modelCount} candidate model(s). Compute resources, DataLoader pipeline, and data optimization strategies verified.`,
-    checks: [
-      {
-        id: "env_hardware",
-        category: "Environment & Hardware",
-        name: "Compute Engine & Accelerator",
-        status: "PASSED",
-        details: "Hardware accelerator detected. Dynamic memory growth enabled. Zero CUDA out-of-memory hazard.",
-        metric: "Ready",
-      },
-      {
-        id: "dataloader_opt",
-        category: "DataLoader Configuration",
-        name: "PyTorch / Framework DataLoader",
-        status: "PASSED",
-        details: "Batch size balanced with num_workers=2 and prefetch_factor=2 for non-blocking asynchronous pipeline.",
-        metric: "Optimized",
-      },
-      {
-        id: "dataset_integrity",
-        category: "Dataset & Memory",
-        name: "Parquet Dataset & Memory Mapping",
-        status: "PASSED",
-        details: "Columnar Parquet partitions validated. Zero-copy memory mapping configured for fast batch iteration.",
-        metric: "Validated",
-      },
-      {
-        id: "feature_readiness",
-        category: "Feature Architecture",
-        name: "Upstream Feature Pipeline Audit",
-        status: "PASSED",
-        details: "All feature scaling, encoding, and target balancing confirmed completed by Data Profiler & Feature Architect.",
-        metric: "Aligned",
-      },
-      {
-        id: "loss_grad",
-        category: "Execution Runtime",
-        name: "Loss & Gradient Scaling",
-        status: "PASSED",
-        details: "Automatic Mixed Precision (AMP) and gradient clipping configured for numerical stability during training epochs.",
-        metric: "Verified",
-      },
-    ],
-    verifiedAt: new Date().toISOString(),
-  };
+  const agent = new PreFlightAgent();
+  const report = await agent.execute(trainingConfig, {
+    projectId: services.projectId || state.projectId,
+    workspaceName: (state as any).workspaceName,
+    runDir,
+    datasetPath,
+    metadata,
+  });
 
+
+  const isBlockedOrFailed = report.decision === "BLOCKED" || report.decision === "FAILED";
+  const requiresAttention =
+    report.decision === "REQUIRES_CONFIGURATION_CHANGE" || report.decision === "REQUIRES_USER_CONFIRMATION";
+
+  if (isBlockedOrFailed) {
+    console.warn(`[Workflow] preFlightNode BLOCKED model training: ${report.summary}`);
+    return {
+      preFlight: report,
+      status: "failed",
+      summary: report.summary,
+      stageOutputs: { preFlight: report },
+      stageStatuses: {
+        preFlight: "Failed",
+        modelTraining: "Pending",
+        modelValidation: "Pending",
+      },
+      steps: [
+        {
+          name: "Pre Flight",
+          status: "failed",
+          summary: report.summary,
+        },
+      ],
+    };
+  }
+
+  if (requiresAttention) {
+    console.info(`[Workflow] preFlightNode pausing for user review: ${report.summary}`);
+    return {
+      preFlight: report,
+      status: "paused",
+      requiresApproval: true,
+      summary: report.summary,
+      stageOutputs: { preFlight: report },
+      stageStatuses: {
+        preFlight: "Requires Attention",
+        modelTraining: "Pending",
+        modelValidation: "Pending",
+      },
+      steps: [
+        {
+          name: "Pre Flight",
+          status: "paused",
+          summary: report.summary,
+        },
+      ],
+    };
+  }
+
+  // APPROVED or APPROVED_WITH_WARNINGS: Proceed to modelTrainingNode
   return {
-    preFlight: preFlightOutput,
+    preFlight: report,
     status: "running",
-    summary: preFlightOutput.summary,
-    stageOutputs: { preFlight: preFlightOutput },
+    summary: report.summary,
+    stageOutputs: { preFlight: report },
     stageStatuses: {
       preFlight: "Completed",
       modelTraining: "In Progress",
@@ -250,11 +247,12 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
       {
         name: "Pre Flight",
         status: "completed",
-        summary: preFlightOutput.summary,
+        summary: report.summary,
       },
     ],
   };
 }
+
 
 export async function modelTrainingNode(state: State, config?: RunnableConfig) {
   // Phase 3: 3.3 Model Training - Train candidate models and record evaluation metrics

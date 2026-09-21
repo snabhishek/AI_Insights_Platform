@@ -391,6 +391,7 @@ export default function ProjectDetailPage({
             onResume={onResume}
             isApproving={isApproving}
             isAwaitingResponse={isAwaitingResponse}
+            approvalNextStep={approvalNextStep}
           />
         </div>
       </div>

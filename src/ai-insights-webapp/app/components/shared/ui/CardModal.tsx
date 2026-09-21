@@ -315,7 +315,7 @@ export default function CardModal({
             </div>
 
             <div className="flex items-center gap-2">
-              {requiresApproval && (
+              {requiresApproval && !(approvalNextStep === "Training Configuration" && activeStep?.id === "Model Selection") && (
                 <button
                   type="button"
                   onClick={() => onApprove?.(approvalNextStep || undefined)}

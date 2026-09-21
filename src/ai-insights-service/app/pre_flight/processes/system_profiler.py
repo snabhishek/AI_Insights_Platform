@@ -18,8 +18,33 @@ class SystemProfiler:
             total = mem.total / 1024**3
             available = mem.available / 1024**3
         except ImportError:
-            warnings.append(
-                'psutil unavailable; RAM information may be incomplete')
+            # Fallback for Windows without external psutil dependency
+            if platform.system() == 'Windows':
+                try:
+                    import ctypes
+                    import struct
+                    stat = (ctypes.c_ulong * 16)()
+                    stat[0] = 64
+                    if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(stat)):
+                        t_bytes, a_bytes = struct.unpack_from('QQ', bytearray(stat), 8)
+                        total = t_bytes / 1024**3
+                        available = a_bytes / 1024**3
+                except Exception as ex:
+                    warnings.append(f'RAM probe fallback failed: {ex}')
+            elif os.path.exists('/proc/meminfo'):
+                try:
+                    with open('/proc/meminfo') as f:
+                        lines = f.readlines()
+                    meminfo = {line.split(':')[0]: float(line.split(':')[1].strip().split()[0]) for line in lines if ':' in line}
+                    if 'MemTotal' in meminfo:
+                        total = meminfo['MemTotal'] / (1024**2)
+                    if 'MemAvailable' in meminfo:
+                        available = meminfo['MemAvailable'] / (1024**2)
+                except Exception as ex:
+                    warnings.append(f'Linux meminfo probe failed: {ex}')
+            if total == 0.0:
+                warnings.append('psutil unavailable; RAM information may be incomplete')
+
         try:
             disk = shutil.disk_usage(Path.cwd()).free / 1024**3
         except OSError:

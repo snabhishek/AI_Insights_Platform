@@ -6,6 +6,7 @@ import { AzureChatOpenAI, ChatOpenAI } from "@langchain/openai";
 import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { createAgent, summarizationMiddleware } from "langchain";
 import { BatchedTableState, IngestionServices } from "../state";
+import { getPipelineForSubstep } from "../pipelineFlowConfig";
 
 export type SupportedChatModel = ChatOpenAI | AzureChatOpenAI | ChatGoogleGenerativeAI;
 export type InspectionPayload = Record<string, unknown> & {
@@ -1126,7 +1127,8 @@ export async function logMilestoneThinking(
   substep: string,
   text: string
 ): Promise<void> {
-  const { agentThinkingService, projectId, pipeline } = services || {};
+  const { agentThinkingService, projectId } = services || {};
+  const pipeline = getPipelineForSubstep(substep) || services?.pipeline;
   if (!agentThinkingService || !projectId || !pipeline) {
     return;
   }
@@ -1165,7 +1167,8 @@ export async function logAgentMessagesAsThinking(
   agentResult: any,
   options?: { skipTools?: boolean }
 ): Promise<void> {
-  const { agentThinkingService, projectId, pipeline } = services || {};
+  const { agentThinkingService, projectId } = services || {};
+  const pipeline = getPipelineForSubstep(substep) || services?.pipeline;
   if (!agentThinkingService || !projectId || !pipeline || !agentResult) {
     return;
   }
