@@ -5,6 +5,8 @@ import { IModelSelectionRepository } from "./modelSelection.repository.interface
 import {
   ModelDefinition,
   ModelSelectionDecisionRecord,
+  ModelSourceProviderRecord,
+  ModelSourceTypeRecord,
   UserSelectionHandoff,
 } from "../models/modelSelection.types";
 
@@ -129,7 +131,7 @@ export class PostgresModelSelectionRepository implements IModelSelectionReposito
   }
 
   async markStale(id: string): Promise<boolean> {
-    const result = await this.db
+    await this.db
       .update(schema.modelSelectionDecisions)
       .set({
         isStale: true,
@@ -140,30 +142,111 @@ export class PostgresModelSelectionRepository implements IModelSelectionReposito
     return true;
   }
 
+  async getSourceTypes(): Promise<ModelSourceTypeRecord[]> {
+    const rows = await this.db.select().from(schema.modelSourceTypes);
+    return rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      description: r.description,
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    }));
+  }
+
+  async getSourceProviders(): Promise<ModelSourceProviderRecord[]> {
+    const rows = await this.db.select().from(schema.modelSourceProviders);
+    return rows.map((r: any) => ({
+      id: r.id,
+      name: r.name,
+      sourceTypeId: r.sourceTypeId,
+      baseUrl: r.baseUrl,
+      metadata: r.metadata || {},
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : r.createdAt,
+    }));
+  }
+
+  async ensureSourceProvider(provider: {
+    id: string;
+    name: string;
+    sourceTypeId: string;
+    baseUrl?: string;
+  }): Promise<void> {
+    const normId = provider.id.toLowerCase().trim();
+    await this.db
+      .insert(schema.modelSourceProviders)
+      .values({
+        id: normId,
+        name: provider.name || provider.id,
+        sourceTypeId: provider.sourceTypeId || "external",
+        baseUrl: provider.baseUrl || null,
+        metadata: {},
+      })
+      .onConflictDoUpdate({
+        target: schema.modelSourceProviders.id,
+        set: {
+          name: provider.name || provider.id,
+          sourceTypeId: provider.sourceTypeId || "external",
+          baseUrl: provider.baseUrl || null,
+        },
+      });
+  }
+
   async saveDynamicModel(model: ModelDefinition): Promise<void> {
+    const sourceTypeId = model.sourceTypeId || "external";
+    let sourceProviderId = model.sourceProviderId;
+
+    // Dynamically register provider in lookup table if provided and not yet registered
+    if (model.source && !sourceProviderId) {
+      sourceProviderId = model.source.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "_");
+      await this.ensureSourceProvider({
+        id: sourceProviderId,
+        name: model.source,
+        sourceTypeId,
+        baseUrl: model.repositoryUrl || undefined,
+      });
+    }
+
     await this.db
       .insert(schema.dynamicModelRegistry)
       .values({
         modelId: model.modelId.toLowerCase().trim(),
         displayName: model.displayName,
         algorithm: model.algorithm,
-        framework: model.framework,
-        supportedTasks: model.supportedTasks as string[],
+        framework: model.framework || "custom",
+        supportedTasks: (model.supportedTasks || []) as string[],
         capabilities: model.capabilities || [],
         strengths: model.strengths || [],
         weaknesses: model.weaknesses || [],
         isBaseline: Boolean(model.isBaseline),
+        sourceTypeId,
+        sourceProviderId: sourceProviderId || null,
         source: model.source || "web_search",
+        repositoryUrl: model.repositoryUrl || null,
+        repositoryId: model.repositoryId || null,
+        version: model.version || null,
+        license: model.license || null,
         metadata: model.metadata || {},
+        discoveredAt: model.discoveredAt ? new Date(model.discoveredAt) : new Date(),
+        updatedAt: new Date(),
       })
       .onConflictDoUpdate({
         target: schema.dynamicModelRegistry.modelId,
         set: {
           displayName: model.displayName,
           algorithm: model.algorithm,
+          framework: model.framework || "custom",
+          supportedTasks: (model.supportedTasks || []) as string[],
           capabilities: model.capabilities || [],
           strengths: model.strengths || [],
           weaknesses: model.weaknesses || [],
+          sourceTypeId,
+          sourceProviderId: sourceProviderId || null,
+          source: model.source || "web_search",
+          repositoryUrl: model.repositoryUrl || null,
+          repositoryId: model.repositoryId || null,
+          version: model.version || null,
+          license: model.license || null,
+          metadata: model.metadata || {},
+          updatedAt: new Date(),
         },
       });
   }
@@ -174,7 +257,7 @@ export class PostgresModelSelectionRepository implements IModelSelectionReposito
       modelId: r.modelId || r.model_id,
       displayName: r.displayName || r.display_name,
       algorithm: r.algorithm,
-      framework: (r.framework as any) || "custom",
+      framework: r.framework || "custom",
       supportedTasks: (r.supportedTasks || r.supported_tasks || []) as any,
       supportedSubTasks: [],
       supportedPredictionTypes: ["value", "point"],
@@ -183,8 +266,28 @@ export class PostgresModelSelectionRepository implements IModelSelectionReposito
       weaknesses: r.weaknesses || [],
       isBaseline: Boolean(r.isBaseline || r.is_baseline),
       isDynamic: true,
-      source: (r.source as any) || "web_search",
+      sourceTypeId: r.sourceTypeId || r.source_type_id || "external",
+      sourceType: (r.sourceTypeId || r.source_type_id || "external") === "builtin" ? "builtin" : "external",
+      sourceProviderId: r.sourceProviderId || r.source_provider_id || null,
+      source: r.source || "web_search",
+      repositoryUrl: r.repositoryUrl || r.repository_url || null,
+      repositoryId: r.repositoryId || r.repository_id || null,
+      version: r.version || null,
+      license: r.license || null,
+      discoveredAt:
+        r.discoveredAt instanceof Date
+          ? r.discoveredAt.toISOString()
+          : r.discoveredAt || r.discovered_at || undefined,
+      updatedAt:
+        r.updatedAt instanceof Date
+          ? r.updatedAt.toISOString()
+          : r.updatedAt || r.updated_at || undefined,
       metadata: r.metadata || {},
     }));
   }
+
+  async clearDynamicModels(): Promise<void> {
+    await this.db.delete(schema.dynamicModelRegistry);
+  }
 }
+

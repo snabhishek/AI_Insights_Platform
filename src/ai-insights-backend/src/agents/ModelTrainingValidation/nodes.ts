@@ -4,7 +4,6 @@ import * as path from "path";
 import { AgentState, IngestionServices } from "../state";
 import { cleanupRunContainer, executePythonScript } from "../tools/helpers/pythonExecutor";
 import { getPythonScriptDirectory } from "../tools/filesystem";
-import { saveModularTrainingJobContract } from "../tools/helpers/schemaHelper";
 
 import { drizzle } from "drizzle-orm/node-postgres";
 import { pool } from "../../db";
@@ -12,6 +11,10 @@ import * as modelSelectionSchema from "../../db/modelSelection";
 import { PostgresModelSelectionRepository } from "../../repositories/modelSelection.repository";
 import { ModelSelectionLLMService } from "../../services/ai/model-selection/modelSelectionLLM.service";
 import { ModelSelectionService } from "../../services/ai/model-selection/modelSelection.service";
+import { TrainingConfigurationAgent, TrainingConfigValidator } from "./TrainingConfiguration";
+import { PreFlightAgent } from "./PreFlight";
+import { validateWithRetry } from "../validator/validatorNode";
+
 
 type State = typeof AgentState.State;
 
@@ -78,23 +81,6 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
 
   const effectiveRunTimestamp = state.runTimestamp || (services as any)?.runTimestamp;
 
-  // Persist modular Training Job Contract YAML into project run folder
-  if (services?.projectService && projectId) {
-    try {
-      const pWs = await services.projectService.getProjectWithWorkspace(projectId);
-      if (pWs && pWs.project) {
-        await saveModularTrainingJobContract(
-          pWs.workspaceName || "DefaultWorkspace",
-          pWs.project.name,
-          decision,
-          effectiveRunTimestamp
-        );
-      }
-    } catch (contractErr: any) {
-      console.warn("[modelSelectionNode] Warning saving Training Job Contract to project folder:", contractErr?.message || contractErr);
-    }
-  }
-
   const candidateNames = (decision.candidates || []).map((c) => c.displayName || c.model_id);
   const summary = `Model selection completed for ${decision.target_entity?.name || metadata.targetColumn || "target"}. Recommended: ${decision.recommended_model?.model_id || "None"} (${((decision.recommended_model?.suitability_score || 0) * 100).toFixed(0)}%). Candidates: ${candidateNames.join(", ")}`;
 
@@ -121,48 +107,36 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
 }
 
 export async function trainingConfigurationNode(state: State, config?: RunnableConfig) {
-  // Phase 2: 3.2 Training Configuration - Prepare training environment, split ratios & hyperparameters
+  // Phase 2: 3.2 Training Configuration - Agent-first training configuration creation with self-healing validator
   const services = servicesFrom(config);
-  const metadata = featureMetadata(state);
-  const dataset = findDataset(runDirectory(state, services));
-  if (!dataset) throw new Error("Feature Engineering did not produce a supported model-ready dataset artifact");
-  if (!metadata.targetColumn) throw new Error("Feature Engineering did not provide a target column");
-
-  // Read user-selected models or fallback to recommended model from modelSelection
-  const trainingConfig = (state.trainingConfiguration || {}) as any;
-  const modelSelection = (state.modelSelection || {}) as any;
-
-  let candidateModels: string[] = [];
-  if (Array.isArray(trainingConfig.candidate_models) && trainingConfig.candidate_models.length > 0) {
-    candidateModels = trainingConfig.candidate_models;
-  } else if (Array.isArray(trainingConfig.models) && trainingConfig.models.length > 0) {
-    candidateModels = trainingConfig.models;
-  } else if (modelSelection.recommended_model?.model_id) {
-    candidateModels = [modelSelection.recommended_model.model_id];
-  } else if (Array.isArray(modelSelection.candidates) && modelSelection.candidates.length > 0) {
-    candidateModels = modelSelection.candidates.map((c: any) => c.model_id);
-  } else {
-    candidateModels = metadata.problemType === "classification"
-      ? ["Logistic Regression", "Random Forest"]
-      : ["Linear Regression", "Random Forest"];
+  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
+    console.info("[Workflow] trainingConfigurationNode skipping execution because workflow is stopped/paused.");
+    return { status: state.status || "failed" };
   }
 
-  const output = {
-    status: "Completed",
-    summary: `Training configuration prepared for models: ${candidateModels.join(", ")}`,
+  const fallbackOutput = {
+    status: "Failed",
+    summary: "Training Configuration fallback triggered",
     phase: "Training Configuration",
-    dataset,
-    targetColumn: metadata.targetColumn,
-    problemType: metadata.problemType,
-    features: metadata.features,
-    configuration: {
-      models: candidateModels,
-      candidate_models: candidateModels,
-      testSplitRatio: 0.3,
-      validationSplitRatio: 0.5,
-      cvFolds: 5,
-    },
+    dataset: "",
+    targetColumn: "",
+    problemType: "classification",
+    features: [],
+    contractPath: "",
+    configuration: {},
   };
+
+  const output = await validateWithRetry(
+    "trainingConfiguration",
+    async (feedbackPrompt?: string) => {
+      return await TrainingConfigurationAgent.execute(state, services, feedbackPrompt);
+    },
+    fallbackOutput,
+    services,
+    2,
+    "Ensure all 17 sections of TrainingJobContract are populated, split ratios sum to 1.0, primary metric is specified, and hyperparameter search space covers all candidate models.",
+    (result: any) => TrainingConfigValidator.validate(result?.configuration || result)
+  );
 
   return {
     trainingConfiguration: output,
@@ -171,11 +145,118 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     stageOutputs: { trainingConfiguration: output },
     stageStatuses: {
       trainingConfiguration: "Completed",
+      preFlight: "In Progress",
+      modelTraining: "Pending",
+      modelValidation: "Pending",
+    },
+    steps: [
+      {
+        name: "Training Configuration",
+        status: "completed",
+        summary: output.summary,
+      },
+    ],
+  };
+}
+
+export async function preFlightNode(state: State, config?: RunnableConfig) {
+  // Phase 2.5: Pre Flight - Validate runtime resources, environment, DataLoader and strategy pre-flight
+  const services = servicesFrom(config);
+  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
+    console.info("[Workflow] preFlightNode skipping execution because workflow is stopped/paused.");
+    return { status: state.status || "failed" };
+  }
+
+  const trainingConfig = (state.trainingConfiguration || {}) as any;
+  const runDir = runDirectory(state, services);
+  const metadata = featureMetadata(state);
+  const datasetFileName = findDataset(runDir);
+  const datasetPath = datasetFileName ? path.join(runDir, datasetFileName) : undefined;
+
+  const agent = new PreFlightAgent();
+  const report = await agent.execute(trainingConfig, {
+    projectId: services.projectId || state.projectId,
+    workspaceName: (state as any).workspaceName,
+    runDir,
+    datasetPath,
+    metadata: {
+      ...metadata,
+      modelSelection: state.modelSelection,
+      trainingConfiguration: state.trainingConfiguration,
+    },
+  });
+
+
+  const isBlockedOrFailed = report.decision === "BLOCKED" || report.decision === "FAILED";
+  const requiresAttention =
+    report.decision === "REQUIRES_CONFIGURATION_CHANGE" || report.decision === "REQUIRES_USER_CONFIRMATION";
+
+  if (isBlockedOrFailed) {
+    console.warn(`[Workflow] preFlightNode BLOCKED model training: ${report.summary}`);
+    return {
+      preFlight: report,
+      status: "failed",
+      summary: report.summary,
+      stageOutputs: { preFlight: report },
+      stageStatuses: {
+        preFlight: "Failed",
+        modelTraining: "Pending",
+        modelValidation: "Pending",
+      },
+      steps: [
+        {
+          name: "Pre Flight",
+          status: "failed",
+          summary: report.summary,
+        },
+      ],
+    };
+  }
+
+  if (requiresAttention) {
+    console.info(`[Workflow] preFlightNode pausing for user review: ${report.summary}`);
+    return {
+      preFlight: report,
+      status: "paused",
+      requiresApproval: true,
+      summary: report.summary,
+      stageOutputs: { preFlight: report },
+      stageStatuses: {
+        preFlight: "Requires Attention",
+        modelTraining: "Pending",
+        modelValidation: "Pending",
+      },
+      steps: [
+        {
+          name: "Pre Flight",
+          status: "paused",
+          summary: report.summary,
+        },
+      ],
+    };
+  }
+
+  // APPROVED or APPROVED_WITH_WARNINGS: Proceed to modelTrainingNode
+  return {
+    preFlight: report,
+    status: "running",
+    summary: report.summary,
+    stageOutputs: { preFlight: report },
+    stageStatuses: {
+      preFlight: "Completed",
       modelTraining: "In Progress",
       modelValidation: "Pending",
     },
+    steps: [
+      {
+        name: "Pre Flight",
+        status: "completed",
+        summary: report.summary,
+      },
+    ],
   };
 }
+
 
 export async function modelTrainingNode(state: State, config?: RunnableConfig) {
   // Phase 3: 3.3 Model Training - Train candidate models and record evaluation metrics

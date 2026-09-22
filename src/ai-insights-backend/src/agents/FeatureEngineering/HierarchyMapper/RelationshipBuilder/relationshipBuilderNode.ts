@@ -1,9 +1,12 @@
+import * as fs from "fs";
+import * as path from "path";
 import { RunnableConfig } from "@langchain/core/runnables";
 import { AgentState, IngestionServices, BatchedTableState } from "../../../state";
 import { getPromptFromFile, getModel, invokeAgentJson, logMilestoneThinking } from "../../../utils/agentUtils";
 import { analyzeFunctionalDependenciesTool, enforceRelationshipStatusByPurity } from "./relationshipBuilder.tool";
 import { GenericDataConnector } from "./dataConnector";
 import { saveModularRelationshipSchema } from "../../../tools/helpers";
+import { getProjectSchemasDir } from "../../../../config/fileServer.config";
 import { RelationshipSchemaOutput } from "./state";
 
 /**
@@ -101,6 +104,22 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
       const proj = await services.projectService.getProjectWithWorkspace(services.projectId);
       if (proj && proj.project) {
         await saveModularRelationshipSchema(proj.workspaceName || "DefaultWorkspace", proj.project.name, finalResult, effectiveRunTimestamp);
+
+        // Also save as JSON file in schemas folder for Dataset Analyser Agent access
+        const workspaceName = proj.workspaceName || "DefaultWorkspace";
+        const projectName = proj.project.name;
+        const schemasDir = getProjectSchemasDir(workspaceName, projectName, effectiveRunTimestamp);
+        await fs.promises.mkdir(schemasDir, { recursive: true });
+
+        const relJsonContent = JSON.stringify(finalResult, null, 2);
+        await fs.promises.writeFile(path.join(schemasDir, "relationship_schema.json"), relJsonContent, "utf-8");
+        if (effectiveRunTimestamp) {
+          await fs.promises.writeFile(path.join(schemasDir, `relationship_schema_${effectiveRunTimestamp}.json`), relJsonContent, "utf-8");
+        }
+
+        const globalSchemasDir = getProjectSchemasDir(workspaceName, projectName);
+        await fs.promises.mkdir(globalSchemasDir, { recursive: true });
+        await fs.promises.writeFile(path.join(globalSchemasDir, "relationship_schema.json"), relJsonContent, "utf-8");
       }
     } catch (err) {
       console.warn("[relationshipBuilderNode] Warning saving Relationship Schema to project folder:", err);

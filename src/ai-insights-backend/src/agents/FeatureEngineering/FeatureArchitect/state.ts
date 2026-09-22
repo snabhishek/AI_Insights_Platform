@@ -29,6 +29,7 @@ export interface FeatureCreationOutput extends Record<string, unknown> {
     }>;
   }>;
   pythonCode?: string;
+  requiredPackages?: string[];
   yamlLineage?: string;
 }
 
@@ -44,6 +45,7 @@ export interface FeatureTransformationOutput extends Record<string, unknown> {
     }>;
   }>;
   pythonCode?: string;
+  requiredPackages?: string[];
   yamlLineage?: string;
 }
 
@@ -51,6 +53,7 @@ export interface BuildDatasetOutput extends Record<string, unknown> {
   status: string;
   summary: string;
   pythonCode?: string;
+  requiredPackages?: string[];
   yamlLineage?: string;
 }
 
@@ -58,6 +61,7 @@ export interface DataValidationOutput extends Record<string, unknown> {
   status: string;
   summary: string;
   pythonCode?: string;
+  requiredPackages?: string[];
   yamlLineage?: string;
   validationReport?: {
     nullRates: Record<string, number>;
@@ -79,6 +83,7 @@ export interface FeatureExtractionOutput extends Record<string, unknown> {
     }>;
   }>;
   pythonCode?: string;
+  requiredPackages?: string[];
   yamlLineage?: string;
 }
 
@@ -95,6 +100,7 @@ export interface FeatureSelectionOutput extends Record<string, unknown> {
     }>;
   }>;
   pythonCode?: string;
+  requiredPackages?: string[];
   yamlLineage?: string;
 }
 
@@ -147,6 +153,7 @@ export interface FeatureValidatorOutput extends Record<string, unknown> {
     totalDropped: number;
   };
   pythonCode?: string;
+  requiredPackages?: string[];
   yamlLineage?: string;
 }
 

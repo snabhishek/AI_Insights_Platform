@@ -9,6 +9,7 @@ import {
   computeProjectRelativePath,
   ensureDirectoryExists,
   getFileServerBasePath,
+  getProjectDir,
   getWorkspacesBasePath,
   resolveStoragePath,
 } from "../../config/fileServer.config";
@@ -31,6 +32,7 @@ export class DuckDBService implements IDuckDBService {
   private openingPromises = new Map<string, Promise<any>>();
   private ingestionPromises = new Map<string, Promise<string>>();
   private static readonly IDLE_TIMEOUT_MS = 5_000;
+  private dbPool: Map<string, any> = new Map();
 
   private schemaCache: {
     timestamp: number;
@@ -40,13 +42,13 @@ export class DuckDBService implements IDuckDBService {
   private static readonly SCHEMA_CACHE_TTL_MS = 30_000;
 
   constructor(private fileService: IFileService) {
-    this.dbStorageDir = getWorkspacesBasePath();
+    this.dbStorageDir = getFileServerBasePath();
     ensureDirectoryExists(this.dbStorageDir);
   }
 
   // ─── path and identifier helpers ───────────────────────────────────
 
-  private sanitizeFileName(fileName: string): string {
+  public sanitizeFileName(fileName: string): string {
     return fileName.replace(/[^a-zA-Z0-9_-]/g, "_");
   }
 
@@ -60,15 +62,20 @@ export class DuckDBService implements IDuckDBService {
   }
 
   /**
-   * Resolves project directory path inside workspaces or relative folder path.
+   * Resolves project directory path inside workspaces or relative folder path on demand.
    */
   public getProjectPath(projectName: string, workspaceName?: string, folderPath?: string): string {
+    if (workspaceName && projectName) {
+      const dir = getProjectDir(workspaceName, projectName);
+      ensureDirectoryExists(dir);
+      return dir;
+    }
     if (folderPath) {
       const abs = resolveStoragePath(folderPath);
       ensureDirectoryExists(abs);
       return abs;
     }
-    const safeProject = this.sanitizeFileName(projectName);
+    const safeProject = this.sanitizeFileName(projectName || "default_project");
 
     // 1. Search existing projects under workspaces/
     const workspacesBase = getWorkspacesBasePath();
@@ -82,12 +89,8 @@ export class DuckDBService implements IDuckDBService {
       } catch {}
     }
 
-    // 2. Check legacy Projects/<safeProject>
-    const legacyProj = path.join(process.cwd(), "Projects", safeProject);
-    if (fs.existsSync(legacyProj)) return legacyProj;
-
-    // 3. Construct standard path under requested or default workspace
-    const relative = computeProjectRelativePath(workspaceName || "Default_Workspace", projectName);
+    // 2. Construct standard path under requested or default workspace
+    const relative = computeProjectRelativePath(workspaceName || "Default_Workspace", projectName || "default_project");
     const resolved = resolveStoragePath(relative);
     ensureDirectoryExists(resolved);
     return resolved;
@@ -1153,6 +1156,27 @@ export class DuckDBService implements IDuckDBService {
       }
     }
 
+    if (fileName && type === "excel") {
+      let dbPath = this.getDuckDbPath(fileName, tableName, projectName);
+      if (!fs.existsSync(dbPath)) {
+        try {
+          dbPath = await this.ingestFileSource(type, config, projectName);
+        } catch {}
+      }
+
+      if (dbPath && fs.existsSync(dbPath)) {
+        return this.withConnection(dbPath, async (conn) => {
+          try {
+            const safeTable = await this.resolveTableName(conn, tableName, fileName);
+            const res = await this.query(conn, `SELECT COUNT(*)::int as count FROM "${this.sanitizeIdentifier(safeTable)}"`);
+            return res[0]?.count ?? 0;
+          } catch {
+            return 0;
+          }
+        });
+      }
+    }
+
     return 0;
   }
 
@@ -1162,12 +1186,14 @@ export class DuckDBService implements IDuckDBService {
     tableName: string,
     limit: number,
     offset: number,
-    projectName?: string
+    projectName?: string,
+    workspaceName?: string,
+    folderPath?: string
   ): Promise<SampleResult> {
     const fileName = config.fileName;
 
     if (projectName) {
-      const projDbPath = this.getProjectDuckDbPath(projectName);
+      const projDbPath = this.getProjectDuckDbPath(projectName, workspaceName, folderPath);
       if (fs.existsSync(projDbPath)) {
         return this.withConnection(projDbPath, async (conn) => {
           const safeTable = await this.resolveTableName(conn, tableName, fileName);
@@ -1200,6 +1226,36 @@ export class DuckDBService implements IDuckDBService {
             const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
             return { success: true, headers, rows, totalRowCount };
           } catch {
+            return { success: false, headers: [], rows: [], totalRowCount: 0 };
+          }
+        });
+      }
+    }
+
+    if (fileName && type === "excel") {
+      // 1. Resolve or ingest Excel into isolated DuckDB in the project folder
+      let dbPath = this.getDuckDbPath(fileName, tableName, projectName, workspaceName, folderPath);
+      if (!fs.existsSync(dbPath)) {
+        try {
+          dbPath = await this.ingestFileSource(type, config, projectName, workspaceName, folderPath);
+        } catch (ingestErr) {
+          console.warn(`[DuckDBService] getSampleWithOffset: Could not ingest Excel "${fileName}" to project DuckDB:`, ingestErr);
+        }
+      }
+
+      // 2. Query data using the converted DuckDB in the project folder
+      if (dbPath && fs.existsSync(dbPath)) {
+        return this.withConnection(dbPath, async (conn) => {
+          try {
+            const safeTable = await this.resolveTableName(conn, tableName, fileName);
+            const qTableName = `"${this.sanitizeIdentifier(safeTable)}"`;
+            const countRes = await this.query(conn, `SELECT COUNT(*)::int as count FROM ${qTableName}`);
+            const totalRowCount = countRes[0]?.count ?? 0;
+            const rows = await this.query(conn, `SELECT * FROM ${qTableName} LIMIT ${limit} OFFSET ${offset}`);
+            const headers = rows.length > 0 ? Object.keys(rows[0]) : [];
+            return { success: true, headers, rows, totalRowCount };
+          } catch (err: any) {
+            console.warn(`[DuckDBService] getSampleWithOffset query on Excel DuckDB "${dbPath}" failed:`, err?.message || err);
             return { success: false, headers: [], rows: [], totalRowCount: 0 };
           }
         });

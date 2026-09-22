@@ -17,52 +17,6 @@ import ModelTrainingValidationStepOutput from "./pipeline-outputs/ModelTrainingV
 
 type AlertType = "error" | "success" | "info";
 
-// ─── Mock fallback data sources ───────────────────────────────────────────────
-
-function buildMockSources(workspaceId: string): DataSource[] {
-  return [
-    {
-      id: "mock-pg",
-      name: "PostgreSQL Production",
-      subtext: "Database",
-      type: "postgres",
-      status: "Connected",
-      health: "Healthy",
-      lastSyncTime: "10:14 AM",
-      lastSyncDate: "July 12, 2026",
-      workspaceId,
-      assets: { tables: 42, views: 8, pipelines: 3 },
-      connectionConfig: { host: "192.168.1.10", port: "5432", database: "ERP Database" },
-    },
-    {
-      id: "mock-sf",
-      name: "Snowflake Warehouse",
-      subtext: "Data Warehouse",
-      type: "snowflake",
-      status: "Connected",
-      health: "Healthy",
-      lastSyncTime: "09:30 AM",
-      lastSyncDate: "July 12, 2026",
-      workspaceId,
-      assets: { tables: 110, views: 24, pipelines: 5 },
-      connectionConfig: { host: "us-west-2", database: "Analytics DB" },
-    },
-    {
-      id: "mock-csv",
-      name: "Sales Data CSV",
-      subtext: "File Upload",
-      type: "csv",
-      status: "Connected",
-      health: "Healthy",
-      lastSyncTime: "11:05 AM",
-      lastSyncDate: "July 12, 2026",
-      workspaceId,
-      assets: { tables: 1, views: 0, pipelines: 0 },
-      connectionConfig: { fileName: "sales_data_june.csv" },
-    },
-  ];
-}
-
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface ProjectDetailPageProps {
@@ -88,13 +42,15 @@ interface ProjectDetailPageProps {
   requiresApproval: boolean;
   workflowMessage: string;
   onSelectStage: (stepId: string) => void;
-  onApprove: () => void;
+  onApprove: (overrideTargetPhase?: string) => void;
   onRetry: (stepId: string) => void;
   isPaused?: boolean;
   pausedAtPhase?: string | null;
   onPause?: () => void;
   onResume?: () => void;
+  approvalNextStep?: string | null;
   isApproving?: boolean;
+  isAwaitingResponse?: boolean;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   showAlert: (opts: { title: string; message?: string; type: AlertType; logs?: string }) => void;
 }
@@ -130,7 +86,9 @@ export default function ProjectDetailPage({
   pausedAtPhase,
   onPause,
   onResume,
+  approvalNextStep,
   isApproving,
+  isAwaitingResponse,
   agentThinking,
   showAlert,
 }: ProjectDetailPageProps) {
@@ -138,6 +96,7 @@ export default function ProjectDetailPage({
   const [editedUseCaseText, setEditedUseCaseText] = React.useState(project.useCase || "");
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState<boolean>(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
+  const [selectedSubstepId, setSelectedSubstepId] = useState<string | null>(null);
 
   React.useEffect(() => {
     setEditedUseCaseText(project.useCase || "");
@@ -149,6 +108,13 @@ export default function ProjectDetailPage({
     const match = PIPELINE_STEPS.find((item) => item.id === mainId);
     if (match) {
       setSelectedWorkflow(match);
+      if (stepId !== mainId) {
+        setSelectedSubstepId(stepId);
+      } else if (mainId === "Model Training & Validation") {
+        setSelectedSubstepId("Model Selection");
+      } else {
+        setSelectedSubstepId(null);
+      }
       setIsExecutionModalOpen(true);
     }
   };
@@ -156,10 +122,7 @@ export default function ProjectDetailPage({
   const projectSources = allDataSources.filter((ds) =>
     project.dataSources.includes(ds.id)
   );
-  const displaySources =
-    projectSources.length > 0
-      ? projectSources
-      : buildMockSources(project.workspaceId);
+  const displaySources = projectSources;
 
   return (
     <>
@@ -428,97 +391,159 @@ export default function ProjectDetailPage({
             onStopWorkflow={onStopWorkflow}
             onViewHistory={onViewHistory}
             onSelectStage={handleSelectStage}
-            onApprove={onApprove}
+            onApprove={() => onApprove()}
             onRetry={onRetry}
             isPaused={isPaused}
             pausedAtPhase={pausedAtPhase}
             onPause={onPause}
             onResume={onResume}
             isApproving={isApproving}
+            isAwaitingResponse={isAwaitingResponse}
+            approvalNextStep={approvalNextStep}
           />
         </div>
       </div>
       {(() => {
+        const savedAgentState = (project.agentState as Record<string, any>) || {};
+        const savedOutputs = (savedAgentState.stageOutputs as Record<string, any>) || {};
+
+        const effectiveInspect = stageOutputs.inspect || stageOutputs.inspectNode || savedOutputs.inspect || savedOutputs.inspectNode;
+        const effectiveProfileData = stageOutputs.profileData || savedOutputs.profileData;
+        const effectivePreprocess = stageOutputs.preprocess || savedOutputs.preprocess;
+        const effectiveResolveSchema = stageOutputs.resolveSchema || savedOutputs.resolveSchema;
+        const effectiveHierarchyMapper = stageOutputs.hierarchyMapper || savedOutputs.hierarchyMapper;
+        const effectiveRelationshipBuilder = stageOutputs.relationshipBuilder || savedOutputs.relationshipBuilder;
+        const effectiveFormBuilder = stageOutputs.formBuilder || savedOutputs.formBuilder;
+        const effectiveFeatureArchitect = stageOutputs.featureArchitect || savedOutputs.featureArchitect;
+        const effectiveFeatureValidator = stageOutputs.featureValidator || (stageOutputs.featureArchitect as any)?.featureValidator || savedOutputs.featureValidator || (savedOutputs.featureArchitect as any)?.featureValidator;
+        const effectiveExogenousScout = stageOutputs.exogenousScout || savedOutputs.exogenousScout;
+        const effectiveModelSelection = stageOutputs.modelSelection || savedOutputs.modelSelection || savedAgentState.modelSelection;
+        const effectiveTrainingConfig = stageOutputs.trainingConfiguration || savedOutputs.trainingConfiguration || savedAgentState.trainingConfiguration;
+        const effectivePreFlight = stageOutputs.preFlight || savedOutputs.preFlight || savedAgentState.preFlight;
+        const effectiveModelTraining = stageOutputs.modelTraining || savedOutputs.modelTraining || savedAgentState.modelTraining;
+        const effectiveModelValidation = stageOutputs.modelValidation || savedOutputs.modelValidation || savedAgentState.modelValidation;
+        const effectiveRunTimestamp = (project.agentState as any)?.runTimestamp;
+
         const stepOutputs: Record<string, React.ReactNode> = {
-          "Data Inspection": (stageOutputs.inspect || stageOutputs.inspectNode) ? (
-            <IngestionStepOutput inspectOutput={stageOutputs.inspect || stageOutputs.inspectNode} />
+          "Data Inspection": effectiveInspect ? (
+            <IngestionStepOutput inspectOutput={effectiveInspect} />
           ) : null,
-          "Data Profiling": (stageOutputs.profileData || stageOutputs.preprocess) ? (
-            <ProfilingStepOutput profileData={stageOutputs.profileData} preprocess={stageOutputs.preprocess} />
+          "Data Profiling": (effectiveProfileData || effectivePreprocess) ? (
+            <ProfilingStepOutput profileData={effectiveProfileData} preprocess={effectivePreprocess} />
           ) : null,
-          "Schema Resolver": stageOutputs.resolveSchema ? (
-            <SchemaResolverStepOutput resolveSchema={stageOutputs.resolveSchema} />
+          "Schema Resolver": effectiveResolveSchema ? (
+            <SchemaResolverStepOutput resolveSchema={effectiveResolveSchema} />
           ) : null,
-          "Hierarchy Mapper": (stageOutputs.hierarchyMapper || stageOutputs.relationshipBuilder || stageOutputs.formBuilder) ? (
+          "Hierarchy Mapper": (effectiveHierarchyMapper || effectiveRelationshipBuilder || effectiveFormBuilder) ? (
             <HierarchyMapperStepOutput
-              hierarchyMapper={stageOutputs.hierarchyMapper}
-              relationshipBuilder={stageOutputs.relationshipBuilder}
-              formBuilder={stageOutputs.formBuilder}
+              hierarchyMapper={effectiveHierarchyMapper}
+              relationshipBuilder={effectiveRelationshipBuilder}
+              formBuilder={effectiveFormBuilder}
             />
           ) : null,
-          "Feature Architect": stageOutputs.featureArchitect ? (
-            <FeatureArchitectStepOutput featureArchitect={stageOutputs.featureArchitect} />
+          "Feature Architect": effectiveFeatureArchitect ? (
+            <FeatureArchitectStepOutput featureArchitect={effectiveFeatureArchitect} />
           ) : null,
-          "Feature Validator": (stageOutputs.featureValidator || (stageOutputs.featureArchitect as any)?.featureValidator) ? (
+          "Feature Validator": effectiveFeatureValidator ? (
             <FeatureValidatorStepOutput
-              featureValidator={stageOutputs.featureValidator || (stageOutputs.featureArchitect as any)?.featureValidator}
+              featureValidator={effectiveFeatureValidator}
             />
           ) : null,
-          "Exogenous Scout": stageOutputs.exogenousScout ? (
-            <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
+          "Exogenous Scout": effectiveExogenousScout ? (
+            <ExogenousScoutStepOutput exogenousScout={effectiveExogenousScout} />
           ) : null,
-          "Model Selection": (stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+          "Model Selection": effectiveModelSelection ? (
             <ModelTrainingValidationStepOutput
-              modelSelection={stageOutputs.modelSelection}
-              modelTraining={stageOutputs.modelTraining}
+              modelSelection={effectiveModelSelection}
               projectId={project.id}
               activeSubstep="Model Selection"
+              activeRunTimestamp={effectiveRunTimestamp}
+              onSelectionConfirmed={(_models) => {
+                if (onApprove) {
+                  onApprove("Training Configuration");
+                }
+              }}
             />
           ) : null,
-          "Training Configuration": (stageOutputs.trainingConfiguration || stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+          "Training Configuration": effectiveTrainingConfig ? (
             <ModelTrainingValidationStepOutput
-              modelSelection={stageOutputs.modelSelection}
-              trainingConfiguration={stageOutputs.trainingConfiguration}
+              modelSelection={effectiveModelSelection}
+              trainingConfiguration={effectiveTrainingConfig}
               projectId={project.id}
               activeSubstep="Training Configuration"
+              activeRunTimestamp={effectiveRunTimestamp}
             />
           ) : null,
-          "Model Training": stageOutputs.modelTraining ? (
+          "Pre Flight": effectivePreFlight ? (
             <ModelTrainingValidationStepOutput
-              modelTraining={stageOutputs.modelTraining}
+              preFlight={effectivePreFlight}
+              projectId={project.id}
+              activeSubstep="Pre Flight"
+              activeRunTimestamp={effectiveRunTimestamp}
+            />
+          ) : null,
+          "Model Training": effectiveModelTraining ? (
+            <ModelTrainingValidationStepOutput
+              modelTraining={effectiveModelTraining}
               projectId={project.id}
               activeSubstep="Model Training"
+              activeRunTimestamp={effectiveRunTimestamp}
             />
           ) : null,
-          "Model Validation": (stageOutputs.modelValidation || stageOutputs.modelTraining) ? (
+          "Model Validation": effectiveModelValidation ? (
             <ModelTrainingValidationStepOutput
-              modelValidation={stageOutputs.modelValidation}
-              modelTraining={stageOutputs.modelTraining}
+              modelValidation={effectiveModelValidation}
               projectId={project.id}
               activeSubstep="Model Validation"
+              activeRunTimestamp={effectiveRunTimestamp}
             />
           ) : null,
-          "Feature Engineering": stageOutputs.exogenousScout ? (
-            <ExogenousScoutStepOutput exogenousScout={stageOutputs.exogenousScout} />
-          ) : stageOutputs.featureArchitect ? (
-            <FeatureArchitectStepOutput featureArchitect={stageOutputs.featureArchitect} />
+          "Feature Engineering": effectiveExogenousScout ? (
+            <ExogenousScoutStepOutput exogenousScout={effectiveExogenousScout} />
+          ) : effectiveFeatureArchitect ? (
+            <FeatureArchitectStepOutput featureArchitect={effectiveFeatureArchitect} />
           ) : null,
-          "Model Training & Validation": (stageOutputs.modelSelection || stageOutputs.modelTraining) ? (
+          "Model Training & Validation": (
+            effectiveModelSelection ||
+            effectiveTrainingConfig ||
+            effectivePreFlight ||
+            effectiveModelTraining ||
+            effectiveModelValidation
+          ) ? (
             <ModelTrainingValidationStepOutput
-              modelSelection={stageOutputs.modelSelection}
-              modelTraining={stageOutputs.modelTraining}
+              modelSelection={effectiveModelSelection}
+              trainingConfiguration={effectiveTrainingConfig}
+              preFlight={effectivePreFlight}
+              modelTraining={effectiveModelTraining}
+              modelValidation={effectiveModelValidation}
               projectId={project.id}
-              activeSubstep="Model Selection"
+              activeSubstep={
+                effectiveModelValidation
+                  ? "Model Validation"
+                  : effectiveModelTraining
+                  ? "Model Training"
+                  : effectivePreFlight
+                  ? "Pre Flight"
+                  : effectiveTrainingConfig
+                  ? "Training Configuration"
+                  : "Model Selection"
+              }
+              activeRunTimestamp={effectiveRunTimestamp}
+              onSelectionConfirmed={(_models) => {
+                if (onApprove) {
+                  onApprove("Training Configuration");
+                }
+              }}
             />
           ) : null
         };
-        console.log(stageOutputs)
 
         return (
           <CardModal 
             isOpen={isExecutionModalOpen}
             onClose={() => setIsExecutionModalOpen(false)}
             workflowCard={selectedWorkflow}
+            selectedSubstepId={selectedSubstepId}
             pipelineStatuses={pipelineStatuses}
             stepOutputs={stepOutputs}
             runStatus={runStatus}
@@ -526,6 +551,11 @@ export default function ProjectDetailPage({
             projectId={project.id}
             agentState={project.agentState}
             agentThinking={agentThinking}
+            requiresApproval={requiresApproval}
+            approvalNextStep={approvalNextStep}
+            isApproving={isApproving}
+            isAwaitingResponse={isAwaitingResponse}
+            onApprove={onApprove}
           />
         );
       })()}

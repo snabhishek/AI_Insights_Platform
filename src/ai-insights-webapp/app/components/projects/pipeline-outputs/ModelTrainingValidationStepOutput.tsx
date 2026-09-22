@@ -2,14 +2,18 @@
 
 import React from "react";
 import ModelSelectionStepOutput from "./ModelSelectionStepOutput";
+import TrainingConfigurationStepOutput from "./TrainingConfigurationStepOutput";
+import PreFlightStepOutput from "./PreFlightStepOutput";
 
 interface ModelTrainingValidationOutputProps {
   modelSelection?: any;
   modelTraining?: any;
   modelValidation?: any;
   trainingConfiguration?: any;
+  preFlight?: any;
   projectId?: string;
   activeSubstep?: string;
+  activeRunTimestamp?: string;
   onSelectionConfirmed?: (selectedModels: string[]) => void;
 }
 
@@ -18,58 +22,24 @@ export default function ModelTrainingValidationStepOutput({
   modelTraining,
   modelValidation,
   trainingConfiguration,
+  preFlight,
   projectId,
   activeSubstep,
+  activeRunTimestamp,
   onSelectionConfirmed,
 }: ModelTrainingValidationOutputProps) {
-  // If activeSubstep is Training Configuration and trainingConfiguration is present
-  if (activeSubstep === "Training Configuration" && trainingConfiguration) {
-    const config = trainingConfiguration.configuration || {};
-    const models = Array.isArray(config.models) ? config.models : (config.candidate_models || []);
-    return (
-      <div className="p-6 space-y-4">
-        <div className="rounded-xl border border-border bg-surface p-5">
-          <h4 className="text-sm font-bold text-foreground">Training Configuration</h4>
+  // 1. Model Selection (UI is actively worked on)
+  if (activeSubstep === "Model Selection" || (modelSelection && !trainingConfiguration && !preFlight && !modelTraining && !modelValidation)) {
+    if (!modelSelection) {
+      return (
+        <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[200px]">
+          <p className="text-sm font-semibold text-foreground">Model Selection</p>
           <p className="text-xs text-muted-foreground mt-1">
-            {trainingConfiguration.summary || "Training environment and dataset splits configured."}
+            Run the pipeline to generate model recommendations.
           </p>
-          <div className="mt-4 pt-3 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-2.5 rounded-lg bg-surface-muted border border-border text-center">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground block">Target Column</span>
-              <span className="text-xs font-bold text-foreground">{trainingConfiguration.targetColumn || "N/A"}</span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-surface-muted border border-border text-center">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground block">Problem Type</span>
-              <span className="text-xs font-bold text-foreground uppercase">{trainingConfiguration.problemType || "N/A"}</span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-surface-muted border border-border text-center">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground block">CV Folds</span>
-              <span className="text-xs font-bold text-foreground">{config.cvFolds ?? 5}</span>
-            </div>
-            <div className="p-2.5 rounded-lg bg-surface-muted border border-border text-center">
-              <span className="text-[10px] uppercase font-bold text-muted-foreground block">Test Split</span>
-              <span className="text-xs font-bold text-foreground">{((config.testSplitRatio ?? 0.3) * 100).toFixed(0)}%</span>
-            </div>
-          </div>
-          {models.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-border">
-              <span className="text-xs font-semibold text-foreground block mb-2">Models Configured for Training:</span>
-              <div className="flex flex-wrap gap-2">
-                {models.map((m: string) => (
-                  <span key={m} className="px-2.5 py-1 rounded-md bg-indigo-50 dark:bg-indigo-950/40 text-indigo-700 dark:text-indigo-300 border border-indigo-200 dark:border-indigo-800 text-xs font-semibold">
-                    {m}
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
         </div>
-      </div>
-    );
-  }
-
-  // If modelSelection is present, render the ModelSelectionStepOutput
-  if (modelSelection) {
+      );
+    }
     return (
       <ModelSelectionStepOutput
         modelSelection={modelSelection}
@@ -79,15 +49,68 @@ export default function ModelTrainingValidationStepOutput({
     );
   }
 
-  // If training or validation completed
-  if (modelTraining || modelValidation) {
+  // 2. Training Configuration (UI is actively worked on)
+  if (activeSubstep === "Training Configuration" || (Boolean(trainingConfiguration?.contractPath || trainingConfiguration?.status === "Completed") && !preFlight && !modelTraining && !modelValidation)) {
+    if (!trainingConfiguration) {
+      return (
+        <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[200px]">
+          <p className="text-sm font-semibold text-foreground">Training Configuration</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Training configuration contract has not been generated yet.
+          </p>
+        </div>
+      );
+    }
+    return (
+      <TrainingConfigurationStepOutput
+        projectId={projectId}
+        trainingConfiguration={trainingConfiguration}
+        modelSelection={modelSelection}
+        activeRunTimestamp={activeRunTimestamp}
+      />
+    );
+  }
+
+  // 3. Pre Flight (Comprehensive 10-Stage Dashboard)
+  if (activeSubstep === "Pre Flight" || (preFlight && !modelTraining && !modelValidation)) {
+    if (!preFlight) {
+      return (
+        <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[200px]">
+          <p className="text-sm font-semibold text-foreground">Pre Flight</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            Pre-flight verification output has not been produced yet.
+          </p>
+        </div>
+      );
+    }
+    return (
+      <PreFlightStepOutput
+        preFlight={preFlight}
+        projectId={projectId}
+        activeRunTimestamp={activeRunTimestamp}
+      />
+    );
+  }
+
+
+  // 4. Model Training or Model Validation
+  if (activeSubstep === "Model Training" || activeSubstep === "Model Validation" || modelTraining || modelValidation) {
+    const isValidationSubstep = activeSubstep === "Model Validation";
+    const title = isValidationSubstep
+      ? "Model Validation Overview"
+      : activeSubstep === "Model Training"
+      ? "Model Training Overview"
+      : "Model Training & Validation Overview";
+
+    const summary = isValidationSubstep
+      ? modelValidation?.summary || "Model validation completed."
+      : modelTraining?.summary || modelValidation?.summary || "Model training artifacts prepared.";
+
     return (
       <div className="p-6 space-y-4">
         <div className="rounded-xl border border-border bg-surface p-5">
-          <h4 className="text-sm font-bold text-foreground">Model Training & Validation Overview</h4>
-          <p className="text-xs text-muted-foreground mt-1">
-            {modelValidation?.summary || modelTraining?.summary || "Model training artifacts prepared."}
-          </p>
+          <h4 className="text-sm font-bold text-foreground">{title}</h4>
+          <p className="text-xs text-muted-foreground mt-1">{summary}</p>
           {modelValidation?.testMetrics && (
             <div className="mt-4 pt-3 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-3">
               {Object.entries(modelValidation.testMetrics).map(([k, v]) => (
@@ -107,7 +130,9 @@ export default function ModelTrainingValidationStepOutput({
 
   return (
     <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[200px]">
-      <p className="text-sm font-semibold text-foreground">Model Training & Validation</p>
+      <p className="text-sm font-semibold text-foreground">
+        {activeSubstep || "Model Training & Validation"}
+      </p>
       <p className="text-xs text-muted-foreground mt-1">
         Run the pipeline to generate model recommendations and commence AutoML training.
       </p>

@@ -2,6 +2,8 @@ import { v4 as uuidv4 } from "uuid";
 import { IModelSelectionService } from "./modelSelection.service.interface";
 import { IModelSelectionRepository } from "../../../repositories/modelSelection.repository.interface";
 import { IModelSelectionLLMService } from "./modelSelectionLLM.service.interface";
+import { IModelDiscoveryService } from "./modelDiscovery.service.interface";
+import { ModelDiscoveryService } from "./modelDiscovery.service";
 import { ProjectService } from "../../project/project.service";
 import { saveModularTrainingJobContract } from "../../../agents/tools/helpers";
 import {
@@ -12,6 +14,7 @@ import { ModelSelectionContextNormalizer } from "../../../agents/ModelTrainingVa
 import { ModelSelectionValidator } from "../../../agents/ModelTrainingValidation/ModelSelection/modelSelectionValidator";
 import { IngestionServices } from "../../../agents/state";
 import {
+  ModelDefinition,
   ModelSelectionDecisionRecord,
   UserSelectionHandoff,
 } from "../../../models/modelSelection.types";
@@ -24,7 +27,8 @@ export class ModelSelectionService implements IModelSelectionService {
     private repository: IModelSelectionRepository,
     private llmService: IModelSelectionLLMService,
     private projectService: ProjectService,
-    private registry: ModelCapabilityRegistry = defaultModelCapabilityRegistry
+    private registry: ModelCapabilityRegistry = defaultModelCapabilityRegistry,
+    private discoveryService: IModelDiscoveryService = new ModelDiscoveryService(repository)
   ) {}
 
   public getRegistry(): ModelCapabilityRegistry {
@@ -56,7 +60,7 @@ export class ModelSelectionService implements IModelSelectionService {
 
     console.info(`[ModelSelectionService] Starting Model Selection analysis for project ${effectiveProjectId}`);
 
-    // 1. Hydrate dynamic models from DB
+    // 1. Hydrate previously discovered dynamic models from DB
     await this.hydrateDynamicModels();
 
     // 2. Normalize input context (leakage context excluded per specification)
@@ -65,38 +69,79 @@ export class ModelSelectionService implements IModelSelectionService {
       projectId: effectiveProjectId,
     });
 
-    // 3. Invoke LLM Service with prompt from prompts/ModelSelection/modelSelection.md and web search tool via agent loop
+    // 3. Mandatory Dynamic Model Discovery via Web Search & External Repositories
+    try {
+      await this.discoveryService.discoverAndRegisterModels(
+        normalizedContext,
+        this.registry,
+        effectiveServices
+      );
+    } catch (discErr: any) {
+      console.warn("[ModelSelectionService] Dynamic model discovery encountered error, continuing with available registry:", discErr?.message || discErr);
+    }
+
+    // 4. Invoke LLM Service with prompt from prompts/ModelSelection/modelSelection.md and search tools
     const decision = await this.llmService.generateDecision(normalizedContext, this.registry, {
       services: effectiveServices,
     });
 
-    // 4. Auto-register any dynamically explored models if present in decision
-    if (Array.isArray(decision.models)) {
-      for (const m of decision.models) {
-        if (!this.registry.isModelSupported(m.model_id)) {
-          const newDef = {
-            modelId: m.model_id,
-            displayName: m.model_id,
-            algorithm: m.algorithm || "Machine Learning Model",
-            framework: (m.framework as any) || "custom",
-            supportedTasks: [decision.target_entity?.datatype === "boolean" ? "tabular_classification" : "tabular_regression"] as any,
+    // 5. Ensure any candidate in decision is registered with proper source metadata
+    if (Array.isArray(decision.candidates)) {
+      for (const c of decision.candidates) {
+        const existingModel = this.registry.getModel(c.model_id);
+        const sourceTypeId = c.source_type_id || existingModel?.sourceTypeId || "external";
+        const source = c.source || existingModel?.source || "web_search";
+        const repoUrl = c.repository_url || existingModel?.repositoryUrl || null;
+        const repoId = c.repository_id || existingModel?.repositoryId || null;
+
+        c.source_type_id = sourceTypeId;
+        c.source_type = sourceTypeId === "builtin" ? "builtin" : "external";
+        c.source = source;
+        c.repository_url = repoUrl;
+        c.repository_id = repoId;
+
+        if (!this.registry.isModelSupported(c.model_id)) {
+          const inferred = ModelSelectionContextNormalizer.inferProblemSpecs(normalizedContext);
+          const newDef: ModelDefinition = {
+            modelId: c.model_id,
+            displayName: c.displayName || c.model_id,
+            algorithm: c.algorithm || c.displayName || "Machine Learning Model",
+            framework: c.framework || "custom",
+            supportedTasks: [inferred.task],
             supportedSubTasks: [],
-            supportedPredictionTypes: ["point", "value"] as any,
+            supportedPredictionTypes: ["point", "value"],
             capabilities: ["numerical_features"],
-            strengths: ["Explored novel architecture"],
-            weaknesses: [],
+            strengths: c.reasoning?.strengths || ["Discovered candidate model"],
+            weaknesses: c.reasoning?.weaknesses || [],
             isBaseline: false,
             isDynamic: true,
-            source: "web_search" as const,
+            sourceTypeId,
+            sourceType: sourceTypeId === "builtin" ? "builtin" : "external",
+            source,
+            repositoryUrl: repoUrl,
+            repositoryId: repoId,
+            discoveredAt: c.discovered_at || new Date().toISOString(),
           };
           this.registry.registerModel(newDef);
           try {
             await this.repository.saveDynamicModel(newDef);
           } catch (regErr: any) {
-            console.warn(`[ModelSelectionService] Failed to persist dynamic model "${m.model_id}" to DB:`, regErr?.message || regErr);
+            console.warn(`[ModelSelectionService] Failed to persist candidate model "${c.model_id}" to DB:`, regErr?.message || regErr);
           }
         }
       }
+    }
+
+    if (decision.recommended_model) {
+      const rec = decision.recommended_model;
+      const matched = this.registry.getModel(rec.model_id);
+      rec.source_type_id = matched?.sourceTypeId || "external";
+      rec.source_type = matched?.sourceType || "external";
+      rec.source = matched?.source || "web_search";
+      rec.repository_url = matched?.repositoryUrl || null;
+      rec.repository_id = matched?.repositoryId || null;
+      rec.version = matched?.version || null;
+      rec.license = matched?.license || null;
     }
 
     // 5. Deterministic Validation
@@ -159,21 +204,6 @@ export class ModelSelectionService implements IModelSelectionService {
       } catch (projErr: any) {
         console.warn(`[ModelSelectionService] Could not update project agentState for ${effectiveProjectId}:`, projErr?.message || projErr);
       }
-
-      // Persist modular Training Job Contract YAML into project run folder
-      try {
-        const pWs = await this.projectService.getProjectWithWorkspace(effectiveProjectId);
-        if (pWs && pWs.project) {
-          await saveModularTrainingJobContract(
-            pWs.workspaceName || "DefaultWorkspace",
-            pWs.project.name,
-            decision,
-            inputContext.runTimestamp
-          );
-        }
-      } catch (contractErr: any) {
-        console.warn(`[ModelSelectionService] Warning saving Training Job Contract for ${effectiveProjectId}:`, contractErr?.message || contractErr);
-      }
     }
 
     return record;
@@ -222,26 +252,55 @@ export class ModelSelectionService implements IModelSelectionService {
         const project = await this.projectService.getById(record.projectId);
         const existingState = (project?.agentState as any) || {};
 
+        const selectedCandidates = (record.decision.candidates || []).filter((c) =>
+          selectedModelIds.some((s) => s.toLowerCase().trim() === c.model_id.toLowerCase().trim())
+        );
+        const selectedModelObjects = selectedCandidates.map((c) => ({
+          model_id: c.model_id,
+          framework: c.framework || "custom",
+          algorithm: c.algorithm || c.displayName || c.model_id,
+          enabled: true,
+          parameters: {},
+        }));
+
         const trainingConfigPayload = {
           ...(existingState.trainingConfiguration || {}),
           status: "Pending",
-          models: selectedModelIds,
+          models: selectedModelObjects,
+          selectedModelIds: selectedModelIds,
           candidate_models: selectedModelIds,
           selectedByUserAt: userSelection.confirmedAt,
           sourceDecisionId: decisionId,
         };
 
+        const cleanStageOutputs = { ...(existingState.stageOutputs || {}) };
+        delete cleanStageOutputs.preFlight;
+        delete cleanStageOutputs.modelTraining;
+        delete cleanStageOutputs.modelValidation;
+
+        const cleanStageStatuses = { ...(existingState.stageStatuses || {}) };
+        cleanStageStatuses.trainingConfiguration = "In Progress";
+        cleanStageStatuses.preFlight = "Pending";
+        cleanStageStatuses.modelTraining = "Pending";
+        cleanStageStatuses.modelValidation = "Pending";
+
+        const updatedModelSelection = {
+          ...(existingState.stageOutputs?.modelSelection || existingState.modelSelection || record.decision || {}),
+          userSelection,
+          selectedModelIds,
+          models: selectedModelObjects,
+        };
+
         const updatedState = {
           ...existingState,
+          modelSelection: updatedModelSelection,
           trainingConfiguration: trainingConfigPayload,
           stageOutputs: {
-            ...(existingState.stageOutputs || {}),
+            ...cleanStageOutputs,
+            modelSelection: updatedModelSelection,
             trainingConfiguration: trainingConfigPayload,
           },
-          stageStatuses: {
-            ...(existingState.stageStatuses || {}),
-            trainingConfiguration: "In Progress",
-          },
+          stageStatuses: cleanStageStatuses,
         };
 
         await this.projectService.updateAgentState(record.projectId, updatedState);
@@ -252,21 +311,19 @@ export class ModelSelectionService implements IModelSelectionService {
         if (pWs && pWs.project) {
           const updatedDecision = {
             ...record.decision,
-            models: (record.decision.candidates || []).map((c) => ({
-              model_id: c.model_id,
-              framework: c.framework || "custom",
-              algorithm: c.algorithm || c.displayName || c.model_id,
-              enabled: selectedModelIds.some((s) => s.toLowerCase().trim() === c.model_id.toLowerCase().trim()),
-              parameters: {},
-            })),
+            userSelection,
+            selectedModelIds,
+            models: selectedModelObjects,
           };
 
+          const effectiveTimestamp = existingState.runTimestamp || record.datasetVersion;
           await saveModularTrainingJobContract(
             pWs.workspaceName || "DefaultWorkspace",
             pWs.project.name,
             updatedDecision,
-            record.datasetVersion
+            effectiveTimestamp
           );
+          console.info(`[ModelSelectionService] Updated Training Job Contract schema with ${selectedCandidates.length} selected models for project ${record.projectId}`);
         }
       } catch (e: any) {
         console.warn(`[ModelSelectionService] Training handoff state update or contract save failed for project ${record.projectId}:`, e?.message || e);
@@ -274,5 +331,105 @@ export class ModelSelectionService implements IModelSelectionService {
     }
 
     return updatedRecord || record;
+  }
+
+  public async recordUserSelectionByProject(
+    projectId: string,
+    selectedModelIds: string[]
+  ): Promise<ModelSelectionDecisionRecord | { success: boolean; selectedModelIds: string[] }> {
+    const record = await this.repository.getLatestByProjectId(projectId);
+    if (record) {
+      return this.recordUserSelection(record.id, selectedModelIds);
+    }
+
+    // Fallback if decision record not directly in repository but project exists in DB
+    const project = await this.projectService.getById(projectId);
+    if (!project) {
+      throw new Error(`Project "${projectId}" not found`);
+    }
+
+    const existingState = (project.agentState as any) || {};
+    const modelSelection = existingState.stageOutputs?.modelSelection || existingState.modelSelection || {};
+    const candidates = modelSelection.candidates || [];
+    const selectedCandidates = candidates.filter((c: any) =>
+      selectedModelIds.some((s: string) => s.toLowerCase().trim() === (c.model_id || "").toLowerCase().trim())
+    );
+
+    const selectedModelObjects = (selectedCandidates.length > 0
+      ? selectedCandidates
+      : selectedModelIds.map((id: string) => ({ model_id: id, algorithm: id, framework: "custom" }))
+    ).map((c: any) => ({
+      model_id: c.model_id,
+      framework: c.framework || "custom",
+      algorithm: c.algorithm || c.displayName || c.model_id,
+      enabled: true,
+      parameters: {},
+    }));
+
+    const userSelection = {
+      selectedModelIds,
+      confirmedAt: new Date().toISOString(),
+    };
+
+    const trainingConfigPayload = {
+      ...(existingState.trainingConfiguration || {}),
+      status: "Pending",
+      models: selectedModelObjects,
+      selectedModelIds: selectedModelIds,
+      candidate_models: selectedModelIds,
+      selectedByUserAt: userSelection.confirmedAt,
+    };
+
+    const updatedModelSelection = {
+      ...modelSelection,
+      userSelection,
+      selectedModelIds,
+      models: selectedModelObjects,
+    };
+
+    const cleanStageOutputs = { ...(existingState.stageOutputs || {}) };
+    delete cleanStageOutputs.preFlight;
+    delete cleanStageOutputs.modelTraining;
+    delete cleanStageOutputs.modelValidation;
+
+    const cleanStageStatuses = { ...(existingState.stageStatuses || {}) };
+    cleanStageStatuses.trainingConfiguration = "In Progress";
+    cleanStageStatuses.preFlight = "Pending";
+    cleanStageStatuses.modelTraining = "Pending";
+    cleanStageStatuses.modelValidation = "Pending";
+
+    const updatedState = {
+      ...existingState,
+      modelSelection: updatedModelSelection,
+      trainingConfiguration: trainingConfigPayload,
+      stageOutputs: {
+        ...cleanStageOutputs,
+        modelSelection: updatedModelSelection,
+        trainingConfiguration: trainingConfigPayload,
+      },
+      stageStatuses: cleanStageStatuses,
+    };
+
+    await this.projectService.updateAgentState(projectId, updatedState);
+
+    const pWs = await this.projectService.getProjectWithWorkspace(projectId);
+    if (pWs && pWs.project) {
+      const updatedDecision = {
+        ...modelSelection,
+        userSelection,
+        selectedModelIds,
+        models: selectedModelObjects,
+      };
+
+      const effectiveTimestamp = existingState.runTimestamp || (project as any).datasetVersion;
+      await saveModularTrainingJobContract(
+        pWs.workspaceName || "DefaultWorkspace",
+        pWs.project.name,
+        updatedDecision,
+        effectiveTimestamp
+      );
+    }
+
+    return { success: true, selectedModelIds };
   }
 }
