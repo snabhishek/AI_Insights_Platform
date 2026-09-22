@@ -784,7 +784,14 @@ export default function ProjectsPage() {
     }
   };
 
-  const runWorkflow = async (action?: "approve" | "retry" | "resume", step?: string, overrideUserPrompt?: string) => {
+  const runWorkflow = async (
+    action?: "approve" | "retry" | "resume",
+    step?: string,
+    overrideUserPrompt?: string,
+    selectedModels?: string[],
+    splitStartDate?: string,
+    splitEndDate?: string
+  ) => {
     if (!selectedProject) return;
 
     if (!workflowConnectorIds || workflowConnectorIds.length === 0) {
@@ -885,10 +892,18 @@ export default function ProjectsPage() {
     }
     let lastData: any = null;
     try {
+      const effectiveSplitDate = splitEndDate || selectedProject?.splitDate || (selectedProject?.agentState as any)?.splitDate;
+      const effectiveSplitStartDate = splitStartDate || (selectedProject?.agentState as any)?.splitStartDate;
+      const effectiveSplitEndDate = splitEndDate || selectedProject?.splitDate || (selectedProject?.agentState as any)?.splitEndDate;
+
       const payload: WorkflowRequestPayload = {
         connectorId: workflowConnectorIds,
         userPrompt: overrideUserPrompt !== undefined ? overrideUserPrompt : (selectedProject?.useCase || ""),
         projectId: selectedProject?.id,
+        ...(effectiveSplitDate ? { splitDate: effectiveSplitDate } : {}),
+        ...(effectiveSplitStartDate ? { splitStartDate: effectiveSplitStartDate } : {}),
+        ...(effectiveSplitEndDate ? { splitEndDate: effectiveSplitEndDate } : {}),
+        ...(selectedModels && selectedModels.length > 0 ? { selectedModels } : {}),
       };
       const currentSession = action === "resume" ? (pausedSessionId || workflowSessionId) : workflowSessionId;
       if (currentSession) {
@@ -1042,7 +1057,12 @@ export default function ProjectsPage() {
     void runWorkflow();
   };
 
-  const handleApprove = (overrideTargetPhase?: unknown) => {
+  const handleApprove = (
+    overrideTargetPhase?: unknown,
+    selectedModels?: string[],
+    splitStartDate?: string,
+    splitEndDate?: string
+  ) => {
     if (isApproving || isExecutingRef.current) return;
     setIsApproving(true);
 
@@ -1078,7 +1098,7 @@ export default function ProjectsPage() {
     setPausedAtPhase(null);
     setPausedStateSnapshot(null);
 
-    void runWorkflow("approve", targetPhase);
+    void runWorkflow("approve", targetPhase, undefined, selectedModels, splitStartDate, splitEndDate);
   };
 
   const handleRetry = (step?: string) => {
@@ -1304,7 +1324,9 @@ export default function ProjectsPage() {
         requiresApproval={requiresApproval}
         workflowMessage={workflowMessage}
         onSelectStage={handleStageSelect}
-        onApprove={(override) => handleApprove(typeof override === "string" ? override : undefined)}
+        onApprove={(override, selectedModels, splitStartDate, splitEndDate) =>
+          handleApprove(typeof override === "string" ? override : undefined, selectedModels, splitStartDate, splitEndDate)
+        }
         isApproving={isApproving}
         onRetry={(stepId) => handleRetry(stepId)}
         isPaused={isPaused}

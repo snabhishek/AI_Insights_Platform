@@ -154,7 +154,7 @@ function CustomSelect({
 interface ProjectCreatePageProps {
   dataSources: DataSource[];
   onCancel: () => void;
-  onSubmit: (name: string, useCase: string, selectedSources: string[], domain?: string, subDomain?: string) => Promise<boolean | void> | void;
+  onSubmit: (name: string, useCase: string, selectedSources: string[], domain?: string, subDomain?: string, splitDate?: string) => Promise<boolean | void> | void;
   onAddDataSource: (name: string, type: DataSource["type"], subtext: string, config: ConnectionConfig) => void;
 }
 
@@ -596,6 +596,7 @@ export default function ProjectCreatePage({
                 </div>
               </div>
             </div>
+
           </div>
         </div>
 

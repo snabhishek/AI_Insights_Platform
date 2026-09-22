@@ -6,8 +6,12 @@ import { FeatureArchitectAnnotation } from "./state";
 import { executePythonScript } from "../../tools/helpers/pythonExecutor";
 import * as fs from "fs";
 import * as path from "path";
-import { getMcpFilesystemTools, getPythonScriptDirectory, makePipelineTemplate } from "../../tools";
-
+import {
+  ensureFeatureEngineeringEnvironment,
+  getMcpFilesystemTools,
+  getPythonScriptDirectory,
+  makePipelineTemplate,
+} from "../../tools";
 
 interface RectifierOutput extends Record<string, unknown> {
   status: string;
@@ -95,7 +99,7 @@ export async function programRectificationNode(
     await logMilestoneThinking(
       services,
       "Feature Engineering",
-      `Executing and validating aggregated script "${aggregatedName}" region ${region}...`
+      `Executing and validating aggregated script "${aggregatedName}" region ${region} via Docker Compose...`
     );
   }
 
@@ -115,6 +119,9 @@ export async function programRectificationNode(
     fs.mkdirSync(baseDir, { recursive: true });
     fs.writeFileSync(scriptPath, aggregated, "utf-8");
   }
+
+  // Ensure Docker environment (Dockerfile, docker-compose.yml, requirements.txt) exists
+  ensureFeatureEngineeringEnvironment(baseDir, stagePackages);
 
   // Acquire a simple lock (record ownership in state) to indicate we are modifying the script
   const lockOwner = `programRectifier:${historyKey}`;
@@ -156,9 +163,12 @@ export async function programRectificationNode(
       await logMilestoneThinking(
         services,
         "Feature Engineering",
-        `Running aggregated script "${aggregatedName}" (Attempt ${attempt}/${maxAttempts})...`
+        `Running aggregated script "${aggregatedName}" in Docker Compose (Attempt ${attempt}/${maxAttempts})...`
       );
     }
+
+    // Sync environment packages before execution
+    ensureFeatureEngineeringEnvironment(baseDir, stagePackages);
 
     const res = await executePythonScript(
       aggregatedName,
@@ -202,13 +212,13 @@ export async function programRectificationNode(
       break;
     }
 
-    // If failed due to code error and model is available, attempt rectification
+    // If failed due to code or container build error and model is available, attempt rectification
     if (model) {
       if (services) {
         await logMilestoneThinking(
           services,
           "Feature Engineering",
-          `Aggregated script "${aggregatedName}" failed for region ${region}. Asking Program Rectifier to fix code errors...`
+          `Aggregated script "${aggregatedName}" failed for region ${region}. Asking Program Rectifier to fix code/environment errors...`
         );
       }
 
@@ -218,7 +228,7 @@ export async function programRectificationNode(
       );
 
       const userMessage = [
-        `The aggregated Python script "${aggregatedName}" (region ${region}) failed during execution.`,
+        `The aggregated Python script "${aggregatedName}" (region ${region}) or container build failed during Docker execution.`,
         `--- Original Code ---`,
         currentCode,
         `--- Execution Stderr/Traceback ---`,
@@ -226,11 +236,13 @@ export async function programRectificationNode(
         `--- Execution Stdout ---`,
         lastStdout,
         `Target Pipeline File: ${scriptPath}`,
+        `Environment Directory: ${baseDir}`,
+        `Environment Configs: ${path.join(baseDir, "requirements.txt")}, ${path.join(baseDir, "Dockerfile")}, ${path.join(baseDir, "docker-compose.yml")}`,
         `Region with Error: ${region}`,
         "Action Required:",
-        `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the code around the failure.`,
-        `2. Use MCP tool 'edit_file' (or 'write_file') to apply your fix directly to '${scriptPath}'.`,
-        "3. Return the final JSON summary with explanation.",
+        `1. Use MCP tool 'read_text_file' on '${scriptPath}' or environment configs to inspect the failure.`,
+        `2. Use MCP tool 'edit_file' (or 'write_file') to apply your fix directly to '${scriptPath}' or the configuration files.`,
+        "3. Return the final JSON summary with explanation and any requiredPackages.",
       ].join("\n\n");
 
       const fallback: RectifierOutput = {
@@ -258,6 +270,7 @@ export async function programRectificationNode(
 
         if (Array.isArray(rectifierRes?.requiredPackages) && rectifierRes.requiredPackages.length > 0) {
           stagePackages = Array.from(new Set([...stagePackages, ...rectifierRes.requiredPackages]));
+          ensureFeatureEngineeringEnvironment(baseDir, stagePackages);
         }
 
         // Re-read the updated script from disk after rectifier tool execution

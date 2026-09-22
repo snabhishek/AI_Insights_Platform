@@ -70,20 +70,24 @@ Synthesize a comprehensive, production-grade configuration that populates the fo
 - `column_count`: Write the number of columns available in the finalized training dataset. This information can be asked from the *dataanalyseragent*.
 
 ### E. Data Splitting & Cross-Validation Strategy (`split`)
-- `strategy`: Select the data splitting approach that most closely represents how the model will encounter data in its intended usage.
-- `train_ratio`: Specify the proportion of available data that should be used for model training.
-- `validation_ratio`: Specify the proportion of available data that should be used for model validation and model or parameter selection.
-- `test_ratio`: Specify the proportion of available data that should be reserved for final unbiased model evaluation.
-- `random_seed`: Seed value ensuring reproducible splits.
-- `stratify_by`: Identify the target or other variable whose distribution should be preserved across the data splits, when needed.
-- `group_by`: Identify the entity or grouping attribute whose related records must remain within the same data split, when needed.
-- `time_column`: Identify the time attribute that should determine the ordering of records for a time-dependent split, when needed.
+- **Temporal Cutoff vs Ratio Fallback**:
+  - **User-Specified Split Date (`split_date`)**: If the user has provided a `splitDate` AND a timestamp or date column exists in the dataset, configure `strategy: "temporal"` with `time_column: "<date_column>"` and `split_date: "<user_provided_split_date>"`. Training data consists of records with `time_column <= split_date` and test/validation data consists of records with `time_column > split_date`.
+  - **Fallback Splitting (Strict 70/15/15 Ratio)**: If NO timestamp or date column exists in the dataset, OR if `splitDate` was not provided, you MUST configure a standard 70/15/15 ratio split (`train_ratio: 0.70`, `validation_ratio: 0.15`, `test_ratio: 0.15`, summing strictly to 1.0).
+- `strategy`: "temporal" (if date column exists and split_date provided), "stratified" (for classification), or "random".
+- `train_ratio`: Specify 0.70 (unless temporal cutoff overrides).
+- `validation_ratio`: Specify 0.15.
+- `test_ratio`: Specify 0.15.
+- `split_date`: The user-specified cutoff date string (e.g. "2024-01-01") if provided and date column exists; otherwise `null`.
+- `random_seed`: Seed value (default: 42) ensuring reproducible splits.
+- `stratify_by`: Target column name if problem type is classification and not using temporal split.
+- `group_by`: Identify grouping attribute when records must remain in same split, if applicable.
+- `time_column`: Name of the date/time column if temporal splitting is used.
 - `cross_validation`:
-  - `enabled`: Determine whether repeated validation across multiple subsets of the training data is appropriate for this use case.
-  - `strategy`: Select the cross-validation approach that best matches the characteristics of the dataset and prediction problem.
-  - `folds`: Specify the number of validation folds to use when cross-validation is enabled.
-  - `shuffle`: Determine whether records should be reordered before creating cross-validation folds.
-  - `random_seed`: Seed value for fold creation.
+  - `enabled`: Determine whether repeated validation across multiple folds is appropriate.
+  - `strategy`: "k_fold", "stratified_k_fold", or "time_series_split".
+  - `folds`: Number of validation folds (typically 5).
+  - `shuffle`: False if temporal, True if standard cross-validation.
+  - `random_seed`: 42.
 
 ### F. Class Imbalance Handling (`imbalance`)
 - `detected`: Determine whether the target distribution contains a meaningful imbalance that could affect model training.

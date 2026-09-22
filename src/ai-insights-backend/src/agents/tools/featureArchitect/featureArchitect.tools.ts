@@ -1,6 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { executePythonScript } from "../helpers/pythonExecutor";
+import { executePythonScript, ensureRequirementsTxt, ensureDockerfile, ensureDockerCompose } from "../helpers/pythonExecutor";
 import * as path from "path";
 import * as fs from "fs";
 
@@ -123,7 +123,7 @@ export const createRunPythonScriptTool = (
     },
     {
       name: "runPythonScript",
-      description: "Execute a Python script with --db-path/connection settings passed in args to perform feature engineering calculations.",
+      description: "Execute a Python script with --db-path/connection settings passed in args to perform feature engineering calculations via Docker Compose.",
       schema: z.object({
         scriptName: z.string().describe("The filename of the Python script to write and execute (e.g., 'feature_creation.py')."),
         code: z.string().describe("The full content of the Python code to run."),
@@ -195,6 +195,19 @@ function findRegionBounds(
     return null;
   }
   return { startLine, endLine };
+}
+
+/**
+ * Ensures that the Feature Engineering directory contains requirements.txt,
+ * Dockerfile, and docker-compose.yml.
+ */
+export function ensureFeatureEngineeringEnvironment(
+  targetDir: string,
+  requiredPackages?: string[]
+): void {
+  ensureRequirementsTxt(targetDir, requiredPackages);
+  ensureDockerfile(targetDir);
+  ensureDockerCompose(targetDir, "feature-engineering");
 }
 
 /**
@@ -275,5 +288,3 @@ export function makePipelineTemplate(scriptName: string): string {
     runner,
   ].join("\n");
 }
-
-

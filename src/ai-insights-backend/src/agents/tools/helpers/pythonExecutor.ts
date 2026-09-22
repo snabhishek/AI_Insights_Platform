@@ -1,7 +1,7 @@
-import Docker from "dockerode";
 import fs from "fs";
 import path from "path";
 import { exec } from "child_process";
+import Docker from "dockerode";
 import { IngestionServices } from "../../state";
 import {
   ensureDirectoryExists,
@@ -17,17 +17,6 @@ export interface ExecutionResult {
   stdout: string;
   stderr: string;
 }
-
-interface ContainerSession {
-  container: Docker.Container;
-  name: string;
-  projectId: string;
-  runTimestamp: string;
-  installedPackages: Set<string>;
-  createdAt: number;
-}
-
-const activeRunContainers = new Map<string, ContainerSession>();
 
 const IMPORT_TO_PACKAGE: Record<string, string> = {
   sklearn: "scikit-learn",
@@ -56,34 +45,6 @@ export function normalizeRequiredPackages(explicitPackages?: string[]): string[]
   }
 
   return Array.from(packages);
-}
-
-/**
- * Helper to demux Docker's multiplexed stream buffer into stdout and stderr.
- */
-function demuxDockerLogs(buffer: Buffer): { stdout: string; stderr: string } {
-  let stdout = "";
-  let stderr = "";
-  let offset = 0;
-
-  while (offset < buffer.length) {
-    if (offset + 8 > buffer.length) break;
-    const type = buffer.readUInt8(offset);
-    const length = buffer.readUInt32BE(offset + 4);
-    offset += 8;
-
-    if (offset + length > buffer.length) break;
-    const content = buffer.toString("utf8", offset, offset + length);
-    offset += length;
-
-    if (type === 1) {
-      stdout += content;
-    } else if (type === 2) {
-      stderr += content;
-    }
-  }
-
-  return { stdout, stderr };
 }
 
 /**
@@ -158,59 +119,180 @@ async function ensureDockerDaemon(docker: Docker): Promise<boolean> {
 }
 
 /**
- * Cleans up any stale orphaned containers from prior runs.
+ * Runs a CLI process via exec with maxBuffer and timeout handling.
  */
-async function cleanupStaleContainers(docker: Docker): Promise<void> {
-  try {
-    const activeNames = new Set(Array.from(activeRunContainers.values()).map((s) => s.name));
-    const allContainers = await docker.listContainers({ all: true });
-    for (const c of allContainers) {
-      const matchName = (c.Names || []).find(
-        (name) =>
-          (name.includes("ai-insights-exec-") || name.includes("ai-insights-feature-arch-executor-")) &&
-          !activeNames.has(name.replace(/^\//, ""))
-      );
-      if (matchName) {
-        try {
-          const cont = docker.getContainer(c.Id);
-          if (c.State === "running") {
-            await cont.stop({ t: 1 });
-          }
-          await cont.remove({ force: true });
-          console.info(`[DockerExecutor] Cleaned up leftover container: ${c.Names?.[0] || c.Id}`);
-        } catch (_) {}
-      }
-    }
-  } catch (err: any) {
-    console.warn("[DockerExecutor] Failed to list containers for stale cleanup:", err.message);
+function executeProcess(
+  command: string,
+  options: {
+    cwd: string;
+    env?: NodeJS.ProcessEnv;
+    timeoutMs?: number;
   }
-}
-
-/**
- * Pulls the specified Docker image if it is not already available locally.
- */
-async function ensureImage(docker: Docker, image: string): Promise<void> {
-  const images = await docker.listImages();
-  const hasImage = images.some((img) => img.RepoTags?.includes(image));
-  if (!hasImage) {
-    await new Promise<void>((resolve, reject) => {
-      docker.pull(image, {}, (err, stream) => {
-        if (err) return reject(err);
-        if (!stream) return reject(new Error("Pull stream was undefined"));
-        docker.modem.followProgress(stream, (progressErr) => {
-          if (progressErr) return reject(progressErr);
-          resolve();
+): Promise<{ exitCode: number; stdout: string; stderr: string }> {
+  return new Promise((resolve) => {
+    exec(
+      command,
+      {
+        cwd: options.cwd,
+        env: { ...process.env, ...(options.env || {}) },
+        maxBuffer: 50 * 1024 * 1024,
+        timeout: options.timeoutMs || 600000,
+      },
+      (error, stdout, stderr) => {
+        const exitCode = error ? (typeof error.code === "number" ? error.code : 1) : 0;
+        resolve({
+          exitCode,
+          stdout: stdout ? stdout.toString() : "",
+          stderr: stderr ? stderr.toString() : (error ? error.message : ""),
         });
-      });
-    });
-  }
+      }
+    );
+  });
 }
 
 /**
- * Executes a Python script inside a managed Docker container session.
- * Mounts directly and only the project folder to `/workspace`.
- * Reuses the existing container across Feature Architect workers, Program Rectifier, and Feature Validator,
- * and preserves installed Python packages and environment state.
+ * Track active docker compose project directories per run session.
+ */
+const activeComposeSessions = new Map<string, { composeDir: string; composeFile: string }>();
+
+/**
+ * Ensures requirements.txt exists and syncs any new required packages.
+ */
+export function ensureRequirementsTxt(
+  targetDir: string,
+  explicitPackages: string[] = []
+): string {
+  const reqPath = path.join(targetDir, "requirements.txt");
+  const defaultPkgs = ["pandas", "numpy", "scikit-learn", "duckdb", "pyarrow", "pyyaml"];
+  const allNeeded = normalizeRequiredPackages([...defaultPkgs, ...explicitPackages]);
+
+  let existingPkgs: string[] = [];
+  if (fs.existsSync(reqPath)) {
+    const content = fs.readFileSync(reqPath, "utf-8");
+    existingPkgs = content
+      .split("\n")
+      .map((l) => l.trim().split("#")[0].trim())
+      .filter(Boolean);
+  }
+
+  const merged = Array.from(new Set([...existingPkgs, ...allNeeded]));
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(reqPath, merged.join("\n") + "\n", "utf-8");
+  return reqPath;
+}
+
+/**
+ * Ensures Dockerfile exists in target directory.
+ */
+export function ensureDockerfile(targetDir: string): string {
+  const dockerfilePath = path.join(targetDir, "Dockerfile");
+  if (!fs.existsSync(dockerfilePath)) {
+    const dockerfileContent = [
+      "FROM python:3.12-slim",
+      "WORKDIR /workspace",
+      "RUN apt-get update && apt-get install -y --no-install-recommends \\",
+      "    build-essential \\",
+      "    libgomp1 \\",
+      "    && rm -rf /var/lib/apt/lists/*",
+      "COPY requirements.txt /tmp/requirements.txt",
+      "RUN pip install --no-cache-dir --disable-pip-version-check --trusted-host pypi.org --trusted-host files.pythonhosted.org -r /tmp/requirements.txt",
+      "",
+    ].join("\n");
+    fs.mkdirSync(targetDir, { recursive: true });
+    fs.writeFileSync(dockerfilePath, dockerfileContent, "utf-8");
+  }
+  return dockerfilePath;
+}
+
+/**
+ * Ensures docker-compose.yml exists in target directory.
+ */
+export function ensureDockerCompose(
+  targetDir: string,
+  serviceName: string = "app",
+  resourceLimits?: { cpus?: string; memory?: string; hasGpu?: boolean }
+): string {
+  const composeYml = path.join(targetDir, "docker-compose.yml");
+  const composeYaml = path.join(targetDir, "docker-compose.yaml");
+
+  if (fs.existsSync(composeYml)) return composeYml;
+  if (fs.existsSync(composeYaml)) return composeYaml;
+
+  const cpus = resourceLimits?.cpus || "2.0";
+  const memory = resourceLimits?.memory || "4G";
+  const gpuConfig = resourceLimits?.hasGpu
+    ? [
+        "        reservations:",
+        "          devices:",
+        "            - driver: cdi",
+        "              count: all",
+        "              capabilities: [gpu]",
+      ].join("\n")
+    : "";
+
+  const content = [
+    "services:",
+    `  ${serviceName}:`,
+    "    build:",
+    "      context: .",
+    "      dockerfile: Dockerfile",
+    "      network: host",
+    "    network_mode: host",
+    "    volumes:",
+    "      - \"${HOST_PROJECT_ROOT:-.}:/workspace\"",
+    "    working_dir: /workspace",
+    "    environment:",
+    "      - PYTHONPATH=/workspace",
+    "    deploy:",
+    "      resources:",
+    "        limits:",
+    `          cpus: '${cpus}'`,
+    `          memory: ${memory}`,
+    ...(gpuConfig ? [gpuConfig] : []),
+    "",
+  ].join("\n");
+
+  fs.mkdirSync(targetDir, { recursive: true });
+  fs.writeFileSync(composeYml, content, "utf-8");
+  return composeYml;
+}
+
+/**
+ * Resolves the appropriate directory where docker-compose.yml, Dockerfile, and requirements.txt
+ * are maintained for the execution of a Python script.
+ */
+function resolveExecutionDirectory(
+  scriptPath: string,
+  projectRootDir: string,
+  effectiveTimestamp: string
+): string {
+  const scriptDir = path.dirname(scriptPath);
+
+  // 1. If script is in a specialized subfolder (e.g. <projectName>_model_training or python_script)
+  if (
+    fs.existsSync(path.join(scriptDir, "docker-compose.yml")) ||
+    fs.existsSync(path.join(scriptDir, "docker-compose.yaml")) ||
+    fs.existsSync(path.join(scriptDir, "Dockerfile"))
+  ) {
+    return scriptDir;
+  }
+
+  // 2. Check run directory
+  const runDir = path.join(projectRootDir, effectiveTimestamp);
+  if (
+    fs.existsSync(path.join(runDir, "docker-compose.yml")) ||
+    fs.existsSync(path.join(runDir, "docker-compose.yaml"))
+  ) {
+    return runDir;
+  }
+
+  // 3. Default to script directory
+  return scriptDir;
+}
+
+/**
+ * Executes a Python script inside a Docker container managed exclusively via
+ * docker-compose, Dockerfile, and requirements.txt.
  */
 export async function executePythonScript(
   scriptName: string,
@@ -219,12 +301,14 @@ export async function executePythonScript(
   runTimestamp: string,
   services: IngestionServices,
   connectorIdList?: string[],
-  requiredPackages?: string[]
+  requiredPackages?: string[],
+  extraArgs: string[] = [],
+  resourceLimits?: { cpus?: string; memory?: string; hasGpu?: boolean }
 ): Promise<ExecutionResult> {
   let workspaceName = "Default_Workspace";
   let projectName = projectId || "default";
 
-  if (services?.projectService && projectId) {
+  if (services?.projectService && typeof services.projectService.getProjectWithWorkspace === "function" && projectId) {
     try {
       const pWs = await services.projectService.getProjectWithWorkspace(projectId);
       if (pWs) {
@@ -258,23 +342,49 @@ export async function executePythonScript(
   const baseDir = getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
   ensureDirectoryExists(baseDir);
 
-  // 3. Format script filename with effective timestamp if not already present
-  let effectiveScriptName = path.basename(scriptName);
-  const ext = path.extname(effectiveScriptName) || ".py";
-  const baseName = path.basename(effectiveScriptName, ext);
-  if (!baseName.includes(effectiveTimestamp) && effectiveTimestamp !== "default") {
-    effectiveScriptName = `${baseName}_${effectiveTimestamp}${ext}`;
+  // 3. Resolve script path (handles both nested project paths and standard python_script paths)
+  let scriptPath: string;
+  const isSubpath = scriptName.includes("/") || scriptName.includes("\\");
+  if (isSubpath) {
+    if (path.isAbsolute(scriptName)) {
+      scriptPath = path.resolve(scriptName);
+    } else if (scriptName.startsWith(effectiveTimestamp) || fs.existsSync(path.join(projectRootDir, scriptName))) {
+      scriptPath = path.join(projectRootDir, scriptName);
+    } else {
+      const withTimestamp = path.join(projectRootDir, effectiveTimestamp, scriptName);
+      if (fs.existsSync(withTimestamp) || !fs.existsSync(path.join(projectRootDir, scriptName))) {
+        scriptPath = withTimestamp;
+      } else {
+        scriptPath = path.join(projectRootDir, scriptName);
+      }
+    }
+    if (code && code.trim().length > 0) {
+      ensureDirectoryExists(path.dirname(scriptPath));
+      fs.writeFileSync(scriptPath, code, "utf-8");
+    }
+  } else {
+    let effectiveScriptName = path.basename(scriptName);
+    const ext = path.extname(effectiveScriptName) || ".py";
+    const baseName = path.basename(effectiveScriptName, ext);
+    if (!baseName.includes(effectiveTimestamp) && effectiveTimestamp !== "default") {
+      effectiveScriptName = `${baseName}_${effectiveTimestamp}${ext}`;
+    }
+    scriptPath = path.join(baseDir, effectiveScriptName);
+    if (code && code.trim().length > 0) {
+      fs.writeFileSync(scriptPath, code, "utf-8");
+    }
   }
 
-  const scriptPath = path.join(baseDir, effectiveScriptName);
-  fs.writeFileSync(scriptPath, code, "utf-8");
-
-  // 4. Compute the relative path of the script directory from the project root folder
-  const relativePythonScriptDir = path.relative(projectRootDir, baseDir).replace(/\\/g, "/");
-  const containerWorkingDir = `/workspace/${relativePythonScriptDir}`.replace(/\/+/g, "/");
+  // 4. Compute relative script path from project root (/workspace in container)
+  const relFromProjectRoot = path.relative(projectRootDir, scriptPath).replace(/\\/g, "/");
+  const scriptDirRel = path.relative(projectRootDir, path.dirname(scriptPath)).replace(/\\/g, "/");
+  const containerOutDir = scriptDirRel && scriptDirRel !== "." ? `/workspace/${scriptDirRel}`.replace(/\/+/g, "/") : "/workspace";
 
   // Formulate command line arguments for the datasource and output directory
-  const args: string[] = [`--out-dir "${containerWorkingDir}"`];
+  const args: string[] = [`--out-dir "${containerOutDir}"`];
+  if (extraArgs && extraArgs.length > 0) {
+    args.push(...extraArgs);
+  }
 
   if (connectorIdList && connectorIdList.length > 0) {
     const primaryConnectorId = connectorIdList[0];
@@ -304,6 +414,7 @@ export async function executePythonScript(
     }
   }
 
+  // Ensure Docker daemon is running
   const docker = getDockerClient();
   const isAvailable = await ensureDockerDaemon(docker);
   if (!isAvailable) {
@@ -314,166 +425,117 @@ export async function executePythonScript(
     };
   }
 
+  // 5. Determine directory containing requirements.txt, Dockerfile, and docker-compose.yml
+  const execDir = resolveExecutionDirectory(scriptPath, projectRootDir, effectiveTimestamp);
+  ensureDirectoryExists(execDir);
+
+  // Sync requirements.txt, Dockerfile, and docker-compose.yml
+  ensureRequirementsTxt(execDir, requiredPackages);
+  ensureDockerfile(execDir);
+  const composeFile = ensureDockerCompose(execDir, "app", resourceLimits);
+  const composeFileName = path.basename(composeFile);
+
   const sessionKey = `${projectId || "default"}__${effectiveTimestamp}`;
-  let session = activeRunContainers.get(sessionKey);
+  activeComposeSessions.set(sessionKey, { composeDir: execDir, composeFile });
 
-  // Check if existing session container is still alive and running
-  if (session) {
-    try {
-      const inspect = await session.container.inspect();
-      if (!inspect?.State?.Running) {
-        activeRunContainers.delete(sessionKey);
-        session = undefined;
-      }
-    } catch {
-      activeRunContainers.delete(sessionKey);
-      session = undefined;
-    }
-  }
+  const env = {
+    HOST_PROJECT_ROOT: normProjectDir,
+    PYTHONPATH: "/workspace",
+  };
 
-  const imageName = "python:3.12-slim";
+  console.info(`[DockerExecutor] Building and running via Docker Compose in [${execDir}] for script [${relFromProjectRoot}]`);
 
-  // Create container if not already running for this run session
-  if (!session) {
-    await cleanupStaleContainers(docker);
-    await ensureImage(docker, imageName);
+  // Step 1: Build Docker Compose image
+  const buildCmd = `docker compose -f "${composeFileName}" build`;
+  const buildResult = await executeProcess(buildCmd, {
+    cwd: execDir,
+    env,
+    timeoutMs: 300000, // 5 min build timeout
+  });
 
-    const safeProj = (projectId || "default").replace(/[^a-zA-Z0-9_-]/g, "_");
-    const containerName = `ai-insights-exec-${safeProj}-${Date.now().toString(36)}`;
-
-    console.info(`[DockerExecutor] Creating container session [${containerName}] mounting project root [${normProjectDir}]`);
-    const container = (await docker.createContainer({
-      name: containerName,
-      Image: imageName,
-      Cmd: ["sh", "-c", "sleep infinity"],
-      WorkingDir: "/workspace",
-      HostConfig: {
-        Binds: [
-          `${normProjectDir}:/workspace`,
-        ],
-        Memory: 2 * 1024 * 1024 * 1024, // 2GB memory limit
-        NanoCpus: 2 * 1000000000, // 2 CPU cores limit
-        AutoRemove: false,
-      },
-    }) as unknown) as Docker.Container;
-
-    await container.start();
-    session = {
-      container,
-      name: containerName,
-      projectId: projectId || "default",
-      runTimestamp: effectiveTimestamp,
-      installedPackages: new Set<string>(),
-      createdAt: Date.now(),
-    };
-    activeRunContainers.set(sessionKey, session);
-  } else {
-    console.info(`[DockerExecutor] Reusing existing container session [${session.name}] for run [${effectiveTimestamp}]`);
-  }
-
-  // Install explicit required packages from agent output that haven't been installed yet
-  const packagesToInstall = normalizeRequiredPackages(requiredPackages).filter(
-    (pkg) => !session!.installedPackages.has(pkg)
-  );
-
-  let scriptExecCmd = `python "${effectiveScriptName}" ${args.join(" ")}`;
-  if (packagesToInstall.length > 0) {
-    const pipFlags = "--no-cache-dir --disable-pip-version-check --root-user-action=ignore";
-    console.info(`[DockerExecutor] Installing packages [${packagesToInstall.join(", ")}] in container [${session.name}]`);
-    scriptExecCmd = `pip install ${pipFlags} ${packagesToInstall.join(" ")} && ${scriptExecCmd}`;
-    for (const pkg of packagesToInstall) {
-      session.installedPackages.add(pkg);
-    }
-  }
-
-  try {
-    console.info(`[DockerExecutor] Running script [${effectiveScriptName}] in working directory [${containerWorkingDir}] inside container [${session.name}]`);
-    const execInstance = await session.container.exec({
-      Cmd: ["sh", "-c", scriptExecCmd],
-      AttachStdout: true,
-      AttachStderr: true,
-      WorkingDir: containerWorkingDir,
-    });
-
-    const stream = await execInstance.start({ hijack: true, stdin: false });
-
-    const chunks: Buffer[] = [];
-    await new Promise<void>((resolve, reject) => {
-      stream.on("data", (chunk: Buffer) => chunks.push(Buffer.from(chunk)));
-      stream.on("end", resolve);
-      stream.on("error", reject);
-    });
-
-    const logsBuffer = Buffer.concat(chunks);
-    const { stdout, stderr } = demuxDockerLogs(logsBuffer);
-
-    let exitCode = 0;
-    try {
-      const inspectRes = await execInstance.inspect();
-      exitCode = inspectRes.ExitCode ?? 0;
-    } catch (_) {}
-
-    return {
-      success: exitCode === 0,
-      stdout,
-      stderr,
-    };
-  } catch (error) {
-    console.error(`[DockerExecutor] Execution failed in container [${session.name}]`, error);
+  if (buildResult.exitCode !== 0) {
+    console.error(`[DockerExecutor] Docker Compose build failed in [${execDir}]:`, buildResult.stderr);
     return {
       success: false,
-      stdout: "",
-      stderr: `Docker execution error: ${error instanceof Error ? error.message : String(error)}`,
+      stdout: buildResult.stdout,
+      stderr: `Docker Compose build error:\n${buildResult.stderr || buildResult.stdout}`,
     };
   }
+
+  // Step 2: Run service via Docker Compose
+  // Determine service name from compose file (default: app, or first service defined)
+  let serviceName = "app";
+  try {
+    const composeContent = fs.readFileSync(composeFile, "utf-8");
+    const serviceMatch = composeContent.match(/services:\s*\n\s*([a-zA-Z0-9_-]+):/);
+    if (serviceMatch && serviceMatch[1]) {
+      serviceName = serviceMatch[1];
+    }
+  } catch {}
+
+  const runCmd = `docker compose -f "${composeFileName}" run --rm ${serviceName} python "${relFromProjectRoot}" ${args.join(" ")}`;
+
+  const execResult = await executeProcess(runCmd, {
+    cwd: execDir,
+    env,
+    timeoutMs: 600000, // 10 min execution timeout
+  });
+
+  return {
+    success: execResult.exitCode === 0,
+    stdout: execResult.stdout,
+    stderr: execResult.stderr,
+  };
 }
 
 /**
- * Explicitly cleans up and deletes the container session for a specific run when the stage completes.
+ * Cleans up container resources and stops docker compose services for a specific run.
  */
 export async function cleanupRunContainer(projectId: string, runTimestamp?: string): Promise<void> {
   const safeProj = projectId || "default";
   const sessionKey = `${safeProj}__${runTimestamp || "default"}`;
-  const directSession = activeRunContainers.get(sessionKey);
 
-  if (directSession) {
+  const session = activeComposeSessions.get(sessionKey);
+  if (session && fs.existsSync(session.composeFile)) {
     try {
-      console.info(`[DockerExecutor] Cleaning up container session [${directSession.name}] for project [${projectId}]`);
-      await directSession.container.stop({ t: 1 }).catch(() => {});
-      await directSession.container.remove({ force: true }).catch(() => {});
-      activeRunContainers.delete(sessionKey);
-      console.info(`[DockerExecutor] Successfully deleted container [${directSession.name}]`);
+      console.info(`[DockerExecutor] Tearing down Docker Compose in [${session.composeDir}]`);
+      await executeProcess(
+        `docker compose -f "${path.basename(session.composeFile)}" down --volumes --remove-orphans`,
+        { cwd: session.composeDir }
+      );
+      activeComposeSessions.delete(sessionKey);
     } catch (err: any) {
-      console.warn(`[DockerExecutor] Error removing container [${directSession.name}]:`, err.message);
+      console.warn(`[DockerExecutor] Warning during compose down for [${sessionKey}]:`, err?.message || err);
     }
-    return;
   }
 
-  for (const [key, session] of activeRunContainers.entries()) {
+  // Fallback cleanup across any session matching project
+  for (const [key, sess] of activeComposeSessions.entries()) {
     if (key.startsWith(`${safeProj}__`)) {
       try {
-        console.info(`[DockerExecutor] Cleaning up container session [${session.name}] for project [${projectId}]`);
-        await session.container.stop({ t: 1 }).catch(() => {});
-        await session.container.remove({ force: true }).catch(() => {});
-        activeRunContainers.delete(key);
-        console.info(`[DockerExecutor] Successfully deleted container [${session.name}]`);
-      } catch (err: any) {
-        console.warn(`[DockerExecutor] Error removing container [${session.name}]:`, err.message);
-      }
+        await executeProcess(
+          `docker compose -f "${path.basename(sess.composeFile)}" down --volumes --remove-orphans`,
+          { cwd: sess.composeDir }
+        );
+        activeComposeSessions.delete(key);
+      } catch {}
     }
   }
 }
 
 /**
- * Cleans up all active container sessions.
+ * Cleans up all active compose sessions.
  */
 export async function cleanupAllRunContainers(): Promise<void> {
-  for (const [key, session] of activeRunContainers.entries()) {
+  for (const [key, sess] of activeComposeSessions.entries()) {
     try {
-      await session.container.stop({ t: 1 }).catch(() => {});
-      await session.container.remove({ force: true }).catch(() => {});
-      console.info(`[DockerExecutor] Cleaned up container [${session.name}]`);
-    } catch (_) {}
+      if (fs.existsSync(sess.composeFile)) {
+        await executeProcess(
+          `docker compose -f "${path.basename(sess.composeFile)}" down --volumes --remove-orphans`,
+          { cwd: sess.composeDir }
+        );
+      }
+    } catch {}
   }
-  activeRunContainers.clear();
+  activeComposeSessions.clear();
 }

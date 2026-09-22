@@ -182,10 +182,11 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
       column_count: 20,
     },
     split: {
-      strategy: "stratified",
+      strategy: state.parentState?.splitDate ? "temporal" : "stratified",
       train_ratio: 0.7,
       validation_ratio: 0.15,
       test_ratio: 0.15,
+      split_date: state.parentState?.splitDate || null,
       random_seed: 42,
       stratify_by: null,
       group_by: null,
@@ -305,6 +306,15 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     `Direction: ${direction}`,
     `Problem Type Context: ${probType}`,
     "",
+    ...(state.parentState?.splitDate ? [
+      `=== User-Specified Split Date ===`,
+      `User Split Date: ${state.parentState.splitDate}`,
+      `DATA SPLIT REQUIREMENT: If a timestamp/date column exists in the dataset, use temporal split with date <= "${state.parentState.splitDate}" for training, and date > "${state.parentState.splitDate}" for testing. If NO timestamp or date column exists in the dataset, you MUST configure a standard 70/15/15 ratio split (70% train, 15% validation, 15% test, summing strictly to 1.0).`,
+      "",
+    ] : [
+      `DATA SPLIT REQUIREMENT: No split date specified. You MUST configure a standard 70/15/15 ratio split (70% train, 15% validation, 15% test, summing strictly to 1.0).`,
+      "",
+    ]),
     ...(feedbackPrompt ? [`=== 3. Previous Validation Feedback to Rectify ===\n${feedbackPrompt}\n`] : []),
     "=== Action Required ===",
     "1. DECIDE whether you need information from the Dataset Analyser Agent:",
@@ -396,6 +406,11 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
   let finalConfig = (rawConfig && typeof rawConfig === "object" && Object.keys(rawConfig).length > 0)
     ? rawConfig
     : fallbackConfig;
+
+  if (state.parentState?.splitDate) {
+    if (!finalConfig.split) finalConfig.split = {};
+    finalConfig.split.split_date = state.parentState.splitDate;
+  }
 
   // Preserve researched candidate training steps without hardcoded derivations
   if (!finalConfig.model_selection) {

@@ -54,6 +54,22 @@ export const AgentState = Annotation.Root({
     reducer: (left, right) => (typeof right === "string" ? right : left),
     default: () => "",
   }),
+  splitDate: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  splitStartDate: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  splitEndDate: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  selectedModels: Annotation<string[]>({
+    reducer: (left, right) => (Array.isArray(right) ? right : left),
+    default: () => [],
+  }),
   inspection: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   schemaResolution: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   dataProfile: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),

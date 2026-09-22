@@ -4,6 +4,7 @@ import React from "react";
 import ModelSelectionStepOutput from "./ModelSelectionStepOutput";
 import TrainingConfigurationStepOutput from "./TrainingConfigurationStepOutput";
 import PreFlightStepOutput from "./PreFlightStepOutput";
+import ModelTrainingStepOutput from "./ModelTrainingStepOutput";
 
 interface ModelTrainingValidationOutputProps {
   modelSelection?: any;
@@ -15,6 +16,8 @@ interface ModelTrainingValidationOutputProps {
   activeSubstep?: string;
   activeRunTimestamp?: string;
   onSelectionConfirmed?: (selectedModels: string[]) => void;
+  onApproveTraining?: (selectedModels: string[], splitStartDate?: string, splitEndDate?: string) => void;
+  isApproving?: boolean;
 }
 
 export default function ModelTrainingValidationStepOutput({
@@ -27,6 +30,8 @@ export default function ModelTrainingValidationStepOutput({
   activeSubstep,
   activeRunTimestamp,
   onSelectionConfirmed,
+  onApproveTraining,
+  isApproving,
 }: ModelTrainingValidationOutputProps) {
   // 1. Model Selection (UI is actively worked on)
   if (activeSubstep === "Model Selection" || (modelSelection && !trainingConfiguration && !preFlight && !modelTraining && !modelValidation)) {
@@ -92,39 +97,18 @@ export default function ModelTrainingValidationStepOutput({
     );
   }
 
-
   // 4. Model Training or Model Validation
   if (activeSubstep === "Model Training" || activeSubstep === "Model Validation" || modelTraining || modelValidation) {
-    const isValidationSubstep = activeSubstep === "Model Validation";
-    const title = isValidationSubstep
-      ? "Model Validation Overview"
-      : activeSubstep === "Model Training"
-      ? "Model Training Overview"
-      : "Model Training & Validation Overview";
-
-    const summary = isValidationSubstep
-      ? modelValidation?.summary || "Model validation completed."
-      : modelTraining?.summary || modelValidation?.summary || "Model training artifacts prepared.";
-
     return (
-      <div className="p-6 space-y-4">
-        <div className="rounded-xl border border-border bg-surface p-5">
-          <h4 className="text-sm font-bold text-foreground">{title}</h4>
-          <p className="text-xs text-muted-foreground mt-1">{summary}</p>
-          {modelValidation?.testMetrics && (
-            <div className="mt-4 pt-3 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {Object.entries(modelValidation.testMetrics).map(([k, v]) => (
-                <div key={k} className="p-2.5 rounded-lg bg-surface-muted border border-border text-center">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground block">{k}</span>
-                  <span className="text-sm font-bold text-foreground">
-                    {typeof v === "number" ? v.toFixed(4) : String(v)}
-                  </span>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
+      <ModelTrainingStepOutput
+        modelTraining={modelTraining || modelValidation}
+        trainingConfiguration={trainingConfiguration}
+        modelSelection={modelSelection}
+        projectId={projectId}
+        activeRunTimestamp={activeRunTimestamp}
+        onApproveTraining={onApproveTraining}
+        isApproving={isApproving}
+      />
     );
   }
 

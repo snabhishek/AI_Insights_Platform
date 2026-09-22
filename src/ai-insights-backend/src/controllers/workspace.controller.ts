@@ -70,7 +70,7 @@ export class WorkspaceController {
 
   createProject = async (req: Request, res: Response): Promise<void> => {
     const workspaceId = req.params.id as string;
-    const { name, role, dataSources, initials, useCase, domain, subDomain } = req.body;
+    const { name, role, dataSources, initials, useCase, domain, subDomain, splitDate } = req.body;
 
     if (!name || !name.trim()) {
       res.status(400).json({ success: false, message: "Project name is required." });
@@ -86,6 +86,7 @@ export class WorkspaceController {
         useCase,
         domain,
         subDomain,
+        splitDate,
       });
 
       if (!result.success) {

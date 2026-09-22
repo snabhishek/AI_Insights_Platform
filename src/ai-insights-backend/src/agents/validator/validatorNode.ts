@@ -14,6 +14,8 @@ const expectedMap: Record<string, string[]> = {
   profiledata: ["status", "tables"],
   trainingConfiguration: ["status", "summary", "configuration"],
   trainingConfigurationNode: ["status", "summary", "configuration"],
+  modelTraining: ["status", "summary", "projectDirectory", "files"],
+  modelTrainingNode: ["status", "summary", "projectDirectory", "files"],
 };
 
 export function looksLikeError(stepName: string, payload: unknown): boolean {
@@ -58,7 +60,7 @@ export function looksLikeError(stepName: string, payload: unknown): boolean {
   }
 }
 
-type CustomValidatorResult = { isValid: boolean; errors?: string[]; reason?: string }
+type CustomValidatorResult = { isValid: boolean; errors?: string[]; reason?: string };
 
 export async function validateWithRetry<T extends Record<string, unknown>>(
   stepName: string,
@@ -67,7 +69,7 @@ export async function validateWithRetry<T extends Record<string, unknown>>(
   services?: IngestionServices,
   maxRetries = 1,
   validatorPrompt?: string,
-  customValidator?: (output: T) => CustomValidatorResult
+  customValidator?: (output: T) => CustomValidatorResult | Promise<CustomValidatorResult>
 ): Promise<T> {
   let attempt = 0;
   let lastFeedback: string | undefined = undefined;
@@ -90,7 +92,7 @@ Do not return any other text.`;
 
       // 1. If custom deterministic validator is supplied, check it first
       if (typeof customValidator === "function") {
-        const check = customValidator(result);
+        const check = await Promise.resolve(customValidator(result));
         if (check.isValid) {
           return result; // Shows green immediately
         }

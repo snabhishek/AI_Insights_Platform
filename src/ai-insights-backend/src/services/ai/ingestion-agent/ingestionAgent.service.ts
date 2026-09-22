@@ -200,7 +200,16 @@ export class IngestionAgentService implements IIngestionAgentService {
   async *run(
     connectorId: string[],
     userPrompt?: string,
-    options?: { sessionId?: string; action?: "approve" | "retry" | "resume"; step?: string; projectId?: string }
+    options?: {
+      sessionId?: string;
+      action?: "approve" | "retry" | "resume";
+      step?: string;
+      projectId?: string;
+      splitDate?: string;
+      splitStartDate?: string;
+      splitEndDate?: string;
+      selectedModels?: string[];
+    }
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
     const traceSession = await this.traceHelper.createTraceSession();
     const runStartedAt = new Date().toISOString();
@@ -590,6 +599,10 @@ export class IngestionAgentService implements IIngestionAgentService {
             ? "Advancing workflow to Training Configuration stage"
             : (isApprovingModel ? "Advancing workflow to Model Training & Validation stage" : `Advancing workflow to ${options?.step || "Feature Engineering"} stage`),
           message: approveMessage,
+          ...(options?.splitDate ? { splitDate: options.splitDate } : {}),
+          ...(options?.splitStartDate ? { splitStartDate: options.splitStartDate } : {}),
+          ...(options?.splitEndDate ? { splitEndDate: options.splitEndDate } : {}),
+          ...(options?.selectedModels && options.selectedModels.length > 0 ? { selectedModels: options.selectedModels } : {}),
         };
         try {
           await this.projectService.updateAgentState(options.projectId, approvedAgentState);
@@ -838,6 +851,10 @@ export class IngestionAgentService implements IIngestionAgentService {
                 projectId: options.projectId,
                 userPrompt: userPrompt ?? "",
                 runTimestamp: activeRunTimestamp,
+                splitDate: options?.splitDate || options?.splitEndDate || "",
+                splitStartDate: options?.splitStartDate || "",
+                splitEndDate: options?.splitEndDate || options?.splitDate || "",
+                selectedModels: options?.selectedModels || [],
                 batchedTables: [],
                 inspection: {},
                 dataProfile: {},
@@ -1213,6 +1230,20 @@ export class IngestionAgentService implements IIngestionAgentService {
                     if (savedAgentState.userPrompt) {
                       stateUpdates.userPrompt = savedAgentState.userPrompt;
                     }
+                    if (options?.splitDate || savedAgentState.splitDate) {
+                      stateUpdates.splitDate = options?.splitDate || savedAgentState.splitDate;
+                    }
+                    if (options?.splitStartDate || savedAgentState.splitStartDate) {
+                      stateUpdates.splitStartDate = options?.splitStartDate || savedAgentState.splitStartDate;
+                    }
+                    if (options?.splitEndDate || savedAgentState.splitEndDate) {
+                      stateUpdates.splitEndDate = options?.splitEndDate || savedAgentState.splitEndDate;
+                    }
+                    if (options?.selectedModels && options.selectedModels.length > 0) {
+                      stateUpdates.selectedModels = options.selectedModels;
+                    } else if (savedAgentState.selectedModels && savedAgentState.selectedModels.length > 0) {
+                      stateUpdates.selectedModels = savedAgentState.selectedModels;
+                    }
                     if (Object.keys(stateUpdates).length > 0) {
                       console.info(`[Workflow] Syncing project DB state into graph checkpointer for thread ${threadId}: ${Object.keys(stateUpdates).join(", ")}`);
                       await workflow.updateState(config, stateUpdates);
@@ -1232,6 +1263,10 @@ export class IngestionAgentService implements IIngestionAgentService {
                       requiresApproval: false,
                       nextStep: undefined,
                       summary: `Advancing to ${options.step || "Feature Engineering"}`,
+                      splitDate: options?.splitDate || savedAgentState.splitDate || "",
+                      splitStartDate: options?.splitStartDate || savedAgentState.splitStartDate || "",
+                      splitEndDate: options?.splitEndDate || savedAgentState.splitEndDate || "",
+                      selectedModels: options?.selectedModels || savedAgentState.selectedModels || [],
                     };
 
                     await workflow.updateState(config, restoredState, predecessorNode);
@@ -1356,6 +1391,10 @@ export class IngestionAgentService implements IIngestionAgentService {
                       runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
                       status: "running",
                       summary: `Resuming from ${targetStep} phase`,
+                      splitDate: options?.splitDate || savedAgentState.splitDate || "",
+                      splitStartDate: options?.splitStartDate || savedAgentState.splitStartDate || "",
+                      splitEndDate: options?.splitEndDate || savedAgentState.splitEndDate || "",
+                      selectedModels: options?.selectedModels || savedAgentState.selectedModels || [],
                     };
 
                     if (predecessorNode !== "__start__") {
@@ -1464,6 +1503,10 @@ export class IngestionAgentService implements IIngestionAgentService {
                 projectId: options?.projectId ?? "",
                 userPrompt: userPrompt ?? "",
                 runTimestamp: activeRunTimestamp,
+                splitDate: options?.splitDate || options?.splitEndDate || "",
+                splitStartDate: options?.splitStartDate || "",
+                splitEndDate: options?.splitEndDate || options?.splitDate || "",
+                selectedModels: options?.selectedModels || [],
                 status: "queued",
                 summary: "Ingestion workflow started",
                 inspection: {},
@@ -1596,7 +1639,9 @@ export class IngestionAgentService implements IIngestionAgentService {
               ? "Model Training & Validation"
               : (nextNode === "trainingConfigurationNode" || nextNode === "trainingConfiguration")
                 ? "Training Configuration"
-                : undefined;
+                : (nextNode === "modelTrainingNode" || nextNode === "modelTraining")
+                  ? "Model Training"
+                  : undefined;
           const isAtApprovalGate = Boolean(approvalTarget);
 
           if (isAtApprovalGate) {
@@ -1605,7 +1650,9 @@ export class IngestionAgentService implements IIngestionAgentService {
               ? "Data Ingestion"
               : approvalTarget === "Training Configuration"
                 ? "Model Selection"
-                : "Feature Engineering";
+                : approvalTarget === "Model Training"
+                  ? "Pre Flight"
+                  : "Feature Engineering";
             const pausedStatuses = { ...(latestGraphStateValues.stageStatuses || {}) };
             if (approvalTarget === "Feature Engineering") {
               pausedStatuses.hierarchyMapper = "Pending";
@@ -1613,10 +1660,14 @@ export class IngestionAgentService implements IIngestionAgentService {
               pausedStatuses.modelSelection = "Pending";
             } else if (approvalTarget === "Training Configuration") {
               pausedStatuses.trainingConfiguration = "Pending";
+            } else if (approvalTarget === "Model Training") {
+              pausedStatuses.modelTraining = "Pending";
             }
             const approvalSummary = approvalTarget === "Training Configuration"
               ? "Model Selection completed successfully. Please select candidate models and confirm for Training Configuration."
-              : `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`;
+              : approvalTarget === "Model Training"
+                ? "Pre Flight assessment completed successfully. Approve to proceed to Model Training."
+                : `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`;
             const pausedValues = {
               ...latestGraphStateValues,
               runTimestamp: latestGraphStateValues.runTimestamp || activeRunTimestamp,

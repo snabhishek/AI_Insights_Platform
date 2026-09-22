@@ -21,7 +21,7 @@ interface CardModalProps {
   approvalNextStep?: string | null;
   isApproving?: boolean;
   isAwaitingResponse?: boolean;
-  onApprove?: (overrideTargetPhase?: string) => void;
+  onApprove?: (overrideTargetPhase?: string, selectedModels?: string[]) => void;
 }
 
 // Map color strings to active Tailwind text/border/bg classes for step circles

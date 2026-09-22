@@ -30,7 +30,16 @@ export interface IIngestionAgentService {
   run(
     connectorId: string[],
     userPrompt?: string,
-    options?: { sessionId?: string; action?: "approve" | "retry" | "resume"; step?: string; projectId?: string }
+    options?: {
+      sessionId?: string;
+      action?: "approve" | "retry" | "resume";
+      step?: string;
+      projectId?: string;
+      splitDate?: string;
+      splitStartDate?: string;
+      splitEndDate?: string;
+      selectedModels?: string[];
+    }
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown>;
   stop(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
   pause(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;

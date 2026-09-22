@@ -42,7 +42,7 @@ interface ProjectDetailPageProps {
   requiresApproval: boolean;
   workflowMessage: string;
   onSelectStage: (stepId: string) => void;
-  onApprove: (overrideTargetPhase?: string) => void;
+  onApprove: (overrideTargetPhase?: string, selectedModels?: string[], splitStartDate?: string, splitEndDate?: string) => void;
   onRetry: (stepId: string) => void;
   isPaused?: boolean;
   pausedAtPhase?: string | null;
@@ -482,12 +482,20 @@ export default function ProjectDetailPage({
               activeRunTimestamp={effectiveRunTimestamp}
             />
           ) : null,
-          "Model Training": effectiveModelTraining ? (
+          "Model Training": (effectiveModelTraining || effectiveModelSelection) ? (
             <ModelTrainingValidationStepOutput
               modelTraining={effectiveModelTraining}
+              trainingConfiguration={effectiveTrainingConfig}
+              modelSelection={effectiveModelSelection}
               projectId={project.id}
               activeSubstep="Model Training"
               activeRunTimestamp={effectiveRunTimestamp}
+              onApproveTraining={(selectedModels, splitStartDate, splitEndDate) => {
+                if (onApprove) {
+                  onApprove("Model Training", selectedModels, splitStartDate, splitEndDate);
+                }
+              }}
+              isApproving={isApproving}
             />
           ) : null,
           "Model Validation": effectiveModelValidation ? (
@@ -534,6 +542,12 @@ export default function ProjectDetailPage({
                   onApprove("Training Configuration");
                 }
               }}
+              onApproveTraining={(selectedModels, splitStartDate, splitEndDate) => {
+                if (onApprove) {
+                  onApprove("Model Training", selectedModels, splitStartDate, splitEndDate);
+                }
+              }}
+              isApproving={isApproving}
             />
           ) : null
         };

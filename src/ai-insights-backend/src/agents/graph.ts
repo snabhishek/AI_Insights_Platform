@@ -40,6 +40,7 @@ export function createAgentGraph(checkpointer: any) {
       "hierarchyMapperNode",
       "modelSelectionNode",
       "trainingConfigurationNode",
+      "modelTrainingNode",
     ],
   });
 }

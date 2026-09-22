@@ -2058,39 +2058,39 @@ const connectorService = new ConnectorService(connectorRepository, fileService, 
 const projectService = new ProjectService(projectRepository, duckDBService);
 
 const services: IngestionServices = {
-  connectorService,
-  connectionTester,
-  fileService,
-  projectService,
-  duckDBService,
-  traceHelper: new AgentTraceHelper(),
-  projectId,
+    connectorService,
+    connectionTester,
+    fileService,
+    projectService,
+    duckDBService,
+    traceHelper: new AgentTraceHelper(),
+    projectId,
 };
 
 async function main(): Promise<void> {
-  try {
-    const result = await executePythonScript(
-      scriptName,
-      pythonCode,
-      projectId,
-      runTimestamp,
-      services,
-      connectorIdList
-    );
+    try {
+        const result = await executePythonScript(
+            scriptName,
+            pythonCode,
+            projectId,
+            runTimestamp,
+            services,
+            connectorIdList
+        );
 
-    console.log(`Execution success: ${result.success}`);
-    console.log("Stdout:\n", result.stdout);
-    console.error("Stderr:\n", result.stderr);
+        console.log(`Execution success: ${result.success}`);
+        console.log("Stdout:\n", result.stdout);
+        console.error("Stderr:\n", result.stderr);
 
-    if (!result.success) {
-      process.exitCode = 1;
+        if (!result.success) {
+            process.exitCode = 1;
+        }
+    } finally {
+        await cleanupRunContainer(projectId, runTimestamp);
     }
-  } finally {
-    await cleanupRunContainer(projectId, runTimestamp);
-  }
 }
 
 main().catch((error: unknown) => {
-  console.error("Python executor failed:", error);
-  process.exitCode = 1;
+    console.error("Python executor failed:", error);
+    process.exitCode = 1;
 });

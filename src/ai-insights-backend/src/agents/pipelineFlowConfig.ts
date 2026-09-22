@@ -110,6 +110,49 @@ export function resolveSafePredecessorNode(
     step === "Model Training" ||
     step === "modelTrainingNode";
 
+  const hasTrainingConfig = Boolean(
+    stageOutputs.trainingConfiguration?.configuration ||
+    savedState?.trainingConfiguration?.configuration ||
+    stageStatuses.trainingConfiguration === "Completed"
+  );
+
+  const hasPreFlight = Boolean(
+    stageOutputs.preFlight?.decision ||
+    savedState?.preFlight?.decision ||
+    stageStatuses.preFlight === "Completed"
+  );
+
+  const isModelTrainingRequested =
+    step === "Model Training" ||
+    step === "modelTrainingNode";
+
+  const isPreFlightRequested =
+    step === "Pre Flight" ||
+    step === "preFlightNode";
+
+  if (isModelTrainingRequested) {
+    if (hasPreFlight) {
+      return "preFlightNode";
+    }
+    if (hasTrainingConfig) {
+      return "trainingConfigurationNode";
+    }
+    if (hasModelSelection) {
+      return "modelSelectionNode";
+    }
+    return "resolveSchema";
+  }
+
+  if (isPreFlightRequested) {
+    if (hasTrainingConfig) {
+      return "trainingConfigurationNode";
+    }
+    if (hasModelSelection) {
+      return "modelSelectionNode";
+    }
+    return "resolveSchema";
+  }
+
   if (isTrainingConfigRequested) {
     // Training Configuration requires Model Selection to have produced candidates
     // AND Feature Engineering to have produced features.
@@ -121,16 +164,6 @@ export function resolveSafePredecessorNode(
       return "exogenous";
     }
     console.warn("[pipelineFlowConfig] Training Configuration requested but Feature Engineering incomplete. Safe fallback to 'resolveSchema'.");
-    return "resolveSchema";
-  }
-
-  if (isPreFlightOrTrainingRequested) {
-    if (hasModelSelection && hasFeatureEngineering) {
-      return "modelSelectionNode";
-    }
-    if (hasFeatureEngineering) {
-      return "exogenous";
-    }
     return "resolveSchema";
   }
 
