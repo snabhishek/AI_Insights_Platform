@@ -126,6 +126,13 @@ export class PythonCapabilityAdapter {
         reasons: ["Fallback execution path active"],
         warnings: ["Python capability service unavailable"],
         requires_validation: true,
+        gpu_available: fallbackSystem.gpus.length > 0,
+        selected_resource: "cpu",
+        direct_execution_feasible: true,
+        optimization_feasible: false,
+        selected_strategy: "direct_cpu",
+        decision_reason: "Fallback direct CPU execution path active (Python service offline).",
+        constraints_or_missing_requirements: ["Python capability service unavailable"],
       },
       error: "Python microservice and CLI are unreachable",
     };
@@ -150,6 +157,31 @@ export class PythonCapabilityAdapter {
   private buildNodeFallbackSystem(): SystemHardwareSnapshot {
     const totalRam = Math.round((os.totalmem() / 1024 ** 3) * 100) / 100;
     const freeRam = Math.round((os.freemem() / 1024 ** 3) * 100) / 100;
+    const gpus: any[] = [];
+    const warnings: string[] = ["Native Node.js system snapshot used (Python service was unreachable)"];
+
+    try {
+      const { execSync } = require("child_process");
+      const out = execSync("nvidia-smi --query-gpu=index,name,memory.total,memory.free --format=csv,noheader,nounits", {
+        encoding: "utf-8",
+        timeout: 2500,
+        stdio: ["ignore", "pipe", "ignore"],
+      });
+      if (out && typeof out === "string") {
+        for (const line of out.trim().split("\n")) {
+          const parts = line.split(",").map((p: string) => p.trim());
+          if (parts.length >= 4) {
+            gpus.push({
+              index: parseInt(parts[0], 10) || 0,
+              name: parts[1],
+              total_vram_gb: Math.round((parseFloat(parts[2]) / 1024) * 100) / 100,
+              free_vram_gb: Math.round((parseFloat(parts[3]) / 1024) * 100) / 100,
+            });
+          }
+        }
+      }
+    } catch {}
+
     return {
       os_name: os.type(),
       architecture: os.arch(),
@@ -158,8 +190,8 @@ export class PythonCapabilityAdapter {
       ram_total_gb: totalRam,
       ram_available_gb: freeRam,
       disk_free_gb: 50.0,
-      gpus: [],
-      warnings: ["Native Node.js system snapshot used (Python service was unreachable)"],
+      gpus,
+      warnings,
     };
   }
 }

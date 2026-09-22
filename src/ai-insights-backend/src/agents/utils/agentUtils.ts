@@ -908,6 +908,53 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
   const isRunningOrDone = (v?: string) => v === "Completed" || v === "In Progress" || v === "Running";
+  const isRunning = (v?: string) => v === "In Progress" || v === "Running";
+
+  // If a node is actively running, prioritize that node
+  for (const node of [
+    "modelValidationNode",
+    "modelValidation",
+    "modelTrainingNode",
+    "modelTraining",
+    "preFlightNode",
+    "preFlight",
+    "trainingConfigurationNode",
+    "trainingConfiguration",
+    "modelSelectionNode",
+    "modelSelection",
+  ]) {
+    if (isRunning(stageStatuses[node])) return node;
+  }
+
+  // If paused before training configuration, current completed stage is model selection
+  if (
+    (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration")) &&
+    (stageStatuses.modelSelection === "Completed" || stageStatuses.modelSelectionNode === "Completed") &&
+    stageStatuses.trainingConfiguration !== "Completed" &&
+    stageStatuses.trainingConfiguration !== "In Progress"
+  ) {
+    return "modelSelectionNode";
+  }
+
+  // If paused before model selection, current completed stage is exogenousScout
+  if (
+    (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) &&
+    (stageStatuses.exogenousScout === "Completed" || stageStatuses.exogenous === "Completed") &&
+    stageStatuses.modelSelection !== "Completed" &&
+    stageStatuses.modelSelection !== "In Progress"
+  ) {
+    return "exogenousScout";
+  }
+
+  // If paused before hierarchy mapper, current completed stage is resolveSchema
+  if (
+    nextNodes.includes("hierarchyMapperNode") &&
+    stageStatuses.resolveSchema === "Completed" &&
+    stageStatuses.hierarchyMapper !== "Completed" &&
+    stageStatuses.hierarchyMapper !== "In Progress"
+  ) {
+    return "resolveSchema";
+  }
 
   for (const node of [
     "finalModelSelectionNode",
@@ -917,6 +964,8 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     "modelEvaluation",
     "modelTrainingNode",
     "modelTraining",
+    "preFlightNode",
+    "preFlight",
     "trainingConfigurationNode",
     "trainingConfiguration",
     "modelSelectionNode",

@@ -96,6 +96,7 @@ export default function ProjectDetailPage({
   const [editedUseCaseText, setEditedUseCaseText] = React.useState(project.useCase || "");
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState<boolean>(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
+  const [selectedSubstepId, setSelectedSubstepId] = useState<string | null>(null);
 
   React.useEffect(() => {
     setEditedUseCaseText(project.useCase || "");
@@ -107,6 +108,13 @@ export default function ProjectDetailPage({
     const match = PIPELINE_STEPS.find((item) => item.id === mainId);
     if (match) {
       setSelectedWorkflow(match);
+      if (stepId !== mainId) {
+        setSelectedSubstepId(stepId);
+      } else if (mainId === "Model Training & Validation") {
+        setSelectedSubstepId("Model Selection");
+      } else {
+        setSelectedSubstepId(null);
+      }
       setIsExecutionModalOpen(true);
     }
   };
@@ -535,6 +543,7 @@ export default function ProjectDetailPage({
             isOpen={isExecutionModalOpen}
             onClose={() => setIsExecutionModalOpen(false)}
             workflowCard={selectedWorkflow}
+            selectedSubstepId={selectedSubstepId}
             pipelineStatuses={pipelineStatuses}
             stepOutputs={stepOutputs}
             runStatus={runStatus}

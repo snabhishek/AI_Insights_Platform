@@ -51,6 +51,27 @@ export interface ResourceEstimations {
   warnings: string[];
 }
 
+export type ExecutionStrategy =
+  | "direct_gpu"
+  | "direct_cpu"
+  | "optimized_gpu"
+  | "optimized_cpu"
+  | "infeasible";
+
+export interface HardwareEvaluationResult {
+  resource: "gpu" | "cpu";
+  available: boolean;
+  supported: boolean;
+  memory_total_gb: number;
+  memory_available_gb: number;
+  memory_required_gb: number | null;
+  memory_sufficient: boolean;
+  runtime_compatible: boolean;
+  compute_compatible: boolean;
+  details: string;
+  constraints: string[];
+}
+
 export interface OptimizationRecommendation {
   id: string;
   name: string;
@@ -75,4 +96,14 @@ export interface PreFlightReport {
   recommendations: OptimizationRecommendation[];
   pythonServiceStatus: "online" | "fallback_cli" | "unavailable";
   rawPipelineResult?: any;
+  // Structured Decision Tree Fields
+  gpu_available?: boolean;
+  gpu_evaluation?: HardwareEvaluationResult | null;
+  cpu_evaluation?: HardwareEvaluationResult | null;
+  selected_resource?: "gpu" | "cpu" | "none";
+  direct_execution_feasible?: boolean;
+  optimization_feasible?: boolean;
+  selected_strategy?: ExecutionStrategy;
+  decision_reason?: string;
+  constraints_or_missing_requirements?: string[];
 }

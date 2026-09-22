@@ -51,17 +51,43 @@ class SystemProfiler:
             disk = 0.0
             warnings.append('Unable to read free disk space')
         gpus = []
+        torch_cuda_ready = False
         try:
             import torch
             if torch.cuda.is_available():
+                torch_cuda_ready = True
                 for i in range(torch.cuda.device_count()):
                     p = torch.cuda.get_device_properties(i)
                     free, _ = torch.cuda.mem_get_info(i)
                     gpus.append(
-                        GPUInfo(i, p.name, p.total_memory / 1024**3,
-                                free / 1024**3))
+                        GPUInfo(i, p.name, round(p.total_memory / 1024**3, 2),
+                                round(free / 1024**3, 2)))
         except Exception as exc:
-            warnings.append(f'GPU probe unavailable: {exc}')
+            pass
+
+        if not gpus:
+            # Fallback to nvidia-smi for host GPU detection
+            try:
+                import subprocess
+                res = subprocess.run(
+                    ['nvidia-smi', '--query-gpu=index,name,memory.total,memory.free',
+                     '--format=csv,noheader,nounits'],
+                    capture_output=True, text=True, timeout=4, check=False)
+                if res.returncode == 0 and res.stdout.strip():
+                    for line in res.stdout.strip().splitlines():
+                        parts = [p.strip() for p in line.split(',') if p.strip()]
+                        if len(parts) >= 4:
+                            idx = int(parts[0])
+                            name = parts[1]
+                            tot = round(float(parts[2]) / 1024, 2)
+                            free = round(float(parts[3]) / 1024, 2)
+                            gpus.append(GPUInfo(idx, name, tot, free))
+                    if gpus and not torch_cuda_ready:
+                        warnings.append('GPU hardware detected via nvidia-smi, but PyTorch CUDA runtime is not available in Python environment')
+            except Exception as exc:
+                warnings.append(f'GPU probe unavailable: {exc}')
+        elif not torch_cuda_ready:
+            warnings.append('PyTorch CUDA runtime not available')
         return SystemSnapshot(platform.system(), platform.machine(), physical,
                               logical, round(total, 2), round(available, 2),
                               round(disk, 2), tuple(gpus), tuple(warnings))

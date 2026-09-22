@@ -256,8 +256,17 @@ export default function ProjectsPage() {
   };
 
   const determineActiveStage = (payload: Partial<WorkflowResponse["data"]>): string => {
+    const stageOutputs = payload.stageOutputs as Record<string, any> | undefined;
+    const stageStatuses = payload.stageStatuses as Record<string, any> | undefined;
+    const hasModelSelection = Boolean(stageOutputs?.modelSelection || stageStatuses?.modelSelection === "Completed");
+    const hasTrainingConfig = Boolean(stageOutputs?.trainingConfiguration || stageStatuses?.trainingConfiguration === "Completed");
+
+    if (hasModelSelection && !hasTrainingConfig) {
+      return "Model Selection";
+    }
+
     if (payload.status === "completed") {
-      if (payload.stageOutputs?.modelSelection || payload.stageStatuses?.modelSelection === "Completed") {
+      if (hasModelSelection) {
         return "Model Selection";
       }
       if (
@@ -271,8 +280,7 @@ export default function ProjectsPage() {
     }
     if (payload.requiresApproval) {
       if (
-        payload.stageOutputs?.modelSelection ||
-        payload.stageStatuses?.modelSelection === "Completed" ||
+        hasModelSelection ||
         payload.nextStep?.toLowerCase().includes("model") ||
         payload.nextStep?.toLowerCase().includes("training")
       ) {
@@ -301,7 +309,9 @@ export default function ProjectsPage() {
       if (node === "featureValidator" || node === "featureValidatorNode") return "Feature Validator";
       if (node === "exogenous" || node === "exogenousScout") return "Exogenous Scout";
       if (node === "modelSelection" || node === "modelSelectionNode") return "Model Selection";
-      if (node === "trainingConfiguration" || node === "trainingConfigurationNode") return "Training Configuration";
+      if (node === "trainingConfiguration" || node === "trainingConfigurationNode") {
+        return hasModelSelection && !hasTrainingConfig ? "Model Selection" : "Training Configuration";
+      }
       if (node === "preFlight" || node === "preFlightNode") return "Pre Flight";
       if (node === "modelTraining" || node === "modelTrainingNode") return "Model Training";
       if (node === "modelValidation" || node === "modelValidationNode") return "Model Validation";
@@ -398,10 +408,10 @@ export default function ProjectsPage() {
 
       if (isWaitingForModelConfirmation) {
         setIsAwaitingResponse(true);
-        setRunStatus("Running");
+        setRunStatus("Paused");
         setIsPaused(false);
-        setRequiresApproval(false);
-        setApprovalNextStep(null);
+        setRequiresApproval(true);
+        setApprovalNextStep("Training Configuration");
       } else {
 
         setIsAwaitingResponse(false);
@@ -630,10 +640,10 @@ export default function ProjectsPage() {
 
           if (isWaitingForModel) {
             setIsAwaitingResponse(true);
-            setRunStatus("Running");
+            setRunStatus("Paused");
             setIsPaused(false);
-            setRequiresApproval(false);
-            setApprovalNextStep(null);
+            setRequiresApproval(true);
+            setApprovalNextStep("Training Configuration");
           } else if (freshState.requiresApproval && !isAtOrPastModel) {
             setIsAwaitingResponse(false);
             setRunStatus("Paused");
@@ -681,10 +691,10 @@ export default function ProjectsPage() {
 
     if (isWaitingForModelConfirmation) {
       setIsAwaitingResponse(true);
-      setRunStatus("Running");
+      setRunStatus("Paused");
       setIsPaused(false);
-      setRequiresApproval(false);
-      setApprovalNextStep(null);
+      setRequiresApproval(true);
+      setApprovalNextStep("Training Configuration");
     } else {
       setIsAwaitingResponse(false);
 
@@ -1127,14 +1137,26 @@ export default function ProjectsPage() {
 
     // Step 5: Update backend with pause status
     if (currentProjectId) {
+      const existingAgentState = (selectedProject?.agentState as Record<string, any>) || {};
+      const isAwaitingApproval = requiresApproval || isAwaitingResponse || approvalNextStep != null;
       void updateProject(currentProjectId, {
         status: "paused",
         agentState: {
+          ...existingAgentState,
+          stageOutputs: {
+            ...(existingAgentState.stageOutputs || {}),
+            ...stageOutputs,
+          },
           status: "paused",
-          summary: `Workflow paused at ${activeStage || "inspect"} phase`,
-          message: `Paused mid-phase. Ready to resume from ${activeStage || "current"} phase.`,
+          summary: isAwaitingApproval
+            ? (existingAgentState.summary || `Workflow waiting for approval at ${approvalNextStep || activeStage || "current"} phase`)
+            : `Workflow paused at ${activeStage || "inspect"} phase`,
+          message: isAwaitingApproval
+            ? (existingAgentState.message || `Waiting for approval before ${approvalNextStep || activeStage || "current"} phase.`)
+            : `Paused mid-phase. Ready to resume from ${activeStage || "current"} phase.`,
           sessionId: currentSession || undefined,
-          requiresApproval: false,
+          requiresApproval: isAwaitingApproval,
+          nextStep: approvalNextStep || existingAgentState.nextStep,
         },
       });
     }

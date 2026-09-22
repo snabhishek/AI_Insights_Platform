@@ -1345,6 +1345,67 @@ export class IngestionAgentService implements IIngestionAgentService {
               }
             }
 
+            // If the graph is currently halted at an approval gate (e.g. trainingConfigurationNode, hierarchyMapperNode, modelSelectionNode)
+            // and the user sent generic "resume" (not "approve"):
+            // We MUST NOT stream into the node (which advances execution past the approval gate).
+            // Instead, we maintain the paused/approval state and notify the client!
+            const nextNode = Array.isArray(graphState?.next) ? graphState.next[0] : undefined;
+            const approvalTarget = nextNode === "hierarchyMapperNode"
+              ? "Feature Engineering"
+              : (nextNode === "modelSelectionNode" || nextNode === "modelSelection")
+                ? "Model Training & Validation"
+                : (nextNode === "trainingConfigurationNode" || nextNode === "trainingConfiguration")
+                  ? "Training Configuration"
+                  : undefined;
+
+            if (approvalTarget && hasState) {
+              console.info(`[Workflow] Thread ${threadId} is at approval gate before ${approvalTarget}. Maintaining paused state awaiting user confirmation/approval.`);
+              const completedPhase = approvalTarget === "Feature Engineering"
+                ? "Data Ingestion"
+                : approvalTarget === "Training Configuration"
+                  ? "Model Selection"
+                  : "Feature Engineering";
+              const pausedStatuses = { ...(latestGraphStateValues.stageStatuses || savedAgentState?.stageStatuses || {}) };
+              if (approvalTarget === "Feature Engineering") {
+                pausedStatuses.hierarchyMapper = "Pending";
+              } else if (approvalTarget === "Model Training & Validation") {
+                pausedStatuses.modelSelection = "Pending";
+              } else if (approvalTarget === "Training Configuration") {
+                pausedStatuses.trainingConfiguration = "Pending";
+                if (pausedStatuses.modelSelection !== "Completed") {
+                  pausedStatuses.modelSelection = "Completed";
+                }
+              }
+              const approvalSummary = approvalTarget === "Training Configuration"
+                ? "Model Selection completed successfully. Please select candidate models and confirm for Training Configuration."
+                : `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`;
+
+              const pausedValues = {
+                ...(savedAgentState || {}),
+                ...(graphState?.values || {}),
+                ...latestGraphStateValues,
+                runTimestamp: latestGraphStateValues.runTimestamp || activeRunTimestamp,
+                stageStatuses: pausedStatuses,
+                status: "paused",
+                requiresApproval: true,
+                nextStep: approvalTarget,
+                summary: approvalSummary,
+                message: approvalSummary,
+              };
+              latestGraphStateValues = pausedValues;
+              const pausedResult = buildResultFromGraphState({ values: pausedValues, next: graphState?.next }, threadId, connectorId);
+              pausedResult.status = "paused";
+              pausedResult.requiresApproval = true;
+              pausedResult.nextStep = approvalTarget;
+              pausedResult.stageStatuses = pausedStatuses;
+              if (options?.projectId) {
+                await this.projectService.updateAgentState(options.projectId, pausedValues);
+                pausedResult.agentThinking = await this.getAllProjectPipelineThinking(options.projectId, pipeline);
+              }
+              agentJobEvents.emit(`job:update:${threadId}`, pausedResult);
+              return;
+            }
+
             if (predecessorNode === "__start__" || !hasState) {
               console.info(`[Workflow] Resuming thread ${threadId} from start at phase ${targetStep}`);
               stream = await workflow.stream(
@@ -2074,20 +2135,51 @@ export class IngestionAgentService implements IIngestionAgentService {
         };
         const graphState = await workflow.getState(config).catch(() => null);
         const meta = this.sessionMeta.get(resolvedSessionId);
+        let existingState: any = {};
+        if (targetProjectId) {
+          try {
+            const proj = await this.projectService.getById(targetProjectId);
+            existingState = (proj?.agentState as any) || {};
+          } catch (_) {}
+        }
+
+        const nextNodes = Array.isArray(graphState?.next) ? graphState.next : [];
+        const isWaitingForApproval = nextNodes.includes("trainingConfigurationNode") ||
+          nextNodes.includes("hierarchyMapperNode") ||
+          nextNodes.includes("modelSelectionNode") ||
+          Boolean(existingState.requiresApproval);
+
+        const approvalTarget = nextNodes.includes("hierarchyMapperNode")
+          ? "Feature Engineering"
+          : (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection"))
+            ? "Model Training & Validation"
+            : (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration"))
+              ? "Training Configuration"
+              : (existingState.nextStep || undefined);
+
+        const summaryText = isWaitingForApproval && approvalTarget === "Training Configuration"
+          ? "Model Selection completed successfully. Please select candidate models and confirm for Training Configuration."
+          : (isWaitingForApproval && approvalTarget
+            ? `${approvalTarget} requires approval before proceeding.`
+            : "Workflow paused by user");
 
         const pausedValues = {
+          ...existingState,
           ...(graphState?.values || {}),
           status: "paused",
-          summary: "Workflow paused by user",
-          message: "Workflow paused by user.",
+          summary: summaryText,
+          message: summaryText,
           sessionId: resolvedSessionId,
+          requiresApproval: isWaitingForApproval,
+          nextStep: isWaitingForApproval ? approvalTarget : undefined,
         };
 
         const result = buildResultFromGraphState({ ...graphState, values: pausedValues }, resolvedSessionId, graphState?.values?.connectorId || meta?.connectorId || []);
         result.status = "paused";
-        result.summary = "Workflow paused by user";
-        result.message = "Workflow paused by user.";
-        result.requiresApproval = false;
+        result.summary = summaryText;
+        result.message = summaryText;
+        result.requiresApproval = isWaitingForApproval;
+        result.nextStep = isWaitingForApproval ? approvalTarget : undefined;
 
         if (targetProjectId) {
           await this.projectService.updateAgentState(targetProjectId, pausedValues);
@@ -2096,10 +2188,25 @@ export class IngestionAgentService implements IIngestionAgentService {
         agentJobEvents.emit(`job:update:${resolvedSessionId}`, result);
         return result;
       } else if (targetProjectId) {
+        let existingState: any = {};
+        try {
+          const proj = await this.projectService.getById(targetProjectId);
+          existingState = (proj?.agentState as any) || {};
+        } catch (_) {}
+
         await this.projectService.updateAgentState(targetProjectId, {
+          ...existingState,
           status: "paused",
-          summary: "Workflow paused by user",
-          message: "Workflow paused by user.",
+          summary: existingState.requiresApproval && existingState.nextStep === "Training Configuration"
+            ? "Model Selection completed successfully. Please select candidate models and confirm for Training Configuration."
+            : (existingState.requiresApproval && existingState.nextStep
+              ? `${existingState.nextStep} requires approval before proceeding.`
+              : "Workflow paused by user"),
+          message: existingState.requiresApproval && existingState.nextStep === "Training Configuration"
+            ? "Model Selection completed successfully. Please select candidate models and confirm for Training Configuration."
+            : (existingState.requiresApproval && existingState.nextStep
+              ? `${existingState.nextStep} requires approval before proceeding.`
+              : "Workflow paused by user."),
         });
         console.info(`[Workflow] Project ${targetProjectId} agent state updated to paused.`);
       }
@@ -2108,7 +2215,10 @@ export class IngestionAgentService implements IIngestionAgentService {
       console.warn(`[Workflow] Failed to update paused state for session ${resolvedSessionId || "unknown"}:`, err?.message || err);
       if (targetProjectId) {
         try {
+          const proj = await this.projectService.getById(targetProjectId);
+          const existingState = (proj?.agentState as any) || {};
           await this.projectService.updateAgentState(targetProjectId, {
+            ...existingState,
             status: "paused",
             summary: "Workflow paused by user",
           });

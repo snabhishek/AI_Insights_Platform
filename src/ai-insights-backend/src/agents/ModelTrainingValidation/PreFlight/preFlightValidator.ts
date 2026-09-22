@@ -10,8 +10,10 @@ export class PreFlightValidator {
   validateConfiguration(config: any): PreFlightCheck[] {
     const checks: PreFlightCheck[] = [];
 
+    const rawCfg = config?.configuration || config || {};
+
     // 1. Data Splits Validation
-    const splits = config.splits || config.data_splits || config.data_split || {};
+    const splits = rawCfg.splits || rawCfg.data_splits || rawCfg.data_split || rawCfg.split || config.splits || config.data_splits || {};
     const trainRatio = Number(splits.train ?? splits.train_ratio ?? 0.7);
     const valRatio = Number(splits.validation ?? splits.val_ratio ?? splits.val ?? 0.15);
     const testRatio = Number(splits.test ?? splits.test_ratio ?? 0.15);
@@ -67,8 +69,26 @@ export class PreFlightValidator {
     }
 
     // 2. Metric Compatibility with Task Type
-    const taskType = (config.task_type || config.problem_type || config.task || "classification").toLowerCase();
-    const primaryMetric = (config.primary_metric || config.metric || config.evaluation_metric || "accuracy").toLowerCase();
+    const taskType = (
+      rawCfg.task_type ||
+      rawCfg.task?.task_type ||
+      rawCfg.problem_type ||
+      rawCfg.task ||
+      config.task_type ||
+      config.problem_type ||
+      config.task ||
+      "classification"
+    ).toLowerCase();
+    const primaryMetric = (
+      rawCfg.primary_metric ||
+      rawCfg.metric ||
+      rawCfg.evaluation_metric ||
+      rawCfg.model_selection?.primary_metric ||
+      config.primary_metric ||
+      config.metric ||
+      config.evaluation_metric ||
+      "accuracy"
+    ).toLowerCase();
 
     const classificationMetrics = ["accuracy", "f1", "f1_score", "precision", "recall", "roc_auc", "auc", "log_loss", "balanced_accuracy"];
     const regressionMetrics = ["rmse", "mse", "mae", "r2", "r2_score", "mape", "smape", "explained_variance"];
@@ -197,11 +217,21 @@ export class PreFlightValidator {
    */
   validateModelAndFramework(config: any, system: SystemHardwareSnapshot): PreFlightCheck[] {
     const checks: PreFlightCheck[] = [];
-    const models = config.models || config.candidate_models || [];
-    const framework = (config.framework || config.model_framework || "scikit-learn").toLowerCase();
+    const rawCfg = config?.configuration || config || {};
+    const modelSel = rawCfg.model_selection || config?.model_selection || {};
+    const rawModels =
+      rawCfg.models ||
+      rawCfg.candidate_models ||
+      modelSel.models ||
+      modelSel.candidates ||
+      config.models ||
+      config.candidate_models ||
+      [];
+    const models = Array.isArray(rawModels) ? rawModels : [];
+    const framework = (rawCfg.framework || rawCfg.model_framework || config.framework || config.model_framework || "scikit-learn").toLowerCase();
 
     // Check Candidate Models
-    if (!Array.isArray(models) || models.length === 0) {
+    if (models.length === 0) {
       checks.push({
         id: "framework_candidates",
         stage: 3,
@@ -213,7 +243,7 @@ export class PreFlightValidator {
         remediation: "Ensure candidate models are defined from Model Selection.",
       });
     } else {
-      const modelNames = models.map((m: any) => m.model_id || m.name || m.algorithm || String(m)).join(", ");
+      const modelNames = models.map((m: any) => (typeof m === "string" ? m : m.model_id || m.name || m.algorithm || String(m))).join(", ");
       checks.push({
         id: "framework_candidates",
         stage: 3,

@@ -4,6 +4,8 @@ import {
   ResourceEstimations,
   OptimizationRecommendation,
   SystemHardwareSnapshot,
+  ExecutionStrategy,
+  HardwareEvaluationResult,
 } from "./types";
 
 export class PreFlightDecisionEngine {
@@ -356,6 +358,259 @@ export class PreFlightDecisionEngine {
       decision: "APPROVED",
       status: "Completed",
       summary: "Pre-flight validation passed cleanly. Compute resources, environment, and dataset verified for training.",
+    };
+  }
+
+  /**
+   * Evaluates hardware and execution feasibility according to the structured 4-step decision tree.
+   */
+  evaluateHardwareAndStrategy(
+    config: any,
+    system: SystemHardwareSnapshot,
+    estimates: ResourceEstimations,
+    pythonDecision?: any
+  ): {
+    gpu_available: boolean;
+    gpu_evaluation: HardwareEvaluationResult | null;
+    cpu_evaluation: HardwareEvaluationResult | null;
+    selected_resource: "gpu" | "cpu" | "none";
+    direct_execution_feasible: boolean;
+    optimization_feasible: boolean;
+    selected_strategy: ExecutionStrategy;
+    decision_reason: string;
+    constraints_or_missing_requirements: string[];
+  } {
+    // If Python microservice already returned structured evaluation, normalize and return it
+    if (pythonDecision && pythonDecision.selected_strategy) {
+      return {
+        gpu_available: Boolean(pythonDecision.gpu_available),
+        gpu_evaluation: pythonDecision.gpu_evaluation || null,
+        cpu_evaluation: pythonDecision.cpu_evaluation || null,
+        selected_resource: (pythonDecision.selected_resource || "cpu") as any,
+        direct_execution_feasible: Boolean(pythonDecision.direct_execution_feasible),
+        optimization_feasible: Boolean(pythonDecision.optimization_feasible),
+        selected_strategy: (pythonDecision.selected_strategy || "direct_cpu") as ExecutionStrategy,
+        decision_reason: pythonDecision.decision_reason || pythonDecision.reasons?.[0] || "Hardware capability evaluated.",
+        constraints_or_missing_requirements: Array.isArray(pythonDecision.constraints_or_missing_requirements)
+          ? pythonDecision.constraints_or_missing_requirements
+          : [],
+      };
+    }
+
+    // Step 1: Check GPU Availability from actual environment snapshot
+    const hasGpu = Boolean(system.gpus && system.gpus.length > 0);
+    const gpu = hasGpu ? system.gpus[0] : null;
+
+    // Step 2: Evaluate Hardware Capability
+    const rawCfg = config?.configuration || config || {};
+    const models = rawCfg.models || rawCfg.candidate_models || rawCfg.model_selection?.models || rawCfg.model_selection?.candidates || [];
+    const framework = (rawCfg.framework || rawCfg.model_framework || "scikit-learn").toLowerCase();
+
+    const isSklearn = framework.includes("sklearn") || framework.includes("scikit-learn");
+    const hasGpuFramework =
+      framework.includes("torch") ||
+      framework.includes("pytorch") ||
+      framework.includes("xgboost") ||
+      framework.includes("lightgbm") ||
+      framework.includes("catboost");
+    const frameworkGpuSupported = hasGpuFramework || (!isSklearn && Boolean(framework));
+
+    const cudaRuntimeMissing = (system.warnings || []).some(
+      (w) => w.includes("PyTorch CUDA runtime") || w.includes("GPU probe unavailable")
+    );
+    const gpuRuntimeCompatible = hasGpu && (!cudaRuntimeMissing || (!framework.includes("torch") && hasGpuFramework));
+
+    const diskOk = (system.disk_free_gb || 0) >= 1.0;
+    const reqRam = estimates.ram_gb || 2.0;
+    const reqVram = estimates.vram_gb || (hasGpu ? 1.2 : null);
+
+    let gpuEval: HardwareEvaluationResult | null = null;
+    let gpuFeasible = false;
+
+    if (hasGpu && gpu) {
+      const vramAvail = gpu.free_vram_gb || 0;
+      const vramTotal = gpu.total_vram_gb || 0;
+      const vramLimit = vramAvail * 0.85;
+      const vramSufficient = reqVram !== null && reqVram <= vramLimit;
+      const gpuConstraints: string[] = [];
+
+      if (!frameworkGpuSupported) {
+        gpuConstraints.push(`Framework '${framework}' does not natively support CUDA GPU acceleration; algorithms execute on CPU runtime.`);
+      }
+      if (cudaRuntimeMissing && (framework.includes("torch") || !framework)) {
+        gpuConstraints.push("PyTorch CUDA runtime is not available in the execution environment.");
+      }
+      if (!vramSufficient && reqVram) {
+        gpuConstraints.push(`Projected VRAM (${reqVram} GB) exceeds safe GPU allocation threshold (${vramLimit.toFixed(1)} GB).`);
+      }
+
+      gpuFeasible = vramSufficient && frameworkGpuSupported && gpuRuntimeCompatible && diskOk;
+      gpuEval = {
+        resource: "gpu",
+        available: true,
+        supported: frameworkGpuSupported,
+        memory_total_gb: vramTotal,
+        memory_available_gb: vramAvail,
+        memory_required_gb: reqVram,
+        memory_sufficient: vramSufficient,
+        runtime_compatible: gpuRuntimeCompatible,
+        compute_compatible: frameworkGpuSupported,
+        details: `GPU '${gpu.name}': ${vramAvail} GB free / ${vramTotal} GB total.`,
+        constraints: gpuConstraints,
+      };
+    }
+
+    // CPU Evaluation
+    const ramLimit = (system.ram_available_gb || 8.0) * 0.85;
+    const ramSufficient = reqRam <= ramLimit;
+    const cpuConstraints: string[] = [];
+
+    if (!diskOk) {
+      cpuConstraints.push(`Host disk space (${system.disk_free_gb} GB) is below the critical 1.0 GB safety threshold.`);
+    }
+    if (!ramSufficient) {
+      cpuConstraints.push(`Projected RAM (${reqRam} GB) exceeds safe host RAM limit (${ramLimit.toFixed(1)} GB).`);
+    }
+
+    const cpuFeasible = ramSufficient && diskOk;
+    const cpuEval: HardwareEvaluationResult = {
+      resource: "cpu",
+      available: true,
+      supported: true,
+      memory_total_gb: system.ram_total_gb,
+      memory_available_gb: system.ram_available_gb,
+      memory_required_gb: reqRam,
+      memory_sufficient: ramSufficient,
+      runtime_compatible: true,
+      compute_compatible: true,
+      details: `CPU host: ${system.cpu_logical} logical cores (${system.cpu_physical} physical), ${system.ram_available_gb} GB free / ${system.ram_total_gb} GB total RAM.`,
+      constraints: cpuConstraints,
+    };
+
+    // Determine suitable resource
+    let selectedResource: "gpu" | "cpu" | "none" = "cpu";
+    if (!diskOk) {
+      selectedResource = "none";
+    } else if (gpuFeasible && frameworkGpuSupported) {
+      selectedResource = "gpu";
+    } else if (cpuFeasible) {
+      selectedResource = "cpu";
+    } else if (hasGpu && frameworkGpuSupported && gpuRuntimeCompatible) {
+      selectedResource = "gpu";
+    } else {
+      selectedResource = "cpu";
+    }
+
+    // Step 3: Evaluate Direct Execution Feasibility
+    if (selectedResource === "gpu" && gpuFeasible) {
+      const reason = `Direct GPU execution feasible: Model verified on ${gpu?.name || "GPU"} (${(reqVram || 1.2).toFixed(1)} GB VRAM required vs ${gpu?.free_vram_gb || 0} GB available).`;
+      return {
+        gpu_available: hasGpu,
+        gpu_evaluation: gpuEval,
+        cpu_evaluation: cpuEval,
+        selected_resource: "gpu",
+        direct_execution_feasible: true,
+        optimization_feasible: false,
+        selected_strategy: "direct_gpu",
+        decision_reason: reason,
+        constraints_or_missing_requirements: gpuEval?.constraints || [],
+      };
+    }
+
+    if (selectedResource === "cpu" && cpuFeasible) {
+      const reason = `Direct CPU execution feasible: System RAM (${system.ram_available_gb.toFixed(1)} GB available vs ${reqRam.toFixed(1)} GB required) and ${system.cpu_logical} cores verified.`;
+      return {
+        gpu_available: hasGpu,
+        gpu_evaluation: gpuEval,
+        cpu_evaluation: cpuEval,
+        selected_resource: "cpu",
+        direct_execution_feasible: true,
+        optimization_feasible: false,
+        selected_strategy: "direct_cpu",
+        decision_reason: reason,
+        constraints_or_missing_requirements: cpuEval.constraints,
+      };
+    }
+
+    // Step 4: Evaluate Optimization Feasibility
+    if (!diskOk) {
+      const reason = `Critical host storage depletion: Available disk space (${system.disk_free_gb} GB) is below the minimum 1.0 GB threshold.`;
+      return {
+        gpu_available: hasGpu,
+        gpu_evaluation: gpuEval,
+        cpu_evaluation: cpuEval,
+        selected_resource: "none",
+        direct_execution_feasible: false,
+        optimization_feasible: false,
+        selected_strategy: "infeasible",
+        decision_reason: reason,
+        constraints_or_missing_requirements: [reason],
+      };
+    }
+
+    // If GPU direct execution failed, check alternative CPU or GPU optimizations
+    if (selectedResource === "gpu") {
+      if (cpuFeasible) {
+        const failoverReason = `GPU execution infeasible (${gpuEval?.constraints[0] || "insufficient VRAM"}); successfully failed over to direct CPU execution with sufficient host RAM (${system.ram_available_gb.toFixed(1)} GB free).`;
+        return {
+          gpu_available: hasGpu,
+          gpu_evaluation: gpuEval,
+          cpu_evaluation: cpuEval,
+          selected_resource: "cpu",
+          direct_execution_feasible: true,
+          optimization_feasible: false,
+          selected_strategy: "direct_cpu",
+          decision_reason: failoverReason,
+          constraints_or_missing_requirements: gpuEval?.constraints || [],
+        };
+      }
+
+      // Try GPU optimization
+      const vramWithOpt = (reqVram || 2.0) * 0.55;
+      if (hasGpu && gpu && vramWithOpt <= (gpu.free_vram_gb || 0) * 0.85 && gpuRuntimeCompatible) {
+        const reason = "Direct GPU execution exceeded safe VRAM headroom; execution enabled via GPU optimizations (mixed precision FP16 / batch size reduction).";
+        return {
+          gpu_available: hasGpu,
+          gpu_evaluation: gpuEval,
+          cpu_evaluation: cpuEval,
+          selected_resource: "gpu",
+          direct_execution_feasible: false,
+          optimization_feasible: true,
+          selected_strategy: "optimized_gpu",
+          decision_reason: reason,
+          constraints_or_missing_requirements: gpuEval?.constraints || [],
+        };
+      }
+    }
+
+    // Try CPU optimization (chunking / batch size reduction)
+    if (ramLimit >= reqRam * 0.6) {
+      const reason = "Direct CPU execution exceeded safe RAM limit; execution enabled via CPU optimizations (batch size reduction / data chunking).";
+      return {
+        gpu_available: hasGpu,
+        gpu_evaluation: gpuEval,
+        cpu_evaluation: cpuEval,
+        selected_resource: "cpu",
+        direct_execution_feasible: false,
+        optimization_feasible: true,
+        selected_strategy: "optimized_cpu",
+        decision_reason: reason,
+        constraints_or_missing_requirements: cpuEval.constraints,
+      };
+    }
+
+    // Infeasible
+    const infeasibleReason = "No feasible execution strategy exists: system RAM and compute capacity do not satisfy model requirements even with optimizations.";
+    return {
+      gpu_available: hasGpu,
+      gpu_evaluation: gpuEval,
+      cpu_evaluation: cpuEval,
+      selected_resource: "none",
+      direct_execution_feasible: false,
+      optimization_feasible: false,
+      selected_strategy: "infeasible",
+      decision_reason: infeasibleReason,
+      constraints_or_missing_requirements: [...(gpuEval?.constraints || []), ...cpuEval.constraints],
     };
   }
 }
