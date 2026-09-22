@@ -107,15 +107,39 @@ export class PostgresProjectRepository implements IProjectRepository {
 
     // Merge previous agentState with new agentState so that fields like stageOutputs, modelSelection, etc. are NOT lost
     const existingState = (currentProj?.agentState as Record<string, unknown>) || {};
+    const existingOutputs = (existingState?.stageOutputs as Record<string, unknown>) || {};
+    const incomingOutputs = (agentState?.stageOutputs as Record<string, unknown>) || {};
+
+    const mergedStageOutputs: Record<string, unknown> = { ...existingOutputs };
+    for (const [k, v] of Object.entries(incomingOutputs)) {
+      const isIncomingEmpty = !v || (typeof v === "object" && Object.keys(v as object).length === 0);
+      const isExistingPopulated = existingOutputs[k] && typeof existingOutputs[k] === "object" && Object.keys(existingOutputs[k] as object).length > 0;
+      if (isIncomingEmpty && isExistingPopulated) {
+        continue;
+      }
+      mergedStageOutputs[k] = v;
+    }
+
+    const preserveIfIncomingEmpty = (key: string) => {
+      const incoming = agentState?.[key];
+      const existing = existingState?.[key];
+      const isIncEmpty = !incoming || (typeof incoming === "object" && Object.keys(incoming as object).length === 0);
+      const isExtPopulated = existing && typeof existing === "object" && Object.keys(existing as object).length > 0;
+      if (isIncEmpty && isExtPopulated) {
+        return existing;
+      }
+      return incoming !== undefined ? incoming : existing;
+    };
+
     const mergedAgentState: Record<string, unknown> = {
       ...existingState,
       ...agentState,
-      ...((agentState?.stageOutputs || existingState?.stageOutputs) ? {
-        stageOutputs: {
-          ...((existingState?.stageOutputs as Record<string, unknown>) || {}),
-          ...((agentState?.stageOutputs as Record<string, unknown>) || {}),
-        }
-      } : {}),
+      stageOutputs: mergedStageOutputs,
+      modelSelection: preserveIfIncomingEmpty("modelSelection"),
+      trainingConfiguration: preserveIfIncomingEmpty("trainingConfiguration"),
+      preFlight: preserveIfIncomingEmpty("preFlight"),
+      modelTraining: preserveIfIncomingEmpty("modelTraining"),
+      modelValidation: preserveIfIncomingEmpty("modelValidation"),
       ...((agentState?.stageStatuses || existingState?.stageStatuses) ? {
         stageStatuses: {
           ...((existingState?.stageStatuses as Record<string, unknown>) || {}),

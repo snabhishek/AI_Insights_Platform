@@ -111,9 +111,9 @@ export const AgentState = Annotation.Root({
   stageOutputs: Annotation<Record<string, unknown>>({
     reducer: (left, right) => {
       if (right && Object.keys(right).length === 0) {
-        return {};
+        return left || {};
       }
-      return { ...left, ...right };
+      return { ...(left || {}), ...right };
     },
     default: () => ({}),
   }),

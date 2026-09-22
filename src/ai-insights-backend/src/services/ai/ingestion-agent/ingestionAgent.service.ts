@@ -494,13 +494,35 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       let pipeline = getPipelineForSubstep(options?.step) || "Data Ingestion";
 
-      const isApprovingModel = options?.action === "approve" && (
+      const isApprovingTrainingConfig = options?.action === "approve" && (
+        options.step === "Training Configuration" ||
+        options.step === "trainingConfigurationNode" ||
+        options.step === "trainingConfiguration"
+      );
+
+      const isApprovingModel = options?.action === "approve" && !isApprovingTrainingConfig && (
         Boolean(options.step?.toLowerCase().includes("model")) ||
         Boolean(options.step?.toLowerCase().includes("training"))
       );
 
       const initialStageStatuses = (options?.action === "resume" || options?.action === "retry") && savedAgentState?.stageStatuses
         ? { ...savedAgentState.stageStatuses, [options.step || "inspect"]: "In Progress" }
+        : isApprovingTrainingConfig
+          ? {
+              inspect: "Completed",
+              profileData: "Completed",
+              preprocess: "Completed",
+              resolveSchema: "Completed",
+              hierarchyMapper: "Completed",
+              featureArchitect: "Completed",
+              featureValidator: "Completed",
+              exogenousScout: "Completed",
+              modelSelection: "Completed",
+              trainingConfiguration: "In Progress",
+              preFlight: "Pending",
+              modelTraining: "Pending",
+              modelValidation: "Pending",
+            }
         : isApprovingModel
           ? {
               inspect: "Completed",
@@ -549,9 +571,11 @@ export class IngestionAgentService implements IIngestionAgentService {
                 modelValidation: "Pending",
               };
 
-      const approveMessage = isApprovingModel
-        ? "Advancing workflow to Model Training & Validation stage..."
-        : `Advancing workflow to ${options?.step || "Feature Engineering"} stage...`;
+      const approveMessage = isApprovingTrainingConfig
+        ? "Advancing workflow to Training Configuration stage..."
+        : isApprovingModel
+          ? "Advancing workflow to Model Training & Validation stage..."
+          : `Advancing workflow to ${options?.step || "Feature Engineering"} stage...`;
 
       if (options?.action === "approve" && options?.projectId) {
         const approvedAgentState = {
@@ -560,9 +584,11 @@ export class IngestionAgentService implements IIngestionAgentService {
           requiresApproval: false,
           runTimestamp: activeRunTimestamp,
           stageStatuses: initialStageStatuses,
-          currentNode: options?.step || (isApprovingModel ? "modelSelectionNode" : "hierarchyMapperNode"),
-          currentStage: options?.step || (isApprovingModel ? "modelSelectionNode" : "hierarchyMapperNode"),
-          summary: isApprovingModel ? "Advancing workflow to Model Training & Validation stage" : `Advancing workflow to ${options?.step || "Feature Engineering"} stage`,
+          currentNode: options?.step || (isApprovingTrainingConfig ? "trainingConfigurationNode" : (isApprovingModel ? "modelSelectionNode" : "hierarchyMapperNode")),
+          currentStage: options?.step || (isApprovingTrainingConfig ? "trainingConfigurationNode" : (isApprovingModel ? "modelSelectionNode" : "hierarchyMapperNode")),
+          summary: isApprovingTrainingConfig
+            ? "Advancing workflow to Training Configuration stage"
+            : (isApprovingModel ? "Advancing workflow to Model Training & Validation stage" : `Advancing workflow to ${options?.step || "Feature Engineering"} stage`),
           message: approveMessage,
         };
         try {

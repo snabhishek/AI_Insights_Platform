@@ -780,19 +780,7 @@ export default function ProjectsPage() {
         )
       );
 
-      // Persist state to backend
-      if (
-        payload.status === "completed" ||
-        payload.status === "failed" ||
-        payload.status === "stopped" ||
-        payload.status === "stopped" ||
-        payload.status === "paused" ||
-        payload.status === "running" ||
-        payload.requiresApproval ||
-        payload.stageStatuses?.resolveSchema === "Completed"
-      ) {
-        void updateProject(targetProjectId, { agentState: agentStateToSave, status: payload.status });
-      }
+      // Local state is updated above; backend persists state directly to the database during workflow execution
     }
   };
 
@@ -1003,10 +991,7 @@ export default function ProjectsPage() {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
       }
-      // Only persist lastData if the execution was NOT aborted/cancelled by user
-      if (!controller.signal.aborted && finishedProjectId && lastData && lastData.status !== "stopped") {
-        void updateProject(finishedProjectId, { agentState: lastData, status: lastData.status });
-      }
+      // Stream complete; backend has persisted final/paused state
     }
   };
 
