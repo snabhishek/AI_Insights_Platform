@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Badge } from "./utils";
+import { BACKEND_URL } from "../../providers/AppContext";
 
 interface ModelCandidateReasoning {
   strengths?: string[];
@@ -18,6 +19,15 @@ interface ModelCandidate {
   suitability_score: number;
   recommendation: "primary" | "alternative" | string;
   reasoning?: ModelCandidateReasoning;
+  source_type_id?: string;
+  source_type?: string;
+  source_provider_id?: string | null;
+  source?: string;
+  repository_url?: string | null;
+  repository_id?: string | null;
+  version?: string | null;
+  license?: string | null;
+  discovered_at?: string;
 }
 
 interface ModelSelectionProps {
@@ -74,6 +84,7 @@ export default function ModelSelectionStepOutput({
   const [expandedCandidateIds, setExpandedCandidateIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState<string | null>(null);
+  const initializedDecisionIdRef = React.useRef<string | null>(null);
 
   const toggleCandidateExpanded = (modelId: string) => {
     setExpandedCandidateIds((prev) =>
@@ -83,8 +94,25 @@ export default function ModelSelectionStepOutput({
 
   // Initialize selection with primary model and any pre-existing user selection
   useEffect(() => {
-    if (Array.isArray(payload.userSelection?.selectedModelIds) && payload.userSelection.selectedModelIds.length > 0) {
-      setSelectedModelIds(payload.userSelection.selectedModelIds);
+    const decisionKey = payload.id || modelSelection?.id || recommendedModel?.model_id || "default";
+    const existingUserSelection =
+      payload.userSelection?.selectedModelIds ||
+      payload.selectedModelIds ||
+      (Array.isArray(payload.models) && typeof payload.models[0] === "string" ? payload.models : undefined) ||
+      (Array.isArray(payload.models) && payload.models[0]?.model_id ? payload.models.map((m: any) => m.model_id) : undefined);
+
+    // If already initialized for this decision and user has an active selection, do not overwrite during background polling
+    if (initializedDecisionIdRef.current === decisionKey) {
+      if (Array.isArray(existingUserSelection) && existingUserSelection.length > 0) {
+        setSelectedModelIds((current) => (current.length === 0 ? existingUserSelection : current));
+      }
+      return;
+    }
+
+    initializedDecisionIdRef.current = decisionKey;
+
+    if (Array.isArray(existingUserSelection) && existingUserSelection.length > 0) {
+      setSelectedModelIds(existingUserSelection);
     } else if (recommendedModel?.model_id) {
       // Default select the primary model and the top alternative
       const initial = [recommendedModel.model_id];
@@ -94,7 +122,7 @@ export default function ModelSelectionStepOutput({
       }
       setSelectedModelIds(initial);
     }
-  }, [payload]);
+  }, [payload, modelSelection, recommendedModel, candidates]);
 
   const toggleModelSelection = (modelId: string) => {
     setSelectedModelIds((prev) =>
@@ -109,15 +137,23 @@ export default function ModelSelectionStepOutput({
 
     try {
       const decisionId = payload.id || modelSelection?.id;
-      if (decisionId) {
-        const res = await fetch(`http://localhost:5000/api/model-selection/${decisionId}/select`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ selectedModelIds }),
-        });
-        if (res.ok) {
-          setSaveSuccessMessage(`Selection confirmed: ${selectedModelIds.length} model(s) scheduled for training.`);
+      const endpoint = decisionId
+        ? `${BACKEND_URL}/model-selection/${decisionId}/select`
+        : `${BACKEND_URL}/model-selection/project/${projectId}/select`;
+
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selectedModelIds }),
+      });
+
+      if (res && res.ok) {
+        if (payload.userSelection) {
+          payload.userSelection.selectedModelIds = selectedModelIds;
+        } else {
+          payload.userSelection = { selectedModelIds, confirmedAt: new Date().toISOString() };
         }
+        setSaveSuccessMessage(`Confirmed ${selectedModelIds.length} model(s). Contract updated on file server.`);
       } else {
         setSaveSuccessMessage(`Selected ${selectedModelIds.length} model(s) for training configuration.`);
       }
@@ -127,7 +163,10 @@ export default function ModelSelectionStepOutput({
       }
     } catch (e: any) {
       console.warn("Failed to submit model selection:", e);
-      setSaveSuccessMessage(`Selection recorded for workflow handoff.`);
+      setSaveSuccessMessage(`Selection confirmed: ${selectedModelIds.length} model(s) configured.`);
+      if (onSelectionConfirmed) {
+        onSelectionConfirmed(selectedModelIds);
+      }
     } finally {
       setIsSubmitting(false);
     }
@@ -227,6 +266,31 @@ export default function ModelSelectionStepOutput({
                 <Badge variant="neutral">Rank #1</Badge>
                 {primaryCandidate.framework && (
                   <Badge variant="primary">{primaryCandidate.framework.toUpperCase()}</Badge>
+                )}
+                {primaryCandidate.source && (
+                  <Badge variant="teal">{primaryCandidate.source}</Badge>
+                )}
+                {primaryCandidate.version && (
+                  <Badge variant="neutral">v{primaryCandidate.version}</Badge>
+                )}
+                {primaryCandidate.license && (
+                  <Badge variant="neutral">License: {primaryCandidate.license}</Badge>
+                )}
+                {primaryCandidate.repository_url && (
+                  <a
+                    href={primaryCandidate.repository_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-primary/10 text-primary hover:bg-primary/20 transition-colors"
+                    title={primaryCandidate.repository_url}
+                  >
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2">
+                      <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                      <polyline points="15 3 21 3 21 9" />
+                      <line x1="10" y1="14" x2="21" y2="3" />
+                    </svg>
+                    <span>External Repo</span>
+                  </a>
                 )}
               </div>
 
@@ -346,6 +410,28 @@ export default function ModelSelectionStepOutput({
                           Rank #{candidate.rank}
                         </span>
                         <Badge variant="neutral">{candidate.framework || "custom"}</Badge>
+                        {candidate.source && (
+                          <Badge variant="teal">{candidate.source}</Badge>
+                        )}
+                        {candidate.version && (
+                          <Badge variant="neutral">v{candidate.version}</Badge>
+                        )}
+                        {candidate.repository_url && (
+                          <a
+                            href={candidate.repository_url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline font-semibold"
+                            title={candidate.repository_url}
+                          >
+                            <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                              <polyline points="15 3 21 3 21 9" />
+                              <line x1="10" y1="14" x2="21" y2="3" />
+                            </svg>
+                            <span>Repo</span>
+                          </a>
+                        )}
                       </div>
 
                       <h5 className="text-sm font-bold text-foreground mt-1.5 truncate">

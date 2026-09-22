@@ -2,6 +2,12 @@ import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import {
+  getProjectDir,
+  getProjectSchemasDir,
+  getLatestProjectTimestamp,
+  getWorkspacesBasePath,
+} from '../../../config/fileServer.config';
 
 export interface RelationshipDetails {
   relatedField: string;
@@ -167,26 +173,74 @@ export async function loadFieldSchemaYaml(): Promise<string> {
 }
 
 /**
- * Resolves the path of an existing schema file for a project inside packages/projectFiles/<Project>/Schemas/.
+ * Resolves the path of existing schema files for a project inside workspaces/<workspace>/projects/<project>/<timestamp>/schemas/
+ * or legacy packages/projectFiles/<Project>/Schemas/.
  */
 export async function getProjectSchemaDirs(
   workspaceName?: string,
   projectName?: string
 ): Promise<string[]> {
   if (!workspaceName && !projectName) return [];
+  const results: string[] = [];
+
+  // 1. Scan workspaces/<workspace>/projects/<projectName>/<timestamp>/schemas/
+  if (workspaceName && projectName) {
+    const projectDir = getProjectDir(workspaceName, projectName);
+    if (fsSync.existsSync(projectDir)) {
+      try {
+        const entries = await fs.readdir(projectDir, { withFileTypes: true });
+        const timestampDirs = entries
+          .filter((d) => d.isDirectory())
+          .map((d) => d.name)
+          .sort((a, b) => b.localeCompare(a)); // Sort latest first
+
+        for (const ts of timestampDirs) {
+          const schemaDir = path.resolve(projectDir, ts, "schemas");
+          if (fsSync.existsSync(schemaDir) && !results.includes(schemaDir)) {
+            results.push(schemaDir);
+          }
+          const schemaDirUpper = path.resolve(projectDir, ts, "Schemas");
+          if (fsSync.existsSync(schemaDirUpper) && !results.includes(schemaDirUpper)) {
+            results.push(schemaDirUpper);
+          }
+        }
+
+        const directSchemas = path.resolve(projectDir, "schemas");
+        if (fsSync.existsSync(directSchemas) && !results.includes(directSchemas)) {
+          results.push(directSchemas);
+        }
+      } catch (err) {
+        console.warn(`[getProjectSchemaDirs] Warning reading project directory at ${projectDir}:`, err);
+      }
+    }
+  } else if (projectName) {
+    const workspacesBase = getWorkspacesBasePath();
+    if (fsSync.existsSync(workspacesBase)) {
+      try {
+        const wsDirs = fsSync.readdirSync(workspacesBase, { withFileTypes: true }).filter((d) => d.isDirectory());
+        for (const ws of wsDirs) {
+          const cand = getProjectDir(ws.name, projectName);
+          if (fsSync.existsSync(cand)) {
+            const dirs = await getProjectSchemaDirs(ws.name, projectName);
+            for (const d of dirs) {
+              if (!results.includes(d)) results.push(d);
+            }
+          }
+        }
+      } catch {}
+    }
+  }
+
+  // 2. Legacy fallback to packages/projectFiles/<Project>/Schemas
   const packagesDir = getPackagesDir();
   const projectFilesParent = getProjectFilesParent(packagesDir);
   const cleanWsName = workspaceName ? sanitizeName(workspaceName) : "";
   const cleanProjectTitle = projectName ? sanitizeName(projectName) : "";
 
-  // Check both cleanProjectTitle (projectName) and legacy cleanWsName-cleanProjectTitle
   const candidateFolderNames: string[] = [];
   if (cleanProjectTitle) candidateFolderNames.push(cleanProjectTitle);
   if (cleanWsName && cleanProjectTitle) candidateFolderNames.push(`${cleanWsName}-${cleanProjectTitle}`);
 
-  const results: string[] = [];
-
-  // 1. Scan nested run subfolders inside projectFilesParent/<folderName>/
   for (const parentFolderName of candidateFolderNames) {
     const projectParentDir = path.resolve(projectFilesParent, parentFolderName);
     if (fsSync.existsSync(projectParentDir)) {
@@ -197,45 +251,14 @@ export async function getProjectSchemaDirs(
           const subSchemaDir = path.resolve(projectParentDir, subEntry, "Schemas");
           if (fsSync.existsSync(subSchemaDir) && !results.includes(subSchemaDir)) {
             results.push(subSchemaDir);
-          } else {
-            const directSubDir = path.resolve(projectParentDir, subEntry);
-            if (fsSync.existsSync(directSubDir) && fsSync.statSync(directSubDir).isDirectory() && !results.includes(directSubDir)) {
-              results.push(directSubDir);
-            }
           }
         }
-
-        // Check Schemas directly under main project dir
         const directParentSchemas = path.resolve(projectParentDir, "Schemas");
         if (fsSync.existsSync(directParentSchemas) && !results.includes(directParentSchemas)) {
           results.push(directParentSchemas);
         }
       } catch {}
     }
-  }
-
-  // 2. Scan legacy flat directories matching projectFilesParent/<folderName>_*
-  if (fsSync.existsSync(projectFilesParent)) {
-    try {
-      const entries = await fs.readdir(projectFilesParent);
-      for (const parentFolderName of candidateFolderNames) {
-        const matchingFlat = entries
-          .filter((e) => e.startsWith(`${parentFolderName}_`) || e.toLowerCase().startsWith(`${parentFolderName.toLowerCase()}_`))
-          .sort((a, b) => b.localeCompare(a));
-
-        for (const entry of matchingFlat) {
-          const schemaDir = path.resolve(projectFilesParent, entry, "Schemas");
-          if (fsSync.existsSync(schemaDir) && !results.includes(schemaDir)) {
-            results.push(schemaDir);
-          } else {
-            const directDir = path.resolve(projectFilesParent, entry);
-            if (fsSync.existsSync(directDir) && !results.includes(directDir)) {
-              results.push(directDir);
-            }
-          }
-        }
-      }
-    } catch {}
   }
 
   return results;
@@ -372,41 +395,23 @@ export interface ProjectSchemaInput {
 }
 
 /**
- * Creates the project folder inside packages/projectFiles/<Project>/Schemas
- * and updates the Domain.yaml modular schema with domain knowledge from project creation.
- * The Domain file is named `<usecasetitle>_domain_<timestamp>.yaml`.
- * Remaining modular schema templates (DataIngestion.yaml, FeatureEngineering.yaml) are copied into the folder.
- * Any legacy single schema file (*_schema_*.yaml) is removed.
+ * Creates the initial Domain.yaml modular schema with domain knowledge inside
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/<usecasetitle>_domain_<timestamp>.yaml
  */
 export async function createProjectSchemaFile(
   workspaceName: string,
-  projectInput: ProjectSchemaInput
+  projectInput: ProjectSchemaInput,
+  runTimestamp?: string
 ): Promise<string> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
+  const timestamp = runTimestamp && runTimestamp.trim().length > 0 ? runTimestamp.trim() : generateDateTimeStamp();
   const cleanProjectTitle = sanitizeName(projectInput.name);
-  const folderName = resolveProjectFolderName(projectFilesParent, projectInput.name, workspaceName);
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-  const timestamp = generateDateTimeStamp();
   const domainFileName = `${useCaseSlug}_domain_${timestamp}.yaml`;
 
-  const targetDir = path.resolve(projectFilesParent, folderName, "Schemas");
+  const targetDir = getProjectSchemasDir(workspaceName, projectInput.name, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
-  // Remove any old legacy single schema files (*_schema_*.yaml) inside targetDir
-  try {
-    const existingFiles = await fs.readdir(targetDir);
-    for (const f of existingFiles) {
-      if (f.includes("_schema_") && (f.endsWith(".yaml") || f.endsWith(".yml"))) {
-        await fs.unlink(path.resolve(targetDir, f));
-        console.info(`[createProjectSchemaFile] Removed legacy single schema file: ${f}`);
-      }
-    }
-  } catch (cleanErr) {
-    console.warn(`[createProjectSchemaFile] Warning during cleanup of old single schema files:`, cleanErr);
-  }
-
-  // Load Domain.yaml template from packages/Schemas
+  // Load Domain.yaml template from packages/Schemas or codebase
   const domainTemplatePath = resolvePackageFilePath("Domain.yaml");
   let domainObj: any = {};
   if (fsSync.existsSync(domainTemplatePath)) {
@@ -438,60 +443,27 @@ export async function createProjectSchemaFile(
 }
 
 /**
- * Searches for modular schema files under packages/projectFiles for the given project folder convention.
+ * Searches for modular schema files for the given project.
  * Updates <usecasetitle>_domain_<timestamp>.yaml with domain knowledge and updates modular schemas with resolved mappings.
- * Removes legacy single schema files if present.
  */
 export async function updateOrCreateProjectSchemaFile(
   workspaceName: string,
   projectTitle: string,
   projectInput: ProjectSchemaInput,
-  payload: ResolvedSchemaPayload
+  payload: ResolvedSchemaPayload,
+  runTimestamp?: string
 ): Promise<string> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
-  const cleanWsName = sanitizeName(workspaceName);
   const cleanProjectTitle = sanitizeName(projectTitle);
-  const folderName = resolveProjectFolderName(projectFilesParent, projectTitle, workspaceName);
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
+  const timestamp = resolveProjectRunTimestamp(workspaceName, projectTitle, runTimestamp);
 
-  const candidateDirs = [
-    path.resolve(projectFilesParent, folderName, "Schemas"),
-    path.resolve(projectFilesParent, cleanProjectTitle, "Schemas"),
-    path.resolve(projectFilesParent, `${cleanWsName}-${cleanProjectTitle}`, "Schemas"),
-    path.resolve(packagesDir, folderName, "Schemas"),
-  ];
-
-  let targetDir: string | null = null;
-  for (const cDir of candidateDirs) {
-    if (fsSync.existsSync(cDir)) {
-      targetDir = cDir;
-      break;
-    }
-  }
-
-  if (!targetDir) {
-    targetDir = path.resolve(projectFilesParent, folderName, "Schemas");
-  }
+  const targetDir = getProjectSchemasDir(workspaceName, projectTitle, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
-
-  // Clean up legacy single schema files (*_schema_*.yaml)
-  try {
-    const files = await fs.readdir(targetDir);
-    for (const f of files) {
-      if (f.includes("_schema_") && (f.endsWith(".yaml") || f.endsWith(".yml"))) {
-        await fs.unlink(path.resolve(targetDir, f));
-      }
-    }
-  } catch (e) {
-    // ignore
-  }
 
   // Update or create the domain file
   const filesInDir = await fs.readdir(targetDir);
   let domainFileName = filesInDir.find((f) => f.includes("_domain_") && (f.endsWith(".yaml") || f.endsWith(".yml")));
   if (!domainFileName) {
-    const timestamp = generateDateTimeStamp();
     domainFileName = `${useCaseSlug}_domain_${timestamp}.yaml`;
   }
 
@@ -535,7 +507,7 @@ export async function updateOrCreateProjectSchemaFile(
   console.info(`[updateOrCreateProjectSchemaFile] Updated domain schema file at ${domainFilePath}`);
 
   // Update DataIngestion.yaml with mapped fields
-  const dataIngestionPath = path.resolve(targetDir, "DataIngestion.yaml");
+  const dataIngestionPath = path.resolve(targetDir, `${useCaseSlug}_data_ingestion_${timestamp}.yaml`);
   let dataIngestionObj: any = { version: "1.0", generatedAt: new Date().toISOString(), resolvedTables: payload.resolvedTables || [], fields: {} };
   if (fsSync.existsSync(dataIngestionPath)) {
     try {
@@ -567,6 +539,8 @@ export async function updateOrCreateProjectSchemaFile(
   for (const [topic, fields] of Object.entries(groupedTopics)) {
     dataIngestionObj.fields[topic] = fields;
   }
+
+  await fs.writeFile(dataIngestionPath, yaml.dump(dataIngestionObj, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
   return domainFilePath;
 }
 
@@ -586,6 +560,10 @@ export function getLatestProjectRunTimestamp(
   workspaceName: string,
   projectName: string
 ): string | undefined {
+  const fromConfig = getLatestProjectTimestamp(workspaceName, projectName);
+  if (fromConfig) return fromConfig;
+
+  // Legacy fallback check
   try {
     const packagesDir = getPackagesDir();
     const projectFilesParent = getProjectFilesParent(packagesDir);
@@ -599,7 +577,7 @@ export function getLatestProjectRunTimestamp(
         .sort((a, b) => b.localeCompare(a));
       if (subEntries.length > 0) {
         const latestFolder = subEntries[0];
-        const match = latestFolder.match(/(\d{8}-\d{6})$/);
+        const match = latestFolder.match(/(\d{8}[-_]\d{6})$/);
         if (match) {
           return match[1];
         }
@@ -610,7 +588,7 @@ export function getLatestProjectRunTimestamp(
       }
     }
   } catch (err) {
-    console.warn("[getLatestProjectRunTimestamp] Warning checking latest run folder:", err);
+    console.warn("[getLatestProjectRunTimestamp] Warning checking legacy run folder:", err);
   }
   return undefined;
 }
@@ -637,58 +615,23 @@ export function resolveProjectRunTimestamp(
 }
 
 /**
- * Ensures the project run folder exists inside packages/projectFiles/<Project>/<RunSlug>-<Timestamp>/Schemas/
- * and copies any domain knowledge schema from the parent project directory into the run folder so all schemas are unified.
+ * Ensures the project run folder exists inside workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/
+ * without copying old domain schemas from past runs.
  */
 export async function ensureProjectRunFolder(
   workspaceName: string,
   projectName: string,
   runTimestamp: string
 ): Promise<string> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
-  const cleanWsName = sanitizeName(workspaceName);
-  const cleanProjectTitle = sanitizeName(projectName);
-  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
-  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-  const runFolderName = `${runSlug}-${timestamp}`;
-
-  const runSchemasDir = path.resolve(projectFilesParent, parentFolderName, runFolderName, "Schemas");
+  const runSchemasDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
   await fs.mkdir(runSchemasDir, { recursive: true });
-
-  // Copy domain YAML from parent project schemas if exists
-  const candidateParentSchemas = [
-    path.resolve(projectFilesParent, parentFolderName, "Schemas"),
-    path.resolve(projectFilesParent, cleanProjectTitle, "Schemas"),
-    path.resolve(projectFilesParent, `${cleanWsName}-${cleanProjectTitle}`, "Schemas"),
-  ];
-  for (const parentSchemasDir of candidateParentSchemas) {
-    if (fsSync.existsSync(parentSchemasDir)) {
-      try {
-        const files = await fs.readdir(parentSchemasDir);
-        for (const file of files) {
-          if (file.includes("_domain_") && (file.endsWith(".yaml") || file.endsWith(".yml"))) {
-            const srcFile = path.resolve(parentSchemasDir, file);
-            const destFile = path.resolve(runSchemasDir, file);
-            if (!fsSync.existsSync(destFile)) {
-              await fs.copyFile(srcFile, destFile);
-              console.info(`[ensureProjectRunFolder] Copied domain schema ${file} into run folder ${runFolderName}`);
-            }
-          }
-        }
-      } catch (copyErr) {
-        console.warn(`[ensureProjectRunFolder] Warning copying domain schema:`, copyErr);
-      }
-    }
-  }
-
   return runSchemasDir;
 }
 
 /**
  * Saves resolved Schema Resolver output into modular Data Ingestion YAML file inside
- * packages/projectFiles/<Project>/Schemas/:
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
  * <usecasetitle>_data_ingestion_<timestamp>.yaml
  */
 export async function saveModularResolvedSchemas(
@@ -697,20 +640,13 @@ export async function saveModularResolvedSchemas(
   payload: ModularSchemaPayload,
   runTimestamp?: string
 ): Promise<{ dataIngestionPath: string }> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
   const cleanProjectTitle = sanitizeName(projectName);
-  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
-  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-
   const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-  const runFolderName = `${runSlug}-${timestamp}`;
 
-  const targetDir = path.resolve(projectFilesParent, parentFolderName, runFolderName, "Schemas");
+  const targetDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
-  // Data Ingestion Schema: <usecasetitle>_data_ingestion_<timestamp>.yaml
   const dataIngestionFileName = `${useCaseSlug}_data_ingestion_${timestamp}.yaml`;
   const dataIngestionPath = path.resolve(targetDir, dataIngestionFileName);
 
@@ -728,7 +664,7 @@ export async function saveModularResolvedSchemas(
 
 /**
  * Saves resolved Relationship Schema output into modular Relationship Schema YAML file inside
- * packages/projectFiles/<Project>/Schemas/:
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
  * <usecasetitle>_relationship_schema_<timestamp>.yaml
  */
 export async function saveModularRelationshipSchema(
@@ -737,17 +673,11 @@ export async function saveModularRelationshipSchema(
   relationshipSchemaPayload: any,
   runTimestamp?: string
 ): Promise<{ relationshipSchemaPath: string }> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
   const cleanProjectTitle = sanitizeName(projectName);
-  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
-  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-
   const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-  const runFolderName = `${runSlug}-${timestamp}`;
 
-  const targetDir = path.resolve(projectFilesParent, parentFolderName, runFolderName, "Schemas");
+  const targetDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
   const relationshipFileName = `${useCaseSlug}_relationship_schema_${timestamp}.yaml`;
@@ -761,7 +691,7 @@ export async function saveModularRelationshipSchema(
 
 /**
  * Saves resolved Form Schema output into modular Form Schema YAML file inside
- * packages/projectFiles/<Project>/<RunFolder>/Schemas/:
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
  * <usecasetitle>_form_schema_<timestamp>.yaml
  */
 export async function saveModularFormSchema(
@@ -770,17 +700,11 @@ export async function saveModularFormSchema(
   formSchemaPayload: any,
   runTimestamp?: string
 ): Promise<{ formSchemaPath: string }> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
   const cleanProjectTitle = sanitizeName(projectName);
-  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
-  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-
   const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-  const runFolderName = `${runSlug}-${timestamp}`;
 
-  const targetDir = path.resolve(projectFilesParent, parentFolderName, runFolderName, "Schemas");
+  const targetDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
   const formFileName = `${useCaseSlug}_form_schema_${timestamp}.yaml`;
@@ -794,39 +718,142 @@ export async function saveModularFormSchema(
 
 /**
  * Saves or updates the modular Training Job Contract YAML file inside
- * packages/projectFiles/<Project>/<RunFolder>/Schemas/:
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
+ * <usecasetitle>_training_job_contract_<timestamp>.yaml
+ */
+/**
+ * Comment headers preserving the exact structure and documentation from TrainingJobContract schema.
+ */
+export const TRAINING_JOB_CONTRACT_COMMENTS = {
+  HEADER: `# =============================================================================
+# TRAINING JOB CONTRACT — AutoML Platform
+# Scope: AGENT TRAINING ONLY.
+#
+# Dataset ingestion, data understanding, profiling, feature engineering,
+# feature selection, and preprocessing are handled by upstream agents.
+# This contract consumes their finalized outputs through upstream_artifacts.
+#
+# The training agent uses this contract to:
+# 1. Understand the ML problem.
+# 2. Select/validate the training strategy.
+# 3. Train candidate models.
+# 4. Optimize hyperparameters.
+# 5. Evaluate and select the best model.
+#
+# Every field should contain either a concrete value or an explicit null when
+# it is not applicable.
+# =============================================================================`,
+
+  PRIMARY_METRIC: `# -----------------------------------------------------------------------------
+# PRIMARY METRIC
+# -----------------------------------------------------------------------------
+# Single source of truth for the metric used throughout training, optimization,
+# evaluation, and model selection. The same definition must not be duplicated.
+# -----------------------------------------------------------------------------`,
+
+  TRAINING_JOB: `# -----------------------------------------------------------------------------
+# TRAINING JOB
+# -----------------------------------------------------------------------------`,
+
+  ML_TASK: `# -----------------------------------------------------------------------------
+# ML TASK
+# -----------------------------------------------------------------------------`,
+
+  UPSTREAM_ARTIFACTS: `# -----------------------------------------------------------------------------
+# UPSTREAM ARTIFACTS
+# -----------------------------------------------------------------------------
+# References finalized outputs from upstream agents.
+# These are identifiers, not definitions of those artifacts.
+# -----------------------------------------------------------------------------`,
+
+  DATA_SPLITTING: `# -----------------------------------------------------------------------------
+# DATA SPLITTING
+# -----------------------------------------------------------------------------`,
+
+  CLASS_IMBALANCE: `# -----------------------------------------------------------------------------
+# CLASS IMBALANCE
+# -----------------------------------------------------------------------------`,
+
+  HYPERPARAMETER_OPTIMIZATION: `# -----------------------------------------------------------------------------
+# HYPERPARAMETER OPTIMIZATION
+# -----------------------------------------------------------------------------`,
+
+  SEARCH_SPACE: `# -----------------------------------------------------------------------------
+# SEARCH SPACE
+# -----------------------------------------------------------------------------
+# Generic representation used by the training engine. The actual parameters
+# depend on the selected model family.
+# -----------------------------------------------------------------------------`,
+
+  TRAINING_OBJECTIVE: `# -----------------------------------------------------------------------------
+# TRAINING OBJECTIVE
+# -----------------------------------------------------------------------------`,
+
+  EVALUATION: `# -----------------------------------------------------------------------------
+# EVALUATION
+# -----------------------------------------------------------------------------`,
+
+  THRESHOLD_OPTIMIZATION: `# -----------------------------------------------------------------------------
+# THRESHOLD OPTIMIZATION
+# -----------------------------------------------------------------------------
+# Applicable primarily to classification models producing probabilities or
+# scores that must be converted into business decisions.
+# -----------------------------------------------------------------------------`,
+
+  VALIDATION_GATES: `# -----------------------------------------------------------------------------
+# VALIDATION GATES
+# -----------------------------------------------------------------------------
+# Hard requirements that a trained model must satisfy before it can be
+# considered a successful training result.
+# -----------------------------------------------------------------------------`,
+
+  MODEL_SELECTION: `# -----------------------------------------------------------------------------
+# MODEL SELECTION
+# -----------------------------------------------------------------------------
+# Determines which candidate becomes the final model after all candidates
+# have been trained and evaluated.
+# -----------------------------------------------------------------------------`,
+
+  ARTIFACTS: `# -----------------------------------------------------------------------------
+# ARTIFACTS
+# -----------------------------------------------------------------------------`,
+};
+
+function dumpSectionYaml(data: Record<string, any>): string {
+  return yaml.dump(data, { indent: 2, lineWidth: -1, noRefs: true }).trim();
+}
+
+/**
+ * Saves or updates the modular Training Job Contract YAML file inside
+ * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
  * <usecasetitle>_training_job_contract_<timestamp>.yaml
  *
- * Copies the TrainingJobContract.yaml template from packages/Schemas,
- * and updates ONLY the model_selection section from the agent response,
- * keeping all other sections untouched.
+ * Formats the YAML content between the standard comment section headers for both
+ * Model Selection and Training Configuration agents.
  */
 export async function saveModularTrainingJobContract(
   workspaceName: string,
   projectName: string,
-  modelSelectionPayload: any,
+  payload: any,
   runTimestamp?: string
-): Promise<{ trainingJobContractPath: string }> {
-  const packagesDir = getPackagesDir();
-  const projectFilesParent = getProjectFilesParent(packagesDir);
+): Promise<{ trainingJobContractPath: string; contractPath: string }> {
   const cleanProjectTitle = sanitizeName(projectName);
-  const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
-  const runSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "-");
   const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-
   const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-  const runFolderName = `${runSlug}-${timestamp}`;
 
-  const targetDir = path.resolve(projectFilesParent, parentFolderName, runFolderName, "Schemas");
+  const targetDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
   const contractFileName = `${useCaseSlug}_training_job_contract_${timestamp}.yaml`;
   const contractPath = path.resolve(targetDir, contractFileName);
 
-  // Check if an existing contract file already exists in targetDir to preserve other sections
-  let baseContent = "";
+  // 1. Read existing contract file if present to preserve/merge data
+  let existingObj: Record<string, any> = {};
   if (fsSync.existsSync(contractPath)) {
-    baseContent = await fs.readFile(contractPath, "utf-8");
+    try {
+      const content = await fs.readFile(contractPath, "utf-8");
+      existingObj = (yaml.load(content) as Record<string, any>) || {};
+    } catch {}
   } else {
     try {
       const existingFiles = await fs.readdir(targetDir);
@@ -834,177 +861,387 @@ export async function saveModularTrainingJobContract(
         (f) => f.includes("_training_job_contract_") && (f.endsWith(".yaml") || f.endsWith(".yml"))
       );
       if (existingContract) {
-        baseContent = await fs.readFile(path.resolve(targetDir, existingContract), "utf-8");
+        const content = await fs.readFile(path.resolve(targetDir, existingContract), "utf-8");
+        existingObj = (yaml.load(content) as Record<string, any>) || {};
       }
     } catch {}
   }
 
-  // If no existing contract in targetDir, load base template from packages/Schemas
-  if (!baseContent) {
-    const templatePath = resolvePackageFilePath("TrainingJobContract.yaml");
-    if (fsSync.existsSync(templatePath)) {
-      baseContent = await fs.readFile(templatePath, "utf-8");
-    } else {
-      console.warn(`[saveModularTrainingJobContract] Template TrainingJobContract.yaml not found at ${templatePath}`);
-      baseContent = "model_selection:\n";
-    }
-  }
+  // Unwrap config/decision if nested
+  const rawData = payload?.configuration || payload?.decision || payload?.modelSelection || payload || {};
 
-  // Extract decision payload
-  const decision = modelSelectionPayload?.decision || modelSelectionPayload?.modelSelection || modelSelectionPayload || {};
-
-  // Build the model_selection structure matching the TrainingJobContract specification
-  const modelSelectionData: Record<string, any> = {
-    target_entity: {
-      name: decision.target_entity?.name ?? null,
-      datatype: decision.target_entity?.datatype ?? null,
-      description: decision.target_entity?.description ?? null,
-      source: decision.target_entity?.source ?? null,
-    },
-    derivation: decision.derivation ?? null,
-    positive_class: decision.positive_class ?? null,
-    negative_class: decision.negative_class ?? null,
-    prediction_grain: {
-      entity: decision.prediction_grain?.entity ?? "record",
-      keys: Array.isArray(decision.prediction_grain?.keys) ? decision.prediction_grain.keys : [],
-      frequency: decision.prediction_grain?.frequency ?? null,
-    },
-    recommended_model: decision.recommended_model ? {
-      model_id: decision.recommended_model.model_id,
-      rank: decision.recommended_model.rank ?? 1,
-      suitability_score: decision.recommended_model.suitability_score ?? 1.0,
-      recommendation: decision.recommended_model.recommendation ?? "primary",
-    } : null,
-    candidates: Array.isArray(decision.candidates) ? decision.candidates.map((c: any) => ({
-      model_id: c.model_id,
-      rank: c.rank,
-      suitability_score: c.suitability_score,
-      recommendation: c.recommendation || "alternative",
-      ...(c.reasoning ? {
-        reasoning: {
-          strengths: Array.isArray(c.reasoning.strengths) ? c.reasoning.strengths : [],
-          weaknesses: Array.isArray(c.reasoning.weaknesses) ? c.reasoning.weaknesses : [],
-          suitability: Array.isArray(c.reasoning.suitability) ? c.reasoning.suitability : [],
-        },
-      } : {}),
-    })) : [],
-    primary_metric: decision.primary_metric || "RMSE",
-    direction: decision.direction || "minimize",
-    tie_breakers: Array.isArray(decision.tie_breakers) && decision.tie_breakers.length > 0
-      ? decision.tie_breakers
-      : ["simplest_model", "fastest_training"],
-    constraints: decision.constraints || {},
-    selection_strategy: decision.selection_strategy || decision.model_selection_strategy || "top_k_candidates",
-    training: {
-      mode: decision.training?.mode || "automl_search",
-      baseline_model: decision.training?.baseline_model || null,
-      ensemble: {
-        enabled: Boolean(decision.training?.ensemble?.enabled),
-        strategy: decision.training?.ensemble?.strategy || null,
-      },
-      random_seed: decision.training?.random_seed ?? 42,
-      early_stopping: {
-        enabled: Boolean(decision.training?.early_stopping?.enabled),
-        patience: decision.training?.early_stopping?.patience ?? null,
-        metric: decision.training?.early_stopping?.metric || decision.primary_metric || "RMSE",
-      },
-    },
-    max_training_time: decision.max_training_time || null,
-    model_selection_strategy: decision.model_selection_strategy || decision.selection_strategy || "highest_validation_score",
-    models: Array.isArray(decision.models) && decision.models.length > 0
-      ? decision.models.map((m: any) => ({
-          model_id: m.model_id,
-          framework: m.framework || "custom",
-          algorithm: m.algorithm || m.model_id,
-          enabled: m.enabled !== undefined ? m.enabled : true,
-          parameters: m.parameters || {},
-        }))
-      : (Array.isArray(decision.candidates) ? decision.candidates.map((c: any) => ({
-          model_id: c.model_id,
-          framework: c.framework || "custom",
-          algorithm: c.algorithm || c.displayName || c.model_id,
-          enabled: true,
-          parameters: {},
-        })) : []),
-    ...(Array.isArray(decision.featureRequirements) ? {
-      feature_requirements: decision.featureRequirements.map((r: any) => ({
-        feature: r.feature || "all",
-        requirement: r.requirement || r.desc || "",
-        reason: r.reason || "",
-      })),
-    } : {}),
-    ...(decision.hyperparameterOptimization ? {
-      hyperparameter_optimization: {
-        recommended: Boolean(decision.hyperparameterOptimization.recommended),
-        approach: decision.hyperparameterOptimization.approach || "bayesian_optimization",
-        rationale: decision.hyperparameterOptimization.rationale || "",
-        ...(decision.hyperparameterOptimization.suggestedSearchBudget ? {
-          suggested_search_budget: decision.hyperparameterOptimization.suggestedSearchBudget,
-        } : {}),
-      },
-    } : {}),
-  };
-
-  // Convert model_selection section to YAML string with 2-space indentation
-  const dumpedModelSelection = yaml.dump(
-    { model_selection: modelSelectionData },
-    { indent: 2, lineWidth: -1, noRefs: true }
+  // Check if incoming payload is a full training configuration
+  const isTrainingConfig = Boolean(
+    rawData.task || rawData.split || rawData.search_space || rawData.objective || rawData.training_job || payload?.configuration
   );
 
-  // Replace ONLY the model_selection: block inside baseContent, preserving all other sections and comments
-  let updatedYaml: string;
-  const startIdx = baseContent.indexOf("model_selection:");
-  if (startIdx !== -1) {
-    const afterStart = baseContent.substring(startIdx);
-    const artifactsHeaderIdx = afterStart.indexOf("# ARTIFACTS");
-    let nextSectionIdx = -1;
-    if (artifactsHeaderIdx !== -1) {
-      nextSectionIdx = afterStart.lastIndexOf("# ---", artifactsHeaderIdx);
-      if (nextSectionIdx === -1) {
-        nextSectionIdx = artifactsHeaderIdx;
-      }
-    } else {
-      const artifactsMatch = afterStart.match(/\nartifacts:\s*/);
-      if (artifactsMatch && artifactsMatch.index !== undefined) {
-        nextSectionIdx = artifactsMatch.index + 1;
-      }
-    }
+  // Determine primary metric name and definition
+  const primaryMetricName =
+    rawData["x-primary-metric-name"] ||
+    rawData.primary_metric_name ||
+    rawData.primary_metric ||
+    existingObj["x-primary-metric-name"] ||
+    existingObj.primary_metric_name ||
+    existingObj.model_selection?.primary_metric ||
+    "f1_score";
 
-    if (nextSectionIdx !== -1) {
-      const before = baseContent.substring(0, startIdx);
-      const after = afterStart.substring(nextSectionIdx);
-      updatedYaml = before + dumpedModelSelection.trim() + "\n\n\n" + after;
-    } else {
-      const nextKeyMatch = afterStart.slice(16).match(/\n[a-zA-Z0-9_-]+:\s*/);
-      if (nextKeyMatch && nextKeyMatch.index !== undefined) {
-        const before = baseContent.substring(0, startIdx);
-        const after = afterStart.substring(16 + nextKeyMatch.index + 1);
-        updatedYaml = before + dumpedModelSelection.trim() + "\n\n\n" + after;
-      } else {
-        updatedYaml = baseContent.substring(0, startIdx) + dumpedModelSelection;
-      }
-    }
-  } else {
-    updatedYaml = baseContent.trim() + "\n\n" + dumpedModelSelection;
+  const primaryMetricDef =
+    rawData["x-primary-metric-def"] ||
+    rawData.primary_metric_def ||
+    existingObj["x-primary-metric-def"] ||
+    existingObj.primary_metric_def || {
+      value: primaryMetricName,
+      source: "llm_inference",
+      confidence: 0.95,
+      confirmation_threshold: 0.85,
+      requires_confirmation: false,
+      rationale: "Selected primary metric representing business goal",
+      evidence: [],
+    };
+
+  // Build model_selection data (merging candidates/models with training steps)
+  const existingModelSel = existingObj.model_selection || {};
+  const incomingModelSel = rawData.model_selection || (isTrainingConfig ? {} : rawData);
+
+  let mergedCandidates: any[] = [];
+  const candidateMap = new Map<string, any>();
+  for (const c of (existingModelSel.candidates || [])) {
+    if (c.model_id) candidateMap.set(c.model_id, { ...c });
   }
-
-  await fs.writeFile(contractPath, updatedYaml, "utf-8");
-  console.info(`[saveModularTrainingJobContract] Saved Training Job Contract schema to ${contractPath}`);
-
-  // Also copy to parent Schemas dir if it exists
-  const parentSchemasDir = path.resolve(projectFilesParent, parentFolderName, "Schemas");
-  if (fsSync.existsSync(parentSchemasDir)) {
-    try {
-      const parentContractPath = path.resolve(parentSchemasDir, contractFileName);
-      await fs.writeFile(parentContractPath, updatedYaml, "utf-8");
-      console.info(`[saveModularTrainingJobContract] Also copied Training Job Contract to parent Schemas dir: ${parentContractPath}`);
-    } catch (parentErr) {
-      console.warn(`[saveModularTrainingJobContract] Warning writing to parent schemas dir:`, parentErr);
+  for (const c of (incomingModelSel.candidates || [])) {
+    if (c.model_id) {
+      const prev = candidateMap.get(c.model_id) || {};
+      candidateMap.set(c.model_id, {
+        ...prev,
+        ...c,
+        ...(c.training_steps ? { training_steps: c.training_steps } : (prev.training_steps ? { training_steps: prev.training_steps } : {})),
+      });
     }
   }
+  if (candidateMap.size > 0) {
+    mergedCandidates = Array.from(candidateMap.values());
+  }
 
-  return { trainingJobContractPath: contractPath };
+  let mergedModels: any[] = [];
+  if (Array.isArray(incomingModelSel.models)) {
+    const existingModelMap = new Map<string, any>();
+    for (const m of (existingModelSel.models || [])) {
+      const id = typeof m === "string" ? m : m?.model_id;
+      if (id) existingModelMap.set(id.toLowerCase().trim(), typeof m === "string" ? { model_id: m } : m);
+    }
+    mergedModels = incomingModelSel.models.map((m: any) => {
+      const id = typeof m === "string" ? m : m?.model_id;
+      const cleanId = (id || "").toLowerCase().trim();
+      const prev = existingModelMap.get(cleanId) || {};
+      const baseObj = typeof m === "string"
+        ? {
+            model_id: m,
+            framework: prev.framework || "custom",
+            algorithm: prev.algorithm || m,
+            enabled: true,
+            parameters: prev.parameters || {},
+          }
+        : m;
+      return {
+        ...prev,
+        ...baseObj,
+        enabled: baseObj.enabled !== undefined ? baseObj.enabled : true,
+        ...(baseObj.training_steps
+          ? { training_steps: baseObj.training_steps }
+          : (prev.training_steps ? { training_steps: prev.training_steps } : {})),
+      };
+    });
+  } else if (Array.isArray(existingModelSel.models) && existingModelSel.models.length > 0) {
+    mergedModels = existingModelSel.models;
+  }
+
+  const modelSelectionData: Record<string, any> = {
+    target_entity: incomingModelSel.target_entity ?? existingModelSel.target_entity ?? {
+      name: incomingModelSel.targetColumn || null,
+      datatype: null,
+      description: null,
+      source: null,
+    },
+    derivation: incomingModelSel.derivation ?? existingModelSel.derivation ?? null,
+    positive_class: incomingModelSel.positive_class ?? existingModelSel.positive_class ?? null,
+    negative_class: incomingModelSel.negative_class ?? existingModelSel.negative_class ?? null,
+    prediction_grain: incomingModelSel.prediction_grain ?? existingModelSel.prediction_grain ?? {
+      entity: "record",
+      keys: [],
+      frequency: null,
+    },
+    recommended_model: incomingModelSel.recommended_model ?? existingModelSel.recommended_model ?? null,
+    candidates: mergedCandidates.length > 0 ? mergedCandidates : (incomingModelSel.candidates || []),
+    primary_metric: primaryMetricName,
+    direction: incomingModelSel.direction ?? existingModelSel.direction ?? "maximize",
+    tie_breakers: incomingModelSel.tie_breakers ?? existingModelSel.tie_breakers ?? ["simplest_model", "fastest_training"],
+    constraints: incomingModelSel.constraints ?? existingModelSel.constraints ?? {},
+    selection_strategy: incomingModelSel.selection_strategy ?? existingModelSel.selection_strategy ?? "top_k_candidates",
+    training: incomingModelSel.training ?? existingModelSel.training ?? {
+      mode: "automl_search",
+      baseline_model: null,
+      ensemble: { enabled: false, strategy: null },
+      random_seed: 42,
+      early_stopping: { enabled: false, patience: null, metric: primaryMetricName },
+    },
+    max_training_time: incomingModelSel.max_training_time ?? existingModelSel.max_training_time ?? null,
+    model_selection_strategy: incomingModelSel.model_selection_strategy ?? existingModelSel.model_selection_strategy ?? "highest_validation_score",
+    models: mergedModels.length > 0 ? mergedModels : (incomingModelSel.models || []),
+    userSelection: incomingModelSel.userSelection || existingModelSel.userSelection || null,
+    selectedModelIds: incomingModelSel.selectedModelIds || existingModelSel.selectedModelIds || (
+      mergedModels.length > 0 ? mergedModels.map((m: any) => typeof m === "string" ? m : m.model_id).filter(Boolean) : null
+    ),
+    ...(incomingModelSel.feature_requirements || incomingModelSel.featureRequirements ? {
+      feature_requirements: incomingModelSel.feature_requirements || incomingModelSel.featureRequirements,
+    } : (existingModelSel.feature_requirements ? { feature_requirements: existingModelSel.feature_requirements } : {})),
+    ...(incomingModelSel.hyperparameter_optimization || incomingModelSel.hyperparameterOptimization ? {
+      hyperparameter_optimization: incomingModelSel.hyperparameter_optimization || incomingModelSel.hyperparameterOptimization,
+    } : (existingModelSel.hyperparameter_optimization ? { hyperparameter_optimization: existingModelSel.hyperparameter_optimization } : {})),
+  };
+
+  // Assemble remaining sections from rawData (if training config) or existingObj / defaults
+  const trainingJobData = rawData.training_job || existingObj.training_job || {
+    job_id: `${cleanProjectTitle}_training_${timestamp}`,
+    experiment_name: cleanProjectTitle,
+    version: "1.0.0",
+    created_at: new Date().toISOString(),
+    created_by: "AutoML Platform",
+    description: `Training pipeline contract for ${cleanProjectTitle}`,
+  };
+
+  const taskData = rawData.task || existingObj.task || {
+    task_type: rawData.problemType || existingObj.task?.task_type || "classification",
+    task_subtype: rawData.problemType === "regression" ? "single" : "binary",
+    learning_type: "supervised",
+    prediction_type: rawData.problemType === "regression" ? "value" : "label",
+    prediction_horizon: null,
+    prediction_timestamp: null,
+  };
+
+  const upstreamArtifactsData = rawData.upstream_artifacts || existingObj.upstream_artifacts || {
+    dataset_id: `dataset_${cleanProjectTitle}_${timestamp}`,
+    dataset_version: "1.0",
+    feature_set_id: `features_${cleanProjectTitle}_${timestamp}`,
+    feature_set_version: "1.0",
+    profiling_report_id: `profiling_${cleanProjectTitle}_${timestamp}`,
+    relationship_schema_id: null,
+    row_count: 0,
+    column_count: 0,
+  };
+
+  const splitData = rawData.split || existingObj.split || {
+    strategy: "random",
+    train_ratio: 0.7,
+    validation_ratio: 0.15,
+    test_ratio: 0.15,
+    random_seed: 42,
+    stratify_by: null,
+    group_by: null,
+    time_column: null,
+    temporal: {
+      train_start: null,
+      train_end: null,
+      validation_start: null,
+      validation_end: null,
+      test_start: null,
+      test_end: null,
+    },
+    cross_validation: {
+      enabled: false,
+      strategy: "kfold",
+      folds: 0,
+      shuffle: false,
+      random_seed: 42,
+    },
+  };
+
+  const imbalanceData = rawData.imbalance || existingObj.imbalance || {
+    detected: false,
+    ratio: null,
+    strategy: "none",
+    class_weights: "none",
+    sampling: {
+      method: "none",
+      sampling_ratio: null,
+    },
+  };
+
+  const hpoData = rawData.hyperparameter_optimization || existingObj.hyperparameter_optimization || {
+    enabled: false,
+    method: "bayesian",
+    objective_metric: primaryMetricName,
+    direction: "maximize",
+    max_trials: 0,
+    timeout: null,
+    search_space: {},
+    pruning: {
+      enabled: false,
+    },
+  };
+
+  const searchSpaceData = rawData.search_space || existingObj.search_space || {};
+
+  const objectiveData = rawData.objective || existingObj.objective || {
+    training_loss: rawData.problemType === "regression" ? "mse" : "logloss",
+    optimization_metric: primaryMetricName,
+    direction: "maximize",
+    custom_objective: {
+      enabled: false,
+      definition: null,
+    },
+  };
+
+  const evaluationData = rawData.evaluation || existingObj.evaluation || {
+    primary_metric: primaryMetricDef,
+    secondary_metrics: rawData.problemType === "regression" ? ["MAE", "RMSE", "R2"] : ["accuracy", "precision", "recall", "roc_auc"],
+    thresholds: {
+      primary_metric_min: null,
+      secondary_metric_constraints: {},
+    },
+    segment_analysis: [],
+    confidence_intervals: {
+      enabled: false,
+    },
+    bootstrap: {
+      enabled: false,
+      samples: null,
+    },
+    fairness_scope: {
+      protected_attributes: [],
+      metric: null,
+      max_disparity: null,
+    },
+  };
+
+  const thresholdingData = rawData.thresholding || existingObj.thresholding || {
+    enabled: false,
+    default_threshold: null,
+    optimization: {
+      enabled: false,
+      metric: null,
+      constraints: {},
+    },
+  };
+
+  const validationGatesData = rawData.validation_gates || existingObj.validation_gates || {
+    minimum_primary_metric: null,
+    maximum_overfitting_gap: null,
+    maximum_latency: null,
+    maximum_model_size: null,
+    fairness_requirements: null,
+    data_quality_requirements: {
+      max_null_rate: null,
+      schema_match: "strict",
+    },
+    calibration_requirement: {
+      method: "none",
+      max_calibration_error: null,
+    },
+    stability_requirement: {
+      metric_variance_across_folds_max: null,
+    },
+    pass_condition: "all_gates_must_pass",
+  };
+
+  const artifactsData = rawData.artifacts || existingObj.artifacts || {
+    output_path: `/workspace/${timestamp}/python_script`,
+    save: {
+      model: true,
+      metrics: true,
+      predictions: false,
+      explainability: false,
+      training_config: true,
+    },
+    serialization_format: "onnx",
+    explainability_method: "none",
+  };
+
+  // 2. Format the complete document between the exact comment headers from TrainingJobContract schema
+  const formattedYaml = [
+    TRAINING_JOB_CONTRACT_COMMENTS.HEADER,
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.PRIMARY_METRIC,
+    "",
+    dumpSectionYaml({
+      "x-primary-metric-name": primaryMetricName,
+      "x-primary-metric-def": primaryMetricDef,
+    }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.TRAINING_JOB,
+    "",
+    dumpSectionYaml({ training_job: trainingJobData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.ML_TASK,
+    "",
+    dumpSectionYaml({ task: taskData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.UPSTREAM_ARTIFACTS,
+    "",
+    dumpSectionYaml({ upstream_artifacts: upstreamArtifactsData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.DATA_SPLITTING,
+    "",
+    dumpSectionYaml({ split: splitData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.CLASS_IMBALANCE,
+    "",
+    dumpSectionYaml({ imbalance: imbalanceData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.HYPERPARAMETER_OPTIMIZATION,
+    "",
+    dumpSectionYaml({ hyperparameter_optimization: hpoData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.SEARCH_SPACE,
+    "",
+    dumpSectionYaml({ search_space: searchSpaceData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.TRAINING_OBJECTIVE,
+    "",
+    dumpSectionYaml({ objective: objectiveData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.EVALUATION,
+    "",
+    dumpSectionYaml({ evaluation: evaluationData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.THRESHOLD_OPTIMIZATION,
+    "",
+    dumpSectionYaml({ thresholding: thresholdingData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.VALIDATION_GATES,
+    "",
+    dumpSectionYaml({ validation_gates: validationGatesData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.MODEL_SELECTION,
+    "",
+    dumpSectionYaml({ model_selection: modelSelectionData }),
+    "",
+    "",
+    TRAINING_JOB_CONTRACT_COMMENTS.ARTIFACTS,
+    "",
+    dumpSectionYaml({ artifacts: artifactsData }),
+    "",
+  ].join("\n");
+
+  await fs.writeFile(contractPath, formattedYaml, "utf-8");
+  console.info(`[saveModularTrainingJobContract] Successfully saved Training Job Contract schema to ${contractPath}`);
+
+  return { trainingJobContractPath: contractPath, contractPath };
 }
+
+export const saveModularTrainingConfigContract = saveModularTrainingJobContract;
 
 
 /**
@@ -1055,11 +1292,21 @@ export async function deleteProjectSchemaFolder(
     ];
 
     let deletedAny = false;
+    if (workspaceName && projectName) {
+      const projectDir = getProjectDir(workspaceName, projectName);
+      if (fsSync.existsSync(projectDir)) {
+        await fs.rm(projectDir, { recursive: true, force: true });
+        console.info(`[deleteProjectSchemaFolder] Deleted project directory at ${projectDir}`);
+        deletedAny = true;
+      }
+    }
+
+    let deletedAnyLegacy = false;
     for (const dir of candidateDirs) {
       if (fsSync.existsSync(dir)) {
         await fs.rm(dir, { recursive: true, force: true });
-        console.info(`[deleteProjectSchemaFolder] Deleted project folder at ${dir}`);
-        deletedAny = true;
+        console.info(`[deleteProjectSchemaFolder] Deleted legacy project folder at ${dir}`);
+        deletedAnyLegacy = true;
       }
     }
 

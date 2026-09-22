@@ -31,6 +31,14 @@ export interface IModelSelectionService {
   ): Promise<ModelSelectionDecisionRecord>;
 
   /**
+   * Records user-selected models for training by project ID.
+   */
+  recordUserSelectionByProject(
+    projectId: string,
+    selectedModelIds: string[]
+  ): Promise<ModelSelectionDecisionRecord | { success: boolean; selectedModelIds: string[] }>;
+
+  /**
    * Returns the underlying ModelCapabilityRegistry.
    */
   getRegistry(): ModelCapabilityRegistry;

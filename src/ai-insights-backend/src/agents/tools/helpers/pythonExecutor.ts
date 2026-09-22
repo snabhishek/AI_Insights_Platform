@@ -3,8 +3,14 @@ import fs from "fs";
 import path from "path";
 import { exec } from "child_process";
 import { IngestionServices } from "../../state";
-import { getPythonScriptDirectory } from "../filesystem/mcpFilesystemClient";
-import { getDatasourcesBasePath } from "../../../config/fileServer.config";
+import {
+  ensureDirectoryExists,
+  getFileServerBasePath,
+  getLatestProjectTimestamp,
+  getProjectPythonScriptDir,
+  resolveProjectEffectiveTimestamp,
+  sanitizeFolderName,
+} from "../../../config/fileServer.config";
 
 export interface ExecutionResult {
   success: boolean;
@@ -33,44 +39,18 @@ const IMPORT_TO_PACKAGE: Record<string, string> = {
   statsmodels: "statsmodels",
 };
 
-const ALLOWLIST = new Set([
-  "numpy",
-  "pandas",
-  "scipy",
-  "scikit-learn",
-  "matplotlib",
-  "seaborn",
-  "opencv-python",
-  "pillow",
-  "torch",
-  "torchvision",
-  "transformers",
-  "datasets",
-  "xgboost",
-  "lightgbm",
-  "duckdb",
-  "pyyaml",
-  "scikit-image",
-  "statsmodels",
-]);
-
 /**
- * Parses Python code to find import statements and returns mapped package names from allowlist.
+ * Normalizes the list of required packages provided explicitly by the agent output.
  */
-export function parseRequiredPackages(code: string): string[] {
+export function normalizeRequiredPackages(explicitPackages?: string[]): string[] {
   const packages = new Set<string>();
-  const lines = code.split("\n");
-  const importRegex = /^\s*(?:import|from)\s+([a-zA-Z0-9_]+)/;
 
-  for (const line of lines) {
-    const match = line.match(importRegex);
-    if (match) {
-      const moduleName = match[1];
-      const pipName = IMPORT_TO_PACKAGE[moduleName] || moduleName;
-      const lowerPipName = pipName.toLowerCase();
-
-      if (ALLOWLIST.has(lowerPipName)) {
-        packages.add(pipName);
+  if (Array.isArray(explicitPackages)) {
+    for (const pkg of explicitPackages) {
+      if (typeof pkg === "string" && pkg.trim().length > 0) {
+        const cleanPkg = pkg.trim();
+        const mapped = IMPORT_TO_PACKAGE[cleanPkg] || cleanPkg;
+        packages.add(mapped);
       }
     }
   }
@@ -228,6 +208,7 @@ async function ensureImage(docker: Docker, image: string): Promise<void> {
 
 /**
  * Executes a Python script inside a managed Docker container session.
+ * Mounts directly and only the project folder to `/workspace`.
  * Reuses the existing container across Feature Architect workers, Program Rectifier, and Feature Validator,
  * and preserves installed Python packages and environment state.
  */
@@ -237,26 +218,63 @@ export async function executePythonScript(
   projectId: string,
   runTimestamp: string,
   services: IngestionServices,
-  connectorIdList?: string[]
+  connectorIdList?: string[],
+  requiredPackages?: string[]
 ): Promise<ExecutionResult> {
-  const baseDir = getPythonScriptDirectory(projectId, runTimestamp);
-  if (!fs.existsSync(baseDir)) {
-    fs.mkdirSync(baseDir, { recursive: true });
+  let workspaceName = "Default_Workspace";
+  let projectName = projectId || "default";
+
+  if (services?.projectService && projectId) {
+    try {
+      const pWs = await services.projectService.getProjectWithWorkspace(projectId);
+      if (pWs) {
+        workspaceName = pWs.workspaceName || workspaceName;
+        projectName = pWs.project.name || projectName;
+      }
+    } catch (err: any) {
+      console.log(err);
+    }
   }
 
-  const scriptPath = path.join(baseDir, scriptName);
+  // 1. Resolve project directory on host
+  const projectRootDir = path.join(
+    getFileServerBasePath(),
+    "workspaces",
+    sanitizeFolderName(workspaceName),
+    "projects",
+    sanitizeFolderName(projectName)
+  );
+  ensureDirectoryExists(projectRootDir);
+  const normProjectDir = path.resolve(projectRootDir).replace(/\\/g, "/");
+
+  // 2. Always resolve the latest timestamp folder for script execution
+  const effectiveTimestamp =
+    getLatestProjectTimestamp(workspaceName, projectName) ||
+    (runTimestamp && runTimestamp !== "default" ? runTimestamp.trim() : undefined) ||
+    resolveProjectEffectiveTimestamp(workspaceName, projectName, runTimestamp) ||
+    runTimestamp ||
+    "default";
+
+  const baseDir = getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
+  ensureDirectoryExists(baseDir);
+
+  // 3. Format script filename with effective timestamp if not already present
+  let effectiveScriptName = path.basename(scriptName);
+  const ext = path.extname(effectiveScriptName) || ".py";
+  const baseName = path.basename(effectiveScriptName, ext);
+  if (!baseName.includes(effectiveTimestamp) && effectiveTimestamp !== "default") {
+    effectiveScriptName = `${baseName}_${effectiveTimestamp}${ext}`;
+  }
+
+  const scriptPath = path.join(baseDir, effectiveScriptName);
   fs.writeFileSync(scriptPath, code, "utf-8");
 
-  const datasourcesDir = getDatasourcesBasePath();
-  if (!fs.existsSync(datasourcesDir)) {
-    fs.mkdirSync(datasourcesDir, { recursive: true });
-  }
+  // 4. Compute the relative path of the script directory from the project root folder
+  const relativePythonScriptDir = path.relative(projectRootDir, baseDir).replace(/\\/g, "/");
+  const containerWorkingDir = `/workspace/${relativePythonScriptDir}`.replace(/\/+/g, "/");
 
-  const normRunDir = path.resolve(baseDir).replace(/\\/g, "/");
-  const normDatasourcesDir = path.resolve(datasourcesDir).replace(/\\/g, "/");
-
-  // Formulate command line arguments for the datasource
-  const args: string[] = [];
+  // Formulate command line arguments for the datasource and output directory
+  const args: string[] = [`--out-dir "${containerWorkingDir}"`];
 
   if (connectorIdList && connectorIdList.length > 0) {
     const primaryConnectorId = connectorIdList[0];
@@ -266,7 +284,7 @@ export async function executePythonScript(
       const config = connector.connectionConfig;
 
       if (["excel", "csv", "tsv"].includes(type) && config.fileName) {
-        const containerDbPath = `/workspace/datasources`;
+        const containerDbPath = `/workspace`;
         args.push(`--db-path "${containerDbPath}"`);
       } else if (type === "postgres") {
         if (config.host) args.push(`--host "${config.host}"`);
@@ -296,7 +314,7 @@ export async function executePythonScript(
     };
   }
 
-  const sessionKey = `${projectId || "default"}__${runTimestamp || "default"}`;
+  const sessionKey = `${projectId || "default"}__${effectiveTimestamp}`;
   let session = activeRunContainers.get(sessionKey);
 
   // Check if existing session container is still alive and running
@@ -323,7 +341,7 @@ export async function executePythonScript(
     const safeProj = (projectId || "default").replace(/[^a-zA-Z0-9_-]/g, "_");
     const containerName = `ai-insights-exec-${safeProj}-${Date.now().toString(36)}`;
 
-    console.info(`[DockerExecutor] Creating container session [${containerName}] for run [${runTimestamp}]`);
+    console.info(`[DockerExecutor] Creating container session [${containerName}] mounting project root [${normProjectDir}]`);
     const container = (await docker.createContainer({
       name: containerName,
       Image: imageName,
@@ -331,10 +349,7 @@ export async function executePythonScript(
       WorkingDir: "/workspace",
       HostConfig: {
         Binds: [
-          `${normRunDir}:/workspace`,
-          `${normRunDir}:/workspace/duckdb`,
-          `${normDatasourcesDir}:/workspace/datasources`,
-          `${normDatasourcesDir}:/workspace/uploads`,
+          `${normProjectDir}:/workspace`,
         ],
         Memory: 2 * 1024 * 1024 * 1024, // 2GB memory limit
         NanoCpus: 2 * 1000000000, // 2 CPU cores limit
@@ -347,22 +362,24 @@ export async function executePythonScript(
       container,
       name: containerName,
       projectId: projectId || "default",
-      runTimestamp: runTimestamp || "default",
+      runTimestamp: effectiveTimestamp,
       installedPackages: new Set<string>(),
       createdAt: Date.now(),
     };
     activeRunContainers.set(sessionKey, session);
   } else {
-    console.info(`[DockerExecutor] Reusing existing container session [${session.name}] for run [${runTimestamp}]`);
+    console.info(`[DockerExecutor] Reusing existing container session [${session.name}] for run [${effectiveTimestamp}]`);
   }
 
-  // Detect and install required packages that haven't been installed yet
-  const requiredPackages = parseRequiredPackages(code);
-  const packagesToInstall = requiredPackages.filter((pkg) => !session!.installedPackages.has(pkg));
+  // Install explicit required packages from agent output that haven't been installed yet
+  const packagesToInstall = normalizeRequiredPackages(requiredPackages).filter(
+    (pkg) => !session!.installedPackages.has(pkg)
+  );
 
-  let scriptExecCmd = `python "${scriptName}" ${args.join(" ")}`;
+  let scriptExecCmd = `python "${effectiveScriptName}" ${args.join(" ")}`;
   if (packagesToInstall.length > 0) {
     const pipFlags = "--no-cache-dir --disable-pip-version-check --root-user-action=ignore";
+    console.info(`[DockerExecutor] Installing packages [${packagesToInstall.join(", ")}] in container [${session.name}]`);
     scriptExecCmd = `pip install ${pipFlags} ${packagesToInstall.join(" ")} && ${scriptExecCmd}`;
     for (const pkg of packagesToInstall) {
       session.installedPackages.add(pkg);
@@ -370,12 +387,12 @@ export async function executePythonScript(
   }
 
   try {
-    console.info(`[DockerExecutor] Running script [${scriptName}] inside container [${session.name}]`);
+    console.info(`[DockerExecutor] Running script [${effectiveScriptName}] in working directory [${containerWorkingDir}] inside container [${session.name}]`);
     const execInstance = await session.container.exec({
       Cmd: ["sh", "-c", scriptExecCmd],
       AttachStdout: true,
       AttachStderr: true,
-      WorkingDir: "/workspace",
+      WorkingDir: containerWorkingDir,
     });
 
     const stream = await execInstance.start({ hijack: true, stdin: false });
@@ -414,19 +431,35 @@ export async function executePythonScript(
 /**
  * Explicitly cleans up and deletes the container session for a specific run when the stage completes.
  */
-export async function cleanupRunContainer(projectId: string, runTimestamp: string): Promise<void> {
-  const sessionKey = `${projectId || "default"}__${runTimestamp || "default"}`;
-  const session = activeRunContainers.get(sessionKey);
+export async function cleanupRunContainer(projectId: string, runTimestamp?: string): Promise<void> {
+  const safeProj = projectId || "default";
+  const sessionKey = `${safeProj}__${runTimestamp || "default"}`;
+  const directSession = activeRunContainers.get(sessionKey);
 
-  if (session) {
+  if (directSession) {
     try {
-      console.info(`[DockerExecutor] Cleaning up container session [${session.name}] for project [${projectId}]`);
-      await session.container.stop({ t: 1 }).catch(() => {});
-      await session.container.remove({ force: true }).catch(() => {});
+      console.info(`[DockerExecutor] Cleaning up container session [${directSession.name}] for project [${projectId}]`);
+      await directSession.container.stop({ t: 1 }).catch(() => {});
+      await directSession.container.remove({ force: true }).catch(() => {});
       activeRunContainers.delete(sessionKey);
-      console.info(`[DockerExecutor] Successfully deleted container [${session.name}]`);
+      console.info(`[DockerExecutor] Successfully deleted container [${directSession.name}]`);
     } catch (err: any) {
-      console.warn(`[DockerExecutor] Error removing container [${session.name}]:`, err.message);
+      console.warn(`[DockerExecutor] Error removing container [${directSession.name}]:`, err.message);
+    }
+    return;
+  }
+
+  for (const [key, session] of activeRunContainers.entries()) {
+    if (key.startsWith(`${safeProj}__`)) {
+      try {
+        console.info(`[DockerExecutor] Cleaning up container session [${session.name}] for project [${projectId}]`);
+        await session.container.stop({ t: 1 }).catch(() => {});
+        await session.container.remove({ force: true }).catch(() => {});
+        activeRunContainers.delete(key);
+        console.info(`[DockerExecutor] Successfully deleted container [${session.name}]`);
+      } catch (err: any) {
+        console.warn(`[DockerExecutor] Error removing container [${session.name}]:`, err.message);
+      }
     }
   }
 }

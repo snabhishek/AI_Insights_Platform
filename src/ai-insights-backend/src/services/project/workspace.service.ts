@@ -9,11 +9,13 @@ import { createProjectSchemaFile, deleteProjectSchemaFolder } from "../../agents
 import {
   computeProjectRelativePath,
   ensureDirectoryExists,
+  getProjectDir,
   getWorkspaceDir,
   resolveStoragePath,
 } from "../../config/fileServer.config";
 import fs from "fs";
 import path from "path";
+import yaml from "js-yaml";
 
 export type ServiceResult<T> =
   | { success: true; data: T }
@@ -135,10 +137,8 @@ export class WorkspaceService {
     }
 
     const projectId = `proj-${uuidv4()}`;
-    const relativeFolderPath = computeProjectRelativePath(ws.name, name);
-    const absFolderPath = resolveStoragePath(relativeFolderPath);
-    ensureDirectoryExists(absFolderPath);
-    ensureDirectoryExists(path.join(absFolderPath, "python_script"));
+    const projectDir = getProjectDir(ws.name, name);
+    ensureDirectoryExists(projectDir);
 
     const newProject: Project = {
       id: projectId,
@@ -147,7 +147,6 @@ export class WorkspaceService {
       dataSources,
       initials: projectData.initials || "US",
       workspaceId,
-      folderPath: relativeFolderPath,
       useCase: projectData.useCase || "",
       domain: projectData.domain || "",
       subDomain: projectData.subDomain || "",
@@ -157,19 +156,7 @@ export class WorkspaceService {
 
     const created = await this.projectRepository.createProject(newProject);
     if (created) {
-      // 1. Create project schema YAML
-      try {
-        await createProjectSchemaFile(ws.name, {
-          name: newProject.name,
-          domain: newProject.domain,
-          subDomain: newProject.subDomain,
-          useCase: newProject.useCase,
-        });
-      } catch (schemaErr: any) {
-        console.warn(`[workspaceService] Failed to create project schema YAML file:`, schemaErr?.message || schemaErr);
-      }
-
-      // 2. Ingest connected data sources into DuckDB under designated project folder
+      // Ingest connected data sources into DuckDB under designated project folder
       if (this.duckDBService && this.connectorRepository && dataSources.length > 0) {
         try {
           const projectSourceInputs: ProjectSourceInput[] = [];
@@ -184,7 +171,7 @@ export class WorkspaceService {
             }
           }
           if (projectSourceInputs.length > 0) {
-            await this.duckDBService.ingestProjectSources(newProject.name, projectSourceInputs, ws.name, relativeFolderPath);
+            await this.duckDBService.ingestProjectSources(newProject.name, projectSourceInputs, ws.name);
           }
         } catch (ingestErr: any) {
           console.warn(`[workspaceService] Warning during project DuckDB source ingestion:`, ingestErr?.message || ingestErr);
@@ -272,7 +259,7 @@ export class WorkspaceService {
 
       if (this.duckDBService && projectWithWs.project.name) {
         try {
-          await this.duckDBService.deleteProjectFolder(projectWithWs.project.name);
+          await this.duckDBService.deleteProjectFolder(projectWithWs.project.name, projectWithWs.workspaceName);
         } catch (duckDbCleanErr: any) {
           console.warn(`[workspaceService] Failed to delete project DuckDB folder for ${pid}:`, duckDbCleanErr?.message || duckDbCleanErr);
         }
@@ -284,5 +271,124 @@ export class WorkspaceService {
 
   async getProjectById(pid: string): Promise<Project | undefined> {
     return this.projectRepository.getById(pid);
+  }
+
+  async getProjectFormSchema(
+    workspaceId: string,
+    projectId: string
+  ): Promise<ServiceResult<{
+    sourceId: string;
+    projectId: string;
+    projectName: string;
+    filterGroups: any[];
+    forms: any[];
+    summary?: string;
+    status?: string;
+  }>> {
+    const project = await this.projectRepository.getById(projectId);
+    if (!project) {
+      return { success: false, reason: "NOT_FOUND", message: "Project not found." };
+    }
+
+    const runs = await this.projectRepository.getProjectRuns(projectId);
+    // 1. Check all runs for this project in descending order
+    for (const run of runs) {
+      const state = (run.agentState as any) || {};
+      const candidates = [
+        state.stageOutputs?.formBuilder,
+        state.stageOutputs?.hierarchyMapper?.formBuilder,
+        state.hierarchyMapper?.formBuilder,
+        state.formBuilder,
+        state.stageOutputs?.hierarchyMapper,
+        state.hierarchyMapper,
+      ];
+
+      for (const c of candidates) {
+        if (!c || typeof c !== "object") continue;
+        const groups = c.filterGroups || c.forms || c.groups;
+        if (Array.isArray(groups) && groups.length > 0) {
+          const sourceId =
+            (project.dataSources && project.dataSources.length > 0 ? project.dataSources[0] : null) ||
+            c.sourceId ||
+            "default_source";
+
+          return {
+            success: true,
+            data: {
+              sourceId,
+              projectId: project.id,
+              projectName: project.name,
+              filterGroups: groups,
+              forms: groups,
+              summary: c.summary,
+              status: c.status || "OK",
+            },
+          };
+        }
+      }
+    }
+
+    // 2. Check disk for YAML schema file if not in DB runs
+    try {
+      const projectWithWs = await this.projectRepository.getProjectWithWorkspace(projectId);
+      const wsName = projectWithWs?.workspaceName;
+      if (wsName) {
+        const projectDir = getProjectDir(wsName, project.name);
+        if (fs.existsSync(projectDir)) {
+          const findFormYaml = (dir: string): string | null => {
+            if (!fs.existsSync(dir)) return null;
+            const entries = fs.readdirSync(dir, { withFileTypes: true });
+            for (const entry of entries) {
+              const fullPath = path.join(dir, entry.name);
+              if (entry.isDirectory()) {
+                const found = findFormYaml(fullPath);
+                if (found) return found;
+              } else if (
+                entry.isFile() &&
+                entry.name.endsWith(".yaml") &&
+                (entry.name.includes("form_schema") || entry.name.includes("hierarchy_schema"))
+              ) {
+                return fullPath;
+              }
+            }
+            return null;
+          };
+
+          const yamlPath = findFormYaml(projectDir);
+          if (yamlPath) {
+            const yamlContent = fs.readFileSync(yamlPath, "utf-8");
+            const parsed: any = yaml.load(yamlContent);
+            const groups = parsed?.filterGroups || parsed?.forms || parsed?.groups;
+            if (Array.isArray(groups) && groups.length > 0) {
+              const sourceId =
+                (project.dataSources && project.dataSources.length > 0 ? project.dataSources[0] : null) ||
+                parsed?.sourceId ||
+                "default_source";
+
+              return {
+                success: true,
+                data: {
+                  sourceId,
+                  projectId: project.id,
+                  projectName: project.name,
+                  filterGroups: groups,
+                  forms: groups,
+                  summary: parsed?.summary,
+                  status: parsed?.status || "OK",
+                },
+              };
+            }
+          }
+        }
+      }
+    } catch (diskErr: any) {
+      console.warn(`[workspaceService] Warning reading form schema from disk:`, diskErr?.message || diskErr);
+    }
+
+    return {
+      success: false,
+      reason: "NOT_FOUND",
+      message: "No form schema found for this project.",
+    };
   }
 }

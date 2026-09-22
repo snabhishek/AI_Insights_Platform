@@ -1,0 +1,7 @@
+search-path = [
+    "src/ai-insights-service",
+]
+ignore-missing-imports = [
+    "torch",
+    "psutil",
+]

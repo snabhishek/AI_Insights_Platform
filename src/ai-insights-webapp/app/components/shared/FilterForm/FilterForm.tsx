@@ -33,7 +33,6 @@ function ModernSelect({
   placeholder,
 }: ModernSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [localSearch, setLocalSearch] = useState(searchTerm);
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -60,7 +59,6 @@ function ModernSelect({
   };
 
   const handleSearch = (term: string) => {
-    setLocalSearch(term);
     if (onSearchChange) {
       onSearchChange(term);
     }
@@ -68,9 +66,9 @@ function ModernSelect({
 
   // Filter options locally based on search
   const filteredOptions = options.filter((opt) => {
-    if (!localSearch.trim()) return true;
+    if (!searchTerm.trim()) return true;
     const optLabel = typeof opt === "object" ? opt.label || opt.name || opt.value || opt.id : String(opt);
-    return String(optLabel).toLowerCase().includes(localSearch.toLowerCase().trim());
+    return String(optLabel).toLowerCase().includes(searchTerm.toLowerCase().trim());
   });
 
   const selectedOption = options.find((opt) => {
@@ -152,12 +150,12 @@ function ModernSelect({
               <input
                 ref={searchInputRef}
                 type="text"
-                value={localSearch}
+                value={searchTerm}
                 onChange={(e) => handleSearch(e.target.value)}
                 placeholder={`Search ${field.label}...`}
                 className="w-full pl-9 pr-8 py-2 text-xs bg-background border border-border/70 rounded-xl text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/20 focus:border-primary transition-all shadow-inner"
               />
-              {localSearch && (
+              {searchTerm && (
                 <button
                   type="button"
                   onClick={() => handleSearch("")}
@@ -279,15 +277,15 @@ export default function FilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000
 
     if (errorMessage) {
       return (
-        <div className="flex items-center justify-between text-xs text-rose-500 bg-rose-50 dark:bg-rose-950/40 p-2.5 rounded-xl border border-rose-200 dark:border-rose-900">
-          <div className="flex items-center gap-1.5">
-            <span>⚠️</span>
-            <span>Failed to load choices</span>
+        <div className="w-full h-10 px-3.5 flex items-center justify-between text-xs text-rose-500 bg-rose-50 dark:bg-rose-950/40 rounded-xl border border-rose-200 dark:border-rose-900 shadow-sm outline-none">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="shrink-0 text-xs">⚠️</span>
+            <span className="truncate">Failed to load choices</span>
           </div>
           <button
             type="button"
             onClick={() => retryFetch(fieldId)}
-            className="px-2.5 py-1 bg-rose-500 text-white rounded-lg font-medium hover:bg-rose-600 transition-colors text-xs cursor-pointer shadow-sm"
+            className="px-2.5 py-1 h-6 shrink-0 flex items-center justify-center bg-rose-500 text-white rounded-lg font-medium hover:bg-rose-600 transition-colors text-[11px] cursor-pointer shadow-sm ml-2 leading-none"
           >
             Retry
           </button>
@@ -378,21 +376,23 @@ export default function FilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000
           )}
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 items-start">
           {(group.fields || []).map((field) => {
             const parents = field.parentFields || (field.parentField ? [field.parentField] : []);
             return (
-              <div key={field.fieldId} className="space-y-1.5">
-                <label className="block text-xs font-semibold text-foreground flex items-center justify-between">
-                  <span className="truncate">{field.label}</span>
+              <div key={field.fieldId} className="flex flex-col justify-start space-y-1.5">
+                <label className="text-xs font-semibold text-foreground flex items-center justify-between h-6 min-h-[24px] max-h-[24px] overflow-hidden leading-none">
+                  <span className="truncate flex-1">{field.label}</span>
                   {parents.length > 0 && (
-                    <span className="text-[10px] text-primary font-medium bg-primary/10 px-2 py-0.5 rounded-md border border-primary/20 shrink-0 ml-2 truncate max-w-[180px]">
+                    <span className="text-[10px] text-primary font-medium bg-primary/10 px-1.5 py-0.5 rounded-md border border-primary/20 shrink-0 ml-2 truncate max-w-[180px] inline-flex items-center h-4.5 leading-none">
                       Cascades: {parents.join(", ")}
                     </span>
                   )}
                 </label>
 
-                {renderFieldControl(field)}
+                <div className="w-full">
+                  {renderFieldControl(field)}
+                </div>
               </div>
             );
           })}

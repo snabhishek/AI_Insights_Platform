@@ -13,6 +13,7 @@ import {
 import { useApp, Project, BACKEND_URL } from "../providers/AppContext";
 import { PipelineStatuses, RunStatus } from "../projects/types";
 import { INITIAL_PIPELINE_STATUSES } from "../projects/constants";
+import { resolveNextWorkflowPhase, STEP_TO_NODE_MAP } from "../projects/pipelineFlowConfig";
 import ProjectsListPage from "../projects/ProjectsListPage";
 import ProjectDetailPage from "../projects/ProjectDetailPage";
 import ProjectCreatePage from "../projects/ProjectCreatePage";
@@ -102,7 +103,7 @@ export default function ProjectsPage() {
   const [lastRunTime, setLastRunTime] = useState("Not run yet");
   const [workflowSessionId, setWorkflowSessionId] = useState<string | null>(null);
   const [activeStage, setActiveStage] = useState<string | null>(null);
-  const [stageOutputs, setStageOutputs] = useState<Record<string, unknown>>({});
+  const [stageOutputs, setStageOutputs] = useState<Record<string, any>>({});
   const [agentThinking, setAgentThinking] = useState<Record<string, Array<{ time: string; text: string; done: boolean }>>>({});
   const [workflowMessage, setWorkflowMessage] = useState<string>("Idle");
   const [requiresApproval, setRequiresApproval] = useState(false);
@@ -113,6 +114,7 @@ export default function ProjectsPage() {
 
   // ── Pause/Resume state ────────────────────────────────────────────────────
   const [isPaused, setIsPaused] = useState(false);
+  const [isAwaitingResponse, setIsAwaitingResponse] = useState(false);
   const [pausedAtPhase, setPausedAtPhase] = useState<string | null>(null);
   const [pausedStateSnapshot, setPausedStateSnapshot] = useState<any>(null);
   const [pausedSessionId, setPausedSessionId] = useState<string | null>(null);
@@ -133,6 +135,7 @@ export default function ProjectsPage() {
     setWorkflowMessage("Idle");
     setRequiresApproval(false);
     setApprovalNextStep(null);
+    setIsAwaitingResponse(false);
     // Clear pause state
     setIsPaused(false);
     setPausedAtPhase(null);
@@ -184,6 +187,8 @@ export default function ProjectsPage() {
     mapSingle("modelSelectionNode", "Model Selection");
     mapSingle("trainingConfiguration", "Training Configuration");
     mapSingle("trainingConfigurationNode", "Training Configuration");
+    mapSingle("preFlight", "Pre Flight");
+    mapSingle("preFlightNode", "Pre Flight");
     mapSingle("modelTraining", "Model Training");
     mapSingle("modelTrainingNode", "Model Training");
     mapSingle("modelValidation", "Model Validation");
@@ -223,6 +228,10 @@ export default function ProjectsPage() {
       isRunning(stageStatuses.trainingConfiguration) ||
       isCompleted(stageStatuses.trainingConfigurationNode) ||
       isRunning(stageStatuses.trainingConfigurationNode) ||
+      isCompleted(stageStatuses.preFlight) ||
+      isRunning(stageStatuses.preFlight) ||
+      isCompleted(stageStatuses.preFlightNode) ||
+      isRunning(stageStatuses.preFlightNode) ||
       isCompleted(stageStatuses.modelTraining) ||
       isRunning(stageStatuses.modelTraining) ||
       isCompleted(stageStatuses.modelTrainingNode) ||
@@ -247,8 +256,17 @@ export default function ProjectsPage() {
   };
 
   const determineActiveStage = (payload: Partial<WorkflowResponse["data"]>): string => {
+    const stageOutputs = payload.stageOutputs as Record<string, any> | undefined;
+    const stageStatuses = payload.stageStatuses as Record<string, any> | undefined;
+    const hasModelSelection = Boolean(stageOutputs?.modelSelection || stageStatuses?.modelSelection === "Completed");
+    const hasTrainingConfig = Boolean(stageOutputs?.trainingConfiguration || stageStatuses?.trainingConfiguration === "Completed");
+
+    if (hasModelSelection && !hasTrainingConfig) {
+      return "Model Selection";
+    }
+
     if (payload.status === "completed") {
-      if (payload.stageOutputs?.modelSelection || payload.stageStatuses?.modelSelection === "Completed") {
+      if (hasModelSelection) {
         return "Model Selection";
       }
       if (
@@ -262,8 +280,7 @@ export default function ProjectsPage() {
     }
     if (payload.requiresApproval) {
       if (
-        payload.stageOutputs?.modelSelection ||
-        payload.stageStatuses?.modelSelection === "Completed" ||
+        hasModelSelection ||
         payload.nextStep?.toLowerCase().includes("model") ||
         payload.nextStep?.toLowerCase().includes("training")
       ) {
@@ -292,7 +309,10 @@ export default function ProjectsPage() {
       if (node === "featureValidator" || node === "featureValidatorNode") return "Feature Validator";
       if (node === "exogenous" || node === "exogenousScout") return "Exogenous Scout";
       if (node === "modelSelection" || node === "modelSelectionNode") return "Model Selection";
-      if (node === "trainingConfiguration" || node === "trainingConfigurationNode") return "Training Configuration";
+      if (node === "trainingConfiguration" || node === "trainingConfigurationNode") {
+        return hasModelSelection && !hasTrainingConfig ? "Model Selection" : "Training Configuration";
+      }
+      if (node === "preFlight" || node === "preFlightNode") return "Pre Flight";
       if (node === "modelTraining" || node === "modelTrainingNode") return "Model Training";
       if (node === "modelValidation" || node === "modelValidationNode") return "Model Validation";
       return node!;
@@ -320,7 +340,16 @@ export default function ProjectsPage() {
 
       const rawStatus = (state.status || (projectToHydrate as any).status || "").toLowerCase();
 
-      if (isRunningLocally || rawStatus === "running") {
+      const isStillRunningLocally =
+        rawStatus === "running" ||
+        (isRunningLocally &&
+          rawStatus !== "paused" &&
+          rawStatus !== "completed" &&
+          rawStatus !== "success" &&
+          rawStatus !== "stopped" &&
+          rawStatus !== "failed");
+
+      if (isStillRunningLocally) {
         setRunStatus("Running");
         setIsPaused(false);
         setRequiresApproval(false);
@@ -370,24 +399,35 @@ export default function ProjectsPage() {
       }
       setActiveStage(determineActiveStage(state));
 
-      // Model Training & Validation is the final stage. Once reached, requiresApproval is false.
-      const isAtOrPastModelPhase =
-        nextStatuses["Model Selection"] === "Completed" ||
-        nextStatuses["Model Selection"] === "In Progress" ||
-        nextStatuses["Training Configuration"] === "Completed" ||
-        nextStatuses["Training Configuration"] === "In Progress" ||
-        nextStatuses["Model Training"] === "Completed" ||
-        nextStatuses["Model Training"] === "In Progress" ||
-        nextStatuses["Model Validation"] === "Completed" ||
-        nextStatuses["Model Validation"] === "In Progress" ||
-        state.stageOutputs?.modelSelection !== undefined;
+      // Check if waiting for internal HITL model confirmation
+      const isWaitingForModelConfirmation =
+        (nextStatuses["Model Selection"] === "Completed" || state.stageOutputs?.modelSelection !== undefined) &&
+        !(state.stageOutputs as Record<string, any> | undefined)?.trainingConfiguration?.contractPath &&
+        nextStatuses["Training Configuration"] !== "Completed" &&
+        (state.nextStep === "Training Configuration" || state.nextStep === "trainingConfigurationNode");
 
-      if (isAtOrPastModelPhase) {
-        setRequiresApproval(false);
-        setApprovalNextStep(null);
-      } else if (state.status !== "running" && !isRunningLocally) {
-        setRequiresApproval(Boolean(state.requiresApproval));
-        setApprovalNextStep(state.requiresApproval ? (state.nextStep || "Feature Engineering") : null);
+      if (isWaitingForModelConfirmation) {
+        setIsAwaitingResponse(true);
+        setRunStatus("Paused");
+        setIsPaused(false);
+        setRequiresApproval(true);
+        setApprovalNextStep("Training Configuration");
+      } else {
+
+        setIsAwaitingResponse(false);
+        const isAtOrPastModelPhase =
+          nextStatuses["Training Configuration"] === "Completed" ||
+          nextStatuses["Pre Flight"] === "Completed" ||
+          nextStatuses["Model Training"] === "Completed" ||
+          nextStatuses["Model Validation"] === "Completed";
+
+        if (isAtOrPastModelPhase) {
+          setRequiresApproval(false);
+          setApprovalNextStep(null);
+        } else if (state.status !== "running" && !isStillRunningLocally) {
+          setRequiresApproval(Boolean(state.requiresApproval));
+          setApprovalNextStep(state.requiresApproval ? (state.nextStep || "Feature Engineering") : null);
+        }
       }
       if (state.sessionId) {
         setWorkflowSessionId(state.sessionId);
@@ -561,7 +601,16 @@ export default function ProjectsPage() {
           freshState.stageStatuses?.modelTraining === "Completed" ||
           freshState.stageOutputs?.modelSelection !== undefined;
 
-        if (isBackendStillActive || isClientStillExecuting || freshStatus === "running") {
+        const isStillRunning =
+          freshStatus === "running" ||
+          ((isBackendStillActive || isClientStillExecuting) &&
+            freshStatus !== "paused" &&
+            freshStatus !== "completed" &&
+            freshStatus !== "success" &&
+            freshStatus !== "failed" &&
+            freshStatus !== "stopped");
+
+        if (isStillRunning) {
           setRunStatus("Running");
           setIsPaused(false);
           setRequiresApproval(false);
@@ -581,11 +630,29 @@ export default function ProjectsPage() {
           setApprovalNextStep(null);
         } else if (freshStatus === "paused") {
           activeRunningProjectIdRef.current = null;
-          setRunStatus("Paused");
-          if (freshState.requiresApproval && !isAtOrPastModel) {
+          isExecutingRef.current = false;
+          const pollStageOutputs = freshState.stageOutputs as Record<string, any> | undefined;
+          const isWaitingForModel =
+            (freshState.stageStatuses?.modelSelection === "Completed" || pollStageOutputs?.modelSelection !== undefined) &&
+            !pollStageOutputs?.trainingConfiguration?.contractPath &&
+            freshState.stageStatuses?.trainingConfiguration !== "Completed" &&
+            (freshState.nextStep === "Training Configuration" || freshState.nextStep === "trainingConfigurationNode");
+
+          if (isWaitingForModel) {
+            setIsAwaitingResponse(true);
+            setRunStatus("Paused");
+            setIsPaused(false);
+            setRequiresApproval(true);
+            setApprovalNextStep("Training Configuration");
+          } else if (freshState.requiresApproval && !isAtOrPastModel) {
+            setIsAwaitingResponse(false);
+            setRunStatus("Paused");
+            setIsPaused(false);
             setRequiresApproval(true);
             setApprovalNextStep(freshState.nextStep || null);
           } else {
+            setIsAwaitingResponse(false);
+            setRunStatus("Paused");
             setIsPaused(true);
             setRequiresApproval(false);
             setApprovalNextStep(null);
@@ -615,51 +682,56 @@ export default function ProjectsPage() {
     });
 
     const rawStatus = (payload.status || "").toLowerCase();
-    const isAtOrPastModelPhase =
-      payload.stageStatuses?.modelSelection === "Completed" ||
-      payload.stageStatuses?.modelSelectionNode === "Completed" ||
-      payload.stageStatuses?.trainingConfiguration === "Completed" ||
-      payload.stageStatuses?.modelTraining === "Completed" ||
-      payload.stageStatuses?.modelValidation === "Completed" ||
-      payload.stageOutputs?.modelSelection !== undefined;
+    const stageOutputs = payload.stageOutputs as Record<string, any> | undefined;
+    const isWaitingForModelConfirmation =
+      (payload.stageStatuses?.modelSelection === "Completed" || stageOutputs?.modelSelection !== undefined) &&
+      !stageOutputs?.trainingConfiguration?.contractPath &&
+      payload.stageStatuses?.trainingConfiguration !== "Completed" &&
+      (payload.nextStep === "Training Configuration" || payload.nextStep === "trainingConfigurationNode");
 
-    if (rawStatus === "completed" || rawStatus === "success") {
-      setRunStatus("Success");
-      setIsPaused(false);
-      setRequiresApproval(false);
-      setApprovalNextStep(null);
-    } else if (rawStatus === "stopped") {
-      setRunStatus("Stopped");
-      setIsPaused(false);
-      setRequiresApproval(false);
-      setApprovalNextStep(null);
-    } else if (rawStatus === "failed") {
-      setRunStatus("Failed");
-      setIsPaused(false);
-      setRequiresApproval(false);
-      setApprovalNextStep(null);
-    } else if (rawStatus === "paused") {
+    if (isWaitingForModelConfirmation) {
+      setIsAwaitingResponse(true);
       setRunStatus("Paused");
-      if (payload.requiresApproval && !isAtOrPastModelPhase) {
+      setIsPaused(false);
+      setRequiresApproval(true);
+      setApprovalNextStep("Training Configuration");
+    } else {
+      setIsAwaitingResponse(false);
+
+      if (rawStatus === "completed" || rawStatus === "success") {
+        setRunStatus("Success");
         setIsPaused(false);
-        setRequiresApproval(true);
-        setApprovalNextStep(payload.nextStep || null);
-      } else {
-        setIsPaused(true);
         setRequiresApproval(false);
         setApprovalNextStep(null);
-        setPausedAtPhase(determineActiveStage(payload));
+      } else if (rawStatus === "stopped") {
+        setRunStatus("Stopped");
+        setIsPaused(false);
+        setRequiresApproval(false);
+        setApprovalNextStep(null);
+      } else if (rawStatus === "failed") {
+        setRunStatus("Failed");
+        setIsPaused(false);
+        setRequiresApproval(false);
+        setApprovalNextStep(null);
+      } else if (rawStatus === "paused") {
+        if (payload.requiresApproval) {
+          setRunStatus("Paused");
+          setIsPaused(false);
+          setRequiresApproval(true);
+          setApprovalNextStep(payload.nextStep || null);
+        } else {
+          setRunStatus("Paused");
+          setIsPaused(true);
+          setRequiresApproval(false);
+          setApprovalNextStep(null);
+          setPausedAtPhase(determineActiveStage(payload));
+        }
+      } else {
+        setRunStatus("Running");
+        setIsPaused(false);
+        setRequiresApproval(false);
+        setApprovalNextStep(null);
       }
-    } else {
-      setRunStatus("Running");
-      setIsPaused(false);
-      setRequiresApproval(false);
-      setApprovalNextStep(null);
-    }
-
-    if (isAtOrPastModelPhase) {
-      setRequiresApproval(false);
-      setApprovalNextStep(null);
     }
 
     setWorkflowMessage(payload.message || payload.summary || "Workflow updated");
@@ -708,19 +780,7 @@ export default function ProjectsPage() {
         )
       );
 
-      // Persist state to backend
-      if (
-        payload.status === "completed" ||
-        payload.status === "failed" ||
-        payload.status === "stopped" ||
-        payload.status === "stopped" ||
-        payload.status === "paused" ||
-        payload.status === "running" ||
-        payload.requiresApproval ||
-        payload.stageStatuses?.resolveSchema === "Completed"
-      ) {
-        void updateProject(targetProjectId, { agentState: agentStateToSave, status: payload.status });
-      }
+      // Local state is updated above; backend persists state directly to the database during workflow execution
     }
   };
 
@@ -810,10 +870,12 @@ export default function ProjectsPage() {
         "Data Profiling": "Pending",
         "Schema Resolver": "Pending",
         "Feature Engineering": "Not Started",
+        "Model Selection": "Not Started",
+        "Training Configuration": "Not Started",
+        "Pre Flight": "Not Started",
         "Model Training": "Not Started",
         "Model Evaluation": "Not Started",
         "Model Validation": "Not Started",
-        "Model Selection": "Not Started",
       });
       // Clear pause state when starting fresh
       setIsPaused(false);
@@ -835,28 +897,8 @@ export default function ProjectsPage() {
       if (action) {
         payload.action = action;
       }
-      if (step) {
-        const stepMap: Record<string, string> = {
-          "Data Inspection": "inspect",
-          "Data Profiling": "profileData",
-          "Schema Resolver": "resolveSchema",
-          "Hierarchy Mapper": "hierarchyMapperNode",
-          "Feature Architect": "featureArchitectNode",
-          "Feature Validator": "featureArchitectNode",
-          "Exogenous Scout": "exogenous",
-          "Feature Engineering": "hierarchyMapperNode",
-          "Model Training & Validation": "modelSelectionNode",
-          "Model Training": "modelTrainingNode",
-          "Model Evaluation": "modelEvaluationNode",
-          "Model Validation": "modelValidationNode",
-          "Model Selection": "modelSelectionNode",
-          "Training Configuration": "trainingConfigurationNode",
-          modelSelection: "modelSelectionNode",
-          modelSelectionNode: "modelSelectionNode",
-          trainingConfiguration: "trainingConfigurationNode",
-          trainingConfigurationNode: "trainingConfigurationNode",
-        };
-        payload.step = stepMap[step] || step;
+      if (step && typeof step === "string") {
+        payload.step = STEP_TO_NODE_MAP[step] || step;
       }
       const response = await executeWorkflowApi(payload, controller.signal);
       const reader = response.body?.getReader();
@@ -949,10 +991,7 @@ export default function ProjectsPage() {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
       }
-      // Only persist lastData if the execution was NOT aborted/cancelled by user
-      if (!controller.signal.aborted && finishedProjectId && lastData && lastData.status !== "stopped") {
-        void updateProject(finishedProjectId, { agentState: lastData, status: lastData.status });
-      }
+      // Stream complete; backend has persisted final/paused state
     }
   };
 
@@ -1003,32 +1042,39 @@ export default function ProjectsPage() {
     void runWorkflow();
   };
 
-  const handleApprove = () => {
+  const handleApprove = (overrideTargetPhase?: unknown) => {
     if (isApproving || isExecutingRef.current) return;
     setIsApproving(true);
 
-    const isFeatureEngineeringCompleted =
-      pipelineStatuses["Feature Engineering"] === "Completed" ||
-      pipelineStatuses["Exogenous Scout"] === "Completed" ||
-      stageOutputs?.exogenousScout !== undefined;
+    const resolution = resolveNextWorkflowPhase({
+      approvalNextStep,
+      overrideTargetPhase,
+      currentStatuses: pipelineStatuses,
+      stageOutputs,
+    });
 
-    const nextStepLower = (approvalNextStep || "").toLowerCase();
-    let targetPhase = "Feature Engineering";
-    if (
-      nextStepLower.includes("training") ||
-      nextStepLower.includes("config")
-    ) {
-      targetPhase = "Training Configuration";
-    } else if (
-      isFeatureEngineeringCompleted ||
-      nextStepLower.includes("model") ||
-      nextStepLower.includes("selection")
-    ) {
-      targetPhase = "Model Selection";
+    const { targetPhase, statusesToUpdate, outputsToClear } = resolution;
+
+    if (Object.keys(statusesToUpdate).length > 0) {
+      setPipelineStatuses((prev) => ({
+        ...prev,
+        ...statusesToUpdate,
+      }));
+    }
+
+    if (outputsToClear.length > 0) {
+      setStageOutputs((prev) => {
+        const next = { ...prev };
+        for (const key of outputsToClear) {
+          delete next[key];
+        }
+        return next;
+      });
     }
 
     // Clear pause state
     setIsPaused(false);
+    setIsAwaitingResponse(false);
     setPausedAtPhase(null);
     setPausedStateSnapshot(null);
 
@@ -1036,28 +1082,7 @@ export default function ProjectsPage() {
   };
 
   const handleRetry = (step?: string) => {
-    const stepMap: Record<string, string> = {
-      inspect: "inspect",
-      profileData: "profileData",
-      preprocess: "preprocess",
-      resolveSchema: "resolveSchema",
-      exogenous: "exogenous",
-      exogenousScout: "exogenous",
-      "Data Inspection": "inspect",
-      "Data Profiling": "profileData",
-      "Schema Resolver": "resolveSchema",
-      "Exogenous Scout": "exogenous",
-      "Feature Engineering": "exogenous",
-      "Model Training & Validation": "modelSelection",
-      "Model Training": "modelTraining",
-      "Model Evaluation": "modelEvaluation",
-      "Model Validation": "modelValidation",
-      "Model Selection": "modelSelection",
-      "Training Configuration": "trainingConfigurationNode",
-      trainingConfiguration: "trainingConfigurationNode",
-      trainingConfigurationNode: "trainingConfigurationNode",
-    };
-    const normalizedStep = typeof step === "string" ? stepMap[step] || step : undefined;
+    const normalizedStep = typeof step === "string" ? STEP_TO_NODE_MAP[step] || step : undefined;
     void runWorkflow("retry", normalizedStep);
   };
 
@@ -1097,14 +1122,26 @@ export default function ProjectsPage() {
 
     // Step 5: Update backend with pause status
     if (currentProjectId) {
+      const existingAgentState = (selectedProject?.agentState as Record<string, any>) || {};
+      const isAwaitingApproval = requiresApproval || isAwaitingResponse || approvalNextStep != null;
       void updateProject(currentProjectId, {
         status: "paused",
         agentState: {
+          ...existingAgentState,
+          stageOutputs: {
+            ...(existingAgentState.stageOutputs || {}),
+            ...stageOutputs,
+          },
           status: "paused",
-          summary: `Workflow paused at ${activeStage || "inspect"} phase`,
-          message: `Paused mid-phase. Ready to resume from ${activeStage || "current"} phase.`,
+          summary: isAwaitingApproval
+            ? (existingAgentState.summary || `Workflow waiting for approval at ${approvalNextStep || activeStage || "current"} phase`)
+            : `Workflow paused at ${activeStage || "inspect"} phase`,
+          message: isAwaitingApproval
+            ? (existingAgentState.message || `Waiting for approval before ${approvalNextStep || activeStage || "current"} phase.`)
+            : `Paused mid-phase. Ready to resume from ${activeStage || "current"} phase.`,
           sessionId: currentSession || undefined,
-          requiresApproval: false,
+          requiresApproval: isAwaitingApproval,
+          nextStep: approvalNextStep || existingAgentState.nextStep,
         },
       });
     }
@@ -1149,26 +1186,43 @@ export default function ProjectsPage() {
 
   const handleReRunWorkflow = async (newUseCase?: string) => {
     if (!selectedProject) return;
-    if (newUseCase !== undefined && newUseCase !== selectedProject.useCase) {
-      await updateProject(selectedProject.id, { useCase: newUseCase });
+    const validUseCase = typeof newUseCase === "string" && newUseCase.trim().length > 0 ? newUseCase.trim() : undefined;
+    if (validUseCase && validUseCase !== selectedProject.useCase) {
+      await updateProject(selectedProject.id, { useCase: validUseCase });
     }
     // Clear workflow session ID to start a fresh execution run
     setWorkflowSessionId(null);
     setRunStatus("Idle");
+    setIsPaused(false);
+    setIsAwaitingResponse(false);
     setRequiresApproval(false);
     setStageOutputs({});
+    setAgentThinking({});
     setActiveStage("inspect");
     setPipelineStatuses({
       "Data Inspection": "In Progress",
       "Data Profiling": "Pending",
       "Schema Resolver": "Pending",
       "Feature Engineering": "Not Started",
+      "Model Selection": "Not Started",
+      "Training Configuration": "Not Started",
+      "Pre Flight": "Not Started",
       "Model Training": "Not Started",
       "Model Evaluation": "Not Started",
       "Model Validation": "Not Started",
-      "Model Selection": "Not Started",
     });
-    void runWorkflow(undefined, undefined, newUseCase ?? selectedProject.useCase);
+
+    // Cleanly clear project agentState in database so stale training configs don't leak into new run
+    await updateProject(selectedProject.id, {
+      status: "idle",
+      agentState: {
+        status: "idle",
+        stageOutputs: {},
+        stageStatuses: INITIAL_PIPELINE_STATUSES,
+      },
+    });
+
+    void runWorkflow(undefined, undefined, validUseCase ?? selectedProject.useCase);
   };
 
   // ── Navigation helpers ────────────────────────────────────────────────────
@@ -1250,13 +1304,15 @@ export default function ProjectsPage() {
         requiresApproval={requiresApproval}
         workflowMessage={workflowMessage}
         onSelectStage={handleStageSelect}
-        onApprove={handleApprove}
+        onApprove={(override) => handleApprove(typeof override === "string" ? override : undefined)}
         isApproving={isApproving}
         onRetry={(stepId) => handleRetry(stepId)}
         isPaused={isPaused}
         pausedAtPhase={pausedAtPhase}
         onPause={handlePauseWorkflow}
         onResume={handleResumeWorkflow}
+        approvalNextStep={approvalNextStep}
+        isAwaitingResponse={isAwaitingResponse}
         agentThinking={agentThinking}
         showAlert={showAlert}
       />

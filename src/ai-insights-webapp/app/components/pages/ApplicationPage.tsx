@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import FilterForm from "../shared/FilterForm/FilterForm";
 import { FormSchema } from "../../hooks/useFilterForm";
-import { useApp } from "../providers/AppContext";
+import { useApp, BACKEND_URL } from "../providers/AppContext";
 
 interface ModernProjectSelectProps {
   projects: Array<{ id: string; name: string }>;
@@ -99,10 +99,49 @@ function ModernProjectSelect({ projects, selectedProjectId, onSelect }: ModernPr
   );
 }
 
+/**
+ * Robustly inspects an agentState object across all possible candidate locations
+ * to extract a non-empty FormBuilder filter schema.
+ */
+function extractFormSchemaFromState(state: any, project: any): FormSchema | null {
+  if (!state || typeof state !== "object") return null;
+
+  const candidates = [
+    state?.stageOutputs?.formBuilder,
+    state?.stageOutputs?.hierarchyMapper?.formBuilder,
+    state?.hierarchyMapper?.formBuilder,
+    state?.formBuilder,
+    state?.stageOutputs?.hierarchyMapper,
+    state?.hierarchyMapper,
+  ];
+
+  for (const candidate of candidates) {
+    if (!candidate || typeof candidate !== "object") continue;
+    const groups = candidate.filterGroups || candidate.forms || candidate.groups;
+    if (Array.isArray(groups) && groups.length > 0) {
+      const primarySourceId =
+        (project.dataSources && project.dataSources.length > 0 ? project.dataSources[0] : null) ||
+        candidate.sourceId ||
+        "default_source";
+
+      return {
+        sourceId: primarySourceId,
+        projectId: project.id,
+        projectName: project.name,
+        filterGroups: groups,
+        forms: groups,
+      };
+    }
+  }
+
+  return null;
+}
+
 export default function ApplicationPage() {
   const { projects } = useApp();
   const [selectedProjectId, setSelectedProjectId] = useState<string>("");
   const [activeSchema, setActiveSchema] = useState<FormSchema | null>(null);
+  const [isLoadingSchema, setIsLoadingSchema] = useState<boolean>(false);
 
   // Automatically select the first available project or sync when projects change
   useEffect(() => {
@@ -116,48 +155,87 @@ export default function ApplicationPage() {
     }
   }, [projects, selectedProjectId]);
 
-  // Update active schema based strictly on selected project's AI-generated Hierarchy Mapper Form Builder output
+  // Update active schema based on selected project with synchronous extraction and asynchronous backend fallback
   useEffect(() => {
     if (!selectedProjectId) {
       setActiveSchema(null);
+      setIsLoadingSchema(false);
       return;
     }
 
     const project = projects.find((p) => p.id === selectedProjectId);
     if (!project) {
       setActiveSchema(null);
+      setIsLoadingSchema(false);
       return;
     }
 
-    const agentState = project.agentState as any;
-    const rawFormBuilder =
-      agentState?.formBuilder ||
-      agentState?.stageOutputs?.formBuilder ||
-      agentState?.stageOutputs?.hierarchyMapper?.formBuilder ||
-      agentState?.stageOutputs?.hierarchyMapper;
-
-    const primarySourceId =
-      project.dataSources && project.dataSources.length > 0
-        ? project.dataSources[0]
-        : rawFormBuilder?.sourceId;
-
-    const groups = rawFormBuilder?.filterGroups || rawFormBuilder?.forms;
-    const hasValidGroups = Array.isArray(groups) && groups.length > 0;
-
-    if (hasValidGroups && primarySourceId) {
-      setActiveSchema({
-        sourceId: primarySourceId,
-        projectId: project.id,
-        projectName: project.name,
-        filterGroups: groups,
-        forms: groups,
-      });
-    } else {
-      setActiveSchema(null);
+    // 1. Try immediate synchronous extraction from in-memory project.agentState
+    const inMemorySchema = extractFormSchemaFromState(project.agentState, project);
+    if (inMemorySchema) {
+      setActiveSchema(inMemorySchema);
+      setIsLoadingSchema(false);
+      return;
     }
+
+    // 2. Asynchronous fallback: fetch dedicated form-schema or project runs from backend
+    let isMounted = true;
+    setIsLoadingSchema(true);
+
+    async function fetchFormSchema() {
+      const wsId = project!.workspaceId || "default";
+      try {
+        // First try dedicated form-schema endpoint
+        const schemaRes = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${project!.id}/form-schema`);
+        if (schemaRes.ok) {
+          const json = await schemaRes.json();
+          if (json.success && json.schema && isMounted) {
+            setActiveSchema({
+              sourceId: json.schema.sourceId || project!.dataSources?.[0] || "default_source",
+              projectId: project!.id,
+              projectName: project!.name,
+              filterGroups: json.schema.filterGroups || json.schema.forms || [],
+              forms: json.schema.forms || json.schema.filterGroups || [],
+            });
+            setIsLoadingSchema(false);
+            return;
+          }
+        }
+
+        // Second fallback: check historical project runs
+        const runsRes = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${project!.id}/runs`);
+        if (runsRes.ok) {
+          const runs: any[] = await runsRes.json();
+          if (Array.isArray(runs) && runs.length > 0) {
+            for (const run of runs) {
+              const runSchema = extractFormSchemaFromState(run.agentState, project);
+              if (runSchema && isMounted) {
+                setActiveSchema(runSchema);
+                setIsLoadingSchema(false);
+                return;
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn("[ApplicationPage] Failed to fetch project form schema fallback:", err);
+      }
+
+      if (isMounted) {
+        setActiveSchema(null);
+        setIsLoadingSchema(false);
+      }
+    }
+
+    fetchFormSchema();
+
+    return () => {
+      isMounted = false;
+    };
   }, [selectedProjectId, projects]);
 
-  const hasDesignedForm = activeSchema && Array.isArray(activeSchema.filterGroups) && activeSchema.filterGroups.length > 0;
+  const hasDesignedForm =
+    activeSchema && Array.isArray(activeSchema.filterGroups) && activeSchema.filterGroups.length > 0;
 
   return (
     <main className="min-h-screen bg-background/50 p-6 md:p-8 space-y-6">
@@ -174,10 +252,24 @@ export default function ApplicationPage() {
 
       {/* Main Content Area */}
       <div className="w-full">
-        {hasDesignedForm ? (
+        {isLoadingSchema ? (
+          <div className="flex flex-col items-center justify-center min-h-[440px] w-full rounded-3xl border border-border/60 bg-surface/30 backdrop-blur-sm p-12 text-center shadow-sm animate-pulse space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-3xl shadow-sm">
+              <span className="animate-spin text-primary">⚙️</span>
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-foreground tracking-tight">
+                Loading Application Forms...
+              </h2>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                Resolving AI-generated data hierarchies and interactive filter configurations.
+              </p>
+            </div>
+          </div>
+        ) : hasDesignedForm ? (
           <FilterForm
             schema={activeSchema}
-            apiBaseUrl="http://127.0.0.1:5000"
+            apiBaseUrl={BACKEND_URL}
           />
         ) : (
           <div className="flex flex-col items-center justify-center min-h-[440px] w-full rounded-3xl border border-dashed border-border/80 bg-surface/30 backdrop-blur-sm p-12 text-center shadow-sm animate-in fade-in duration-300">

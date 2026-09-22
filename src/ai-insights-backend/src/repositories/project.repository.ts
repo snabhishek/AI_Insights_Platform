@@ -9,7 +9,45 @@ import { Project, ProjectRun, ProjectWithWorkspace } from "../models/project.typ
 export class PostgresProjectRepository implements IProjectRepository {
   constructor(private db: NodePgDatabase<typeof schema>) {}
 
+  private normalizeAgentState(agentState: any): any {
+    if (!agentState || typeof agentState !== "object") return agentState;
+    const stageOutputs = agentState.stageOutputs || {};
+
+    const hasForms = (obj: any) =>
+      obj &&
+      typeof obj === "object" &&
+      ((Array.isArray(obj.filterGroups) && obj.filterGroups.length > 0) ||
+        (Array.isArray(obj.forms) && obj.forms.length > 0));
+
+    if (!hasForms(agentState.formBuilder)) {
+      if (hasForms(stageOutputs.formBuilder)) {
+        agentState.formBuilder = stageOutputs.formBuilder;
+      } else if (hasForms(stageOutputs.hierarchyMapper?.formBuilder)) {
+        agentState.formBuilder = stageOutputs.hierarchyMapper.formBuilder;
+      } else if (hasForms(agentState.hierarchyMapper?.formBuilder)) {
+        agentState.formBuilder = agentState.hierarchyMapper.formBuilder;
+      }
+    }
+
+    if (!agentState.hierarchyMapper || Object.keys(agentState.hierarchyMapper).length === 0) {
+      if (stageOutputs.hierarchyMapper && Object.keys(stageOutputs.hierarchyMapper).length > 0) {
+        agentState.hierarchyMapper = stageOutputs.hierarchyMapper;
+      }
+    }
+
+    if (!agentState.relationshipBuilder || Object.keys(agentState.relationshipBuilder).length === 0) {
+      if (stageOutputs.relationshipBuilder && Object.keys(stageOutputs.relationshipBuilder).length > 0) {
+        agentState.relationshipBuilder = stageOutputs.relationshipBuilder;
+      } else if (stageOutputs.hierarchyMapper?.relationshipBuilder) {
+        agentState.relationshipBuilder = stageOutputs.hierarchyMapper.relationshipBuilder;
+      }
+    }
+
+    return agentState;
+  }
+
   private mapRowToProject(row: any): Project {
+    const rawAgentState = row.agent_state ?? row.agentState ?? {};
     return {
       id: row.id,
       name: row.name,
@@ -22,18 +60,19 @@ export class PostgresProjectRepository implements IProjectRepository {
       subDomain: row.sub_domain ?? row.subDomain ?? undefined,
       folderPath: row.folder_path ?? row.folderPath ?? undefined,
       status: row.status || (row.agent_state?.status) || "idle",
-      agentState: row.agent_state ?? row.agentState ?? {},
+      agentState: this.normalizeAgentState(rawAgentState),
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
     };
   }
 
   private mapRowToProjectRun(row: any): ProjectRun {
+    const rawAgentState = row.agent_state ?? row.agentState ?? {};
     return {
       id: row.id,
       projectId: row.project_id || row.projectId,
       useCase: row.use_case ?? row.useCase ?? undefined,
       status: row.status || (row.agent_state?.status) || "idle",
-      agentState: row.agent_state ?? row.agentState ?? {},
+      agentState: this.normalizeAgentState(rawAgentState),
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
     };
   }
@@ -50,7 +89,7 @@ export class PostgresProjectRepository implements IProjectRepository {
 
     const project = this.mapRowToProject(res[0]);
     if (latestRuns.length > 0) {
-      project.agentState = latestRuns[0].agentState;
+      project.agentState = this.normalizeAgentState(latestRuns[0].agentState);
       project.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || project.status || "idle";
       if (project.agentState && typeof project.agentState === "object") {
         (project.agentState as any).status = project.status;
@@ -71,7 +110,7 @@ export class PostgresProjectRepository implements IProjectRepository {
         .orderBy(desc(schema.projectRuns.createdAt))
         .limit(1);
       if (latestRuns.length > 0) {
-        proj.agentState = latestRuns[0].agentState;
+        proj.agentState = this.normalizeAgentState(latestRuns[0].agentState);
         proj.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || proj.status || "idle";
         if (proj.agentState && typeof proj.agentState === "object") {
           (proj.agentState as any).status = proj.status;
@@ -105,6 +144,52 @@ export class PostgresProjectRepository implements IProjectRepository {
     const effectiveUseCase = useCase ?? currentProj?.useCase;
     const effectiveStatus = (agentState?.status as string) || currentProj?.status || "idle";
 
+    // Merge previous agentState with new agentState so that fields like stageOutputs, modelSelection, etc. are NOT lost
+    const existingState = (currentProj?.agentState as Record<string, unknown>) || {};
+    const existingOutputs = (existingState?.stageOutputs as Record<string, unknown>) || {};
+    const incomingOutputs = (agentState?.stageOutputs as Record<string, unknown>) || {};
+
+    const mergedStageOutputs: Record<string, unknown> = { ...existingOutputs };
+    for (const [k, v] of Object.entries(incomingOutputs)) {
+      const isIncomingEmpty = !v || (typeof v === "object" && Object.keys(v as object).length === 0);
+      const isExistingPopulated = existingOutputs[k] && typeof existingOutputs[k] === "object" && Object.keys(existingOutputs[k] as object).length > 0;
+      if (isIncomingEmpty && isExistingPopulated) {
+        continue;
+      }
+      mergedStageOutputs[k] = v;
+    }
+
+    const preserveIfIncomingEmpty = (key: string) => {
+      const incoming = agentState?.[key];
+      const existing = existingState?.[key];
+      const isIncEmpty = !incoming || (typeof incoming === "object" && Object.keys(incoming as object).length === 0);
+      const isExtPopulated = existing && typeof existing === "object" && Object.keys(existing as object).length > 0;
+      if (isIncEmpty && isExtPopulated) {
+        return existing;
+      }
+      return incoming !== undefined ? incoming : existing;
+    };
+
+    const mergedAgentState: Record<string, unknown> = {
+      ...existingState,
+      ...agentState,
+      stageOutputs: mergedStageOutputs,
+      formBuilder: preserveIfIncomingEmpty("formBuilder"),
+      hierarchyMapper: preserveIfIncomingEmpty("hierarchyMapper"),
+      relationshipBuilder: preserveIfIncomingEmpty("relationshipBuilder"),
+      modelSelection: preserveIfIncomingEmpty("modelSelection"),
+      trainingConfiguration: preserveIfIncomingEmpty("trainingConfiguration"),
+      preFlight: preserveIfIncomingEmpty("preFlight"),
+      modelTraining: preserveIfIncomingEmpty("modelTraining"),
+      modelValidation: preserveIfIncomingEmpty("modelValidation"),
+      ...((agentState?.stageStatuses || existingState?.stageStatuses) ? {
+        stageStatuses: {
+          ...((existingState?.stageStatuses as Record<string, unknown>) || {}),
+          ...((agentState?.stageStatuses as Record<string, unknown>) || {}),
+        }
+      } : {}),
+    };
+
     // Update projects table with status and useCase
     const projectUpdates: Record<string, any> = {
       status: effectiveStatus,
@@ -125,7 +210,7 @@ export class PostgresProjectRepository implements IProjectRepository {
         projectId: id,
         useCase: effectiveUseCase || null,
         status: effectiveStatus,
-        agentState,
+        agentState: mergedAgentState,
       });
     } catch (runErr: any) {
       console.warn(`[ProjectRepository] Failed to insert project run record:`, runErr?.message || runErr);
@@ -133,7 +218,7 @@ export class PostgresProjectRepository implements IProjectRepository {
 
     const updatedProj = await this.getById(id);
     if (updatedProj) {
-      updatedProj.agentState = agentState;
+      updatedProj.agentState = mergedAgentState;
       updatedProj.status = effectiveStatus;
     }
     return updatedProj;
@@ -182,7 +267,7 @@ export class PostgresProjectRepository implements IProjectRepository {
         .orderBy(desc(schema.projectRuns.createdAt))
         .limit(1);
       if (latestRuns.length > 0) {
-        proj.agentState = latestRuns[0].agentState;
+        proj.agentState = this.normalizeAgentState(latestRuns[0].agentState);
         proj.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || proj.status || "idle";
         if (proj.agentState && typeof proj.agentState === "object") {
           (proj.agentState as any).status = proj.status;
