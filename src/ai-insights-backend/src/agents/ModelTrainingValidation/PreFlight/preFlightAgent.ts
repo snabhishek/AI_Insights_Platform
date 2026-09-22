@@ -1,3 +1,5 @@
+import * as fs from "fs";
+import * as yaml from "js-yaml";
 import { PythonCapabilityAdapter } from "./pythonCapabilityAdapter";
 import { PreFlightValidator } from "./preFlightValidator";
 import { PreFlightDecisionEngine } from "./preFlightDecisionEngine";
@@ -23,15 +25,108 @@ export class PreFlightAgent {
   }
 
   /**
+   * Normalizes incoming training configuration by unwrapping envelopes,
+   * discovering candidate models from all contract sections or disk YAML,
+   * and hoisting canonical configuration fields to the root.
+   */
+  public normalizeTrainingConfig(trainingConfig: any, context: PreFlightContext = {}): any {
+    const raw = trainingConfig || {};
+    let configObj: Record<string, any> = {};
+
+    // 1. Unwrap envelope if configuration is nested
+    if (raw.configuration && typeof raw.configuration === "object" && Object.keys(raw.configuration).length > 0) {
+      configObj = { ...raw.configuration };
+    } else {
+      configObj = { ...raw };
+    }
+
+    // 2. If contractPath exists on disk, read and merge from YAML contract file if candidates are missing
+    const contractPath = raw.contractPath || configObj.contractPath;
+    if (contractPath && typeof contractPath === "string" && fs.existsSync(contractPath)) {
+      try {
+        const fileContent = fs.readFileSync(contractPath, "utf-8");
+        const parsedYaml = (yaml.load(fileContent) as Record<string, any>) || {};
+        configObj = { ...parsedYaml, ...configObj };
+      } catch (err) {
+        console.warn("[PreFlightAgent] Could not read YAML contract from disk:", err);
+      }
+    }
+
+    // 3. Extract candidate models from all possible locations
+    const modelSel = configObj.model_selection || raw.model_selection || {};
+    const rawCandidates: any[] =
+      (Array.isArray(configObj.models) && configObj.models.length > 0 ? configObj.models : null) ||
+      (Array.isArray(configObj.candidate_models) && configObj.candidate_models.length > 0 ? configObj.candidate_models : null) ||
+      (Array.isArray(modelSel.models) && modelSel.models.length > 0 ? modelSel.models : null) ||
+      (Array.isArray(modelSel.candidates) && modelSel.candidates.length > 0 ? modelSel.candidates : null) ||
+      (Array.isArray(modelSel.userSelection?.selectedModels) && modelSel.userSelection.selectedModels.length > 0 ? modelSel.userSelection.selectedModels : null) ||
+      (Array.isArray(context.metadata?.modelSelection?.candidates) && context.metadata.modelSelection.candidates.length > 0 ? context.metadata.modelSelection.candidates : null) ||
+      (Array.isArray(context.metadata?.modelSelection?.models) && context.metadata.modelSelection.models.length > 0 ? context.metadata.modelSelection.models : null) ||
+      [];
+
+    const normalizedModels = rawCandidates.map((m: any) => {
+      if (typeof m === "string") {
+        return { model_id: m, algorithm: m, framework: "scikit-learn" };
+      }
+      return {
+        ...m,
+        model_id: m.model_id || m.id || m.name || m.algorithm || "model",
+        algorithm: m.algorithm || m.displayName || m.model_id || m.name || "algorithm",
+        framework: m.framework || m.library || "scikit-learn",
+      };
+    });
+
+    configObj.models = normalizedModels;
+    configObj.candidate_models = normalizedModels;
+
+    // 4. Resolve framework
+    if (!configObj.framework && !configObj.model_framework) {
+      if (normalizedModels.length > 0) {
+        configObj.framework = normalizedModels[0].framework || "scikit-learn";
+      } else {
+        configObj.framework = "scikit-learn";
+      }
+    }
+
+    // 5. Ensure splits, task_type, primary_metric, target_column are top-level accessible
+    if (!configObj.splits && !configObj.data_splits) {
+      if (configObj.split) {
+        configObj.splits = configObj.split;
+      }
+    }
+    if (!configObj.task_type && !configObj.problem_type) {
+      if (configObj.task?.task_type) {
+        configObj.task_type = configObj.task.task_type;
+      } else if (context.metadata?.problemType) {
+        configObj.task_type = context.metadata.problemType;
+      }
+    }
+    if (!configObj.primary_metric && !configObj.metric) {
+      if (modelSel.primary_metric) {
+        configObj.primary_metric = modelSel.primary_metric;
+      }
+    }
+    if (!configObj.target_column && !configObj.targetColumn) {
+      if (modelSel.target_entity?.name) {
+        configObj.target_column = modelSel.target_entity.name;
+      } else if (context.metadata?.targetColumn) {
+        configObj.target_column = context.metadata.targetColumn;
+      }
+    }
+
+    return configObj;
+  }
+
+  /**
    * Executes the 10-stage pre-flight pipeline sequentially.
    */
   async execute(trainingConfig: any, context: PreFlightContext = {}): Promise<PreFlightReport> {
     console.info("[PreFlightAgent] Starting 10-stage Pre-Flight Assessment...");
 
     // Stage 1: Understand Training Job
-    const config = trainingConfig || {};
+    const config = this.normalizeTrainingConfig(trainingConfig, context);
     const models = config.models || config.candidate_models || [];
-    const modelCount = Array.isArray(models) ? models.length : 1;
+    const modelCount = Array.isArray(models) && models.length > 0 ? models.length : 1;
     const framework = (config.framework || config.model_framework || "scikit-learn").toLowerCase();
     const frameworks = Array.from(
       new Set(
@@ -41,7 +136,7 @@ export class PreFlightAgent {
       )
     );
 
-    console.info(`[PreFlightAgent] Stage 1: Job understood. ${modelCount} model(s), frameworks: [${frameworks.join(", ")}].`);
+    console.info(`[PreFlightAgent] Stage 1: Job understood. ${models.length} model(s), frameworks: [${frameworks.join(", ")}].`);
 
     // Fetch system snapshot and Python capabilities
     const pyPipeline = await this.pythonAdapter.runPreflightPipeline(config);
@@ -116,12 +211,20 @@ export class PreFlightAgent {
     );
     console.info(`[PreFlightAgent] Stage 10: Final Pre-Flight Decision: [${decision}] - ${summary}`);
 
+    // Structured Hardware Evaluation & Strategy Resolution
+    const hardwareDecision = this.decisionEngine.evaluateHardwareAndStrategy(
+      config,
+      system,
+      estimates,
+      pyPipeline.decision
+    );
+
     return {
       decision,
       status,
       summary,
       verifiedAt: new Date().toISOString(),
-      modelCount,
+      modelCount: models.length > 0 ? models.length : modelCount,
       frameworks,
       system,
       estimates,
@@ -129,6 +232,15 @@ export class PreFlightAgent {
       recommendations: allRecommendations,
       pythonServiceStatus: pyPipeline.status,
       rawPipelineResult: pyPipeline.raw,
+      gpu_available: hardwareDecision.gpu_available,
+      gpu_evaluation: hardwareDecision.gpu_evaluation,
+      cpu_evaluation: hardwareDecision.cpu_evaluation,
+      selected_resource: hardwareDecision.selected_resource,
+      direct_execution_feasible: hardwareDecision.direct_execution_feasible,
+      optimization_feasible: hardwareDecision.optimization_feasible,
+      selected_strategy: hardwareDecision.selected_strategy,
+      decision_reason: hardwareDecision.decision_reason,
+      constraints_or_missing_requirements: hardwareDecision.constraints_or_missing_requirements,
     };
   }
 }

@@ -9,6 +9,7 @@ interface CardModalProps {
   onClose: () => void;
   render?: React.ReactNode;
   workflowCard?: Workflow | null;
+  selectedSubstepId?: string | null;
   pipelineStatuses?: Record<string, PipelineStatus>;
   stepOutputs?: Record<string, React.ReactNode>;
   runStatus?: string;
@@ -67,6 +68,7 @@ export default function CardModal({
   onClose,
   render,
   workflowCard,
+  selectedSubstepId = null,
   pipelineStatuses = {},
   stepOutputs = {},
   runStatus = "Idle",
@@ -91,18 +93,55 @@ export default function CardModal({
   const activeStep = stepsList[activeStepIndex] || null;
   const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Not Started") : "Not Started";
 
-  // Auto-select active (In Progress) step, or first uncompleted step when modal opens
+  // Auto-select active (In Progress) step, or requested substep, or latest completed step
   useEffect(() => {
     if (!isOpen || !workflowCard) return;
     const steps = workflowCard.step || [];
+    if (steps.length === 0) return;
+
+    // 1. If explicit selectedSubstepId provided and exists in steps:
+    if (selectedSubstepId) {
+      const targetIdx = steps.findIndex((s) => s.id === selectedSubstepId || s.title === selectedSubstepId);
+      if (targetIdx !== -1) {
+        setActiveStepIndex(targetIdx);
+        return;
+      }
+    }
+
+    // 2. If a step is actively "In Progress", prioritize it
     const inProgressIdx = steps.findIndex((s) => pipelineStatuses[s.id] === "In Progress");
     if (inProgressIdx !== -1) {
       setActiveStepIndex(inProgressIdx);
-    } else {
-      const firstUncompletedIdx = steps.findIndex((s) => pipelineStatuses[s.id] !== "Completed");
-      setActiveStepIndex(firstUncompletedIdx !== -1 ? firstUncompletedIdx : 0);
+      return;
     }
-  }, [workflowCard?.id, isOpen]);
+
+    // 3. If awaiting model confirmation / approval before Training Configuration, select Model Selection
+    if (approvalNextStep === "Training Configuration" || (requiresApproval && steps.some((s) => s.id === "Model Selection"))) {
+      const modelSelIdx = steps.findIndex((s) => s.id === "Model Selection");
+      if (modelSelIdx !== -1) {
+        setActiveStepIndex(modelSelIdx);
+        return;
+      }
+    }
+
+    // 4. Prefer latest step that has completed output or has non-null stepOutputs
+    let latestWithOutputIdx = -1;
+    for (let i = steps.length - 1; i >= 0; i--) {
+      const s = steps[i];
+      if (stepOutputs[s.id] != null || pipelineStatuses[s.id] === "Completed") {
+        latestWithOutputIdx = i;
+        break;
+      }
+    }
+    if (latestWithOutputIdx !== -1) {
+      setActiveStepIndex(latestWithOutputIdx);
+      return;
+    }
+
+    // 5. Fallback to first uncompleted step or 0
+    const firstUncompletedIdx = steps.findIndex((s) => pipelineStatuses[s.id] !== "Completed");
+    setActiveStepIndex(firstUncompletedIdx !== -1 ? firstUncompletedIdx : 0);
+  }, [workflowCard?.id, isOpen, selectedSubstepId, approvalNextStep, requiresApproval]);
 
   // Synchronize and fetch agent thinking logs
   useEffect(() => {
@@ -178,6 +217,7 @@ export default function CardModal({
       }
     }
     lastStepStatusRef.current = currentStatus;
+    lastStepIdRef.current = activeStep.id;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStep?.id, activeStepStatus, pipelineStatuses]);
 

@@ -188,6 +188,59 @@ async function runTests() {
   console.log(`  Blocked Summary: ${blockedReport.summary}`);
   console.log();
 
+  // TEST 7: Candidate Models Extraction from Nested Training Configuration Envelope
+  console.log("[Test 7] Candidate Models Discovery from Envelope & model_selection hierarchy");
+  const envelopeConfig = {
+    status: "Completed",
+    summary: "Training configuration synthesized",
+    phase: "Training Configuration",
+    contractPath: "mock/path/to/contract.yaml",
+    configuration: {
+      task: { task_type: "classification" },
+      model_selection: {
+        candidates: [
+          { model_id: "lightgbm_classifier", algorithm: "LGBMClassifier", framework: "lightgbm" },
+          { model_id: "catboost_classifier", algorithm: "CatBoostClassifier", framework: "catboost" },
+          { model_id: "random_forest", algorithm: "RandomForestClassifier", framework: "scikit-learn" },
+        ],
+        primary_metric: "f1_score",
+        target_entity: { name: "churn" },
+      },
+      split: { train_ratio: 0.7, validation_ratio: 0.15, test_ratio: 0.15 },
+    },
+  };
+
+  const normalized = agent.normalizeTrainingConfig(envelopeConfig, {});
+  assert(Array.isArray(normalized.models) && normalized.models.length === 3, `Must extract 3 models from envelope (got: ${normalized.models?.length})`);
+  assert(normalized.models[0].model_id === "lightgbm_classifier", "First extracted model must be lightgbm_classifier");
+  assert(normalized.models[1].model_id === "catboost_classifier", "Second extracted model must be catboost_classifier");
+
+  const envelopeReport = await agent.execute(envelopeConfig, {
+    metadata: { targetColumn: "churn", problemType: "classification" },
+  });
+  assert(envelopeReport.modelCount === 3, `Assessed model count must be 3 (got: ${envelopeReport.modelCount})`);
+  const candidateCheck = envelopeReport.checks.find((c) => c.id === "framework_candidates");
+  assert(candidateCheck?.status === "PASSED", `Candidate models specification check must be PASSED (got: ${candidateCheck?.status})`);
+  assert(!candidateCheck?.details.includes("No explicit candidate models"), "Must NOT report missing candidate models warning");
+  console.log(`  Extracted ${envelopeReport.modelCount} candidate model(s): ${envelopeReport.frameworks.join(", ")}`);
+  console.log();
+
+  // TEST 8: Structured 4-Step Decision Tree Output Verification
+  console.log("[Test 8] Pre-Flight Structured Decision Tree Verification");
+  assert(envelopeReport.gpu_available !== undefined, "gpu_available must be defined in report");
+  assert(typeof envelopeReport.gpu_available === "boolean", "gpu_available must be boolean");
+  assert(envelopeReport.selected_resource === "gpu" || envelopeReport.selected_resource === "cpu", `selected_resource must be 'gpu' or 'cpu' (got: ${envelopeReport.selected_resource})`);
+  assert(typeof envelopeReport.direct_execution_feasible === "boolean", "direct_execution_feasible must be boolean");
+  assert(Boolean(envelopeReport.selected_strategy), `selected_strategy must be present (got: ${envelopeReport.selected_strategy})`);
+  assert(Boolean(envelopeReport.decision_reason), "decision_reason must be present and traceable");
+  console.log(`  GPU Available: ${envelopeReport.gpu_available}`);
+  console.log(`  Selected Resource: ${envelopeReport.selected_resource}`);
+  console.log(`  Selected Strategy: ${envelopeReport.selected_strategy}`);
+  console.log(`  Direct Execution Feasible: ${envelopeReport.direct_execution_feasible}`);
+  console.log(`  Optimization Feasible: ${envelopeReport.optimization_feasible}`);
+  console.log(`  Decision Reason: ${envelopeReport.decision_reason}`);
+  console.log();
+
   console.log("==================================================");
   console.log(`   ALL ${passedTests}/${totalTests} TESTS PASSED SUCCESSFULLY!`);
   console.log("==================================================");

@@ -179,7 +179,11 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
     workspaceName: (state as any).workspaceName,
     runDir,
     datasetPath,
-    metadata,
+    metadata: {
+      ...metadata,
+      modelSelection: state.modelSelection,
+      trainingConfiguration: state.trainingConfiguration,
+    },
   });
 
 

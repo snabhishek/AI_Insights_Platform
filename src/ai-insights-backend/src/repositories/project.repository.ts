@@ -105,6 +105,25 @@ export class PostgresProjectRepository implements IProjectRepository {
     const effectiveUseCase = useCase ?? currentProj?.useCase;
     const effectiveStatus = (agentState?.status as string) || currentProj?.status || "idle";
 
+    // Merge previous agentState with new agentState so that fields like stageOutputs, modelSelection, etc. are NOT lost
+    const existingState = (currentProj?.agentState as Record<string, unknown>) || {};
+    const mergedAgentState: Record<string, unknown> = {
+      ...existingState,
+      ...agentState,
+      ...((agentState?.stageOutputs || existingState?.stageOutputs) ? {
+        stageOutputs: {
+          ...((existingState?.stageOutputs as Record<string, unknown>) || {}),
+          ...((agentState?.stageOutputs as Record<string, unknown>) || {}),
+        }
+      } : {}),
+      ...((agentState?.stageStatuses || existingState?.stageStatuses) ? {
+        stageStatuses: {
+          ...((existingState?.stageStatuses as Record<string, unknown>) || {}),
+          ...((agentState?.stageStatuses as Record<string, unknown>) || {}),
+        }
+      } : {}),
+    };
+
     // Update projects table with status and useCase
     const projectUpdates: Record<string, any> = {
       status: effectiveStatus,
@@ -125,7 +144,7 @@ export class PostgresProjectRepository implements IProjectRepository {
         projectId: id,
         useCase: effectiveUseCase || null,
         status: effectiveStatus,
-        agentState,
+        agentState: mergedAgentState,
       });
     } catch (runErr: any) {
       console.warn(`[ProjectRepository] Failed to insert project run record:`, runErr?.message || runErr);
@@ -133,7 +152,7 @@ export class PostgresProjectRepository implements IProjectRepository {
 
     const updatedProj = await this.getById(id);
     if (updatedProj) {
-      updatedProj.agentState = agentState;
+      updatedProj.agentState = mergedAgentState;
       updatedProj.status = effectiveStatus;
     }
     return updatedProj;

@@ -389,26 +389,9 @@ export default function WorkflowPipeline({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {isAwaitingResponse ? (
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-500/10 text-amber-700 dark:text-amber-400 text-xs font-bold border border-amber-500/20">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
-                Awaiting Input
-              </span>
-              <button
-                type="button"
-                onClick={onStopWorkflow}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0"
-              >
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-                  <rect x="5" y="5" width="14" height="14" rx="2" />
-                </svg>
-                Stop Workflow
-              </button>
-            </div>
-          ) : requiresApproval ? (
+          {(isAwaitingResponse || requiresApproval) ? (
             <>
-              {approvalNextStep === "Training Configuration" || pausedAtPhase === "Training Configuration" ? (
+              {approvalNextStep === "Training Configuration" || pausedAtPhase === "Training Configuration" || isAwaitingResponse ? (
                 <button
                   type="button"
                   onClick={() => onSelectStage("Model Training & Validation")}

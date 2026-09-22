@@ -82,6 +82,29 @@ class OptimizationProposal:
     parameters: Mapping[str, Any] = field(default_factory=dict)
 
 
+class ExecutionStrategy(str, Enum):
+    DIRECT_GPU = 'direct_gpu'
+    DIRECT_CPU = 'direct_cpu'
+    OPTIMIZED_GPU = 'optimized_gpu'
+    OPTIMIZED_CPU = 'optimized_cpu'
+    INFEASIBLE = 'infeasible'
+
+
+@dataclass(frozen=True)
+class HardwareEvaluationResult:
+    resource: str
+    available: bool
+    supported: bool
+    memory_total_gb: float
+    memory_available_gb: float
+    memory_required_gb: float | None
+    memory_sufficient: bool
+    runtime_compatible: bool
+    compute_compatible: bool
+    details: str
+    constraints: tuple[str, ...] = ()
+
+
 @dataclass(frozen=True)
 class PreflightDecision:
     status: DecisionStatus
@@ -94,6 +117,16 @@ class PreflightDecision:
     reasons: tuple[str, ...]
     warnings: tuple[str, ...]
     requires_validation: bool
+    gpu_available: bool = False
+    gpu_evaluation: HardwareEvaluationResult | None = None
+    cpu_evaluation: HardwareEvaluationResult | None = None
+    selected_resource: str = 'none'
+    direct_execution_feasible: bool = False
+    optimization_feasible: bool = False
+    selected_strategy: ExecutionStrategy = ExecutionStrategy.INFEASIBLE
+    decision_reason: str = ''
+    constraints_or_missing_requirements: tuple[str, ...] = ()
 
     def as_dict(self):
         return asdict(self)
+
