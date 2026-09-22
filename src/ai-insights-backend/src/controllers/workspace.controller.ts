@@ -166,4 +166,19 @@ export class WorkspaceController {
       res.status(500).json({ success: false, message: error.message || "Failed to fetch project" });
     }
   };
+
+  getProjectFormSchema = async (req: Request, res: Response): Promise<void> => {
+    const workspaceId = req.params.id as string;
+    const pid = req.params.pid as string;
+    try {
+      const result = await this.workspaceService.getProjectFormSchema(workspaceId, pid);
+      if (!result.success) {
+        res.status(404).json({ success: false, message: result.message });
+        return;
+      }
+      res.json({ success: true, schema: result.data });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || "Failed to retrieve project form schema" });
+    }
+  };
 }
