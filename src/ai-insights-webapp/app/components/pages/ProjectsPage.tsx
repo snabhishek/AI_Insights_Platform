@@ -258,65 +258,119 @@ export default function ProjectsPage() {
   const determineActiveStage = (payload: Partial<WorkflowResponse["data"]>): string => {
     const stageOutputs = payload.stageOutputs as Record<string, any> | undefined;
     const stageStatuses = payload.stageStatuses as Record<string, any> | undefined;
-    const hasModelSelection = Boolean(stageOutputs?.modelSelection || stageStatuses?.modelSelection === "Completed");
-    const hasTrainingConfig = Boolean(stageOutputs?.trainingConfiguration || stageStatuses?.trainingConfiguration === "Completed");
+    const currentNode = payload.currentNode || payload.currentStage;
+    const nextStep = (payload.nextStep || "").toLowerCase().trim();
 
-    if (hasModelSelection && !hasTrainingConfig) {
+    const hasModelTraining = Boolean(
+      stageOutputs?.modelTraining ||
+      stageOutputs?.modelTrainingCode ||
+      stageStatuses?.modelTraining === "Completed" ||
+      stageStatuses?.modelTraining === "In Progress" ||
+      stageStatuses?.modelTrainingCode === "Completed"
+    );
+    const hasPreFlight = Boolean(
+      stageOutputs?.preFlight ||
+      stageStatuses?.preFlight === "Completed"
+    );
+    const hasTrainingConfig = Boolean(
+      stageOutputs?.trainingConfiguration ||
+      stageStatuses?.trainingConfiguration === "Completed"
+    );
+    const hasModelSelection = Boolean(
+      stageOutputs?.modelSelection ||
+      stageStatuses?.modelSelection === "Completed"
+    );
+
+    // 1. Model Training stages (Code Generation, Docker Execution, or after PreFlight)
+    if (
+      currentNode === "modelTrainingExecNode" ||
+      currentNode === "modelTrainingCodeNode" ||
+      currentNode === "modelTraining" ||
+      currentNode === "modelTrainingNode" ||
+      nextStep.includes("model training") ||
+      nextStep.includes("modeltraining") ||
+      hasPreFlight ||
+      hasModelTraining
+    ) {
+      return "Model Training";
+    }
+
+    // 2. Pre Flight / Training Configuration review
+    if (
+      currentNode === "preFlightNode" ||
+      currentNode === "preFlight" ||
+      nextStep.includes("pre flight") ||
+      nextStep.includes("preflight") ||
+      hasTrainingConfig
+    ) {
+      return "Training Configuration";
+    }
+
+    // 3. Model Selection
+    if (
+      currentNode === "trainingConfigurationNode" ||
+      currentNode === "trainingConfiguration" ||
+      nextStep.includes("training configuration") ||
+      nextStep.includes("trainingconfiguration") ||
+      currentNode === "modelSelectionNode" ||
+      currentNode === "modelSelection" ||
+      nextStep.includes("model selection") ||
+      nextStep.includes("modelselection") ||
+      hasModelSelection
+    ) {
       return "Model Selection";
     }
 
-    if (payload.status === "completed") {
-      if (hasModelSelection) {
-        return "Model Selection";
-      }
-      if (
-        payload.stageOutputs?.exogenousScout ||
-        payload.stageStatuses?.exogenousScout === "Completed" ||
-        payload.stageStatuses?.exogenous === "Completed"
-      ) {
-        return "Exogenous Scout";
-      }
-      return "resolveSchema";
+    // 4. Feature Engineering stages
+    if (
+      currentNode === "exogenous" ||
+      currentNode === "exogenousScout" ||
+      stageStatuses?.exogenousScout === "Completed" ||
+      stageOutputs?.exogenousScout
+    ) {
+      return "Exogenous Scout";
     }
-    if (payload.requiresApproval) {
-      if (
-        hasModelSelection ||
-        payload.nextStep?.toLowerCase().includes("model") ||
-        payload.nextStep?.toLowerCase().includes("training")
-      ) {
-        return "Model Selection";
-      }
-      if (
-        payload.stageOutputs?.exogenousScout ||
-        payload.stageStatuses?.exogenousScout === "Completed" ||
-        payload.stageStatuses?.exogenous === "Completed"
-      ) {
-        return "Exogenous Scout";
-      }
-      if (payload.nextStep === "profileData") {
-        return "inspect";
-      }
-      if (payload.nextStep === "resolveSchema") {
-        return "profileData";
-      }
-      return "resolveSchema";
+    if (
+      currentNode === "featureValidator" ||
+      currentNode === "featureValidatorNode" ||
+      stageStatuses?.featureValidator === "Completed" ||
+      stageOutputs?.featureValidator
+    ) {
+      return "Feature Validator";
     }
-    if (payload.currentStage || payload.currentNode) {
-      const node = payload.currentStage || payload.currentNode;
-      if (node === "preprocess") return "profileData";
-      if (node === "hierarchyMapper" || node === "hierarchyMapperNode") return "Hierarchy Mapper";
-      if (node === "featureArchitect" || node === "featureArchitectNode") return "Feature Architect";
-      if (node === "featureValidator" || node === "featureValidatorNode") return "Feature Validator";
-      if (node === "exogenous" || node === "exogenousScout") return "Exogenous Scout";
-      if (node === "modelSelection" || node === "modelSelectionNode") return "Model Selection";
-      if (node === "trainingConfiguration" || node === "trainingConfigurationNode") {
-        return hasModelSelection && !hasTrainingConfig ? "Model Selection" : "Training Configuration";
-      }
-      if (node === "preFlight" || node === "preFlightNode") return "Pre Flight";
-      if (node === "modelTraining" || node === "modelTrainingNode") return "Model Training";
-      if (node === "modelValidation" || node === "modelValidationNode") return "Model Validation";
-      return node!;
+    if (
+      currentNode === "featureArchitect" ||
+      currentNode === "featureArchitectNode" ||
+      stageStatuses?.featureArchitect === "Completed" ||
+      stageOutputs?.featureArchitect
+    ) {
+      return "Feature Architect";
     }
+    if (
+      currentNode === "hierarchyMapper" ||
+      currentNode === "hierarchyMapperNode" ||
+      nextStep.includes("feature engineering")
+    ) {
+      return "Hierarchy Mapper";
+    }
+
+    // 5. Ingestion stages
+    if (
+      currentNode === "resolveSchema" ||
+      stageStatuses?.resolveSchema === "Completed" ||
+      stageOutputs?.schemaResolution
+    ) {
+      return "Schema Resolver";
+    }
+    if (
+      currentNode === "profileData" ||
+      currentNode === "preprocess" ||
+      stageStatuses?.profileData === "Completed" ||
+      stageOutputs?.dataProfile
+    ) {
+      return "Data Profiling";
+    }
+
     return "inspect";
   };
 

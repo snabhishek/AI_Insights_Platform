@@ -746,7 +746,7 @@ export function resolvePromptFilePath(filename: string): string {
             }
           }
         }
-      } catch {}
+      } catch { }
     }
   }
 
@@ -1019,21 +1019,21 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     if (isRunningOrDone(stageStatuses[node]) || nextNodes.includes(node)) return node;
   }
 
-  const isExo = isRunningOrDone(stageStatuses.exogenousScout) || 
-                isRunningOrDone(stageStatuses.exogenous) || 
-                nextNodes.includes("exogenous");
+  const isExo = isRunningOrDone(stageStatuses.exogenousScout) ||
+    isRunningOrDone(stageStatuses.exogenous) ||
+    nextNodes.includes("exogenous");
   if (isExo) return "exogenousScout";
 
   const isFeatureValidator = isRunningOrDone(stageStatuses.featureValidator) ||
-                             nextNodes.includes("featureValidatorNode");
+    nextNodes.includes("featureValidatorNode");
   if (isFeatureValidator) return "featureValidator";
 
   const isFeatureArchitect = isRunningOrDone(stageStatuses.featureArchitect) ||
-                             nextNodes.includes("featureArchitectNode");
+    nextNodes.includes("featureArchitectNode");
   if (isFeatureArchitect) return "featureArchitect";
 
   const isHierarchy = isRunningOrDone(stageStatuses.hierarchyMapper) ||
-                      nextNodes.includes("hierarchyMapperNode");
+    nextNodes.includes("hierarchyMapperNode");
   if (isHierarchy) return "hierarchyMapperNode";
 
   if (isRunningOrDone(stageStatuses.resolveSchema) || nextNodes.includes("resolveSchema")) return "resolveSchema";
@@ -1111,11 +1111,11 @@ export function buildResultFromGraphState(
 ): any {
   const values = graphState?.values ?? {};
   const nextNodes: string[] = Array.isArray(graphState?.next) ? graphState.next : [];
-  const defaultStatuses = { 
-    inspect: "Pending", 
-    profileData: "Pending", 
-    preprocess: "Pending", 
-    resolveSchema: "Pending", 
+  const defaultStatuses = {
+    inspect: "Pending",
+    profileData: "Pending",
+    preprocess: "Pending",
+    resolveSchema: "Pending",
     hierarchyMapper: "Pending",
     featureArchitect: "Pending",
     featureValidator: "Pending",
@@ -1131,7 +1131,7 @@ export function buildResultFromGraphState(
     ? values.stageStatuses as Record<string, string>
     : defaultStatuses;
   const status = (typeof values.status === "string" && values.status) ? values.status : "running";
-  
+
   const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
   const isFeatureEngineeringStarted = stageStatuses.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending";
   const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted && isIngestionComplete;
@@ -1253,7 +1253,7 @@ export async function logMilestoneThinking(
     if (typeof services?.onThinkingUpdate === "function") {
       try {
         await services.onThinkingUpdate(substep);
-      } catch {}
+      } catch { }
     }
   } catch (err) {
     console.warn("[AgentUtils] Failed to log milestone thinking:", err);
@@ -1355,7 +1355,7 @@ export async function logAgentMessagesAsThinking(
       if (typeof services?.onThinkingUpdate === "function") {
         try {
           await services.onThinkingUpdate(substep);
-        } catch {}
+        } catch { }
       }
     }
   } catch (err) {

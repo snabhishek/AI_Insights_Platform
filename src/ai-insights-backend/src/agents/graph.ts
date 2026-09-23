@@ -6,7 +6,15 @@ import { schemaResolverNode } from "./IngestionLayer/resolver/schemaResolverNode
 import { hierarchyMapperNode } from "./FeatureEngineering/HierarchyMapper/hierarchyMapperNode";
 import { featureArchitectNode } from "./FeatureEngineering/FeatureArchitect/featureArchitectNode";
 import { exogenousScoutNode } from "./FeatureEngineering/ExogenousScout/exogenousScoutNode";
-import { modelSelectionNode, trainingConfigurationNode, preFlightNode, modelTrainingNode, modelValidationNode } from "./ModelTrainingValidation/nodes";
+import {
+  modelSelectionNode,
+  trainingConfigurationNode,
+  preFlightNode,
+  modelTrainingCodeNode,
+  modelTrainingExecNode,
+  // modelValidationNode, // Commented out for now
+} from "./ModelTrainingValidation/nodes";
+import { getInterruptBeforeNodes } from "./workflowRules.config";
 
 export function createAgentGraph(checkpointer: any) {
   const workflow = new StateGraph(AgentState)
@@ -19,8 +27,9 @@ export function createAgentGraph(checkpointer: any) {
     .addNode("modelSelectionNode", modelSelectionNode)
     .addNode("trainingConfigurationNode", trainingConfigurationNode)
     .addNode("preFlightNode", preFlightNode)
-    .addNode("modelTrainingNode", modelTrainingNode)
-    .addNode("modelValidationNode", modelValidationNode)
+    .addNode("modelTrainingCodeNode", modelTrainingCodeNode)
+    .addNode("modelTrainingExecNode", modelTrainingExecNode)
+    // .addNode("modelValidationNode", modelValidationNode)
     .addEdge("__start__", "inspect")
     .addEdge("inspect", "profileData")
     .addEdge("profileData", "resolveSchema")
@@ -30,17 +39,14 @@ export function createAgentGraph(checkpointer: any) {
     .addEdge("exogenous", "modelSelectionNode")
     .addEdge("modelSelectionNode", "trainingConfigurationNode")
     .addEdge("trainingConfigurationNode", "preFlightNode")
-    .addEdge("preFlightNode", "modelTrainingNode")
-    .addEdge("modelTrainingNode", "modelValidationNode")
-    .addEdge("modelValidationNode", "__end__");
+    .addEdge("preFlightNode", "modelTrainingCodeNode")
+    .addEdge("modelTrainingCodeNode", "modelTrainingExecNode")
+    // .addEdge("modelTrainingExecNode", "modelValidationNode")
+    // .addEdge("modelValidationNode", "__end__");
+    .addEdge("modelTrainingExecNode", "__end__");
 
   return workflow.compile({
     checkpointer,
-    interruptBefore: [
-      "hierarchyMapperNode",
-      "modelSelectionNode",
-      "trainingConfigurationNode",
-      "modelTrainingNode",
-    ],
+    interruptBefore: getInterruptBeforeNodes() as any,
   });
 }

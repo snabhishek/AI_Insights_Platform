@@ -4,6 +4,7 @@ import { TrainingConfigController } from "../controllers/trainingConfig.controll
 export default function createTrainingConfigRouter(controller: TrainingConfigController): Router {
   const router = Router();
 
+  router.get("/:projectId/date-range", controller.getDateRange);
   router.get("/:projectId", controller.getContract);
   router.put("/:projectId", controller.saveContract);
   router.post("/:projectId", controller.saveContract);

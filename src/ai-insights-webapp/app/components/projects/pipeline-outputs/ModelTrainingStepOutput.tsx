@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 
 export interface CandidateModelItem {
   model_id: string;
@@ -97,6 +97,35 @@ function MaximizeIcon({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001/api";
+
+const MONTHS = [
+  { value: 1, name: "January", short: "Jan" },
+  { value: 2, name: "February", short: "Feb" },
+  { value: 3, name: "March", short: "Mar" },
+  { value: 4, name: "April", short: "Apr" },
+  { value: 5, name: "May", short: "May" },
+  { value: 6, name: "June", short: "Jun" },
+  { value: 7, name: "July", short: "Jul" },
+  { value: 8, name: "August", short: "Aug" },
+  { value: 9, name: "September", short: "Sep" },
+  { value: 10, name: "October", short: "Oct" },
+  { value: 11, name: "November", short: "Nov" },
+  { value: 12, name: "December", short: "Dec" },
+];
+
+export interface DateRangeInfo {
+  hasTemporalData: boolean;
+  timeColumn: string | null;
+  minDate?: string;
+  maxDate?: string;
+  minYear?: number;
+  maxYear?: number;
+  minMonth?: number;
+  maxMonth?: number;
+  availableYears?: number[];
+}
+
 export default function ModelTrainingStepOutput({
   modelTraining,
   trainingConfiguration,
@@ -108,6 +137,10 @@ export default function ModelTrainingStepOutput({
 }: ModelTrainingStepOutputProps) {
   const [copiedArtifact, setCopiedArtifact] = useState<string | null>(null);
   const [activePlotModal, setActivePlotModal] = useState<{ title: string; url: string } | null>(null);
+
+  // Dynamic Date Range from Dataset
+  const [dateRangeInfo, setDateRangeInfo] = useState<DateRangeInfo | null>(null);
+  const [isLoadingDateRange, setIsLoadingDateRange] = useState<boolean>(true);
 
   // Extract candidate models available for selection
   const rawCandidateList: CandidateModelItem[] = (
@@ -146,16 +179,75 @@ export default function ModelTrainingStepOutput({
   }
   const candidateModels = Array.from(uniqueCandidateMap.values());
 
-  // Model selection and date split state for HITL gate
+  // Model selection and Month/Year split state for HITL gate
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>(() => {
     return candidateModels.map((c) => c.model_id);
   });
-  const [splitStartDate, setSplitStartDate] = useState<string>(() => {
-    return modelTraining?.splitStartDate || "";
+
+  const [selectedYear, setSelectedYear] = useState<number>(() => {
+    const existing = modelTraining?.splitEndDate || modelTraining?.splitDate;
+    if (existing && typeof existing === "string") {
+      const y = parseInt(existing.split("-")[0], 10);
+      if (!isNaN(y)) return y;
+    }
+    return new Date().getFullYear();
   });
-  const [splitEndDate, setSplitEndDate] = useState<string>(() => {
-    return modelTraining?.splitEndDate || modelTraining?.splitDate || "";
+
+  const [selectedMonth, setSelectedMonth] = useState<number>(() => {
+    const existing = modelTraining?.splitEndDate || modelTraining?.splitDate;
+    if (existing && typeof existing === "string") {
+      const parts = existing.split("-");
+      if (parts.length >= 2) {
+        const m = parseInt(parts[1], 10);
+        if (!isNaN(m)) return m;
+      }
+    }
+    return 9; // September default
   });
+
+  // Fetch date range dynamically from project dataset and training config
+  useEffect(() => {
+    if (!projectId) {
+      setIsLoadingDateRange(false);
+      return;
+    }
+    let isCancelled = false;
+    async function loadDateRange() {
+      setIsLoadingDateRange(true);
+      try {
+        const url = `${BACKEND_URL}/training-config/${projectId}/date-range${
+          activeRunTimestamp ? `?timestamp=${encodeURIComponent(activeRunTimestamp)}` : ""
+        }`;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error("Failed to load date range");
+        const json = await res.json();
+        if (!isCancelled && json.success && json.data) {
+          const data: DateRangeInfo = json.data;
+          setDateRangeInfo(data);
+          if (data.hasTemporalData && data.minYear && data.maxYear) {
+            // Default to maxYear or 80% through available range
+            const defaultY = data.maxYear;
+            setSelectedYear((prev) => {
+              if (prev >= data.minYear! && prev <= data.maxYear!) return prev;
+              return defaultY;
+            });
+            if (data.maxMonth) {
+              setSelectedMonth((prev) => prev || data.maxMonth || 9);
+            }
+          }
+        }
+      } catch (e) {
+        console.warn("[ModelTrainingStepOutput] Date range fetch error:", e);
+      } finally {
+        if (!isCancelled) setIsLoadingDateRange(false);
+      }
+    }
+
+    loadDateRange();
+    return () => {
+      isCancelled = true;
+    };
+  }, [projectId, activeRunTimestamp]);
 
   const toggleModelSelection = (modelId: string) => {
     setSelectedModelIds((prev) =>
@@ -177,10 +269,37 @@ export default function ModelTrainingStepOutput({
     setTimeout(() => setCopiedArtifact(null), 2000);
   };
 
-  // Determine stage state
-  const isAwaitingSelection =
-    modelTraining?.status === "Requires Attention" ||
-    (candidateModels.length > 0 && !modelTraining?.report && !modelTraining?.selectedModel);
+  // Compute available years list
+  const minYearLimit = dateRangeInfo?.minYear ?? 2000;
+  const maxYearLimit = dateRangeInfo?.maxYear ?? new Date().getFullYear();
+  const availableYearsList = dateRangeInfo?.availableYears && dateRangeInfo.availableYears.length > 0
+    ? dateRangeInfo.availableYears
+    : Array.from({ length: maxYearLimit - minYearLimit + 1 }, (_, i) => minYearLimit + i);
+
+  // Filter months if at min/max year boundaries
+  const availableMonthsList = MONTHS.filter((m) => {
+    if (!dateRangeInfo?.hasTemporalData) return true;
+    if (selectedYear === dateRangeInfo.minYear && dateRangeInfo.minMonth && m.value < dateRangeInfo.minMonth) {
+      return false;
+    }
+    if (selectedYear === dateRangeInfo.maxYear && dateRangeInfo.maxMonth && m.value > dateRangeInfo.maxMonth) {
+      return false;
+    }
+    return true;
+  });
+
+  const selectedMonthObj = MONTHS.find((m) => m.value === selectedMonth) || MONTHS[8];
+  const formattedSplitCutoff = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
+
+  // Determine phase state
+  const hasExecutionReport = Boolean(modelTraining?.report || modelTraining?.selectedModel || (modelTraining?.status === "Completed" && modelTraining?.validationMetrics));
+  const hasCodeGenerated = Boolean(
+    modelTraining?.projectDirectory ||
+    modelTraining?.filesCreated ||
+    modelTraining?.status === "Code Generated" ||
+    modelTraining?.phase === "Model Training Code Generation" ||
+    modelTraining?.files
+  );
 
   const report = modelTraining?.report;
   const championModelId = modelTraining?.selectedModel || report?.selectedModel || candidateModels[0]?.model_id;
@@ -218,19 +337,20 @@ export default function ModelTrainingStepOutput({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
-            {isAwaitingSelection ? (
-              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
-                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                Requires Attention: Configure Split & Select Models
-              </span>
-            ) : modelTraining?.status === "Completed" ? (
+            {hasExecutionReport ? (
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                 <CheckCircleIcon className="w-3.5 h-3.5" />
                 Training Complete
               </span>
+            ) : hasCodeGenerated ? (
+              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">
+                <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                Ready for Docker Execution: Select Models
+              </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
-                In Progress
+                <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+                Awaiting Train Split Date (Month / Year)
               </span>
             )}
 
@@ -248,134 +368,88 @@ export default function ModelTrainingStepOutput({
         )}
       </div>
 
-      {/* ─── HITL Gate: Train Split Dates & Candidate Model Selection Panel ─── */}
-      {isAwaitingSelection && (
-        <div className="rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/10 p-5 space-y-5">
-          {/* Section 1: Train Split Dates */}
-          <div className="p-4 rounded-xl border border-amber-500/20 bg-surface/80 shadow-xs space-y-3">
-            <div className="flex items-center justify-between">
-              <label className="text-xs font-bold text-foreground flex items-center gap-2 uppercase tracking-wider">
-                <span className="text-sm">📅</span>
-                <span>Train / Test Dataset Split Dates</span>
-              </label>
-              <span className="text-[11px] text-muted-foreground font-mono">YYYY-MM-DD</span>
+      {/* ─── Candidate Model Selection & Docker Execution Gate ─── */}
+      {!hasExecutionReport && (
+        <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 dark:bg-primary/10 p-5 space-y-5 animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/80">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+                  ✓ Ready for Execution
+                </span>
+                <span className="text-xs font-bold text-foreground">
+                  Select Models to Train in Docker Sandbox
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Choose which candidate models to execute inside the isolated Docker container. Selected models will be fit and scored against the evaluation dataset.
+              </p>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div>
-                <label className="block text-[11px] font-semibold text-muted-foreground mb-1.5">
-                  Train Split Start Date <span className="font-normal lowercase text-[10px]">(optional cutoff)</span>
-                </label>
-                <input
-                  type="date"
-                  value={splitStartDate}
-                  onChange={(e) => setSplitStartDate(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-border bg-surface text-xs text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all shadow-xs"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-semibold text-muted-foreground mb-1.5">
-                  Train Split End Date <span className="text-amber-500 font-bold">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={splitEndDate}
-                  onChange={(e) => setSplitEndDate(e.target.value)}
-                  className="w-full h-10 px-3 rounded-lg border border-border bg-surface text-xs text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all shadow-xs"
-                />
-              </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAll}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
+              >
+                Select All ({candidateModels.length})
+              </button>
+              <button
+                type="button"
+                onClick={deselectAll}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
+              >
+                Deselect All
+              </button>
             </div>
-
-            <p className="text-[11px] text-muted-foreground leading-relaxed pt-1">
-              Data on or before the end date (and on/after start date if provided) is assigned to training. Records after the end date are assigned to test/validation.
-              <span className="block mt-1 font-medium text-foreground/80">
-                Note: If no date column is present in the dataset, a 70/15/15 ratio split is used automatically.
-              </span>
-            </p>
           </div>
 
-          {/* Section 2: Candidate Models Selection */}
-          <div className="space-y-3">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-                  <span>Select Candidate Models to Train</span>
-                  <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-amber-500/20 text-amber-700 dark:text-amber-300">
-                    {selectedModelIds.length} of {candidateModels.length} Selected
-                  </span>
-                </h4>
-                <p className="text-xs text-muted-foreground mt-0.5">
-                  Check candidate models you want trained inside the Docker container. Unselected models will be skipped.
-                </p>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={selectAll}
-                  className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            {candidateModels.map((candidate) => {
+              const isChecked = selectedModelIds.includes(candidate.model_id);
+              return (
+                <div
+                  key={candidate.model_id}
+                  onClick={() => toggleModelSelection(candidate.model_id)}
+                  className={`p-4 rounded-xl border transition-all cursor-pointer select-none flex items-start gap-3.5 ${
+                    isChecked
+                      ? "border-primary/50 bg-surface dark:bg-surface shadow-xs ring-1 ring-primary/30"
+                      : "border-border bg-surface/70 hover:border-border/80 opacity-70"
+                  }`}
                 >
-                  Select All
-                </button>
-                <button
-                  type="button"
-                  onClick={deselectAll}
-                  className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
-                >
-                  Deselect All
-                </button>
-              </div>
-            </div>
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {}} // handled by parent div
+                    className="mt-0.5 w-4 h-4 rounded-md border-border text-primary focus:ring-0 cursor-pointer"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-bold text-foreground truncate">
+                        {candidate.displayName || candidate.model_id}
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-surface-muted border border-border text-muted-foreground">
+                        {candidate.framework || "sklearn"}
+                      </span>
+                    </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-              {candidateModels.map((candidate) => {
-                const isChecked = selectedModelIds.includes(candidate.model_id);
-                return (
-                  <div
-                    key={candidate.model_id}
-                    onClick={() => toggleModelSelection(candidate.model_id)}
-                    className={`p-4 rounded-xl border transition-all cursor-pointer select-none flex items-start gap-3.5 ${
-                      isChecked
-                        ? "border-primary/50 bg-primary/5 dark:bg-primary/10 shadow-xs"
-                        : "border-border bg-surface/70 hover:border-border/80 opacity-70"
-                    }`}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={isChecked}
-                      onChange={() => {}} // handled by parent div
-                      className="mt-0.5 w-4 h-4 rounded-md border-border text-primary focus:ring-0 cursor-pointer"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-bold text-foreground truncate">
-                          {candidate.displayName || candidate.model_id}
+                    <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="font-mono text-[11px] truncate">ID: {candidate.model_id}</span>
+                      {typeof candidate.score === "number" && (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold ml-auto">
+                          Suitability: {(candidate.score * 100).toFixed(0)}%
                         </span>
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-surface-muted border border-border text-muted-foreground">
-                          {candidate.framework || "sklearn"}
-                        </span>
-                      </div>
-
-                      <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-                        <span className="font-mono text-[11px] truncate">ID: {candidate.model_id}</span>
-                        {typeof candidate.score === "number" && (
-                          <span className="text-emerald-600 dark:text-emerald-400 font-semibold ml-auto">
-                            Suitability: {(candidate.score * 100).toFixed(0)}%
-                          </span>
-                        )}
-                      </div>
+                      )}
                     </div>
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              );
+            })}
           </div>
 
-          {/* Section 3: Action Button */}
-          <div className="pt-3 border-t border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="pt-3 border-t border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              The Python model training program will only be generated and executed for your selected models.
+              {selectedModelIds.length} candidate model(s) selected for containerized training.
             </p>
 
             <button
@@ -383,7 +457,7 @@ export default function ModelTrainingStepOutput({
               disabled={selectedModelIds.length === 0 || isApproving}
               onClick={() => {
                 if (onApproveTraining) {
-                  onApproveTraining(selectedModelIds, splitStartDate || undefined, splitEndDate || undefined);
+                  onApproveTraining(selectedModelIds);
                 }
               }}
               className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-xs tracking-wide hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
@@ -391,12 +465,122 @@ export default function ModelTrainingStepOutput({
               {isApproving ? (
                 <>
                   <span className="w-3.5 h-3.5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                  <span>Generating Code & Launching Training...</span>
+                  <span>Running Training in Docker Sandbox...</span>
                 </>
               ) : (
                 <>
-                  <CheckCircleIcon className="w-4 h-4" />
-                  <span>Generate Code & Train Selected Models ({selectedModelIds.length})</span>
+                  <CpuIcon className="w-4 h-4" />
+                  <span>Execute Training in Docker ({selectedModelIds.length} Models)</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Phase 4B: Candidate Model Selection & Docker Execution Gate ─── */}
+      {hasCodeGenerated && !hasExecutionReport && (
+        <div className="rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/10 p-5 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-500/20">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
+                  ✓ Python Training Code Created
+                </span>
+                <span className="text-xs font-bold text-foreground">
+                  Select Models to Train in Docker
+                </span>
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Choose which candidate models to execute inside the isolated Docker container. You can run all or select specific models.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={selectAll}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
+              >
+                Select All ({candidateModels.length})
+              </button>
+              <button
+                type="button"
+                onClick={deselectAll}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
+              >
+                Deselect All
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+            {candidateModels.map((candidate) => {
+              const isChecked = selectedModelIds.includes(candidate.model_id);
+              return (
+                <div
+                  key={candidate.model_id}
+                  onClick={() => toggleModelSelection(candidate.model_id)}
+                  className={`p-4 rounded-xl border transition-all cursor-pointer select-none flex items-start gap-3.5 ${
+                    isChecked
+                      ? "border-primary/50 bg-primary/5 dark:bg-primary/10 shadow-xs"
+                      : "border-border bg-surface/70 hover:border-border/80 opacity-70"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {}} // handled by parent div
+                    className="mt-0.5 w-4 h-4 rounded-md border-border text-primary focus:ring-0 cursor-pointer"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-bold text-foreground truncate">
+                        {candidate.displayName || candidate.model_id}
+                      </span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-surface-muted border border-border text-muted-foreground">
+                        {candidate.framework || "sklearn"}
+                      </span>
+                    </div>
+
+                    <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
+                      <span className="font-mono text-[11px] truncate">ID: {candidate.model_id}</span>
+                      {typeof candidate.score === "number" && (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold ml-auto">
+                          Suitability: {(candidate.score * 100).toFixed(0)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="pt-3 border-t border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              {selectedModelIds.length} candidate model(s) selected for Docker execution.
+            </p>
+
+            <button
+              type="button"
+              disabled={selectedModelIds.length === 0 || isApproving}
+              onClick={() => {
+                if (onApproveTraining) {
+                  onApproveTraining(selectedModelIds);
+                }
+              }}
+              className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-xs tracking-wide hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
+            >
+              {isApproving ? (
+                <>
+                  <span className="w-3.5 h-3.5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                  <span>Running Training in Docker Sandbox...</span>
+                </>
+              ) : (
+                <>
+                  <CpuIcon className="w-4 h-4" />
+                  <span>Execute Training in Docker ({selectedModelIds.length} Models)</span>
                 </>
               )}
             </button>
@@ -405,7 +589,7 @@ export default function ModelTrainingStepOutput({
       )}
 
       {/* ─── Champion Model Card ─── */}
-      {!isAwaitingSelection && championCandidate && (
+      {hasExecutionReport && championCandidate && (
         <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-surface to-surface p-6 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1.5">
@@ -483,7 +667,7 @@ export default function ModelTrainingStepOutput({
       )}
 
       {/* ─── Model Metrics Leaderboard Table ─── */}
-      {!isAwaitingSelection && candidateModels.length > 0 && (
+      {hasExecutionReport && candidateModels.length > 0 && (
         <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-xs">
           <div className="p-4 border-b border-border flex items-center justify-between">
             <div>
@@ -575,7 +759,7 @@ export default function ModelTrainingStepOutput({
       )}
 
       {/* ─── Artifacts & Visualizations Gallery ─── */}
-      {!isAwaitingSelection && Object.keys(plots).length > 0 && (
+      {hasExecutionReport && Object.keys(plots).length > 0 && (
         <div className="rounded-2xl border border-border bg-surface p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>

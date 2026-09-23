@@ -56,4 +56,28 @@ export class TrainingConfigController {
       });
     }
   };
+
+  getDateRange = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const projectId = String(req.params.projectId || "");
+      const timestamp = req.query.timestamp ? String(req.query.timestamp) : undefined;
+
+      if (!projectId) {
+        res.status(400).json({ success: false, message: "projectId parameter is required" });
+        return;
+      }
+
+      const result = await this.service.getDateRange(projectId, timestamp);
+      res.status(200).json({
+        success: true,
+        data: result,
+      });
+    } catch (error: any) {
+      console.error("[TrainingConfigController] getDateRange error:", error);
+      res.status(500).json({
+        success: false,
+        message: error?.message || "Failed to fetch dataset date range",
+      });
+    }
+  };
 }

@@ -34,6 +34,7 @@ export interface ModelTrainingAgentOutput {
   candidates: CandidateModelRun[];
   rankedCandidates: CandidateModelRun[];
   selectedModel?: string;
+  selectedModels?: string[];
   selectedModelArtifact?: string;
   validationMetrics?: Record<string, number>;
   plots?: Record<string, string>;
@@ -41,4 +42,6 @@ export interface ModelTrainingAgentOutput {
   executionLogs?: string;
   hasDateColumn?: boolean;
   dateColumnName?: string;
+  splitStartDate?: string;
+  splitEndDate?: string;
 }

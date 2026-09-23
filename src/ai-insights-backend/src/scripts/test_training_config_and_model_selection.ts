@@ -35,16 +35,28 @@ async function runVerificationTests() {
   const interruptNodes = (graph as any)?.interruptBefore || (graph as any)?.config?.interruptBefore || [];
   console.log("Graph interruptBefore nodes:", interruptNodes);
   assert(
-    interruptNodes.includes("trainingConfigurationNode"),
-    "trainingConfigurationNode is included in interruptBefore"
-  );
-  assert(
     interruptNodes.includes("hierarchyMapperNode"),
     "hierarchyMapperNode is included in interruptBefore"
   );
   assert(
-    !interruptNodes.includes("modelSelectionNode"),
-    "modelSelectionNode is NOT in interruptBefore (executes automatically to produce candidate models before training configuration pause)"
+    interruptNodes.includes("modelSelectionNode"),
+    "modelSelectionNode is included in interruptBefore (approval gate after Feature Engineering)"
+  );
+  assert(
+    interruptNodes.includes("trainingConfigurationNode"),
+    "trainingConfigurationNode is included in interruptBefore (model subsetting gate)"
+  );
+  assert(
+    interruptNodes.includes("modelTrainingCodeNode"),
+    "modelTrainingCodeNode is included in interruptBefore (train split dates input gate)"
+  );
+  assert(
+    interruptNodes.includes("modelTrainingExecNode"),
+    "modelTrainingExecNode is included in interruptBefore (Docker candidate selection gate)"
+  );
+  assert(
+    interruptNodes.includes("preFlightNode"),
+    "preFlightNode is included in interruptBefore (pauses after Training Configuration for YAML review/approval before Preflight runs)"
   );
 
 

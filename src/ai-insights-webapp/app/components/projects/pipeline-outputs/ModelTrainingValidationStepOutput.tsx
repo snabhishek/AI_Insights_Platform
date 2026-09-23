@@ -17,6 +17,7 @@ interface ModelTrainingValidationOutputProps {
   activeRunTimestamp?: string;
   onSelectionConfirmed?: (selectedModels: string[]) => void;
   onApproveTraining?: (selectedModels: string[], splitStartDate?: string, splitEndDate?: string) => void;
+  onApprove?: (selectedModels?: string[], splitEndDate?: string) => void;
   isApproving?: boolean;
 }
 
@@ -31,10 +32,14 @@ export default function ModelTrainingValidationStepOutput({
   activeRunTimestamp,
   onSelectionConfirmed,
   onApproveTraining,
+  onApprove,
   isApproving,
 }: ModelTrainingValidationOutputProps) {
-  // 1. Model Selection (UI is actively worked on)
-  if (activeSubstep === "Model Selection" || (modelSelection && !trainingConfiguration && !preFlight && !modelTraining && !modelValidation)) {
+  // 1. Model Selection Substep
+  if (
+    activeSubstep === "Model Selection" ||
+    (modelSelection && !trainingConfiguration && !preFlight && !modelTraining && !modelValidation)
+  ) {
     if (!modelSelection) {
       return (
         <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[200px]">
@@ -54,8 +59,14 @@ export default function ModelTrainingValidationStepOutput({
     );
   }
 
-  // 2. Training Configuration (UI is actively worked on)
-  if (activeSubstep === "Training Configuration" || (Boolean(trainingConfiguration?.contractPath || trainingConfiguration?.status === "Completed") && !preFlight && !modelTraining && !modelValidation)) {
+  // 2. Training Configuration Substep
+  if (
+    activeSubstep === "Training Configuration" ||
+    (Boolean(trainingConfiguration?.contractPath || trainingConfiguration?.status === "Completed") &&
+      !preFlight &&
+      !modelTraining &&
+      !modelValidation)
+  ) {
     if (!trainingConfiguration) {
       return (
         <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[200px]">
@@ -72,18 +83,23 @@ export default function ModelTrainingValidationStepOutput({
         trainingConfiguration={trainingConfiguration}
         modelSelection={modelSelection}
         activeRunTimestamp={activeRunTimestamp}
+        onApprove={onApprove}
+        isApproving={isApproving}
       />
     );
   }
 
-  // 3. Pre Flight (Comprehensive 10-Stage Dashboard)
-  if (activeSubstep === "Pre Flight" || (preFlight && !modelTraining && !modelValidation)) {
+  // 3. Pre Flight Substep
+  if (
+    activeSubstep === "Pre Flight" ||
+    (Boolean(preFlight) && !modelTraining && !modelValidation)
+  ) {
     if (!preFlight) {
       return (
         <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[200px]">
-          <p className="text-sm font-semibold text-foreground">Pre Flight</p>
+          <p className="text-sm font-semibold text-foreground">Pre Flight Verification</p>
           <p className="text-xs text-muted-foreground mt-1">
-            Pre-flight verification output has not been produced yet.
+            Pre-flight verification has not been performed yet.
           </p>
         </div>
       );
@@ -97,11 +113,16 @@ export default function ModelTrainingValidationStepOutput({
     );
   }
 
-  // 4. Model Training or Model Validation
-  if (activeSubstep === "Model Training" || activeSubstep === "Model Validation" || modelTraining || modelValidation) {
+  // 4. Model Training Substep
+  if (
+    activeSubstep === "Model Training" ||
+    activeSubstep === "Model Validation" ||
+    Boolean(modelTraining) ||
+    Boolean(modelValidation)
+  ) {
     return (
       <ModelTrainingStepOutput
-        modelTraining={modelTraining || modelValidation}
+        modelTraining={modelTraining || modelValidation || {}}
         trainingConfiguration={trainingConfiguration}
         modelSelection={modelSelection}
         projectId={projectId}

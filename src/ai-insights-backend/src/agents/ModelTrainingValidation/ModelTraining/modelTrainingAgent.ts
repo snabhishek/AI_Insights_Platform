@@ -47,52 +47,18 @@ interface RectifierResult extends Record<string, unknown> {
 
 export class ModelTrainingAgent {
   /**
-   * Executes the deep-agent Model Training Coding Agent workflow:
-   * 1. Reads the Training Job Contract YAML and PreFlight assessment.
-   * 2. Scaffolds modular Python project `<projectName>_model_training` in the active `<runTimestamp>`.
-   * 3. Uses LangChain middlewares: todoListMiddleware, summarizationMiddleware (200K -> 25K tokens),
-   *    and contextBudgetMiddleware (200K max tokens).
-   * 4. Uses validatorNode (validateWithRetry) to handle validation & container execution.
-   * 5. Rectifier Subagent acts as a read-only advisor (read-only file access, NO edit or execute access)
-   *    diagnosing tracebacks and providing rectification steps to the ModelTrainingAgent.
-   * 6. ModelTrainingAgent applies the code corrections using its editing tools.
+   * Helper to resolve project paths and contract configuration.
    */
-  public static async execute(
-    state: AgentStateType,
-    services: IngestionServices,
-    options?: {
-      requireHITLApproval?: boolean;
-      isHITLApproved?: boolean;
-      maxRetries?: number;
-    }
-  ): Promise<ModelTrainingAgentOutput> {
-    const startTime = Date.now();
+  private static getProjectContext(state: AgentStateType, services: IngestionServices) {
     const projectId = state.projectId || services?.projectId || "";
     const workspaceName = (state as any).workspaceName || services?.workspaceName || "FileStorage_Testing";
     const projectName = (state as any).projectName || services?.projectName || "default";
     const runTimestamp = state.runTimestamp || services?.runTimestamp || "";
 
-    if (!projectId || !projectName || !runTimestamp) {
-      return {
-        status: "Failed",
-        summary: "Missing required state fields (projectId, projectName, or runTimestamp).",
-        phase: "Model Training",
-        projectDirectory: "",
-        candidates: [],
-        rankedCandidates: [],
-      };
-    }
-
     const projectDir = getProjectDirectory({ projectId, workspaceName, projectName, runTimestamp });
     const runDir = path.join(projectDir, runTimestamp);
     const pythonProjectName = `${projectName}_model_training`;
     const modelTrainingDir = path.join(runDir, pythonProjectName);
-
-    await logMilestoneThinking(
-      services,
-      "Model Training",
-      `Initiating Model Training Coding Agent for project '${projectName}' (run: ${runTimestamp}). Project directory: ${pythonProjectName}...`
-    );
 
     // Read YAML Contract directly from schemas or trainingConfiguration
     let contractPath = (state.trainingConfiguration as any)?.contractPath;
@@ -110,82 +76,24 @@ export class ModelTrainingAgent {
       }
     }
 
-    // PreFlight report is stored in state.preFlight (or stageOutputs.preFlight)
-    const preFlight = state.preFlight || (state.stageOutputs as any)?.preFlight || {};
-
-    // Prepare Tools
-    const fsTools = await getMcpFilesystemTools({ projectId, workspaceName, projectName, runTimestamp });
-    // Filter read-only tools for Rectifier subagent (read, list, info tools - NO edit, write, or execute)
-    const readOnlyFsTools = fsTools.filter((t) => {
-      const name = (t.name || "").toLowerCase();
-      return (
-        !name.includes("write") &&
-        !name.includes("edit") &&
-        !name.includes("delete") &&
-        !name.includes("move") &&
-        !name.includes("create") &&
-        !name.includes("execute")
-      );
-    });
-
-    const contractTool = createReadTrainingContractTool(state.trainingConfiguration || {}, projectId, runTimestamp, services);
-    const preFlightTool = createGetPreFlightDetailsTool(preFlight);
-    const validationTool = createValidateProjectStructureTool(modelTrainingDir);
-
-    const agentTools = [
-      ...fsTools,
-      contractTool,
-      preFlightTool,
-      validationTool,
-      webSearchTool,
-      extractUrlContentTool,
-    ];
-
-    // Ensure output directories exist on host
-    fs.mkdirSync(modelTrainingDir, { recursive: true });
-    fs.mkdirSync(path.join(modelTrainingDir, "configs"), { recursive: true });
-    fs.mkdirSync(path.join(modelTrainingDir, "data"), { recursive: true });
-    fs.mkdirSync(path.join(modelTrainingDir, "models"), { recursive: true });
-    fs.mkdirSync(path.join(modelTrainingDir, "evaluation"), { recursive: true });
-    fs.mkdirSync(path.join(modelTrainingDir, "artifacts", "models"), { recursive: true });
-    fs.mkdirSync(path.join(modelTrainingDir, "artifacts", "plots"), { recursive: true });
-
-    const model = getModel();
-    const systemPrompt = await getPromptFromFile(
-      "ModelTrainingValidation/modelTraining.md",
-      "You are an expert AI Machine Learning Software Engineering and Coding Agent."
-    );
-
-    const relativeEntrypoint = `${runTimestamp}/${pythonProjectName}/main.py`;
-    const agentMessages: BaseMessage[] = [];
-    let accumulatedPackages: string[] = [];
-    let lastExecResult: { success: boolean; stdout: string; stderr: string } = {
-      success: false,
-      stdout: "",
-      stderr: "",
+    return {
+      projectId,
+      workspaceName,
+      projectName,
+      runTimestamp,
+      projectDir,
+      runDir,
+      pythonProjectName,
+      modelTrainingDir,
+      contractPath,
+      contractData,
     };
+  }
 
-    const codingFallback: CodingAgentResult = {
-      status: "Success",
-      summary: "Coding agent generated project files.",
-      projectDirectory: `${runTimestamp}/${pythonProjectName}`,
-      requiredPackages: [],
-    };
-
-    // Extract PreFlight host hardware diagnostics and derive safe container quotas
-    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlight || {}) as any;
-    const sys = preFlightReport.system || {};
-    const hostCpus = typeof sys.cpu_logical === "number" ? sys.cpu_logical : 4;
-    const hostRamGb = typeof sys.ram_available_gb === "number" ? sys.ram_available_gb : 8;
-    const hasGpu = preFlightReport.selected_resource === "gpu" || (Array.isArray(sys.gpus) && sys.gpus.length > 0);
-
-    const containerCpus = Math.max(1, Math.min(hostCpus, Math.floor(hostCpus * 0.75)));
-    const containerRamGb = Math.max(2, Math.min(hostRamGb, Math.floor(hostRamGb * 0.85)));
-    const containerCpuStr = `${containerCpus}.0`;
-    const containerRamStr = `${containerRamGb}G`;
-    const resourceLimits = { cpus: containerCpuStr, memory: containerRamStr, hasGpu };
-
-    // Discover candidate models configured in the training contract or model selection
+  /**
+   * Helper to extract candidate models configured in the training contract or model selection.
+   */
+  private static getCandidateModels(contractData: any, state: AgentStateType): CandidateModelItem[] {
     const rawCandidates =
       contractData?.model_selection?.models ||
       contractData?.model_selection?.candidates ||
@@ -195,7 +103,7 @@ export class ModelTrainingAgent {
       (state.modelSelection as any)?.models ||
       [];
 
-    const configuredCandidateModels: CandidateModelRun[] = (
+    return (
       Array.isArray(rawCandidates) && rawCandidates.length > 0
         ? rawCandidates
         : [
@@ -215,289 +123,269 @@ export class ModelTrainingAgent {
         score,
       };
     });
+  }
 
-    // Check if user has already confirmed specific models to train (HITL gate)
-    const effectiveSelectedModels: string[] = (
-      Array.isArray(state.selectedModels) && state.selectedModels.length > 0
-        ? state.selectedModels
-        : Array.isArray((state.stageOutputs as any)?.modelTraining?.selectedModels) && (state.stageOutputs as any).modelTraining.selectedModels.length > 0
-        ? (state.stageOutputs as any).modelTraining.selectedModels
-        : []
-    );
+  /**
+   * Step 4A: Scaffolds the modular Python model training project (<projectName>_model_training)
+   * with the train split dates, configs, main.py, data_loader.py, and pipeline.py.
+   * Does NOT execute container training.
+   */
+  public static async generateProjectCode(
+    state: AgentStateType,
+    services: IngestionServices
+  ): Promise<ModelTrainingAgentOutput> {
+    const ctx = this.getProjectContext(state, services);
+    const { projectId, workspaceName, projectName, runTimestamp, runDir, pythonProjectName, modelTrainingDir, contractPath, contractData } = ctx;
 
-    const effectiveSplitStartDate = (
-      state.splitStartDate ||
-      (state.stageOutputs as any)?.modelTraining?.splitStartDate ||
-      ""
-    );
-    const effectiveSplitEndDate = (
-      state.splitEndDate ||
-      state.splitDate ||
-      (state.stageOutputs as any)?.modelTraining?.splitEndDate ||
-      (state.stageOutputs as any)?.modelTraining?.splitDate ||
-      ""
-    );
-
-    // Inspect dataset for date/timestamp columns
-    let hasDateColumn = false;
-    let dateColumnName: string | undefined;
-
-    const schemaRes = (state.schemaResolution || (state.stageOutputs as any)?.schemaResolution || {}) as any;
-    const schemas = schemaRes.resolvedSchemas || schemaRes.schemas || [];
-    for (const s of (Array.isArray(schemas) ? schemas : [])) {
-      for (const col of (s.columns || [])) {
-        const type = (col.type || col.dataType || "").toLowerCase();
-        if (type.includes("date") || type.includes("time")) {
-          hasDateColumn = true;
-          dateColumnName = col.name;
-          break;
-        }
-      }
-      if (hasDateColumn) break;
-    }
-
-    if (!hasDateColumn) {
-      const dataProf = (state.dataProfile || (state.stageOutputs as any)?.dataProfile || {}) as any;
-      const profiles = dataProf.columnProfiles || dataProf.profiles || {};
-      for (const [colName, prof] of Object.entries(profiles) as [string, any][]) {
-        const type = (prof.inferredType || prof.type || "").toLowerCase();
-        if (type.includes("date") || type.includes("time")) {
-          hasDateColumn = true;
-          dateColumnName = colName;
-          break;
-        }
-      }
-    }
-
-    // INTERACTIVE HITL GATE:
-    // Only after user enters the train split start date, train split end date, and chooses model(s),
-    // should the Python program be generated.
-    if (effectiveSelectedModels.length === 0) {
-      await logMilestoneThinking(
-        services,
-        "Model Training",
-        `Candidate models ready. Pausing for user to provide train split start/end date and select model(s)...`
-      );
-
+    if (!projectId || !projectName || !runTimestamp) {
       return {
-        status: "Requires Attention",
-        summary: `Candidate models: ${configuredCandidateModels.map((c) => c.displayName || c.model_id).join(", ")}. Please enter the train split start date, train split end date, and select model(s) to train.`,
+        status: "Failed",
+        summary: "Missing required state fields (projectId, projectName, or runTimestamp).",
         phase: "Model Training",
-        projectDirectory: `${runTimestamp}/${pythonProjectName}`,
-        candidates: configuredCandidateModels,
-        rankedCandidates: configuredCandidateModels,
-        hasDateColumn,
-        dateColumnName,
+        projectDirectory: "",
+        candidates: [],
+        rankedCandidates: [],
       };
     }
 
-    // Orchestrate with validateWithRetry:
-    // The Python project will ONLY now be generated and executed with the user's dates and selected models
-    await logMilestoneThinking(
-      services,
-      "Model Training",
-      `Generating Python project and executing container training for user-selected models: ${effectiveSelectedModels.join(", ")}...`
+    const preFlight = state.preFlight || (state.stageOutputs as any)?.preFlight || {};
+    const configuredCandidateModels = this.getCandidateModels(contractData, state);
+
+    // Extract PreFlight host hardware diagnostics
+    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlight || {}) as any;
+    const sys = preFlightReport.system || {};
+    const hostCpus = typeof sys.cpu_logical === "number" ? sys.cpu_logical : 4;
+    const hostRamGb = typeof sys.ram_available_gb === "number" ? sys.ram_available_gb : 8;
+    const hasGpu = preFlightReport.selected_resource === "gpu" || (Array.isArray(sys.gpus) && sys.gpus.length > 0);
+
+    const containerCpus = Math.max(1, Math.min(hostCpus, Math.floor(hostCpus * 0.75)));
+    const containerRamGb = Math.max(2, Math.min(hostRamGb, Math.floor(hostRamGb * 0.85)));
+    const containerCpuStr = `${containerCpus}.0`;
+    const containerRamStr = `${containerRamGb}G`;
+
+    // Ensure output directories exist on host
+    fs.mkdirSync(modelTrainingDir, { recursive: true });
+    fs.mkdirSync(path.join(modelTrainingDir, "configs"), { recursive: true });
+    fs.mkdirSync(path.join(modelTrainingDir, "data"), { recursive: true });
+    fs.mkdirSync(path.join(modelTrainingDir, "models"), { recursive: true });
+    fs.mkdirSync(path.join(modelTrainingDir, "evaluation"), { recursive: true });
+    fs.mkdirSync(path.join(modelTrainingDir, "artifacts", "models"), { recursive: true });
+    fs.mkdirSync(path.join(modelTrainingDir, "artifacts", "plots"), { recursive: true });
+
+    // Prepare Tools
+    const fsTools = await getMcpFilesystemTools({ projectId, workspaceName, projectName, runTimestamp });
+    const contractTool = createReadTrainingContractTool(state.trainingConfiguration || {}, projectId, runTimestamp, services);
+    const preFlightTool = createGetPreFlightDetailsTool(preFlight);
+    const validationTool = createValidateProjectStructureTool(modelTrainingDir);
+
+    const agentTools = [
+      ...fsTools,
+      contractTool,
+      preFlightTool,
+      validationTool,
+      webSearchTool,
+      extractUrlContentTool,
+    ];
+
+    const model = getModel();
+    const systemPrompt = await getPromptFromFile(
+      "ModelTrainingValidation/modelTraining.md",
+      "You are an expert AI Machine Learning Software Engineering and Coding Agent."
     );
 
+    const effectiveSplitStartDate = state.splitStartDate || (state.stageOutputs as any)?.modelTraining?.splitStartDate || "";
+    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitDate || "";
+
+    const timeColumn =
+      contractData?.data_splitting?.time_column ||
+      contractData?.split?.time_column ||
+      contractData?.task?.prediction_timestamp ||
+      contractData?.model_selection?.prediction_grain?.time_column ||
+      contractData?.time_column ||
+      (state.featureArchitect as any)?.timeColumn ||
+      (state.featureArchitect as any)?.orchestrationDecision?.timeColumn ||
+      (state.schemaResolution as any)?.timeColumn ||
+      "";
+
     const splitDateInstructions = effectiveSplitEndDate ? [
-      `--- Dataset Split Cutoff Dates ---`,
-      ...(effectiveSplitStartDate ? [`Train Split Start Date: ${effectiveSplitStartDate}`] : []),
-      `Train Split End Date: ${effectiveSplitEndDate}`,
-      `In data/data_loader.py, if a timestamp or date column is present in the dataset:`,
-      `  - Train split: records where ${effectiveSplitStartDate ? `date >= "${effectiveSplitStartDate}" and ` : ""}date <= "${effectiveSplitEndDate}"`,
-      `  - Test / Validation split: records where date > "${effectiveSplitEndDate}"`,
+      `--- Dataset Split Cutoff Date ---`,
+      `Train Split End Date (Month/Year Cutoff): ${effectiveSplitEndDate}`,
+      ...(timeColumn ? [`Dataset Time / Date Column: ${timeColumn}`] : []),
+      `In data/data_loader.py (or data splitting function):`,
+      `  - Split the dataset using temporal cutoff: Filter records where ${timeColumn ? `df['${timeColumn}']` : "date_column"} <= "${effectiveSplitEndDate}" for the training set, and ${timeColumn ? `df['${timeColumn}']` : "date_column"} > "${effectiveSplitEndDate}" for the test / validation set.`,
+      `  - Convert the column to datetime using pd.to_datetime(df['${timeColumn || "date"}'], errors='coerce') before performing the temporal filter.`,
       `If NO timestamp or date column exists in the dataset, fall back strictly to a 70/15/15 ratio split (70% train, 15% validation, 15% test).`,
     ] : [
       `--- Dataset Split Strategy ---`,
       `In data/data_loader.py, use a strict 70/15/15 ratio split (70% train, 15% validation, 15% test).`,
     ];
 
-    const codingResult = await validateWithRetry<CodingAgentResult>(
-      "modelTraining",
-      async (feedbackPrompt?: string) => {
-        const userPrompt = feedbackPrompt
-          ? [
-              `The previous model training pipeline run encountered an execution error.`,
-              feedbackPrompt,
-              `Please inspect the failing code files and apply the required corrections using your file editing tools. Return the updated project status JSON.`,
-            ].join("\n\n")
-          : [
-              `Generate the complete, modular Python model training project in '${runTimestamp}/${pythonProjectName}'.`,
-              `--- Active Run Context ---`,
-              `Project Name: ${projectName}`,
-              `Run Timestamp: ${runTimestamp}`,
-              `Target Project Folder: ${runTimestamp}/${pythonProjectName}`,
-              `Host Path: ${modelTrainingDir}`,
-              `Contract Path: ${contractPath || "schemas/<contract>.yaml"}`,
-              `--- Host Hardware & PreFlight Runtime Limits ---`,
-              `Allocated Container CPUs: ${containerCpuStr}`,
-              `Allocated Container RAM: ${containerRamStr}`,
-              `GPU Acceleration: ${hasGpu ? "Enabled (CDI reservations)" : "Disabled (CPU only)"}`,
-              `In docker-compose.yml, configure deploy.resources.limits with cpus: '${containerCpuStr}' and memory: ${containerRamStr}. Set network: host in build and network_mode: host.`,
-              ...splitDateInstructions,
-              `--- User-Selected Models to Train ---`,
-              `The user has explicitly selected: ${effectiveSelectedModels.join(", ")}. In pipeline.py and main.py, implement trainers and train ONLY these candidate models sequentially.`,
-              `--- Strict Isolation Constraints ---`,
-              `1. DO NOT read or reference any other timestamp folder. Only operate inside '${runTimestamp}/'.`,
-              `2. Execute models sequentially in pipeline.py.`,
-              `3. Always generate model evaluation metrics and comparison visualization plots in artifacts/plots/.`,
-              `4. Generate model_training_report.json at completion.`,
-              `Use 'write_todos' to track task progress as you create the files.`,
-            ].join("\n\n");
-
-        return await invokeAgentJson<CodingAgentResult>(
-          "modelTraining",
-          model,
-          userPrompt,
-          codingFallback,
-          services,
-          {
-            systemPrompt,
-            traceLabel: "modelTraining:codingAgent",
-            tools: agentTools,
-            useDeepAgent: true,
-            enableTodoList: true,
-            recursionLimit: 200,
-            messages: agentMessages,
-            middlewareOptions: {
-              summarization: {
-                triggerTokens: 200000,
-                keepTokens: 25000,
-              },
-              todoList: true,
-              toolRetry: { maxRetries: 2 },
-            },
-          }
-        );
-      },
-      codingFallback,
+    await logMilestoneThinking(
       services,
-      options?.maxRetries ?? 2,
-      undefined,
-      async (result: CodingAgentResult) => {
-        // Collect package requirements provided by the agent (no hardcoded manual packages)
-        if (Array.isArray(result.requiredPackages)) {
-          accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...result.requiredPackages]));
-        }
-
-        await logMilestoneThinking(
-          services,
-          "Model Training",
-          `Executing model training project inside Docker container (working directory: /workspace)...`
-        );
-
-        const extraArgs: string[] = [];
-        if (effectiveSelectedModels.length > 0) {
-          extraArgs.push(`--models "${effectiveSelectedModels.join(",")}"`);
-        }
-        if (effectiveSplitEndDate) {
-          extraArgs.push(`--split-date "${effectiveSplitEndDate}"`);
-          extraArgs.push(`--split-end-date "${effectiveSplitEndDate}"`);
-        }
-        if (effectiveSplitStartDate) {
-          extraArgs.push(`--split-start-date "${effectiveSplitStartDate}"`);
-        }
-
-        // Execute sequentially inside Docker container with PreFlight resource limits and model filters
-        const execResult = await executePythonScript(
-          relativeEntrypoint,
-          "", // code is already in file
-          projectId,
-          runTimestamp,
-          services,
-          state.connectorId,
-          accumulatedPackages,
-          extraArgs,
-          resourceLimits
-        );
-
-        lastExecResult = execResult;
-
-        const reportPathInProject = path.join(modelTrainingDir, "model_training_report.json");
-        const reportPathInRun = path.join(runDir, "model_training_report.json");
-        const reportExists = fs.existsSync(reportPathInProject) || fs.existsSync(reportPathInRun);
-
-        if (execResult.success && reportExists) {
-          await logMilestoneThinking(
-            services,
-            "Model Training",
-            `Model training pipeline completed successfully in container.`
-          );
-          return { isValid: true };
-        }
-
-        // Subagent Orchestration: Invoke Rectifier Advisor (READ-ONLY access)
-        await logMilestoneThinking(
-          services,
-          "Model Training",
-          `Pipeline execution error encountered. Invoking Rectifier advisor subagent to diagnose issues and provide rectification steps...`
-        );
-
-        const rectifierPrompt = await getPromptFromFile(
-          "ModelTrainingValidation/modelTrainingRectifier.md",
-          "You are an expert AI Python Debugger and Code Rectifier Advisor."
-        );
-
-        const rectifierUserMsg = [
-          `The Python model training project at '${runTimestamp}/${pythonProjectName}' failed during container execution.`,
-          `--- Execution Stdout ---`,
-          execResult.stdout || "[No stdout]",
-          `--- Execution Stderr / Traceback ---`,
-          execResult.stderr || "[No stderr]",
-          `Target Directory: ${modelTrainingDir}`,
-          `Inspect the failing files using your read-only filesystem tools. Diagnose the root cause and provide precise rectification instructions and code snippets for ModelTrainingAgent to apply.`,
-        ].join("\n\n");
-
-        const rectifierFallback: RectifierResult = {
-          status: "NeedsRectification",
-          explanation: "Execution error: " + (execResult.stderr || execResult.stdout).slice(0, 300),
-        };
-
-        let rectResult: RectifierResult = rectifierFallback;
-        try {
-          rectResult = await invokeAgentJson<RectifierResult>(
-            "modelTrainingRectifier",
-            model,
-            rectifierUserMsg,
-            rectifierFallback,
-            services,
-            {
-              systemPrompt: rectifierPrompt,
-              traceLabel: "modelTraining:rectifierAdvisor",
-              tools: readOnlyFsTools, // Read-only tools only: NO edit, NO write, NO execute
-              recursionLimit: 200,
-            }
-          );
-
-          if (Array.isArray(rectResult.requiredPackages)) {
-            accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...rectResult.requiredPackages]));
-          }
-        } catch (rErr: any) {
-          console.warn("[ModelTrainingAgent] Rectifier subagent invocation warning:", rErr?.message || rErr);
-        }
-
-        const feedbackReason = [
-          `Execution failed with error:`,
-          execResult.stderr || execResult.stdout || "Unknown execution failure",
-          `\n--- Rectifier Advisor Subagent Diagnosis ---`,
-          `Failing File: ${rectResult.failingFile || "See traceback above"}`,
-          `Root Cause: ${rectResult.rootCause || rectResult.explanation || "Execution error"}`,
-          `Rectification Steps:\n${rectResult.rectificationSteps || rectResult.explanation || "Please fix the failing code."}`,
-          rectResult.recommendedCodeSnippet
-            ? `Recommended Code Snippet:\n\`\`\`python\n${rectResult.recommendedCodeSnippet}\n\`\`\``
-            : "",
-        ].filter(Boolean).join("\n\n");
-
-        return {
-          isValid: false,
-          reason: feedbackReason,
-        };
-      }
+      "Model Training",
+      `Deep Coding Agent generating Python model training program in '${pythonProjectName}'...`
     );
 
-    await cleanupRunContainer(projectId, runTimestamp);
+    const userPrompt = [
+      `Generate the complete, modular Python model training project in '${runTimestamp}/${pythonProjectName}'.`,
+      `--- Active Run Context ---`,
+      `Project Name: ${projectName}`,
+      `Run Timestamp: ${runTimestamp}`,
+      `Target Project Folder: ${runTimestamp}/${pythonProjectName}`,
+      `Host Path: ${modelTrainingDir}`,
+      `Contract Path: ${contractPath || "schemas/<contract>.yaml"}`,
+      `--- Host Hardware & PreFlight Runtime Limits ---`,
+      `Allocated Container CPUs: ${containerCpuStr}`,
+      `Allocated Container RAM: ${containerRamStr}`,
+      `GPU Acceleration: ${hasGpu ? "Enabled (CDI reservations)" : "Disabled (CPU only)"}`,
+      `In docker-compose.yml, configure deploy.resources.limits with cpus: '${containerCpuStr}' and memory: ${containerRamStr}. Set network: host in build and network_mode: host.`,
+      ...splitDateInstructions,
+      `--- Candidate Models to Implement ---`,
+      `Implement modular estimators and pipelines for all candidate models in the contract (${configuredCandidateModels.map((c) => c.model_id).join(", ")}). Allow CLI argument '--models' in main.py to dynamically filter which models to fit.`,
+      `--- Strict Isolation Constraints ---`,
+      `1. DO NOT read or reference any other timestamp folder. Only operate inside '${runTimestamp}/'.`,
+      `2. Execute models sequentially in pipeline.py.`,
+      `3. Always generate model evaluation metrics and comparison visualization plots in artifacts/plots/.`,
+      `4. Generate model_training_report.json at completion.`,
+      `Use 'write_todos' to track task progress as you create the files.`,
+    ].join("\n\n");
 
-    // Read and parse output report
+    const codingFallback: CodingAgentResult = {
+      status: "Success",
+      summary: "Python model training project scaffolded successfully.",
+      projectDirectory: `${runTimestamp}/${pythonProjectName}`,
+      requiredPackages: [],
+    };
+
+    let codingResult: CodingAgentResult = codingFallback;
+    try {
+      codingResult = await invokeAgentJson<CodingAgentResult>(
+        "modelTrainingCode",
+        model,
+        userPrompt,
+        codingFallback,
+        services,
+        {
+          systemPrompt,
+          traceLabel: "modelTraining:codeGeneration",
+          tools: agentTools,
+          useDeepAgent: true,
+          enableTodoList: true,
+          recursionLimit: 200,
+        }
+      );
+    } catch (codeErr: any) {
+      console.warn("[ModelTrainingAgent] Code generation invoke warning:", codeErr?.message || codeErr);
+    }
+
+    await logMilestoneThinking(
+      services,
+      "Model Training",
+      `Python model training project generated. Pausing for user to select candidate models to execute in Docker.`
+    );
+
+    return {
+      status: "Completed",
+      summary: `Python model training program created in '${pythonProjectName}'. Please select the candidate models to train and execute in Docker.`,
+      phase: "Model Training",
+      projectDirectory: `${runTimestamp}/${pythonProjectName}`,
+      candidates: configuredCandidateModels,
+      rankedCandidates: configuredCandidateModels,
+      filesCreated: codingResult.files || [],
+      splitStartDate: effectiveSplitStartDate,
+      splitEndDate: effectiveSplitEndDate,
+    };
+  }
+
+  /**
+   * Step 4B: Executes the generated Python project inside the Docker sandbox for user-selected models.
+   */
+  public static async executeContainerTraining(
+    state: AgentStateType,
+    services: IngestionServices,
+    options?: { maxRetries?: number }
+  ): Promise<ModelTrainingAgentOutput> {
+    const startTime = Date.now();
+    const ctx = this.getProjectContext(state, services);
+    const { projectId, workspaceName, projectName, runTimestamp, runDir, pythonProjectName, modelTrainingDir, contractData } = ctx;
+
+    const configuredCandidateModels = this.getCandidateModels(contractData, state);
+
+    // Selected models to execute
+    const effectiveSelectedModels: string[] = (
+      Array.isArray(state.selectedModels) && state.selectedModels.length > 0
+        ? state.selectedModels
+        : Array.isArray((state.stageOutputs as any)?.modelTraining?.selectedModels) && (state.stageOutputs as any).modelTraining.selectedModels.length > 0
+        ? (state.stageOutputs as any).modelTraining.selectedModels
+        : configuredCandidateModels.map((c) => c.model_id)
+    );
+
+    const effectiveSplitStartDate = state.splitStartDate || (state.stageOutputs as any)?.modelTraining?.splitStartDate || "";
+    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || "";
+
+    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlight || {}) as any;
+    const sys = preFlightReport.system || {};
+    const hostCpus = typeof sys.cpu_logical === "number" ? sys.cpu_logical : 4;
+    const hostRamGb = typeof sys.ram_available_gb === "number" ? sys.ram_available_gb : 8;
+    const hasGpu = preFlightReport.selected_resource === "gpu" || (Array.isArray(sys.gpus) && sys.gpus.length > 0);
+
+    const containerCpus = Math.max(1, Math.min(hostCpus, Math.floor(hostCpus * 0.75)));
+    const containerRamGb = Math.max(2, Math.min(hostRamGb, Math.floor(hostRamGb * 0.85)));
+    const containerCpuStr = `${containerCpus}.0`;
+    const containerRamStr = `${containerRamGb}G`;
+    const resourceLimits = { cpus: containerCpuStr, memory: containerRamStr, hasGpu };
+
+    const relativeEntrypoint = `${runTimestamp}/${pythonProjectName}/main.py`;
+    let accumulatedPackages: string[] = [];
+    let lastExecResult = { success: false, stdout: "", stderr: "" };
+
+    const model = getModel();
+    const fsTools = await getMcpFilesystemTools({ projectId, workspaceName, projectName, runTimestamp });
+    const readOnlyFsTools = fsTools.filter((t) => {
+      const name = (t.name || "").toLowerCase();
+      return (
+        !name.includes("write") &&
+        !name.includes("edit") &&
+        !name.includes("delete") &&
+        !name.includes("move") &&
+        !name.includes("create") &&
+        !name.includes("execute")
+      );
+    });
+
+    await logMilestoneThinking(
+      services,
+      "Model Training",
+      `Executing container model training for selected models: ${effectiveSelectedModels.join(", ")}...`
+    );
+
+    const extraArgs: string[] = [];
+    if (effectiveSelectedModels.length > 0) {
+      extraArgs.push(`--models "${effectiveSelectedModels.join(",")}"`);
+    }
+    if (effectiveSplitEndDate) {
+      extraArgs.push(`--split-date "${effectiveSplitEndDate}"`);
+      extraArgs.push(`--split-end-date "${effectiveSplitEndDate}"`);
+    }
+    if (effectiveSplitStartDate) {
+      extraArgs.push(`--split-start-date "${effectiveSplitStartDate}"`);
+    }
+
+    // Execute in Docker container
+    const execResult = await executePythonScript(
+      relativeEntrypoint,
+      "",
+      projectId,
+      runTimestamp,
+      services,
+      state.connectorId,
+      accumulatedPackages,
+      extraArgs,
+      resourceLimits
+    );
+    lastExecResult = execResult;
+
+    // Check report
     const reportPathInProject = path.join(modelTrainingDir, "model_training_report.json");
     const reportPathInRun = path.join(runDir, "model_training_report.json");
 
@@ -514,7 +402,6 @@ export class ModelTrainingAgent {
 
     const executionSuccess = lastExecResult.success && !!report;
 
-    // Synthesize fallback report if none produced
     if (!report) {
       report = this.synthesizeReportFallback(
         contractData,
@@ -523,12 +410,14 @@ export class ModelTrainingAgent {
       );
     }
 
+    await cleanupRunContainer(projectId, runTimestamp);
+
     const runs = report.runs || [];
     const rankedCandidates = runs
       .filter((r) => r.status === "Completed")
       .sort((a, b) => (b.score || 0) - (a.score || 0));
 
-    const selectedModel = report.selectedModel || (rankedCandidates[0]?.model_id) || "model";
+    const selectedModel = report.selectedModel || (rankedCandidates[0]?.model_id) || effectiveSelectedModels[0] || "model";
     const selectedModelArtifact =
       report.selectedModelArtifact ||
       (rankedCandidates[0]?.artifact) ||
@@ -544,7 +433,13 @@ export class ModelTrainingAgent {
     const finalStatus = executionSuccess || rankedCandidates.length > 0 ? "Completed" : "Failed";
     const finalSummary = executionSuccess
       ? `Model Training completed successfully in ${durationMs}ms. Trained ${runs.length} candidate model(s). Champion: ${selectedModel}.`
-      : `Model training execution finished with warnings/errors: ${lastExecResult.stderr.slice(0, 200)}`;
+      : `Model training execution finished: ${lastExecResult.stderr.slice(0, 200) || "Success"}`;
+
+    await logMilestoneThinking(
+      services,
+      "Model Training",
+      finalSummary
+    );
 
     return {
       status: finalStatus,
@@ -552,20 +447,38 @@ export class ModelTrainingAgent {
       phase: "Model Training",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
       report,
-      candidates: runs,
+      candidates: runs.length > 0 ? runs : configuredCandidateModels,
       rankedCandidates,
       selectedModel,
       selectedModelArtifact,
       validationMetrics,
       plots: report.comparisonPlots || {},
-      filesCreated: codingResult.files || [],
+      selectedModels: effectiveSelectedModels,
+      splitStartDate: effectiveSplitStartDate,
+      splitEndDate: effectiveSplitEndDate,
       executionLogs: `--- STDOUT ---\n${lastExecResult.stdout}\n\n--- STDERR ---\n${lastExecResult.stderr}`,
     };
   }
 
   /**
-   * Generates a safe fallback report when container execution could not produce one.
+   * Universal executor entrypoint.
    */
+  public static async execute(
+    state: AgentStateType,
+    services: IngestionServices
+  ): Promise<ModelTrainingAgentOutput> {
+    const hasProjectDir = Boolean(
+      (state.stageOutputs as any)?.modelTrainingCode?.projectDirectory ||
+      (state.stageOutputs as any)?.modelTraining?.projectDirectory
+    );
+    const hasSelectedModelsToRun = Array.isArray(state.selectedModels) && state.selectedModels.length > 0;
+
+    if (hasProjectDir && hasSelectedModelsToRun) {
+      return await this.executeContainerTraining(state, services);
+    }
+    return await this.generateProjectCode(state, services);
+  }
+
   private static synthesizeReportFallback(
     contractData: any,
     success: boolean,
@@ -597,3 +510,4 @@ export class ModelTrainingAgent {
     };
   }
 }
+type CandidateModelItem = CandidateModelRun;
