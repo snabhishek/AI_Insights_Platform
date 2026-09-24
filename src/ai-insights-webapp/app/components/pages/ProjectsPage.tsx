@@ -206,9 +206,11 @@ export default function ProjectsPage() {
     const profileVal = stageStatuses.profileData;
     const preprocessVal = stageStatuses.preprocess;
     if (profileVal || preprocessVal) {
-      if (isCompleted(profileVal) || isCompleted(preprocessVal)) {
+      if (isRunning(profileVal) || isRunning(preprocessVal)) {
+        next["Data Profiling"] = "In Progress";
+      } else if (isCompleted(profileVal) && (isCompleted(preprocessVal) || !preprocessVal)) {
         next["Data Profiling"] = "Completed";
-      } else if (isRunning(profileVal) || isRunning(preprocessVal)) {
+      } else if (isCompleted(profileVal) || isCompleted(preprocessVal)) {
         next["Data Profiling"] = "In Progress";
       }
     }
@@ -219,35 +221,42 @@ export default function ProjectsPage() {
     const fvVal = stageStatuses.featureValidator || stageStatuses.featureValidatorNode;
     const exoVal = stageStatuses.exogenousScout || stageStatuses.exogenous;
 
-    const feSteps = [hmVal, faVal, fvVal, exoVal].filter(Boolean);
-    if (feSteps.length > 0 && feSteps.every((v) => isCompleted(v))) {
+    const isFERunning = isRunning(hmVal) || isRunning(faVal) || isRunning(fvVal) || isRunning(exoVal);
+    const isDIRunning = isRunning(stageStatuses.inspect) || isRunning(profileVal) || isRunning(preprocessVal) || isRunning(stageStatuses.resolveSchema);
+
+    if (isFERunning) {
+      next["Feature Engineering"] = "In Progress";
+    } else if (isCompleted(hmVal) && isCompleted(faVal) && (isCompleted(exoVal) || isCompleted(fvVal))) {
       next["Feature Engineering"] = "Completed";
-    } else if (feSteps.some((v) => isRunning(v) || isCompleted(v))) {
+    } else if (isCompleted(hmVal) || isCompleted(faVal) || isCompleted(fvVal) || isCompleted(exoVal)) {
       next["Feature Engineering"] = "In Progress";
     }
 
     // If Model Selection / Training / Validation is active or completed, earlier phases are guaranteed Completed
+    // ONLY if Data Ingestion or Feature Engineering is NOT currently running.
     const isModelPhaseActiveOrDone =
-      isCompleted(stageStatuses.modelSelection) ||
-      isRunning(stageStatuses.modelSelection) ||
-      isCompleted(stageStatuses.modelSelectionNode) ||
-      isRunning(stageStatuses.modelSelectionNode) ||
-      isCompleted(stageStatuses.trainingConfiguration) ||
-      isRunning(stageStatuses.trainingConfiguration) ||
-      isCompleted(stageStatuses.trainingConfigurationNode) ||
-      isRunning(stageStatuses.trainingConfigurationNode) ||
-      isCompleted(stageStatuses.preFlight) ||
-      isRunning(stageStatuses.preFlight) ||
-      isCompleted(stageStatuses.preFlightNode) ||
-      isRunning(stageStatuses.preFlightNode) ||
-      isCompleted(stageStatuses.modelTraining) ||
-      isRunning(stageStatuses.modelTraining) ||
-      isCompleted(stageStatuses.modelTrainingNode) ||
-      isRunning(stageStatuses.modelTrainingNode) ||
-      isCompleted(stageStatuses.modelValidation) ||
-      isRunning(stageStatuses.modelValidation) ||
-      isCompleted(stageStatuses.modelValidationNode) ||
-      isRunning(stageStatuses.modelValidationNode);
+      !isDIRunning &&
+      !isFERunning &&
+      (isCompleted(stageStatuses.modelSelection) ||
+        isRunning(stageStatuses.modelSelection) ||
+        isCompleted(stageStatuses.modelSelectionNode) ||
+        isRunning(stageStatuses.modelSelectionNode) ||
+        isCompleted(stageStatuses.trainingConfiguration) ||
+        isRunning(stageStatuses.trainingConfiguration) ||
+        isCompleted(stageStatuses.trainingConfigurationNode) ||
+        isRunning(stageStatuses.trainingConfigurationNode) ||
+        isCompleted(stageStatuses.preFlight) ||
+        isRunning(stageStatuses.preFlight) ||
+        isCompleted(stageStatuses.preFlightNode) ||
+        isRunning(stageStatuses.preFlightNode) ||
+        isCompleted(stageStatuses.modelTraining) ||
+        isRunning(stageStatuses.modelTraining) ||
+        isCompleted(stageStatuses.modelTrainingNode) ||
+        isRunning(stageStatuses.modelTrainingNode) ||
+        isCompleted(stageStatuses.modelValidation) ||
+        isRunning(stageStatuses.modelValidation) ||
+        isCompleted(stageStatuses.modelValidationNode) ||
+        isRunning(stageStatuses.modelValidationNode));
 
     if (isModelPhaseActiveOrDone) {
       next["Data Inspection"] = "Completed";

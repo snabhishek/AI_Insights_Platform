@@ -135,6 +135,7 @@ services:
     - You **MUST** use a standard **70/15/15 ratio split** (70% train, 15% validation, 15% test).
   - If problem type is classification and class balance allows, use stratified splitting when using ratio split.
 - Implements appropriate preprocessing transformers (e.g., `SimpleImputer`, `OneHotEncoder`, `StandardScaler`) fitted **ONLY** on the training set and transformed on validation/test sets to prevent data leakage.
+- **MANDATORY PREPROCESSOR PERSISTENCE**: You **MUST ALWAYS** save the fitted preprocessor / ColumnTransformer to `artifacts/models/preprocessor.joblib`. Downstream validation and real-time inference MUST load this exact preprocessor to guarantee identical feature shapes and encodings.
 
 ### 2. `models/base_model.py`
 - Abstract class `BaseModelTrainer` defining:
@@ -157,6 +158,9 @@ services:
   - Classification: `accuracy`, `precision_weighted`, `recall_weighted`, `f1_weighted`, `roc_auc` (when probabilities available), `log_loss`, `confusion_matrix`.
 - **Visualizations (Saved as PNG)**:
   - Per-model plots: ROC curve, PR curve, Confusion Matrix heatmap (classification), Residual scatter plot / Q-Q plot (regression), Feature Importance bar chart (if model supports it).
+  - **MANDATORY MULTICLASS & VISUALIZATION SAFETY**:
+    - `roc_curve` and `precision_recall_curve` from scikit-learn **ONLY support binary classification** (`len(np.unique(y_true)) == 2`). If `len(np.unique(y_true)) > 2`, you **MUST check and safely bypass binary ROC/PR curves or compute one-vs-rest**.
+    - **EVERY SINGLE plot function in `visualizer.py` MUST be wrapped in a `try...except Exception as e:` block** logging a warning. Under NO circumstance should a visualization chart error crash model evaluation or cause a candidate model to be marked as failed.
   - Cross-model comparison: Side-by-side metric comparison bar chart comparing all trained candidate models.
   - Export all visual plot paths and metric dictionaries into the final report.
 
@@ -165,7 +169,8 @@ services:
 - **Model Selection Filtering**: Accepts an optional list/set of selected models (e.g. from `--models` argument or configuration). If provided, it **MUST ONLY execute and benchmark the specified selected models**.
 - Measures and logs training time, fitting time, and scoring time per candidate model.
 - Saves the best-performing model as `artifacts/models/selected_model.joblib` (or `.pkl`).
-- Generates `model_training_report.json` with the standard report schema.
+- Always persist `artifacts/models/preprocessor.joblib`.
+- Generates `model_training_report.json` with the standard report schema. All visualization generator calls in `pipeline.py` must be protected in try-except so plotting never fails a model.
 
 ### 6. `main.py`
 - Accepts arguments:

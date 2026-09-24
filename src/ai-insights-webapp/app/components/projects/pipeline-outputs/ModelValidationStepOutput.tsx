@@ -1,7 +1,8 @@
 "use client";
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { Badge } from "./utils";
+import { BACKEND_URL } from "../../providers/AppContext";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -212,6 +213,97 @@ export default function ModelValidationStepOutput({
     return candidates.find((c) => c.model_id === selectedModelId) || candidates[0] || null;
   }, [candidates, selectedModelId]);
 
+  const [dateRangeInfo, setDateRangeInfo] = useState<any>(null);
+
+  // Fetch date range dynamically if not already present in trainingConfiguration
+  useEffect(() => {
+    if (!projectId) return;
+    let isCancelled = false;
+    async function fetchDateRange() {
+      try {
+        const url = `${BACKEND_URL}/training-config/${projectId}/date-range${
+          activeRunTimestamp ? `?timestamp=${encodeURIComponent(activeRunTimestamp)}` : ""
+        }`;
+        const res = await fetch(url);
+        if (res.ok) {
+          const json = await res.json();
+          if (!isCancelled && json.success && json.data) {
+            setDateRangeInfo(json.data);
+          }
+        }
+      } catch (e) {
+        console.warn("[ModelValidationStepOutput] Error fetching date range:", e);
+      }
+    }
+    fetchDateRange();
+    return () => {
+      isCancelled = true;
+    };
+  }, [BACKEND_URL, projectId, activeRunTimestamp]);
+
+  // Split date selected during training configuration
+  const effectiveSplitDate = useMemo(() => {
+    return (
+      trainingConfiguration?.splitDate ||
+      trainingConfiguration?.splitEndDate ||
+      trainingConfiguration?.configuration?.split?.split_date ||
+      trainingConfiguration?.configuration?.split?.cutoff_date ||
+      trainingConfiguration?.configuration?.data_splitting?.cutoff_date ||
+      trainingConfiguration?.contract?.split?.split_date ||
+      modelTraining?.splitEndDate ||
+      modelTraining?.splitDate ||
+      (trainingConfiguration as any)?.split ||
+      null
+    );
+  }, [trainingConfiguration, modelTraining]);
+
+  // Earliest selectable date: strictly AFTER split date selected during training configuration
+  const minSelectableDate = useMemo(() => {
+    if (!effectiveSplitDate || typeof effectiveSplitDate !== "string") return undefined;
+    const trimmed = effectiveSplitDate.trim();
+    if (!trimmed) return undefined;
+
+    try {
+      const ym = /^(\d{4})-(\d{2})$/.exec(trimmed);
+      if (ym) {
+        const y = parseInt(ym[1], 10);
+        const m = parseInt(ym[2], 10);
+        const d = new Date(Date.UTC(y, m - 1, 1));
+        d.setUTCDate(d.getUTCDate() + 1);
+        return d.toISOString().split("T")[0];
+      }
+
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) {
+        d.setDate(d.getDate() + 1);
+        return d.toISOString().split("T")[0];
+      }
+    } catch {}
+    return undefined;
+  }, [effectiveSplitDate]);
+
+  // Maximum selectable date: before or on the maximum last date of the dataset calculated during training configuration
+  const maxSelectableDate = useMemo(() => {
+    const rawMax =
+      trainingConfiguration?.maxDate ||
+      trainingConfiguration?.dateRange?.maxDate ||
+      trainingConfiguration?.configuration?.maxDate ||
+      trainingConfiguration?.configuration?.split?.max_date ||
+      dateRangeInfo?.maxDate;
+
+    if (!rawMax || typeof rawMax !== "string") return undefined;
+    const trimmed = rawMax.trim();
+    if (!trimmed) return undefined;
+
+    try {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().split("T")[0];
+      }
+    } catch {}
+    return trimmed.split("T")[0].split(" ")[0];
+  }, [trainingConfiguration, dateRangeInfo]);
+
   // Calculative start date derivation
   const defaultCalculatedStartDate = useMemo(() => {
     if (rawReport?.prediction_objective_start_date) {
@@ -219,6 +311,9 @@ export default function ModelValidationStepOutput({
     }
     if (modelValidation?.predictionObjectiveStartDate) {
       return modelValidation.predictionObjectiveStartDate;
+    }
+    if (minSelectableDate) {
+      return minSelectableDate;
     }
     const configDate =
       trainingConfiguration?.predictionObjectiveStartDate ||
@@ -237,7 +332,7 @@ export default function ModelValidationStepOutput({
     }
     const today = new Date();
     return today.toISOString().split("T")[0];
-  }, [rawReport, modelValidation, trainingConfiguration]);
+  }, [rawReport, modelValidation, minSelectableDate, trainingConfiguration]);
 
   // Validation Form Inputs
   const [horizonInput, setHorizonInput] = useState<number>(
@@ -247,6 +342,21 @@ export default function ModelValidationStepOutput({
     (rawReport?.prediction_objective_frequency as any) || modelValidation?.predictionObjectiveFrequency || "Weekly"
   );
   const [startDateInput, setStartDateInput] = useState<string>(defaultCalculatedStartDate);
+
+  // Synchronize startDateInput when minSelectableDate resolves
+  useEffect(() => {
+    if (minSelectableDate && (!startDateInput || startDateInput < minSelectableDate)) {
+      setStartDateInput(minSelectableDate);
+    }
+  }, [minSelectableDate]);
+
+  // Check if date is out of range
+  const isDateOutOfRange = useMemo(() => {
+    if (!startDateInput) return false;
+    if (minSelectableDate && startDateInput < minSelectableDate) return true;
+    if (maxSelectableDate && startDateInput > maxSelectableDate) return true;
+    return false;
+  }, [startDateInput, minSelectableDate, maxSelectableDate]);
 
   // Dynamic Mode Calculation
   const isBacktesting = useMemo(() => {
@@ -441,9 +551,15 @@ export default function ModelValidationStepOutput({
             <div className="relative">
               <input
                 type="date"
+                min={minSelectableDate}
+                max={maxSelectableDate}
                 value={startDateInput}
                 onChange={(e) => setStartDateInput(e.target.value)}
-                className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition cursor-pointer"
+                className={`w-full h-9 px-3 rounded-lg border ${
+                  isDateOutOfRange
+                    ? "border-amber-500 focus:ring-amber-500/40 text-amber-500"
+                    : "border-border focus:ring-primary/40 text-foreground"
+                } bg-background text-sm font-medium focus:outline-none focus:ring-2 transition cursor-pointer`}
               />
             </div>
           </div>
@@ -452,7 +568,7 @@ export default function ModelValidationStepOutput({
           <div className="flex items-end">
             <button
               type="button"
-              disabled={isApproving}
+              disabled={isApproving || isDateOutOfRange}
               onClick={handleRunValidation}
               className="w-full h-9 px-4 rounded-xl bg-primary text-primary-foreground font-semibold text-xs tracking-wide hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
@@ -471,45 +587,41 @@ export default function ModelValidationStepOutput({
           </div>
         </div>
 
-        {/* Dynamic Mode Helper Text */}
-        <div className="mt-3 text-xs text-muted-foreground flex items-center gap-1.5">
-          <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground/80" />
-          <span>
-            {isBacktesting
-              ? `Start date (${startDateInput}) is historical: computing ground-truth metrics (WAPE, MAE, RMSE) against observed test values.`
-              : `Start date (${startDateInput}) is in the future: generating forward predictions for ${horizonInput} ${frequencyInput.toLowerCase()} periods.`}
-          </span>
+        {/* Dynamic Mode Helper Text & Allowed Date Range Display */}
+        <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-muted-foreground gap-2">
+          <div className="flex items-center gap-1.5">
+            <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground/80 flex-shrink-0" />
+            <span>
+              {isDateOutOfRange ? (
+                <span className="text-amber-500 font-medium">
+                  Objective start date must be after split date ({minSelectableDate || effectiveSplitDate})
+                  {maxSelectableDate ? ` and before dataset maximum date (${maxSelectableDate})` : ""}.
+                </span>
+              ) : isBacktesting ? (
+                `Start date (${startDateInput}) is historical: computing ground-truth metrics (WAPE, MAE, RMSE) against observed test values.`
+              ) : (
+                `Start date (${startDateInput}) is in the future: generating forward predictions for ${horizonInput} ${frequencyInput.toLowerCase()} periods.`
+              )}
+            </span>
+          </div>
+          {(minSelectableDate || maxSelectableDate) && (
+            <div className="text-[11px] font-mono text-muted-foreground/80 bg-muted/40 px-2 py-0.5 rounded border border-border/50 self-start sm:self-auto">
+              Allowed: {minSelectableDate || "Any"} &rarr; {maxSelectableDate || "Max"}
+            </div>
+          )}
         </div>
       </div>
 
       {/* ─── If No Candidate Results Yet ─── */}
       {candidates.length === 0 && (
-        <div className="p-10 rounded-2xl bg-surface-raised border border-dashed border-border text-center flex flex-col items-center justify-center min-h-[260px]">
+        <div className="p-10 rounded-2xl bg-surface-raised border border-dashed border-border text-center flex flex-col items-center justify-center min-h-[220px]">
           <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-3">
             <TrendingUpIcon className="w-6 h-6" />
           </div>
           <h4 className="text-sm font-bold text-foreground">Model Validation Awaiting Execution</h4>
-          <p className="text-xs text-muted-foreground max-w-md mt-1 mb-5">
-            Model training has finalized. Set your forecast horizon and frequency above, then click &ldquo;Run Model Validation&rdquo; to evaluate candidate models on out-of-sample data.
+          <p className="text-xs text-muted-foreground max-w-md mt-1">
+            Model training has finalized. Set your forecast horizon, frequency, and objective start date above, then click &ldquo;Run Model Validation&rdquo; to evaluate candidate models on out-of-sample data.
           </p>
-          <button
-            type="button"
-            disabled={isApproving}
-            onClick={handleRunValidation}
-            className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-xs tracking-wide hover:opacity-90 disabled:opacity-50 shadow-md cursor-pointer transition flex items-center gap-2"
-          >
-            {isApproving ? (
-              <>
-                <span className="w-3.5 h-3.5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                <span>Validating Candidate Models...</span>
-              </>
-            ) : (
-              <>
-                <PlayIcon className="w-4 h-4" />
-                <span>Launch Model Validation ({horizonInput} {frequencyInput})</span>
-              </>
-            )}
-          </button>
         </div>
       )}
 

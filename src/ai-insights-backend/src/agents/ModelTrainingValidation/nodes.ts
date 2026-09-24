@@ -164,6 +164,49 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     (result: any) => TrainingConfigValidator.validate(result?.configuration || result)
   );
 
+  // Calculate dataset temporal range and maximum last date of dataset directly in trainingConfigurationNode
+  try {
+    const { extractDatasetDateRange } = await import("../tools/helpers/datasetDateRangeHelper");
+    const wsName = (state as any).workspaceName || services.workspaceName || "DefaultWorkspace";
+    const pName = (state as any).projectName || services.projectName || "Forecasting";
+    const ts = state.runTimestamp || (services as any)?.runTimestamp;
+    const dateRange = await extractDatasetDateRange(wsName, pName, ts, state as any);
+    if (dateRange && dateRange.hasTemporalData) {
+      (output as any).dateRange = dateRange;
+      if (dateRange.maxDate) {
+        (output as any).maxDate = dateRange.maxDate;
+      }
+      if (dateRange.minDate) {
+        (output as any).minDate = dateRange.minDate;
+      }
+      if (output.configuration) {
+        (output.configuration as any).dateRange = dateRange;
+        if (dateRange.maxDate) {
+          (output.configuration as any).maxDate = dateRange.maxDate;
+          if ((output.configuration as any).split) {
+            (output.configuration as any).split.max_date = dateRange.maxDate;
+          }
+        }
+      }
+    }
+  } catch (rangeErr: any) {
+    console.warn("[trainingConfigurationNode] Failed to extract dataset date range:", rangeErr?.message || rangeErr);
+  }
+
+  // Preserve split date explicitly on output and configuration
+  const resolvedSplitDate =
+    state.splitEndDate ||
+    state.splitDate ||
+    (output as any)?.configuration?.split?.split_date ||
+    (output as any)?.configuration?.data_splitting?.cutoff_date ||
+    (output as any)?.configuration?.splitDate;
+  if (resolvedSplitDate) {
+    (output as any).splitDate = resolvedSplitDate;
+    if (output.configuration) {
+      (output.configuration as any).splitDate = resolvedSplitDate;
+    }
+  }
+
   return {
     trainingConfiguration: output,
     status: "running",
