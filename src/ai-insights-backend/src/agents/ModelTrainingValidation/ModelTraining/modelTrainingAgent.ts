@@ -307,7 +307,7 @@ export class ModelTrainingAgent {
   ): Promise<ModelTrainingAgentOutput> {
     const startTime = Date.now();
     const ctx = this.getProjectContext(state, services);
-    const { projectId, workspaceName, projectName, runTimestamp, runDir, pythonProjectName, modelTrainingDir, contractData } = ctx;
+    const { projectId, workspaceName, projectName, runTimestamp, runDir, pythonProjectName, modelTrainingDir, contractPath, contractData } = ctx;
 
     const configuredCandidateModels = this.getCandidateModels(contractData, state);
 
@@ -371,21 +371,224 @@ export class ModelTrainingAgent {
       extraArgs.push(`--split-start-date "${effectiveSplitStartDate}"`);
     }
 
-    // Execute in Docker container
-    const execResult = await executePythonScript(
-      relativeEntrypoint,
-      "",
-      projectId,
-      runTimestamp,
-      services,
-      state.connectorId,
-      accumulatedPackages,
-      extraArgs,
-      resourceLimits
-    );
-    lastExecResult = execResult;
+    const agentMessages: BaseMessage[] = [];
+    const codingFallback: CodingAgentResult = {
+      status: "Success",
+      summary: "Coding agent generated project files.",
+      projectDirectory: `${runTimestamp}/${pythonProjectName}`,
+      requiredPackages: [],
+    };
 
-    // Check report
+    const splitDateInstructions = effectiveSplitEndDate ? [
+      `--- Dataset Split Cutoff Dates ---`,
+      ...(effectiveSplitStartDate ? [`Train Split Start Date: ${effectiveSplitStartDate}`] : []),
+      `Train Split End Date: ${effectiveSplitEndDate}`,
+      `In data/data_loader.py, if a timestamp or date column is present in the dataset:`,
+      `  - Train split: records where ${effectiveSplitStartDate ? `date >= "${effectiveSplitStartDate}" and ` : ""}date <= "${effectiveSplitEndDate}"`,
+      `  - Test / Validation split: records where date > "${effectiveSplitEndDate}"`,
+      `If NO timestamp or date column exists in the dataset, fall back strictly to a 70/15/15 ratio split (70% train, 15% validation, 15% test).`,
+    ] : [
+      `--- Dataset Split Strategy ---`,
+      `In data/data_loader.py, use a strict 70/15/15 ratio split (70% train, 15% validation, 15% test).`,
+    ];
+
+    const agentTools = [
+      ...fsTools,
+      createReadTrainingContractTool(state.trainingConfiguration || {}, projectId, runTimestamp, services),
+      createGetPreFlightDetailsTool(preFlightReport),
+      createValidateProjectStructureTool(modelTrainingDir),
+      webSearchTool,
+      extractUrlContentTool,
+    ];
+
+    const systemPrompt = await getPromptFromFile(
+      "ModelTrainingValidation/modelTraining.md",
+      "You are an expert AI Machine Learning Software Engineering and Coding Agent."
+    );
+
+    const codingResult = await validateWithRetry<CodingAgentResult>(
+      "modelTraining",
+      async (feedbackPrompt?: string) => {
+        const userPrompt = feedbackPrompt
+          ? [
+              `The previous model training pipeline run encountered an execution error.`,
+              feedbackPrompt,
+              `Please inspect the failing code files and apply the required corrections using your file editing tools. Return the updated project status JSON.`,
+            ].join("\n\n")
+          : [
+              `Execute and finalize the modular Python model training project in '${runTimestamp}/${pythonProjectName}'.`,
+              `--- Active Run Context ---`,
+              `Project Name: ${projectName}`,
+              `Run Timestamp: ${runTimestamp}`,
+              `Target Project Folder: ${runTimestamp}/${pythonProjectName}`,
+              `Host Path: ${modelTrainingDir}`,
+              `Contract Path: ${contractPath || "schemas/<contract>.yaml"}`,
+              `--- Host Hardware & PreFlight Runtime Limits ---`,
+              `Allocated Container CPUs: ${containerCpuStr}`,
+              `Allocated Container RAM: ${containerRamStr}`,
+              `GPU Acceleration: ${hasGpu ? "Enabled (CDI reservations)" : "Disabled (CPU only)"}`,
+              `In docker-compose.yml, configure deploy.resources.limits with cpus: '${containerCpuStr}' and memory: ${containerRamStr}. Set network: host in build and network_mode: host.`,
+              ...splitDateInstructions,
+              `--- User-Selected Models to Train ---`,
+              `The user has explicitly selected: ${effectiveSelectedModels.join(", ")}. In pipeline.py and main.py, implement trainers and train ONLY these candidate models sequentially.`,
+              `--- Strict Isolation Constraints ---`,
+              `1. DO NOT read or reference any other timestamp folder. Only operate inside '${runTimestamp}/'.`,
+              `2. Execute models sequentially in pipeline.py.`,
+              `3. Always generate model evaluation metrics and comparison visualization plots in artifacts/plots/.`,
+              `4. Generate model_training_report.json at completion.`,
+              `Use 'write_todos' to track task progress as you create the files.`,
+            ].join("\n\n");
+
+        return await invokeAgentJson<CodingAgentResult>(
+          "modelTraining",
+          model,
+          userPrompt,
+          codingFallback,
+          services,
+          {
+            systemPrompt,
+            traceLabel: "modelTraining:codingAgent",
+            tools: agentTools,
+            useDeepAgent: true,
+            enableTodoList: true,
+            recursionLimit: 200,
+            messages: agentMessages,
+            middlewareOptions: {
+              summarization: {
+                triggerTokens: 200000,
+                keepTokens: 25000,
+              },
+              todoList: true,
+              toolRetry: { maxRetries: 2 },
+            },
+          }
+        );
+      },
+      codingFallback,
+      services,
+      options?.maxRetries ?? 20,
+      undefined,
+      async (result: CodingAgentResult) => {
+        // Collect package requirements provided by the agent (no hardcoded manual packages)
+        if (Array.isArray(result.requiredPackages)) {
+          accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...result.requiredPackages]));
+        }
+
+        await logMilestoneThinking(
+          services,
+          "Model Training",
+          `Executing model training project inside Docker container for selected models: ${effectiveSelectedModels.join(", ")}...`
+        );
+
+        const extraArgs: string[] = [];
+        if (effectiveSelectedModels.length > 0) {
+          extraArgs.push(`--models "${effectiveSelectedModels.join(",")}"`);
+        }
+        if (effectiveSplitEndDate) {
+          extraArgs.push(`--split-date "${effectiveSplitEndDate}"`);
+          extraArgs.push(`--split-end-date "${effectiveSplitEndDate}"`);
+        }
+
+        // Execute sequentially inside Docker container with PreFlight resource limits and model filters
+        const execResult = await executePythonScript(
+          relativeEntrypoint,
+          "", // code is already in file
+          projectId,
+          runTimestamp,
+          services,
+          state.connectorId,
+          accumulatedPackages,
+          extraArgs,
+          resourceLimits
+        );
+
+        lastExecResult = execResult;
+
+        const reportPathInProject = path.join(modelTrainingDir, "model_training_report.json");
+        const reportPathInRun = path.join(runDir, "model_training_report.json");
+        const reportExists = fs.existsSync(reportPathInProject) || fs.existsSync(reportPathInRun);
+
+        if (execResult.success && reportExists) {
+          await logMilestoneThinking(
+            services,
+            "Model Training",
+            `Model training pipeline completed successfully in container.`
+          );
+          return { isValid: true };
+        }
+
+        // Subagent Orchestration: Invoke Rectifier Advisor (READ-ONLY access)
+        await logMilestoneThinking(
+          services,
+          "Model Training",
+          `Pipeline execution error encountered. Invoking Rectifier advisor subagent to diagnose issues and provide rectification steps...`
+        );
+
+        const rectifierPrompt = await getPromptFromFile(
+          "ModelTrainingValidation/modelTrainingRectifier.md",
+          "You are an expert AI Python Debugger and Code Rectifier Advisor."
+        );
+
+        const rectifierUserMsg = [
+          `The Python model training project at '${runTimestamp}/${pythonProjectName}' failed during container execution.`,
+          `--- Execution Stdout ---`,
+          execResult.stdout || "[No stdout]",
+          `--- Execution Stderr / Traceback ---`,
+          execResult.stderr || "[No stderr]",
+          `Target Directory: ${modelTrainingDir}`,
+          `Inspect the failing files using your read-only filesystem tools. Diagnose the root cause and provide precise rectification instructions and code snippets for ModelTrainingAgent to apply.`,
+        ].join("\n\n");
+
+        const rectifierFallback: RectifierResult = {
+          status: "NeedsRectification",
+          explanation: "Execution error: " + (execResult.stderr || execResult.stdout).slice(0, 300),
+        };
+
+        let rectResult: RectifierResult = rectifierFallback;
+        try {
+          rectResult = await invokeAgentJson<RectifierResult>(
+            "modelTrainingRectifier",
+            model,
+            rectifierUserMsg,
+            rectifierFallback,
+            services,
+            {
+              systemPrompt: rectifierPrompt,
+              traceLabel: "modelTraining:rectifierAdvisor",
+              tools: readOnlyFsTools, // Read-only tools only: NO edit, NO write, NO execute
+              recursionLimit: 200,
+            }
+          );
+
+          if (Array.isArray(rectResult.requiredPackages)) {
+            accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...rectResult.requiredPackages]));
+          }
+        } catch (rErr: any) {
+          console.warn("[ModelTrainingAgent] Rectifier subagent invocation warning:", rErr?.message || rErr);
+        }
+
+        const feedbackReason = [
+          `Execution failed with error:`,
+          execResult.stderr || execResult.stdout || "Unknown execution failure",
+          `\n--- Rectifier Advisor Subagent Diagnosis ---`,
+          `Failing File: ${rectResult.failingFile || "See traceback above"}`,
+          `Root Cause: ${rectResult.rootCause || rectResult.explanation || "Execution error"}`,
+          `Rectification Steps:\n${rectResult.rectificationSteps || rectResult.explanation || "Please fix the failing code."}`,
+          rectResult.recommendedCodeSnippet
+            ? `Recommended Code Snippet:\n\`\`\`python\n${rectResult.recommendedCodeSnippet}\n\`\`\``
+            : "",
+        ].filter(Boolean).join("\n\n");
+
+        return {
+          isValid: false,
+          reason: feedbackReason,
+        };
+      }
+    );
+
+    await cleanupRunContainer(projectId, runTimestamp);
+
+    // Read and parse output report
     const reportPathInProject = path.join(modelTrainingDir, "model_training_report.json");
     const reportPathInRun = path.join(runDir, "model_training_report.json");
 
@@ -402,6 +605,7 @@ export class ModelTrainingAgent {
 
     const executionSuccess = lastExecResult.success && !!report;
 
+    // Synthesize fallback report if none produced
     if (!report) {
       report = this.synthesizeReportFallback(
         contractData,
@@ -409,8 +613,6 @@ export class ModelTrainingAgent {
         lastExecResult.stderr
       );
     }
-
-    await cleanupRunContainer(projectId, runTimestamp);
 
     const runs = report.runs || [];
     const rankedCandidates = runs
@@ -433,7 +635,7 @@ export class ModelTrainingAgent {
     const finalStatus = executionSuccess || rankedCandidates.length > 0 ? "Completed" : "Failed";
     const finalSummary = executionSuccess
       ? `Model Training completed successfully in ${durationMs}ms. Trained ${runs.length} candidate model(s). Champion: ${selectedModel}.`
-      : `Model training execution finished: ${lastExecResult.stderr.slice(0, 200) || "Success"}`;
+      : `Model training execution finished with warnings/errors: ${lastExecResult.stderr.slice(0, 200)}`;
 
     await logMilestoneThinking(
       services,
@@ -453,6 +655,7 @@ export class ModelTrainingAgent {
       selectedModelArtifact,
       validationMetrics,
       plots: report.comparisonPlots || {},
+      filesCreated: codingResult.files || [],
       selectedModels: effectiveSelectedModels,
       splitStartDate: effectiveSplitStartDate,
       splitEndDate: effectiveSplitEndDate,

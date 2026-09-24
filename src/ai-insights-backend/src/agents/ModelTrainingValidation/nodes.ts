@@ -318,7 +318,7 @@ export async function modelTrainingExecNode(state: State, config?: RunnableConfi
     return { status: state.status || "failed" };
   }
 
-  const output = await ModelTrainingAgent.executeContainerTraining(state, services);
+  const output = await ModelTrainingAgent.executeContainerTraining(state, services, {maxRetries: 20});
 
   if (output.status === "Failed") {
     return {
