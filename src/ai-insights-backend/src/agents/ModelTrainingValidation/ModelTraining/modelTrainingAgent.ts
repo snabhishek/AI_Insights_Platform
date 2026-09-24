@@ -193,7 +193,6 @@ export class ModelTrainingAgent {
       "You are an expert AI Machine Learning Software Engineering and Coding Agent."
     );
 
-    const effectiveSplitStartDate = state.splitStartDate || (state.stageOutputs as any)?.modelTraining?.splitStartDate || "";
     const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitDate || "";
 
     const timeColumn =
@@ -212,7 +211,8 @@ export class ModelTrainingAgent {
       `Train Split End Date (Month/Year Cutoff): ${effectiveSplitEndDate}`,
       ...(timeColumn ? [`Dataset Time / Date Column: ${timeColumn}`] : []),
       `In data/data_loader.py (or data splitting function):`,
-      `  - Split the dataset using temporal cutoff: Filter records where ${timeColumn ? `df['${timeColumn}']` : "date_column"} <= "${effectiveSplitEndDate}" for the training set, and ${timeColumn ? `df['${timeColumn}']` : "date_column"} > "${effectiveSplitEndDate}" for the test / validation set.`,
+      `  - Temporal Split: The training dataset MUST include all historical records from the start/beginning of the dataset up to and including the cutoff month and year (${timeColumn ? `df['${timeColumn}']` : "date_column"} <= "${effectiveSplitEndDate}").`,
+      `  - Test / Validation Split: All records after the cutoff month and year (${timeColumn ? `df['${timeColumn}']` : "date_column"} > "${effectiveSplitEndDate}") must be partitioned for validation and test evaluation.`,
       `  - Convert the column to datetime using pd.to_datetime(df['${timeColumn || "date"}'], errors='coerce') before performing the temporal filter.`,
       `If NO timestamp or date column exists in the dataset, fall back strictly to a 70/15/15 ratio split (70% train, 15% validation, 15% test).`,
     ] : [
@@ -292,7 +292,6 @@ export class ModelTrainingAgent {
       candidates: configuredCandidateModels,
       rankedCandidates: configuredCandidateModels,
       filesCreated: codingResult.files || [],
-      splitStartDate: effectiveSplitStartDate,
       splitEndDate: effectiveSplitEndDate,
     };
   }
@@ -320,7 +319,6 @@ export class ModelTrainingAgent {
         : configuredCandidateModels.map((c) => c.model_id)
     );
 
-    const effectiveSplitStartDate = state.splitStartDate || (state.stageOutputs as any)?.modelTraining?.splitStartDate || "";
     const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || "";
 
     const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlight || {}) as any;
@@ -367,9 +365,6 @@ export class ModelTrainingAgent {
       extraArgs.push(`--split-date "${effectiveSplitEndDate}"`);
       extraArgs.push(`--split-end-date "${effectiveSplitEndDate}"`);
     }
-    if (effectiveSplitStartDate) {
-      extraArgs.push(`--split-start-date "${effectiveSplitStartDate}"`);
-    }
 
     const agentMessages: BaseMessage[] = [];
     const codingFallback: CodingAgentResult = {
@@ -380,12 +375,11 @@ export class ModelTrainingAgent {
     };
 
     const splitDateInstructions = effectiveSplitEndDate ? [
-      `--- Dataset Split Cutoff Dates ---`,
-      ...(effectiveSplitStartDate ? [`Train Split Start Date: ${effectiveSplitStartDate}`] : []),
-      `Train Split End Date: ${effectiveSplitEndDate}`,
+      `--- Dataset Split Cutoff Date ---`,
+      `Train Split End Date (Month/Year Cutoff): ${effectiveSplitEndDate}`,
       `In data/data_loader.py, if a timestamp or date column is present in the dataset:`,
-      `  - Train split: records where ${effectiveSplitStartDate ? `date >= "${effectiveSplitStartDate}" and ` : ""}date <= "${effectiveSplitEndDate}"`,
-      `  - Test / Validation split: records where date > "${effectiveSplitEndDate}"`,
+      `  - Temporal Split: The training dataset MUST include all historical records from the start/beginning of the dataset up to and including the cutoff month and year (date <= "${effectiveSplitEndDate}").`,
+      `  - Test / Validation Split: All records after the cutoff month and year (date > "${effectiveSplitEndDate}") must be partitioned for validation and test evaluation.`,
       `If NO timestamp or date column exists in the dataset, fall back strictly to a 70/15/15 ratio split (70% train, 15% validation, 15% test).`,
     ] : [
       `--- Dataset Split Strategy ---`,
@@ -657,7 +651,6 @@ export class ModelTrainingAgent {
       plots: report.comparisonPlots || {},
       filesCreated: codingResult.files || [],
       selectedModels: effectiveSelectedModels,
-      splitStartDate: effectiveSplitStartDate,
       splitEndDate: effectiveSplitEndDate,
       executionLogs: `--- STDOUT ---\n${lastExecResult.stdout}\n\n--- STDERR ---\n${lastExecResult.stderr}`,
     };

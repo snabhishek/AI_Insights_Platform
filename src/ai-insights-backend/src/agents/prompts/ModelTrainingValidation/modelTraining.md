@@ -127,10 +127,10 @@ services:
 - Supports both Parquet (via `duckdb` or `pandas` / `pyarrow`) and CSV fallback.
 - Validates that the target column exists. Drops rows where the target column is null.
 - **Dataset Splitting Logic**:
-  - Check whether a timestamp or date column exists in the dataset AND split dates are configured (`split_start_date` and `split_end_date`, or `split_date`).
+  - Check whether a timestamp or date column exists in the dataset AND a split cutoff date is configured (`split_end_date` or `split_date` in `YYYY-MM` format).
   - If a date/timestamp column exists:
-    - Train split: Records where `date_column <= split_end_date` (and `date_column >= split_start_date` if `split_start_date` is provided).
-    - Test / Validation split: Records where `date_column > split_end_date` (e.g. split into validation and test sets).
+    - Train split: All records from the start of the dataset up to and including the cutoff date (`date_column <= split_end_date`).
+    - Test / Validation split: All records after the cutoff date (`date_column > split_end_date`), split into validation and test sets.
   - **MANDATORY FALLBACK**: If **NO date or timestamp column exists** in the dataset (or split dates are not provided):
     - You **MUST** use a standard **70/15/15 ratio split** (70% train, 15% validation, 15% test).
   - If problem type is classification and class balance allows, use stratified splitting when using ratio split.
