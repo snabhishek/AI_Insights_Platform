@@ -22,6 +22,7 @@ interface CardModalProps {
   isApproving?: boolean;
   isAwaitingResponse?: boolean;
   onApprove?: (overrideTargetPhase?: string, selectedModels?: string[]) => void;
+  onSubstepChange?: (substepId: string) => void;
 }
 
 // Map color strings to active Tailwind text/border/bg classes for step circles
@@ -81,6 +82,7 @@ export default function CardModal({
   isApproving = false,
   isAwaitingResponse = false,
   onApprove,
+  onSubstepChange,
 }: CardModalProps) {
   const [activeStepIndex, setActiveStepIndex] = useState<number>(0);
   const [thinkingLogs, setThinkingLogs] = useState<Array<{ time: string; text: string; done: boolean }>>([]);
@@ -115,8 +117,8 @@ export default function CardModal({
       return;
     }
 
-    // 3. If awaiting model confirmation / approval before Training Configuration, select Model Selection
-    if (approvalNextStep === "Training Configuration" || (requiresApproval && steps.some((s) => s.id === "Model Selection"))) {
+    // 3. If specifically awaiting model confirmation / approval before Training Configuration, select Model Selection
+    if (approvalNextStep === "Training Configuration" && (!selectedSubstepId || selectedSubstepId === "Model Selection")) {
       const modelSelIdx = steps.findIndex((s) => s.id === "Model Selection");
       if (modelSelIdx !== -1) {
         setActiveStepIndex(modelSelIdx);
@@ -272,7 +274,10 @@ export default function CardModal({
                 <button
                   key={stepItem.id}
                   title={stepItem.description}
-                  onClick={() => setActiveStepIndex(idx)}
+                  onClick={() => {
+                    setActiveStepIndex(idx);
+                    onSubstepChange?.(stepItem.id);
+                  }}
                   className={`flex items-center gap-4 text-left w-full relative z-10 py-1.5 focus:outline-none transition-all cursor-pointer group`}
                 >
                   {/* Progress segment line: Stops at the final step circle */}
@@ -355,32 +360,45 @@ export default function CardModal({
             </div>
 
             <div className="flex items-center gap-2">
-              {requiresApproval && !(approvalNextStep === "Training Configuration" && activeStep?.id === "Model Selection") && (
-                <button
-                  type="button"
-                  onClick={() => onApprove?.(approvalNextStep || undefined)}
-                  disabled={isApproving}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ${
-                    isApproving ? "opacity-75 cursor-not-allowed" : "animate-pulse"
-                  }`}
-                >
-                  {isApproving ? (
-                    <>
-                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
-                      </svg>
-                      <span>Advancing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      <span>Proceed to Next Phase</span>
-                    </>
-                  )}
-                </button>
-              )}
+              {(() => {
+                const isModelTrainingCard = workflowCard?.id === "Model Training & Validation" || workflowCard?.title === "Model Training & Validation";
+                const isSubProcessApproval = isModelTrainingCard || [
+                  "Model Selection", "modelSelection", "modelSelectionNode",
+                  "Training Configuration", "trainingConfiguration", "trainingConfigurationNode",
+                  "Pre Flight", "preFlight", "preFlightNode",
+                  "Model Training", "modelTraining", "modelTrainingNode", "modelTrainingCodeNode",
+                  "Model Validation", "modelValidation", "modelValidationNode",
+                ].includes(approvalNextStep || "");
+
+                if (!requiresApproval || isSubProcessApproval) return null;
+
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onApprove?.(approvalNextStep || undefined)}
+                    disabled={isApproving}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ${
+                      isApproving ? "opacity-75 cursor-not-allowed" : "animate-pulse"
+                    }`}
+                  >
+                    {isApproving ? (
+                      <>
+                        <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                          <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                        </svg>
+                        <span>Advancing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>Proceed to Next Phase</span>
+                      </>
+                    )}
+                  </button>
+                );
+              })()}
 
               <button 
                 onClick={onClose} 

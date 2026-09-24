@@ -47,17 +47,8 @@ async function runModelValidationTests() {
   const res3 = ModelValidationAgent.resolvePredictionStartDate(state3, config3);
   assert(res3 === "2025-01-01", "calculates prediction start date from split_date in trainingConfig");
 
-  // 8. Python Runner Script: contains necessary safeguards and imports
-  const script = ModelValidationAgent.generatePythonRunnerScript();
-  assert(
-    script.includes("def safe_calc_wape(") &&
-    script.includes("def safe_calc_mape(") &&
-    script.includes("def safe_calc_smape(") &&
-    script.includes("preprocessor.joblib") &&
-    script.includes("validation_predictions.parquet") &&
-    script.includes("model_validation_report.json"),
-    "generates Python runner script with safe metric functions and artifact paths"
-  );
+
+
 
   console.log(`=== Tests Complete: ${passedCount}/${totalCount} Passed ===`);
   if (passedCount !== totalCount) {

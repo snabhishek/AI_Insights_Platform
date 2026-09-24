@@ -391,44 +391,75 @@ export default function WorkflowPipeline({
         <div className="flex items-center gap-2 shrink-0">
           {(isAwaitingResponse || requiresApproval) ? (
             <>
-              {approvalNextStep === "Training Configuration" || pausedAtPhase === "Training Configuration" || isAwaitingResponse ? (
-                <button
-                  type="button"
-                  onClick={() => onSelectStage("Model Training & Validation")}
-                  disabled={isApproving}
-                  className={`inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
-                  title="Open Model Selection to review and confirm candidate models for training"
-                >
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <path d="M9 11l3 3L22 4" />
-                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-                  </svg>
-                  <span>Select & Confirm Models</span>
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => onApprove()}
-                  disabled={isApproving}
-                  className={`inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
-                >
-                  {isApproving ? (
-                    <>
-                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+              {(() => {
+                const isModelTrainingSubprocess =
+                  approvalNextStep === "Training Configuration" ||
+                  approvalNextStep === "trainingConfigurationNode" ||
+                  approvalNextStep === "Pre Flight" ||
+                  approvalNextStep === "preFlightNode" ||
+                  approvalNextStep === "Model Training" ||
+                  approvalNextStep === "modelTrainingNode" ||
+                  approvalNextStep === "modelTrainingCodeNode" ||
+                  approvalNextStep === "Model Validation" ||
+                  approvalNextStep === "modelValidationNode" ||
+                  pausedAtPhase === "Training Configuration" ||
+                  pausedAtPhase === "Pre Flight" ||
+                  pausedAtPhase === "Model Training" ||
+                  pausedAtPhase === "Model Validation" ||
+                  isAwaitingResponse;
+
+                if (isModelTrainingSubprocess) {
+                  let buttonLabel = "Select & Confirm Models";
+                  if (approvalNextStep?.toLowerCase().includes("validation")) {
+                    buttonLabel = "Review & Validate Models";
+                  } else if (approvalNextStep?.toLowerCase().includes("flight")) {
+                    buttonLabel = "Review Pre-Flight Check";
+                  } else if (approvalNextStep?.toLowerCase().includes("training")) {
+                    buttonLabel = "Review Training Configuration";
+                  }
+
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => onSelectStage("Model Training & Validation")}
+                      disabled={isApproving}
+                      className={`inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
+                      title="Open Model Training & Validation to review the active sub-process"
+                    >
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <path d="M9 11l3 3L22 4" />
+                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
                       </svg>
-                      <span>Advancing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      <span>Proceed to Next Phase</span>
-                    </>
-                  )}
-                </button>
-              )}
+                      <span>{buttonLabel}</span>
+                    </button>
+                  );
+                }
+
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onApprove()}
+                    disabled={isApproving}
+                    className={`inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
+                  >
+                    {isApproving ? (
+                      <>
+                        <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                          <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                        </svg>
+                        <span>Advancing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>Proceed to Next Phase</span>
+                      </>
+                    )}
+                  </button>
+                );
+              })()}
               <button
                 type="button"
                 onClick={onStopWorkflow}

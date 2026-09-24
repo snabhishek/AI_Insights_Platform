@@ -135,6 +135,35 @@ function formatPercentage(val: number | null | undefined): string {
   return `${prefix}${val.toFixed(1)}%`;
 }
 
+function formatScoreBadge(score: number | undefined, metricName?: string): string {
+  if (score === undefined || isNaN(score)) return "N/A";
+  if (score > 0 && score <= 1.0) return (score * 100).toFixed(1) + "%";
+  if (score >= 10 && score <= 100 && (metricName?.includes("F1") || metricName?.includes("Accuracy") || metricName?.includes("WAPE"))) {
+    return `${score.toFixed(1)}%`;
+  }
+  return score.toFixed(1);
+}
+
+function resolveMetric(metrics: Record<string, MetricDetail> | undefined, ...names: string[]): MetricDetail | null {
+  if (!metrics) return null;
+  for (const name of names) {
+    if (metrics[name]) return metrics[name];
+    const found = Object.keys(metrics).find((k) => k.toLowerCase() === name.toLowerCase());
+    if (found && metrics[found]) return metrics[found];
+  }
+  return null;
+}
+
+function formatMetricValue(m: MetricDetail | null, isPercent = false, decimals = 1): string {
+  if (!m || m.value === null || m.value === undefined || isNaN(m.value)) return "N/A";
+  let v = m.value;
+  if (isPercent) {
+    if (v > 0 && v <= 1.0) v = v * 100;
+    return `${v.toFixed(decimals)}%`;
+  }
+  return v.toFixed(decimals);
+}
+
 // ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ModelValidationStepOutput({
@@ -509,8 +538,8 @@ export default function ModelValidationStepOutput({
                     {isChampion && <TrophyIcon className={`w-3.5 h-3.5 ${isSelected ? "text-amber-300" : "text-amber-500"}`} />}
                     <span>{cand.displayName || cand.model_id}</span>
                     {cand.score !== undefined && (
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${isSelected ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-                        {cand.score.toFixed(3)}
+                      <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isSelected ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
+                        {cand.primaryMetricName ? `${cand.primaryMetricName.replace(" Score", "")}: ` : ""}{formatScoreBadge(cand.score, cand.primaryMetricName)}
                       </span>
                     )}
                   </button>
@@ -536,7 +565,7 @@ export default function ModelValidationStepOutput({
                     </h3>
                     {activeCandidate.score !== undefined && (
                       <Badge variant="primary" className="text-[11px] font-bold py-0.5 px-2">
-                        {activeCandidate.primaryMetricName || "Score"}: {activeCandidate.score.toFixed(4)}
+                        {activeCandidate.primaryMetricName || "Score"}: {formatScoreBadge(activeCandidate.score, activeCandidate.primaryMetricName)}
                       </Badge>
                     )}
                   </div>
@@ -764,12 +793,14 @@ export default function ModelValidationStepOutput({
                     Actual Total
                   </div>
                   <div className="text-xl font-extrabold text-foreground mt-1">
-                    {formatNumber(activeCandidate.totals?.actualTotal)}
+                    {activeCandidate.totals?.actualTotal !== null && activeCandidate.totals?.actualTotal !== undefined
+                      ? formatNumber(activeCandidate.totals.actualTotal)
+                      : "N/A"}
                   </div>
                   <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {activeCandidate.actualDataCoverage !== null
-                      ? `${activeCandidate.actualDataCoverage}% coverage`
-                      : "Out-of-sample ground truth"}
+                    {activeCandidate.totals?.actualTotal !== null && activeCandidate.totals?.actualTotal !== undefined
+                      ? (activeCandidate.actualDataCoverage !== null ? `${activeCandidate.actualDataCoverage}% coverage` : "Out-of-sample ground truth")
+                      : "Future Mode: Ground truth not yet observed"}
                   </div>
                 </div>
 
@@ -795,7 +826,7 @@ export default function ModelValidationStepOutput({
                     <span className="text-xl font-extrabold text-foreground">
                       {activeCandidate.totals?.difference !== null && activeCandidate.totals?.difference !== undefined
                         ? (activeCandidate.totals.difference > 0 ? "+" : "") + formatNumber(activeCandidate.totals.difference)
-                        : "N/A"}
+                        : (isBacktesting ? "N/A" : "Forward Forecast")}
                     </span>
                     {activeCandidate.totals?.differencePercentage !== null && activeCandidate.totals?.differencePercentage !== undefined && (
                       <Badge
@@ -807,7 +838,9 @@ export default function ModelValidationStepOutput({
                     )}
                   </div>
                   <div className="text-[11px] text-muted-foreground mt-0.5">
-                    Total aggregate bias
+                    {activeCandidate.totals?.difference !== null && activeCandidate.totals?.difference !== undefined
+                      ? "Total aggregate bias"
+                      : "Future projection without historical baseline delta"}
                   </div>
                 </div>
 
@@ -817,12 +850,10 @@ export default function ModelValidationStepOutput({
                     WAPE (Weighted Abs Error)
                   </div>
                   <div className="text-xl font-extrabold text-foreground mt-1">
-                    {activeCandidate.metrics?.WAPE?.value !== null && activeCandidate.metrics?.WAPE?.value !== undefined
-                      ? (activeCandidate.metrics.WAPE.value * 100).toFixed(2) + "%"
-                      : "N/A"}
+                    {formatMetricValue(resolveMetric(activeCandidate.metrics, "WAPE", "wape"), true, 1)}
                   </div>
                   <div className="text-[11px] text-muted-foreground mt-0.5">
-                    Primary accuracy metric (lower is better)
+                    {isBacktesting ? "Primary accuracy metric (lower is better)" : "Unavailable in future prediction mode"}
                   </div>
                 </div>
 
@@ -835,18 +866,14 @@ export default function ModelValidationStepOutput({
                     <span>
                       MAE:{" "}
                       <span className="text-foreground font-extrabold">
-                        {activeCandidate.metrics?.MAE?.value !== null && activeCandidate.metrics?.MAE?.value !== undefined
-                          ? activeCandidate.metrics.MAE.value.toFixed(2)
-                          : "N/A"}
+                        {formatMetricValue(resolveMetric(activeCandidate.metrics, "MAE", "mae"), false, 2)}
                       </span>
                     </span>
                     <span className="text-muted-foreground">|</span>
                     <span>
                       RMSE:{" "}
                       <span className="text-foreground font-extrabold">
-                        {activeCandidate.metrics?.RMSE?.value !== null && activeCandidate.metrics?.RMSE?.value !== undefined
-                          ? activeCandidate.metrics.RMSE.value.toFixed(2)
-                          : "N/A"}
+                        {formatMetricValue(resolveMetric(activeCandidate.metrics, "RMSE", "rmse"), false, 2)}
                       </span>
                     </span>
                   </div>
@@ -861,12 +888,10 @@ export default function ModelValidationStepOutput({
                     Precision
                   </div>
                   <div className="text-xl font-extrabold text-foreground mt-1">
-                    {activeCandidate.metrics?.Precision?.value !== null && activeCandidate.metrics?.Precision?.value !== undefined
-                      ? (activeCandidate.metrics.Precision.value * 100).toFixed(1) + "%"
-                      : "N/A"}
+                    {formatMetricValue(resolveMetric(activeCandidate.metrics, "Precision", "precision"), true, 1)}
                   </div>
                   <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {activeCandidate.metrics?.Precision?.reason || "Classification threshold precision"}
+                    {resolveMetric(activeCandidate.metrics, "Precision", "precision")?.reason || "Classification threshold precision"}
                   </div>
                 </div>
 
@@ -876,12 +901,10 @@ export default function ModelValidationStepOutput({
                     Recall
                   </div>
                   <div className="text-xl font-extrabold text-foreground mt-1">
-                    {activeCandidate.metrics?.Recall?.value !== null && activeCandidate.metrics?.Recall?.value !== undefined
-                      ? (activeCandidate.metrics.Recall.value * 100).toFixed(1) + "%"
-                      : "N/A"}
+                    {formatMetricValue(resolveMetric(activeCandidate.metrics, "Recall", "recall"), true, 1)}
                   </div>
                   <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {activeCandidate.metrics?.Recall?.reason || "Classification sensitivity / true positive rate"}
+                    {resolveMetric(activeCandidate.metrics, "Recall", "recall")?.reason || "Classification sensitivity / true positive rate"}
                   </div>
                 </div>
 
@@ -891,12 +914,10 @@ export default function ModelValidationStepOutput({
                     F1 Score
                   </div>
                   <div className="text-xl font-extrabold text-foreground mt-1">
-                    {activeCandidate.metrics?.F1?.value !== null && activeCandidate.metrics?.F1?.value !== undefined
-                      ? activeCandidate.metrics.F1.value.toFixed(3)
-                      : "N/A"}
+                    {formatMetricValue(resolveMetric(activeCandidate.metrics, "F1", "f1_score", "f1"), false, 3)}
                   </div>
                   <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {activeCandidate.metrics?.F1?.reason || "Harmonic mean of precision and recall"}
+                    {resolveMetric(activeCandidate.metrics, "F1", "f1_score", "f1")?.reason || "Harmonic mean of precision and recall"}
                   </div>
                 </div>
 

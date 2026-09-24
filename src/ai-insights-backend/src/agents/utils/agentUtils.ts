@@ -528,9 +528,15 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     finalModelSelectionNode: "Model Selection",
     trainingConfiguration: "Training Configuration",
     trainingConfigurationNode: "Training Configuration",
+    datasetAnalyserAgent: "Training Configuration",
+    datasetAnalyserNode: "Training Configuration",
     preFlight: "Pre Flight",
     preFlightNode: "Pre Flight",
     "Pre Flight": "Pre Flight",
+    modelTrainingCode: "Model Training",
+    modelTrainingCodeNode: "Model Training",
+    modelTrainingExec: "Model Training",
+    modelTrainingExecNode: "Model Training",
     modelTraining: "Model Training",
     modelTrainingNode: "Model Training",
     modelEvaluation: "Model Training",
@@ -961,9 +967,19 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     if (isRunning(stageStatuses[node])) return node;
   }
 
+  // If paused before model validation, current completed stage is model training
+  if (
+    (nextNodes.includes("modelValidationNode") || nextNodes.includes("modelValidation")) &&
+    (stageStatuses.modelTraining === "Completed" || stageStatuses.modelTrainingExecNode === "Completed") &&
+    stageStatuses.modelValidation !== "Completed" &&
+    stageStatuses.modelValidation !== "In Progress"
+  ) {
+    return "modelTrainingExecNode";
+  }
+
   // If paused before model training, current completed stage is preFlight
   if (
-    (nextNodes.includes("modelTrainingNode") || nextNodes.includes("modelTraining")) &&
+    (nextNodes.includes("modelTrainingCodeNode") || nextNodes.includes("modelTrainingNode") || nextNodes.includes("modelTraining")) &&
     (stageStatuses.preFlight === "Completed" || stageStatuses.preFlightNode === "Completed") &&
     stageStatuses.modelTraining !== "Completed" &&
     stageStatuses.modelTraining !== "In Progress"
@@ -1138,8 +1154,9 @@ export function buildResultFromGraphState(
   const ss = stageStatuses as Record<string, string>;
   const isAtModelApproval = (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) && (ss.exogenousScout === "Completed" || ss.exogenous === "Completed");
   const isAtTrainingConfigApproval = (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration")) && (ss.modelSelection === "Completed" || ss.modelSelectionNode === "Completed");
-  const isAtModelTrainingApproval = (nextNodes.includes("modelTrainingNode") || nextNodes.includes("modelTraining")) && (ss.preFlight === "Completed" || ss.preFlightNode === "Completed");
-  const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval || isAtTrainingConfigApproval || isAtModelTrainingApproval);
+  const isAtModelTrainingApproval = (nextNodes.includes("modelTrainingCodeNode") || nextNodes.includes("modelTrainingNode") || nextNodes.includes("modelTraining")) && (ss.preFlight === "Completed" || ss.preFlightNode === "Completed");
+  const isAtModelValidationApproval = (nextNodes.includes("modelValidationNode") || nextNodes.includes("modelValidation")) && (ss.modelTraining === "Completed" || ss.modelTrainingExecNode === "Completed");
+  const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval || isAtTrainingConfigApproval || isAtModelTrainingApproval || isAtModelValidationApproval);
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
   return {

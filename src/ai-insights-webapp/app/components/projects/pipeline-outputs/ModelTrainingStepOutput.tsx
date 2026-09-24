@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { BACKEND_URL } from "../../providers/AppContext";
 
 export interface CandidateModelItem {
   model_id: string;
@@ -24,6 +25,8 @@ export interface ModelTrainingStepOutputProps {
   projectId?: string;
   activeRunTimestamp?: string;
   onApproveTraining?: (selectedModels: string[], splitStartDate?: string, splitEndDate?: string) => void;
+  onApproveValidation?: (selectedModels: string[]) => void;
+  onNavigateToValidation?: (selectedModels: string[]) => void;
   isApproving?: boolean;
 }
 
@@ -97,8 +100,6 @@ function MaximizeIcon({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:3001/api";
-
 const MONTHS = [
   { value: 1, name: "January", short: "Jan" },
   { value: 2, name: "February", short: "Feb" },
@@ -133,6 +134,8 @@ export default function ModelTrainingStepOutput({
   projectId,
   activeRunTimestamp,
   onApproveTraining,
+  onApproveValidation,
+  onNavigateToValidation,
   isApproving = false,
 }: ModelTrainingStepOutputProps) {
   const [copiedArtifact, setCopiedArtifact] = useState<string | null>(null);
@@ -142,31 +145,128 @@ export default function ModelTrainingStepOutput({
   const [dateRangeInfo, setDateRangeInfo] = useState<DateRangeInfo | null>(null);
   const [isLoadingDateRange, setIsLoadingDateRange] = useState<boolean>(true);
 
-  // Extract candidate models available for selection
-  const rawCandidateList: CandidateModelItem[] = (
-    modelTraining?.candidates ||
-    modelTraining?.rankedCandidates ||
-    trainingConfiguration?.configuration?.model_selection?.models ||
-    trainingConfiguration?.configuration?.model_selection?.candidates ||
-    modelSelection?.candidates ||
-    modelSelection?.models ||
-    []
-  ).map((c: any, idx: number) => {
-    const modelId = typeof c === "string" ? c : (c.model_id || c.id || `candidate_${idx + 1}`);
-    const displayName = typeof c === "string" ? c : (c.displayName || c.algorithm || modelId);
-    const framework = typeof c === "string" ? "sklearn" : (c.framework || "sklearn");
-    const score = typeof c === "object" && typeof c.score === "number" ? c.score : c?.suitability_score;
+  // Extract candidate models with full support for all report schemas, snake_case and camelCase
+  let reportCandidates: any[] = [];
+  const rawReportPayload =
+    modelTraining?.report?.candidate_model_results ||
+    modelTraining?.report?.runs ||
+    modelTraining?.report?.candidate_models ||
+    modelTraining?.report?.models ||
+    modelTraining?.report?.leaderboard ||
+    modelTraining?.report?.results ||
+    modelTraining?.report?.candidates ||
+    modelTraining?.report?.trained_models;
+
+  if (Array.isArray(rawReportPayload)) {
+    reportCandidates = rawReportPayload;
+  } else if (rawReportPayload && typeof rawReportPayload === "object") {
+    reportCandidates = Object.entries(rawReportPayload).map(([key, val]: [string, any]) => {
+      if (val && typeof val === "object") {
+        return {
+          model_id: val.model_id || key,
+          ...val,
+        };
+      }
+      return { model_id: key, value: val };
+    });
+  }
+
+  const sourceCandidates: any[] =
+    (reportCandidates.length > 0)
+      ? reportCandidates
+      : (Array.isArray(modelTraining?.rankedCandidates) && modelTraining.rankedCandidates.length > 0)
+        ? modelTraining.rankedCandidates
+        : (Array.isArray(modelTraining?.candidates) && modelTraining.candidates.length > 0)
+          ? modelTraining.candidates
+          : (Array.isArray(trainingConfiguration?.configuration?.model_selection?.models) && trainingConfiguration.configuration.model_selection.models.length > 0)
+            ? trainingConfiguration.configuration.model_selection.models
+            : (Array.isArray(trainingConfiguration?.configuration?.model_selection?.candidates) && trainingConfiguration.configuration.model_selection.candidates.length > 0)
+              ? trainingConfiguration.configuration.model_selection.candidates
+              : (Array.isArray(modelSelection?.candidates) && modelSelection.candidates.length > 0)
+                ? modelSelection.candidates
+                : (Array.isArray(modelSelection?.models) && modelSelection.models.length > 0)
+                  ? modelSelection.models
+                  : [];
+
+  const rawCandidateList: CandidateModelItem[] = sourceCandidates.map((c: any, idx: number) => {
+    const modelId = String(typeof c === "string" ? c : (c.model_id || c.id || c.name || c.model_name || `candidate_${idx + 1}`));
+    const displayName = String(typeof c === "string" ? c : (c.displayName || c.display_name || c.algorithm || c.name || modelId));
+    const framework = String(typeof c === "string" ? "sklearn" : (c.framework || "sklearn"));
+    const status = c.status === "SUCCESS" || c.status === "Completed" ? "Completed" : c.status || (c.error ? "Failed" : "Completed");
+
+    // Extract metrics from validation_metrics, validationMetrics, metrics, test_metrics, etc.
+    const validationMetrics = c.validationMetrics || c.validation_metrics || c.metrics || c.val_metrics || {};
+    const testMetrics = c.testMetrics || c.test_metrics || {};
+
+    // Extract score prioritizing regression and classification primary metrics
+    let score: number | undefined = undefined;
+    if (typeof c === "number" && !isNaN(c)) {
+      score = c;
+    } else if (typeof c.score === "number" && !isNaN(c.score)) {
+      score = c.score;
+    } else if (typeof c.val_score === "number" && !isNaN(c.val_score)) {
+      score = c.val_score;
+    } else if (typeof c.validation_score === "number" && !isNaN(c.validation_score)) {
+      score = c.validation_score;
+    } else if (typeof c.metric_score === "number" && !isNaN(c.metric_score)) {
+      score = c.metric_score;
+    } else if (typeof c.primary_metric_value === "number" && !isNaN(c.primary_metric_value)) {
+      score = c.primary_metric_value;
+    } else if (typeof c.test_score === "number" && !isNaN(c.test_score)) {
+      score = c.test_score;
+    } else if (typeof validationMetrics?.roc_auc === "number") {
+      score = validationMetrics.roc_auc;
+    } else if (typeof validationMetrics?.accuracy === "number") {
+      score = validationMetrics.accuracy;
+    } else if (typeof validationMetrics?.f1_score === "number") {
+      score = validationMetrics.f1_score;
+    } else if (typeof validationMetrics?.f1_weighted === "number") {
+      score = validationMetrics.f1_weighted;
+    } else if (typeof validationMetrics?.r2 === "number") {
+      score = validationMetrics.r2;
+    } else if (typeof validationMetrics?.rmse === "number") {
+      score = validationMetrics.rmse;
+    } else if (typeof testMetrics?.roc_auc === "number") {
+      score = testMetrics.roc_auc;
+    } else if (typeof testMetrics?.accuracy === "number") {
+      score = testMetrics.accuracy;
+    } else if (typeof testMetrics?.f1_score === "number") {
+      score = testMetrics.f1_score;
+    } else if (typeof testMetrics?.r2 === "number") {
+      score = testMetrics.r2;
+    } else if (typeof c.suitability_score === "number") {
+      score = c.suitability_score;
+    } else {
+      const numVal = Object.values(validationMetrics).find((v) => typeof v === "number" && !isNaN(v as number));
+      if (typeof numVal === "number") score = numVal as number;
+    }
+
+    // Extract duration seconds
+    const durationSeconds =
+      c.durationSeconds ??
+      c.duration_seconds ??
+      c.training_metadata?.training_time_seconds ??
+      c.training_time_seconds ??
+      c.training_time ??
+      c.duration ??
+      c.time_taken ??
+      (c.duration_ms ? c.duration_ms / 1000 : undefined);
+
+    const artifact = c.artifact || c.model_path || c.artifact_path || c.model_artifact;
+    const plots = c.plots || c.comparison_plots || c.plot_paths;
+
     return {
       model_id: modelId,
       displayName,
       framework,
-      status: c.status || "Completed",
+      status,
       score,
-      durationSeconds: c.durationSeconds,
-      validationMetrics: c.validationMetrics,
-      testMetrics: c.testMetrics,
-      artifact: c.artifact,
-      plots: c.plots,
+      durationSeconds,
+      validationMetrics,
+      testMetrics,
+      artifact,
+      plots,
+      error: c.error,
     };
   });
 
@@ -183,6 +283,18 @@ export default function ModelTrainingStepOutput({
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>(() => {
     return candidateModels.map((c) => c.model_id);
   });
+
+  // Selected models for Held-Out Model Validation
+  const [selectedModelsForValidation, setSelectedModelsForValidation] = useState<string[]>(() => {
+    return candidateModels.map((c) => c.model_id);
+  });
+
+  // Keep validation selection updated when candidateModels arrive
+  useEffect(() => {
+    if (candidateModels.length > 0) {
+      setSelectedModelsForValidation((prev) => (prev.length === 0 ? candidateModels.map((c) => c.model_id) : prev));
+    }
+  }, [candidateModels]);
 
   const [selectedYear, setSelectedYear] = useState<number>(() => {
     const existing = modelTraining?.splitEndDate || modelTraining?.splitDate;
@@ -478,116 +590,6 @@ export default function ModelTrainingStepOutput({
         </div>
       )}
 
-      {/* ─── Phase 4B: Candidate Model Selection & Docker Execution Gate ─── */}
-      {hasCodeGenerated && !hasExecutionReport && (
-        <div className="rounded-2xl border-2 border-amber-500/30 bg-amber-500/5 dark:bg-amber-950/10 p-5 space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-500/20">
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="px-2.5 py-0.5 rounded-md bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 font-bold text-xs">
-                  ✓ Python Training Code Created
-                </span>
-                <span className="text-xs font-bold text-foreground">
-                  Select Models to Train in Docker
-                </span>
-              </div>
-              <p className="text-xs text-muted-foreground mt-1">
-                Choose which candidate models to execute inside the isolated Docker container. You can run all or select specific models.
-              </p>
-            </div>
-
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={selectAll}
-                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
-              >
-                Select All ({candidateModels.length})
-              </button>
-              <button
-                type="button"
-                onClick={deselectAll}
-                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
-              >
-                Deselect All
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-            {candidateModels.map((candidate) => {
-              const isChecked = selectedModelIds.includes(candidate.model_id);
-              return (
-                <div
-                  key={candidate.model_id}
-                  onClick={() => toggleModelSelection(candidate.model_id)}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer select-none flex items-start gap-3.5 ${
-                    isChecked
-                      ? "border-primary/50 bg-primary/5 dark:bg-primary/10 shadow-xs"
-                      : "border-border bg-surface/70 hover:border-border/80 opacity-70"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => {}} // handled by parent div
-                    className="mt-0.5 w-4 h-4 rounded-md border-border text-primary focus:ring-0 cursor-pointer"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-bold text-foreground truncate">
-                        {candidate.displayName || candidate.model_id}
-                      </span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-surface-muted border border-border text-muted-foreground">
-                        {candidate.framework || "sklearn"}
-                      </span>
-                    </div>
-
-                    <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="font-mono text-[11px] truncate">ID: {candidate.model_id}</span>
-                      {typeof candidate.score === "number" && (
-                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold ml-auto">
-                          Suitability: {(candidate.score * 100).toFixed(0)}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="pt-3 border-t border-amber-500/20 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">
-              {selectedModelIds.length} candidate model(s) selected for Docker execution.
-            </p>
-
-            <button
-              type="button"
-              disabled={selectedModelIds.length === 0 || isApproving}
-              onClick={() => {
-                if (onApproveTraining) {
-                  onApproveTraining(selectedModelIds);
-                }
-              }}
-              className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-xs tracking-wide hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
-            >
-              {isApproving ? (
-                <>
-                  <span className="w-3.5 h-3.5 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
-                  <span>Running Training in Docker Sandbox...</span>
-                </>
-              ) : (
-                <>
-                  <CpuIcon className="w-4 h-4" />
-                  <span>Execute Training in Docker ({selectedModelIds.length} Models)</span>
-                </>
-              )}
-            </button>
-          </div>
-        </div>
-      )}
-
       {/* ─── Champion Model Card ─── */}
       {hasExecutionReport && championCandidate && (
         <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-surface to-surface p-6 shadow-sm">
@@ -694,7 +696,12 @@ export default function ModelTrainingStepOutput({
               <tbody className="divide-y divide-border">
                 {candidateModels.map((m, idx) => {
                   const isChampion = m.model_id === championModelId;
-                  const metrics = m.testMetrics || m.validationMetrics || {};
+                  const metrics =
+                    m.validationMetrics && Object.keys(m.validationMetrics).length > 0
+                      ? m.validationMetrics
+                      : m.testMetrics && Object.keys(m.testMetrics).length > 0
+                      ? m.testMetrics
+                      : {};
                   return (
                     <tr
                       key={m.model_id}
@@ -726,22 +733,38 @@ export default function ModelTrainingStepOutput({
                         </span>
                       </td>
                       <td className="py-3 px-4 font-extrabold text-foreground">
-                        {typeof m.score === "number" ? `${(m.score * 100).toFixed(1)}%` : "—"}
+                        {typeof m.score === "number"
+                          ? m.score >= 0 && m.score <= 1
+                            ? `${(m.score * 100).toFixed(1)}%`
+                            : m.score.toFixed(3)
+                          : typeof metrics.roc_auc === "number"
+                          ? `${(metrics.roc_auc * 100).toFixed(1)}%`
+                          : typeof metrics.accuracy === "number"
+                          ? `${(metrics.accuracy * 100).toFixed(1)}%`
+                          : typeof metrics.r2 === "number"
+                          ? metrics.r2.toFixed(3)
+                          : typeof metrics.rmse === "number"
+                          ? metrics.rmse.toFixed(2)
+                          : "—"}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1.5">
-                          {Object.entries(metrics).slice(0, 3).map(([k, v]) => (
-                            <span
-                              key={k}
-                              className="px-1.5 py-0.5 rounded bg-surface border border-border font-mono text-[10px]"
-                            >
-                              {k}: {typeof v === "number" ? v.toFixed(3) : String(v)}
-                            </span>
-                          ))}
+                          {Object.keys(metrics).length > 0 ? (
+                            Object.entries(metrics).slice(0, 3).map(([k, v]) => (
+                              <span
+                                key={k}
+                                className="px-1.5 py-0.5 rounded bg-surface border border-border font-mono text-[10px]"
+                              >
+                                {k}: {typeof v === "number" ? (v >= 0 && v <= 1 ? `${(v * 100).toFixed(1)}%` : v.toFixed(3)) : String(v)}
+                              </span>
+                            ))
+                          ) : (
+                            <span className="text-muted-foreground/60 font-mono text-[11px]">—</span>
+                          )}
                         </div>
                       </td>
                       <td className="py-3 px-4 text-muted-foreground font-mono">
-                        {m.durationSeconds ? `${m.durationSeconds.toFixed(1)}s` : "—"}
+                        {m.durationSeconds != null ? `${Number(m.durationSeconds).toFixed(1)}s` : "—"}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
@@ -754,6 +777,114 @@ export default function ModelTrainingStepOutput({
                 })}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Handoff to Model Validation with Model Selection ─── */}
+      {hasExecutionReport && candidateModels.length > 0 && (onNavigateToValidation || onApproveValidation) && (
+        <div className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 via-surface to-surface p-5 space-y-4 shadow-sm animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/80">
+            <div>
+              <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+                <CheckCircleIcon className="w-4 h-4 text-primary" />
+                Select Models for Held-Out Model Validation
+              </h4>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Choose which trained estimators to validate on the held-out verification dataset. Only selected models will be validated.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setSelectedModelsForValidation(candidateModels.map((c) => c.model_id))}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
+              >
+                Select All
+              </button>
+              <button
+                type="button"
+                onClick={() => setSelectedModelsForValidation([])}
+                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
+              >
+                Deselect All
+              </button>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+            {candidateModels.map((candidate) => {
+              const isChecked = selectedModelsForValidation.includes(candidate.model_id);
+              const isChamp = candidate.model_id === championModelId;
+              return (
+                <div
+                  key={candidate.model_id}
+                  onClick={() => {
+                    setSelectedModelsForValidation((prev) =>
+                      prev.includes(candidate.model_id)
+                        ? prev.filter((id) => id !== candidate.model_id)
+                        : [...prev, candidate.model_id]
+                    );
+                  }}
+                  className={`p-3.5 rounded-xl border transition-all cursor-pointer select-none flex items-start gap-3 ${
+                    isChecked
+                      ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-xs ring-1 ring-primary/20"
+                      : "border-border bg-surface/70 hover:border-border/80 opacity-70"
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isChecked}
+                    onChange={() => {}}
+                    className="mt-0.5 w-4 h-4 rounded text-primary border-border focus:ring-0 cursor-pointer"
+                  />
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-1.5">
+                      <span className="text-xs font-bold text-foreground truncate">
+                        {candidate.displayName || candidate.model_id}
+                      </span>
+                      {isChamp && (
+                        <span className="text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-emerald-500 text-white shrink-0">
+                          Champion
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center justify-between mt-1 text-[11px] text-muted-foreground">
+                      <span className="font-mono">{candidate.framework || "sklearn"}</span>
+                      {typeof candidate.score === "number" && (
+                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold font-mono">
+                          {(candidate.score * 100).toFixed(1)}%
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="pt-3 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <p className="text-xs text-muted-foreground">
+              {selectedModelsForValidation.length} model(s) selected for Model Validation evaluation.
+            </p>
+
+            <button
+              type="button"
+              disabled={selectedModelsForValidation.length === 0 || isApproving}
+              onClick={() => {
+                if (onNavigateToValidation) {
+                  onNavigateToValidation(selectedModelsForValidation);
+                } else if (onApproveValidation) {
+                  onApproveValidation(selectedModelsForValidation);
+                }
+              }}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <polyline points="20 6 9 17 4 12" />
+              </svg>
+              <span>Proceed to Model Validation ({selectedModelsForValidation.length} Models)</span>
+            </button>
           </div>
         </div>
       )}

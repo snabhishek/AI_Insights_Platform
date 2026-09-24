@@ -19,7 +19,9 @@ interface ModelTrainingValidationOutputProps {
   onSelectionConfirmed?: (selectedModels: string[]) => void;
   onApproveTraining?: (selectedModels: string[], splitStartDate?: string, splitEndDate?: string) => void;
   onApprove?: (selectedModels?: string[], splitEndDate?: string) => void;
-  onApproveValidation?: (horizon: number, frequency: string, startDate?: string) => void;
+  onApproveValidation?: (horizon: number, frequency: string, startDate?: string, selectedModels?: string[]) => void;
+  onApprovePreFlight?: () => void;
+  onNavigateToValidation?: (selectedModels: string[]) => void;
   isApproving?: boolean;
 }
 
@@ -36,12 +38,14 @@ export default function ModelTrainingValidationStepOutput({
   onApproveTraining,
   onApprove,
   onApproveValidation,
+  onApprovePreFlight,
+  onNavigateToValidation,
   isApproving,
 }: ModelTrainingValidationOutputProps) {
   // 1. Model Selection Substep
   if (
     activeSubstep === "Model Selection" ||
-    (modelSelection && !trainingConfiguration && !preFlight && !modelTraining && !modelValidation)
+    (!activeSubstep && modelSelection && !trainingConfiguration && !preFlight && !modelTraining && !modelValidation)
   ) {
     if (!modelSelection) {
       return (
@@ -65,7 +69,7 @@ export default function ModelTrainingValidationStepOutput({
   // 2. Training Configuration Substep
   if (
     activeSubstep === "Training Configuration" ||
-    (Boolean(trainingConfiguration?.contractPath || trainingConfiguration?.status === "Completed") &&
+    (!activeSubstep && Boolean(trainingConfiguration?.contractPath || trainingConfiguration?.status === "Completed") &&
       !preFlight &&
       !modelTraining &&
       !modelValidation)
@@ -95,7 +99,7 @@ export default function ModelTrainingValidationStepOutput({
   // 3. Pre Flight Substep
   if (
     activeSubstep === "Pre Flight" ||
-    (Boolean(preFlight) && !modelTraining && !modelValidation)
+    (!activeSubstep && Boolean(preFlight) && !modelTraining && !modelValidation)
   ) {
     if (!preFlight) {
       return (
@@ -112,6 +116,8 @@ export default function ModelTrainingValidationStepOutput({
         preFlight={preFlight}
         projectId={projectId}
         activeRunTimestamp={activeRunTimestamp}
+        onApprovePreFlight={onApprovePreFlight}
+        isApproving={isApproving}
       />
     );
   }
@@ -119,24 +125,32 @@ export default function ModelTrainingValidationStepOutput({
   // 4. Model Training Substep
   if (
     activeSubstep === "Model Training" ||
-    activeSubstep === "Model Validation" ||
-    Boolean(modelTraining) ||
-    Boolean(modelValidation)
+    (!activeSubstep && Boolean(modelTraining) && !modelValidation)
   ) {
     return (
       <ModelTrainingStepOutput
-        modelTraining={modelTraining || modelValidation || {}}
+        modelTraining={modelTraining || {}}
         trainingConfiguration={trainingConfiguration}
         modelSelection={modelSelection}
         projectId={projectId}
         activeRunTimestamp={activeRunTimestamp}
         onApproveTraining={onApproveTraining}
+        onNavigateToValidation={onNavigateToValidation}
+        onApproveValidation={(selectedModels) => {
+          if (onApproveValidation) {
+            onApproveValidation(12, "Weekly", undefined, selectedModels);
+          }
+        }}
         isApproving={isApproving}
       />
     );
   }
 
-  if (activeSubstep === "Model Validation" || (modelValidation && !modelTraining)) {
+  // 5. Model Validation Substep
+  if (
+    activeSubstep === "Model Validation" ||
+    (!activeSubstep && Boolean(modelValidation))
+  ) {
     return (
       <ModelValidationStepOutput
         modelValidation={modelValidation}

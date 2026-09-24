@@ -2,6 +2,9 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { useFilterForm, FormSchema, FormField, FilterGroup } from "../../../hooks/useFilterForm";
+import { BACKEND_URL } from "../../providers/AppContext";
+
+const DEFAULT_API_BASE = BACKEND_URL.replace(/\/api\/?$/, "");
 
 export interface FilterFormProps {
   schema: FormSchema;
@@ -241,7 +244,7 @@ function ModernSelect({
   );
 }
 
-export default function FilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000", onFilterChange }: FilterFormProps) {
+export default function FilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE, onFilterChange }: FilterFormProps) {
   const {
     selectedValues,
     setFieldValue,

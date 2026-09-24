@@ -244,7 +244,7 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
     stageOutputs: { preFlight: report },
     stageStatuses: {
       preFlight: "Completed",
-      modelTrainingCode: "In Progress",
+      modelTrainingCode: "Pending",
       modelTraining: "Pending",
     },
     steps: [
@@ -387,6 +387,7 @@ export async function modelValidationNode(state: State, config?: RunnableConfig)
   const options = {
     predictionHorizon: (state as any).predictionHorizon,
     predictionFrequency: (state as any).predictionFrequency,
+    predictionObjectiveStartDate: (state as any).predictionObjectiveStartDate,
   };
 
   const output = await ModelValidationAgent.execute(state, services, options);

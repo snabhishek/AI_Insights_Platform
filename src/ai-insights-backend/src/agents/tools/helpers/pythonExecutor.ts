@@ -1,6 +1,6 @@
 import fs from "fs";
 import path from "path";
-import { exec } from "child_process";
+import { exec, spawn } from "child_process";
 import Docker from "dockerode";
 import { IngestionServices } from "../../state";
 import {
@@ -119,7 +119,7 @@ async function ensureDockerDaemon(docker: Docker): Promise<boolean> {
 }
 
 /**
- * Runs a CLI process via exec with maxBuffer and timeout handling.
+ * Runs a CLI process via spawn with live streaming to console.log, maxBuffer and timeout handling.
  */
 function executeProcess(
   command: string,
@@ -127,26 +127,69 @@ function executeProcess(
     cwd: string;
     env?: NodeJS.ProcessEnv;
     timeoutMs?: number;
+    onLog?: (line: string) => void;
   }
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
-    exec(
-      command,
-      {
-        cwd: options.cwd,
-        env: { ...process.env, ...(options.env || {}) },
-        maxBuffer: 50 * 1024 * 1024,
-        timeout: options.timeoutMs || 600000,
-      },
-      (error, stdout, stderr) => {
-        const exitCode = error ? (typeof error.code === "number" ? error.code : 1) : 0;
-        resolve({
-          exitCode,
-          stdout: stdout ? stdout.toString() : "",
-          stderr: stderr ? stderr.toString() : (error ? error.message : ""),
-        });
+    const isWindows = process.platform === "win32";
+    const shell = isWindows ? (process.env.ComSpec || "cmd.exe") : "/bin/sh";
+    const shellFlag = isWindows ? "/d /s /c" : "-c";
+
+    let stdoutData = "";
+    let stderrData = "";
+
+    const child = spawn(shell, [shellFlag, command], {
+      cwd: options.cwd,
+      env: { ...process.env, ...(options.env || {}) },
+      windowsVerbatimArguments: isWindows,
+    });
+
+    let timeoutTimer: NodeJS.Timeout | undefined;
+    if (options.timeoutMs) {
+      timeoutTimer = setTimeout(() => {
+        try {
+          child.kill("SIGTERM");
+        } catch {}
+      }, options.timeoutMs);
+    }
+
+    const processChunk = (chunk: Buffer | string, isErr = false) => {
+      const text = chunk.toString();
+      if (isErr) {
+        stderrData += text;
+      } else {
+        stdoutData += text;
       }
-    );
+      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+      for (const line of lines) {
+        // Stream live progress directly into the backend terminal console
+        console.log(`[DockerExecutor] ${line}`);
+        if (options.onLog) {
+          options.onLog(line);
+        }
+      }
+    };
+
+    child.stdout?.on("data", (chunk) => processChunk(chunk, false));
+    child.stderr?.on("data", (chunk) => processChunk(chunk, true));
+
+    child.on("close", (code) => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      resolve({
+        exitCode: code ?? 0,
+        stdout: stdoutData,
+        stderr: stderrData,
+      });
+    });
+
+    child.on("error", (err) => {
+      if (timeoutTimer) clearTimeout(timeoutTimer);
+      resolve({
+        exitCode: 1,
+        stdout: stdoutData,
+        stderr: stderrData || err.message,
+      });
+    });
   });
 }
 

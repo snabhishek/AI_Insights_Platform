@@ -582,18 +582,45 @@ export class ModelTrainingAgent {
 
     await cleanupRunContainer(projectId, runTimestamp);
 
-    // Read and parse output report
-    const reportPathInProject = path.join(modelTrainingDir, "model_training_report.json");
-    const reportPathInRun = path.join(runDir, "model_training_report.json");
+    // Read and parse output report from all potential locations
+    const candidateReportPaths = [
+      path.join(modelTrainingDir, "model_training_report.json"),
+      path.join(runDir, "model_training_report.json"),
+      path.join(modelTrainingDir, "artifacts", "model_training_report.json"),
+      path.join(runDir, "artifacts", "model_training_report.json"),
+      path.join(modelTrainingDir, "reports", "model_training_report.json"),
+      path.join(runDir, "reports", "model_training_report.json"),
+    ];
 
-    let report: ModelTrainingReport | undefined;
-    if (fs.existsSync(reportPathInProject)) {
+    let report: any | undefined;
+    for (const p of candidateReportPaths) {
+      if (fs.existsSync(p)) {
+        try {
+          report = JSON.parse(fs.readFileSync(p, "utf-8"));
+          if (report) break;
+        } catch {}
+      }
+    }
+
+    // Fallback: search runDir recursively if not found
+    if (!report && fs.existsSync(runDir)) {
       try {
-        report = JSON.parse(fs.readFileSync(reportPathInProject, "utf-8"));
-      } catch {}
-    } else if (fs.existsSync(reportPathInRun)) {
-      try {
-        report = JSON.parse(fs.readFileSync(reportPathInRun, "utf-8"));
+        const findReportRecursive = (dir: string): string | null => {
+          const files = fs.readdirSync(dir, { withFileTypes: true });
+          for (const f of files) {
+            const fullPath = path.join(dir, f.name);
+            if (f.isFile() && f.name === "model_training_report.json") return fullPath;
+            if (f.isDirectory() && !f.name.startsWith(".")) {
+              const res = findReportRecursive(fullPath);
+              if (res) return res;
+            }
+          }
+          return null;
+        };
+        const discovered = findReportRecursive(runDir);
+        if (discovered) {
+          report = JSON.parse(fs.readFileSync(discovered, "utf-8"));
+        }
       } catch {}
     }
 
@@ -608,27 +635,129 @@ export class ModelTrainingAgent {
       );
     }
 
-    const runs = report.runs || [];
+    // Extract runs from any standard report key (supporting both arrays and dictionary objects like candidate_model_results)
+    let rawRuns: any[] = [];
+    if (Array.isArray(report)) {
+      rawRuns = report;
+    } else if (report && typeof report === "object") {
+      const candidatesPayload =
+        report.candidate_model_results ||
+        report.candidate_models ||
+        report.models ||
+        report.runs ||
+        report.leaderboard ||
+        report.results ||
+        report.candidates ||
+        report.trained_models;
+
+      if (Array.isArray(candidatesPayload)) {
+        rawRuns = candidatesPayload;
+      } else if (candidatesPayload && typeof candidatesPayload === "object") {
+        rawRuns = Object.entries(candidatesPayload).map(([key, val]: [string, any]) => {
+          if (val && typeof val === "object") {
+            return {
+              model_id: val.model_id || key,
+              ...val,
+            };
+          }
+          return { model_id: key, value: val };
+        });
+      }
+    }
+
+    const runs: CandidateModelRun[] = rawRuns.map((r: any, idx: number) => {
+      const modelId = String(r.model_id || r.id || r.name || r.model_name || `model_${idx + 1}`);
+      const displayName = String(r.displayName || r.display_name || r.algorithm || modelId);
+      const framework = String(r.framework || "sklearn");
+      const status = r.status === "SUCCESS" || r.status === "Completed" ? "Completed" : r.status || (r.error ? "Failed" : "Completed");
+      const validationMetrics = r.validationMetrics || r.validation_metrics || r.metrics || r.val_metrics || {};
+      const testMetrics = r.testMetrics || r.test_metrics || {};
+
+      // Robust score extraction prioritizing standard regression & classification validation metrics
+      let score: number | undefined = undefined;
+      if (typeof r.score === "number" && !isNaN(r.score)) {
+        score = r.score;
+      } else if (typeof r.val_score === "number" && !isNaN(r.val_score)) {
+        score = r.val_score;
+      } else if (typeof r.validation_score === "number" && !isNaN(r.validation_score)) {
+        score = r.validation_score;
+      } else if (typeof r.metric_score === "number" && !isNaN(r.metric_score)) {
+        score = r.metric_score;
+      } else if (typeof r.primary_metric_value === "number" && !isNaN(r.primary_metric_value)) {
+        score = r.primary_metric_value;
+      } else if (typeof validationMetrics?.roc_auc === "number") {
+        score = validationMetrics.roc_auc;
+      } else if (typeof validationMetrics?.accuracy === "number") {
+        score = validationMetrics.accuracy;
+      } else if (typeof validationMetrics?.f1_score === "number") {
+        score = validationMetrics.f1_score;
+      } else if (typeof validationMetrics?.r2 === "number") {
+        score = validationMetrics.r2;
+      } else if (typeof testMetrics?.roc_auc === "number") {
+        score = testMetrics.roc_auc;
+      } else if (typeof testMetrics?.accuracy === "number") {
+        score = testMetrics.accuracy;
+      } else if (typeof testMetrics?.f1_score === "number") {
+        score = testMetrics.f1_score;
+      } else if (typeof r.suitability_score === "number") {
+        score = r.suitability_score;
+      } else {
+        const num = Object.values(validationMetrics).find((v) => typeof v === "number" && !isNaN(v as number));
+        if (typeof num === "number") score = num;
+      }
+
+      // Duration extraction from training_metadata or standard duration fields
+      const durationSeconds =
+        r.durationSeconds ??
+        r.duration_seconds ??
+        r.training_metadata?.training_time_seconds ??
+        r.training_time_seconds ??
+        r.training_time ??
+        r.duration ??
+        r.time_taken ??
+        (r.duration_ms ? r.duration_ms / 1000 : undefined);
+
+      const artifact = r.model_artifact || r.artifact || r.model_path || r.artifact_path || `artifacts/models/${modelId}.joblib`;
+      const plots = r.plots || r.comparison_plots || r.plot_paths || {};
+
+      return {
+        model_id: modelId,
+        displayName,
+        framework,
+        status,
+        score,
+        durationSeconds,
+        validationMetrics,
+        testMetrics,
+        artifact,
+        plots,
+        error: r.error,
+      };
+    });
+
     const rankedCandidates = runs
       .filter((r) => r.status === "Completed")
       .sort((a, b) => (b.score || 0) - (a.score || 0));
 
-    const selectedModel = report.selectedModel || (rankedCandidates[0]?.model_id) || effectiveSelectedModels[0] || "model";
+    const selectedModel = report.selectedModel || report.champion_model || (rankedCandidates[0]?.model_id) || effectiveSelectedModels[0] || "model";
     const selectedModelArtifact =
       report.selectedModelArtifact ||
+      report.champion_artifact ||
       (rankedCandidates[0]?.artifact) ||
       `artifacts/models/${selectedModel}.joblib`;
 
     const validationMetrics =
       report.validationMetrics ||
+      report.validation_metrics ||
       rankedCandidates[0]?.testMetrics ||
       rankedCandidates[0]?.validationMetrics ||
       {};
 
     const durationMs = Date.now() - startTime;
     const finalStatus = executionSuccess || rankedCandidates.length > 0 ? "Completed" : "Failed";
+    const trainedCount = runs.length > 0 ? runs.length : configuredCandidateModels.length;
     const finalSummary = executionSuccess
-      ? `Model Training completed successfully in ${durationMs}ms. Trained ${runs.length} candidate model(s). Champion: ${selectedModel}.`
+      ? `Model Training completed successfully in ${durationMs}ms. Trained ${trainedCount} candidate model(s). Champion: ${selectedModel}.`
       : `Model training execution finished with warnings/errors: ${lastExecResult.stderr.slice(0, 200)}`;
 
     await logMilestoneThinking(

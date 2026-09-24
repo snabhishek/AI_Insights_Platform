@@ -215,8 +215,16 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     displayName: "Model Validation",
     pipeline: "Model Training & Validation",
     predecessorNode: "modelTrainingExecNode",
-    interruptBefore: false,
-    requiresApproval: false,
+    interruptBefore: true,
+    requiresApproval: true,
+    approvalPrompt: "Model Training completed successfully. Select the candidate models to validate and proceed to Model Validation.",
+    nextStepOnApproval: "Model Validation",
+    requiredInputsOnApproval: ["selectedModels"],
+    prerequisites: (state) => Boolean(
+      state?.modelTraining ||
+      state?.stageOutputs?.modelTraining ||
+      state?.stageStatuses?.modelTraining === "Completed"
+    ),
     aliases: ["modelValidation"],
   },
 ] as const;

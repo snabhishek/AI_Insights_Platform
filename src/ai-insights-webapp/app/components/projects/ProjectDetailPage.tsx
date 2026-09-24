@@ -119,7 +119,10 @@ export default function ProjectDetailPage({
       if (stepId !== mainId) {
         setSelectedSubstepId(stepId);
       } else if (mainId === "Model Training & Validation") {
-        setSelectedSubstepId("Model Selection");
+        const substeps = ["Model Validation", "Model Training", "Pre Flight", "Training Configuration", "Model Selection"];
+        const inProgress = substeps.find((s) => pipelineStatuses[s] === "In Progress");
+        const withOutput = substeps.find((s) => stageOutputs?.[s] != null || pipelineStatuses[s] === "Completed");
+        setSelectedSubstepId(inProgress || withOutput || "Model Selection");
       } else {
         setSelectedSubstepId(null);
       }
@@ -494,6 +497,12 @@ export default function ProjectDetailPage({
               projectId={project.id}
               activeSubstep="Pre Flight"
               activeRunTimestamp={effectiveRunTimestamp}
+              onApprovePreFlight={() => {
+                if (onApprove) {
+                  onApprove("Model Training");
+                }
+              }}
+              isApproving={isApproving}
             />
           ) : null,
           "Model Training": (effectiveModelTraining || effectiveModelSelection) ? (
@@ -509,6 +518,11 @@ export default function ProjectDetailPage({
                   onApprove("Model Training", selectedModels, splitStartDate, splitEndDate);
                 }
               }}
+              onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
+                if (onApprove) {
+                  onApprove("Model Validation", selectedModels, undefined, undefined, horizon, frequency, startDate);
+                }
+              }}
               isApproving={isApproving}
             />
           ) : null,
@@ -521,9 +535,9 @@ export default function ProjectDetailPage({
               projectId={project.id}
               activeSubstep="Model Validation"
               activeRunTimestamp={effectiveRunTimestamp}
-              onApproveValidation={(horizon, frequency, startDate) => {
+              onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
                 if (onApprove) {
-                  onApprove("Model Validation", undefined, undefined, undefined, horizon, frequency, startDate);
+                  onApprove("Model Validation", selectedModels, undefined, undefined, horizon, frequency, startDate);
                 }
               }}
               isApproving={isApproving}
@@ -549,7 +563,8 @@ export default function ProjectDetailPage({
               modelValidation={effectiveModelValidation}
               projectId={project.id}
               activeSubstep={
-                effectiveModelValidation
+                selectedSubstepId ||
+                (effectiveModelValidation
                   ? "Model Validation"
                   : effectiveModelTraining
                     ? "Model Training"
@@ -557,7 +572,7 @@ export default function ProjectDetailPage({
                       ? "Pre Flight"
                       : effectiveTrainingConfig
                         ? "Training Configuration"
-                        : "Model Selection"
+                        : "Model Selection")
               }
               activeRunTimestamp={effectiveRunTimestamp}
               onSelectionConfirmed={(models) => {
@@ -568,6 +583,19 @@ export default function ProjectDetailPage({
               onApproveTraining={(selectedModels, splitStartDate, splitEndDate) => {
                 if (onApprove) {
                   onApprove("Model Training", selectedModels, splitStartDate, splitEndDate);
+                }
+              }}
+              onApprovePreFlight={() => {
+                if (onApprove) {
+                  onApprove("Model Training");
+                }
+              }}
+              onNavigateToValidation={(models) => {
+                setSelectedSubstepId("Model Validation");
+              }}
+              onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
+                if (onApprove) {
+                  onApprove("Model Validation", selectedModels, undefined, undefined, horizon, frequency, startDate);
                 }
               }}
               onApprove={(selectedModels, splitEndDate) => {
@@ -598,6 +626,7 @@ export default function ProjectDetailPage({
             isApproving={isApproving}
             isAwaitingResponse={isAwaitingResponse}
             onApprove={onApprove}
+            onSubstepChange={setSelectedSubstepId}
           />
         );
       })()}

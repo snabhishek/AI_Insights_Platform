@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import MessageModal from "../shared/ui/MessageModal";
 import ConfirmationModal from "../shared/ui/ConfirmationModal";
 import CreateWorkspaceModal from "../shared/ui/CreateWorkspaceModal";
@@ -142,6 +142,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Toast Notification state (top-right modern shared notification)
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const lastToastRef = useRef<{ title: string; time: number } | null>(null);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -154,16 +155,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       type?: "success" | "error" | "info" | "warning";
       duration?: number;
     }) => {
-      const id = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
       const messageText = config.title || config.message || "";
-      const newToast: ToastItem = {
-        id,
-        title: messageText,
-        message: "",
-        type: config.type || "info",
-        duration: config.duration || 4500,
-      };
-      setToasts((prev) => [...prev.slice(-4), newToast]);
+      if (!messageText) return;
+      const now = Date.now();
+      if (
+        lastToastRef.current &&
+        lastToastRef.current.title === messageText &&
+        now - lastToastRef.current.time < 5000
+      ) {
+        return; // Suppress duplicate notification loops
+      }
+      lastToastRef.current = { title: messageText, time: now };
+
+      setToasts((prev) => {
+        if (prev.some((t) => t.title === messageText)) {
+          return prev;
+        }
+        const id = `${now}-${Math.random().toString(36).substring(2, 7)}`;
+        const newToast: ToastItem = {
+          id,
+          title: messageText,
+          message: "",
+          type: config.type || "info",
+          duration: config.duration || 4500,
+        };
+        return [...prev.slice(-3), newToast];
+      });
     },
     []
   );
