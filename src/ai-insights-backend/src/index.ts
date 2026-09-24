@@ -25,8 +25,10 @@ import * as connectorsSchema from "./db/connectors";
 import * as agentThinkingSchema from "./db/agentThinking";
 import * as agentJobsSchema from "./db/agentJobs";
 import * as modelSelectionSchema from "./db/modelSelection";
-const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema, ...modelSelectionSchema };
+import * as modelValidationSchema from "./db/modelValidation";
+const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema, ...modelSelectionSchema, ...modelValidationSchema };
 import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
+import { PostgresModelValidationRepository } from "./repositories/modelValidation.repository";
 import { AgentThinkingService } from "./services/ai/agent-thinking/agentThinking.service";
 // import { AgentController } from "./controllers/agent.controller";
 import { IngestionAgentService } from "./services/ai/ingestion-agent/ingestionAgent.service";
@@ -127,6 +129,7 @@ async function bootstrap() {
   const modelSelectionController = new ModelSelectionController(modelSelectionService);
   const trainingConfigService = new TrainingConfigService(projectService);
   const trainingConfigController = new TrainingConfigController(trainingConfigService);
+  const modelValidationRepository = new PostgresModelValidationRepository(db);
 
   // 4. Mount Main routers
   app.get("/api/filter-options", connectorController.getFilterOptions);

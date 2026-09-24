@@ -14,6 +14,9 @@ import { ModelSelectionService } from "../../services/ai/model-selection/modelSe
 import { TrainingConfigurationAgent, TrainingConfigValidator } from "./TrainingConfiguration";
 import { PreFlightAgent } from "./PreFlight";
 import { ModelTrainingAgent } from "./ModelTraining";
+import { ModelValidationAgent } from "./ModelValidation";
+import * as modelValidationSchema from "../../db/modelValidation";
+import { PostgresModelValidationRepository } from "../../repositories/modelValidation.repository";
 import { validateWithRetry } from "../validator/validatorNode";
 
 type State = typeof AgentState.State;
@@ -377,59 +380,53 @@ export async function modelTrainingNode(state: State, config?: RunnableConfig) {
 }
 
 export async function modelValidationNode(state: State, config?: RunnableConfig) {
+  // Phase 4: 3.4 Model Validation - Validate trained candidate models, calculate deterministic metrics, persist in dedicated validation directory
   const services = servicesFrom(config);
-  const report = readReport(state, services);
-  const metrics = report.validationMetrics || (report.runs && report.runs[0]?.testMetrics) || {};
+  const projectId = services.projectId || state.projectId || "default-project";
 
-  const runDir = runDirectory(state, services);
-  const candidateArtifactPaths = [
-    path.join(runDir, report.artifact || "selected_model.joblib"),
-    path.join(runDir, report.selectedModelArtifact || "selected_model.joblib"),
-    path.join(runDir, "selected_model.pkl"),
-    path.join(runDir, "selected_model.joblib"),
-  ];
-
-  if (fs.existsSync(runDir)) {
-    try {
-      const entries = fs.readdirSync(runDir, { withFileTypes: true });
-      for (const ent of entries) {
-        if (ent.isDirectory() && ent.name.includes("model_training")) {
-          candidateArtifactPaths.push(
-            path.join(runDir, ent.name, report.artifact || "artifacts/models/selected_model.joblib"),
-            path.join(runDir, ent.name, "artifacts", "models", "selected_model.joblib"),
-            path.join(runDir, ent.name, "artifacts", "models", "selected_model.pkl"),
-            path.join(runDir, ent.name, "selected_model.joblib"),
-            path.join(runDir, ent.name, "selected_model.pkl")
-          );
-        }
-      }
-    } catch {}
-  }
-
-  const foundArtifact = candidateArtifactPaths.find((p) => p && fs.existsSync(p));
-  const effectiveArtifact = foundArtifact
-    ? path.relative(runDir, foundArtifact).replace(/\\/g, "/")
-    : report.artifact || report.selectedModelArtifact || "artifacts/models/selected_model.joblib";
-
-  const output = {
-    status: "Passed",
-    summary: `Model ${report.selectedModel || "champion"} validated on held-out test data and persisted successfully`,
-    model: report.selectedModel || "champion",
-    modelVersion: state.runTimestamp,
-    targetColumn: report.targetColumn,
-    problemType: report.problemType,
-    testMetrics: metrics,
-    artifact: effectiveArtifact,
-    checks: { finiteMetrics: true, heldOutTestSet: true },
-    phase: "Model Validation",
+  const options = {
+    predictionHorizon: (state as any).predictionHorizon,
+    predictionFrequency: (state as any).predictionFrequency,
   };
+
+  const output = await ModelValidationAgent.execute(state, services, options);
+
+  // Persist to Postgres database repository if available
+  try {
+    const db = drizzle(pool, { schema: modelValidationSchema });
+    const repo = new PostgresModelValidationRepository(db);
+    if (output.report) {
+      await repo.saveValidationRun(
+        output.report.validation_run_id,
+        projectId,
+        output.report,
+        output.validationDirectory,
+        output.predictionsArtifact
+      );
+    }
+  } catch (persistErr: any) {
+    console.warn("[modelValidationNode] Postgres persistence warning:", persistErr?.message || persistErr);
+  }
 
   return {
     modelValidation: output,
     status: "completed",
-    summary: "Model Training & Validation completed successfully",
-    stageOutputs: { modelValidation: output },
-    stageStatuses: { modelValidation: "Completed" },
-    steps: [{ name: "Model Validation", status: "completed", summary: output.summary }],
+    summary: output.summary,
+    stageOutputs: {
+      modelValidation: output,
+    },
+    stageStatuses: {
+      modelSelection: "Completed",
+      trainingConfiguration: "Completed",
+      modelTraining: "Completed",
+      modelValidation: "Completed",
+    },
+    steps: [
+      {
+        name: "Model Validation",
+        status: output.status === "Failed" ? "failed" : "completed",
+        summary: output.summary,
+      },
+    ],
   };
 }

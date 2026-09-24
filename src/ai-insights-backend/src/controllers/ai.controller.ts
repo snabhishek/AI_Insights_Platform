@@ -70,6 +70,9 @@ export class AIController {
       splitStartDate,
       splitEndDate,
       selectedModels,
+      predictionHorizon,
+      predictionFrequency,
+      predictionObjectiveStartDate,
     } = req.body as {
       connectorId?: string[];
       userPrompt?: string;
@@ -82,6 +85,9 @@ export class AIController {
       splitStartDate?: string;
       splitEndDate?: string;
       selectedModels?: string[];
+      predictionHorizon?: number;
+      predictionFrequency?: string;
+      predictionObjectiveStartDate?: string;
     };
     // Disable socket timeouts for long-running AI workflow SSE streaming
     req.setTimeout(0);
@@ -141,6 +147,9 @@ export class AIController {
         splitStartDate,
         splitEndDate: splitEndDate || splitDate,
         selectedModels,
+        predictionHorizon,
+        predictionFrequency,
+        predictionObjectiveStartDate,
       });
 
       for await (const update of stream) {

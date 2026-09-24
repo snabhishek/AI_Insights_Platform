@@ -39,6 +39,9 @@ export interface IIngestionAgentService {
       splitStartDate?: string;
       splitEndDate?: string;
       selectedModels?: string[];
+      predictionHorizon?: number;
+      predictionFrequency?: string;
+      predictionObjectiveStartDate?: string;
     }
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown>;
   stop(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;

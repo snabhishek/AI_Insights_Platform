@@ -844,7 +844,10 @@ export default function ProjectsPage() {
     overrideUserPrompt?: string,
     selectedModels?: string[],
     splitStartDate?: string,
-    splitEndDate?: string
+    splitEndDate?: string,
+    predictionHorizon?: number,
+    predictionFrequency?: string,
+    predictionObjectiveStartDate?: string
   ) => {
     if (!selectedProject) return;
 
@@ -958,6 +961,9 @@ export default function ProjectsPage() {
         ...(effectiveSplitStartDate ? { splitStartDate: effectiveSplitStartDate } : {}),
         ...(effectiveSplitEndDate ? { splitEndDate: effectiveSplitEndDate } : {}),
         ...(selectedModels && selectedModels.length > 0 ? { selectedModels } : {}),
+        ...(predictionHorizon !== undefined ? { predictionHorizon } : {}),
+        ...(predictionFrequency ? { predictionFrequency } : {}),
+        ...(predictionObjectiveStartDate ? { predictionObjectiveStartDate } : {}),
       };
       const currentSession = action === "resume" ? (pausedSessionId || workflowSessionId) : workflowSessionId;
       if (currentSession) {
@@ -1115,7 +1121,10 @@ export default function ProjectsPage() {
     overrideTargetPhase?: unknown,
     selectedModels?: string[],
     splitStartDate?: string,
-    splitEndDate?: string
+    splitEndDate?: string,
+    predictionHorizon?: number,
+    predictionFrequency?: string,
+    predictionObjectiveStartDate?: string
   ) => {
     if (isApproving || isExecutingRef.current) return;
     setIsApproving(true);
@@ -1152,7 +1161,17 @@ export default function ProjectsPage() {
     setPausedAtPhase(null);
     setPausedStateSnapshot(null);
 
-    void runWorkflow("approve", targetPhase, undefined, selectedModels, splitStartDate, splitEndDate);
+    void runWorkflow(
+      "approve",
+      targetPhase,
+      undefined,
+      selectedModels,
+      splitStartDate,
+      splitEndDate,
+      predictionHorizon,
+      predictionFrequency,
+      predictionObjectiveStartDate
+    );
   };
 
   const handleRetry = (step?: string) => {
@@ -1378,8 +1397,16 @@ export default function ProjectsPage() {
         requiresApproval={requiresApproval}
         workflowMessage={workflowMessage}
         onSelectStage={handleStageSelect}
-        onApprove={(override, selectedModels, splitStartDate, splitEndDate) =>
-          handleApprove(typeof override === "string" ? override : undefined, selectedModels, splitStartDate, splitEndDate)
+        onApprove={(override, selectedModels, splitStartDate, splitEndDate, predictionHorizon, predictionFrequency, predictionObjectiveStartDate) =>
+          handleApprove(
+            typeof override === "string" ? override : undefined,
+            selectedModels,
+            splitStartDate,
+            splitEndDate,
+            predictionHorizon,
+            predictionFrequency,
+            predictionObjectiveStartDate
+          )
         }
         isApproving={isApproving}
         onRetry={(stepId) => handleRetry(stepId)}

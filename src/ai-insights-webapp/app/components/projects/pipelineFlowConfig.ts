@@ -181,6 +181,10 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
     ) {
       targetPhase = "Model Training Execution";
     } else if (
+      nextStepLower.includes("validation")
+    ) {
+      targetPhase = "Model Validation";
+    } else if (
       nextStepLower.includes("model") ||
       nextStepLower.includes("selection")
     ) {
@@ -254,6 +258,9 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
   } else if (targetPhase === "Model Training Execution") {
     statusesToUpdate["Model Training"] = "In Progress";
     outputsToClear.push("modelTraining", "modelValidation");
+  } else if (targetPhase === "Model Validation") {
+    statusesToUpdate["Model Validation"] = "In Progress";
+    outputsToClear.push("modelValidation");
   }
 
   return {

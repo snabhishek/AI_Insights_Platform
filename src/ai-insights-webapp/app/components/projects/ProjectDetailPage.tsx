@@ -42,7 +42,15 @@ interface ProjectDetailPageProps {
   requiresApproval: boolean;
   workflowMessage: string;
   onSelectStage: (stepId: string) => void;
-  onApprove: (overrideTargetPhase?: string, selectedModels?: string[], splitStartDate?: string, splitEndDate?: string) => void;
+  onApprove: (
+    overrideTargetPhase?: string,
+    selectedModels?: string[],
+    splitStartDate?: string,
+    splitEndDate?: string,
+    predictionHorizon?: number,
+    predictionFrequency?: string,
+    predictionObjectiveStartDate?: string
+  ) => void;
   onRetry: (stepId: string) => void;
   isPaused?: boolean;
   pausedAtPhase?: string | null;
@@ -504,12 +512,21 @@ export default function ProjectDetailPage({
               isApproving={isApproving}
             />
           ) : null,
-          "Model Validation": effectiveModelValidation ? (
+          "Model Validation": (effectiveModelValidation || effectiveModelTraining) ? (
             <ModelTrainingValidationStepOutput
               modelValidation={effectiveModelValidation}
+              modelTraining={effectiveModelTraining}
+              trainingConfiguration={effectiveTrainingConfig}
+              modelSelection={effectiveModelSelection}
               projectId={project.id}
               activeSubstep="Model Validation"
               activeRunTimestamp={effectiveRunTimestamp}
+              onApproveValidation={(horizon, frequency, startDate) => {
+                if (onApprove) {
+                  onApprove("Model Validation", undefined, undefined, undefined, horizon, frequency, startDate);
+                }
+              }}
+              isApproving={isApproving}
             />
           ) : null,
           "Feature Engineering": effectiveExogenousScout ? (

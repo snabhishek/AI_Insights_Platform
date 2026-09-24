@@ -5,6 +5,7 @@ import ModelSelectionStepOutput from "./ModelSelectionStepOutput";
 import TrainingConfigurationStepOutput from "./TrainingConfigurationStepOutput";
 import PreFlightStepOutput from "./PreFlightStepOutput";
 import ModelTrainingStepOutput from "./ModelTrainingStepOutput";
+import ModelValidationStepOutput from "./ModelValidationStepOutput";
 
 interface ModelTrainingValidationOutputProps {
   modelSelection?: any;
@@ -18,6 +19,7 @@ interface ModelTrainingValidationOutputProps {
   onSelectionConfirmed?: (selectedModels: string[]) => void;
   onApproveTraining?: (selectedModels: string[], splitStartDate?: string, splitEndDate?: string) => void;
   onApprove?: (selectedModels?: string[], splitEndDate?: string) => void;
+  onApproveValidation?: (horizon: number, frequency: string, startDate?: string) => void;
   isApproving?: boolean;
 }
 
@@ -33,6 +35,7 @@ export default function ModelTrainingValidationStepOutput({
   onSelectionConfirmed,
   onApproveTraining,
   onApprove,
+  onApproveValidation,
   isApproving,
 }: ModelTrainingValidationOutputProps) {
   // 1. Model Selection Substep
@@ -128,6 +131,21 @@ export default function ModelTrainingValidationStepOutput({
         projectId={projectId}
         activeRunTimestamp={activeRunTimestamp}
         onApproveTraining={onApproveTraining}
+        isApproving={isApproving}
+      />
+    );
+  }
+
+  if (activeSubstep === "Model Validation" || (modelValidation && !modelTraining)) {
+    return (
+      <ModelValidationStepOutput
+        modelValidation={modelValidation}
+        modelTraining={modelTraining}
+        trainingConfiguration={trainingConfiguration}
+        modelSelection={modelSelection}
+        projectId={projectId}
+        activeRunTimestamp={activeRunTimestamp}
+        onApproveValidation={onApproveValidation}
         isApproving={isApproving}
       />
     );

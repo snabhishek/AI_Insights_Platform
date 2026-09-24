@@ -177,6 +177,66 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS agent_jobs_project_id_idx ON agent_jobs (project_id);
     `);
 
+    // 10. Model Validation Runs table
+    await query(`
+      CREATE TABLE IF NOT EXISTS model_validation_runs (
+        id VARCHAR(50) PRIMARY KEY,
+        project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+        evaluation_mode VARCHAR(50) NOT NULL,
+        prediction_objective_start_date VARCHAR(50),
+        prediction_objective_horizon INTEGER NOT NULL DEFAULT 12,
+        prediction_objective_frequency VARCHAR(50) NOT NULL DEFAULT 'Weekly',
+        dataset_reference TEXT,
+        dataset_schema_version VARCHAR(50),
+        actual_data_coverage DOUBLE PRECISION,
+        champion_model_id VARCHAR(100),
+        status VARCHAR(50) NOT NULL DEFAULT 'Completed',
+        summary TEXT,
+        validation_directory VARCHAR(500),
+        report_artifact_path TEXT,
+        predictions_artifact_path TEXT,
+        chart_data JSONB DEFAULT '{}'::jsonb,
+        warnings TEXT[] DEFAULT '{}'::text[],
+        metadata JSONB DEFAULT '{}'::jsonb,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+    await query(`
+      CREATE INDEX IF NOT EXISTS model_validation_runs_project_id_idx ON model_validation_runs (project_id);
+      CREATE INDEX IF NOT EXISTS model_validation_runs_mode_idx ON model_validation_runs (evaluation_mode);
+    `);
+
+    // 11. Model Validation Results table
+    await query(`
+      CREATE TABLE IF NOT EXISTS model_validation_results (
+        id VARCHAR(50) PRIMARY KEY,
+        validation_run_id VARCHAR(50) NOT NULL REFERENCES model_validation_runs(id) ON DELETE CASCADE,
+        model_id VARCHAR(100) NOT NULL,
+        display_name VARCHAR(255),
+        framework VARCHAR(50),
+        execution_status VARCHAR(50) NOT NULL DEFAULT 'Completed',
+        score DOUBLE PRECISION,
+        primary_metric_name VARCHAR(100),
+        metrics JSONB DEFAULT '{}'::jsonb,
+        totals JSONB DEFAULT '{}'::jsonb,
+        actual_total DOUBLE PRECISION,
+        forecast_total DOUBLE PRECISION,
+        difference DOUBLE PRECISION,
+        difference_percentage DOUBLE PRECISION,
+        evaluation_record_count INTEGER DEFAULT 0,
+        actual_data_coverage DOUBLE PRECISION,
+        chart_series JSONB DEFAULT '{}'::jsonb,
+        model_artifact_path TEXT,
+        error_message TEXT,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+    `);
+    await query(`
+      CREATE INDEX IF NOT EXISTS model_validation_results_run_id_idx ON model_validation_results (validation_run_id);
+      CREATE INDEX IF NOT EXISTS model_validation_results_model_id_idx ON model_validation_results (model_id);
+    `);
+
 
     // 7. Seed 18 mock data sources if connectors table is empty
     const connCheck = await query("SELECT COUNT(*) FROM connectors");

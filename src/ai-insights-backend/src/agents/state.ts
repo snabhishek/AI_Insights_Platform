@@ -36,6 +36,9 @@ export interface IngestionServices {
   onThinkingUpdate?: (substep: string) => Promise<void> | void;
   isCancelled?: () => boolean;
   abortSignal?: AbortSignal;
+  predictionHorizon?: number;
+  predictionFrequency?: string;
+  predictionObjectiveStartDate?: string;
 }
 
 export const AgentState = Annotation.Root({
@@ -69,6 +72,18 @@ export const AgentState = Annotation.Root({
   selectedModels: Annotation<string[]>({
     reducer: (left, right) => (Array.isArray(right) ? right : left),
     default: () => [],
+  }),
+  predictionHorizon: Annotation<number>({
+    reducer: (left, right) => (typeof right === "number" && !isNaN(right) ? right : left),
+    default: () => 12,
+  }),
+  predictionFrequency: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "Weekly",
+  }),
+  predictionObjectiveStartDate: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
   }),
   inspection: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   schemaResolution: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),

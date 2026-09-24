@@ -209,6 +209,9 @@ export class IngestionAgentService implements IIngestionAgentService {
       splitStartDate?: string;
       splitEndDate?: string;
       selectedModels?: string[];
+      predictionHorizon?: number;
+      predictionFrequency?: string;
+      predictionObjectiveStartDate?: string;
     }
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
     const traceSession = await this.traceHelper.createTraceSession();
@@ -941,6 +944,9 @@ export class IngestionAgentService implements IIngestionAgentService {
                 splitStartDate: options?.splitStartDate || "",
                 splitEndDate: options?.splitEndDate || options?.splitDate || "",
                 selectedModels: options?.selectedModels || [],
+                predictionHorizon: options?.predictionHorizon ?? 12,
+                predictionFrequency: options?.predictionFrequency || "Weekly",
+                predictionObjectiveStartDate: options?.predictionObjectiveStartDate || "",
                 batchedTables: [],
                 inspection: {},
                 dataProfile: {},
@@ -1338,6 +1344,15 @@ export class IngestionAgentService implements IIngestionAgentService {
                     } else if (savedAgentState.selectedModels && savedAgentState.selectedModels.length > 0) {
                       stateUpdates.selectedModels = savedAgentState.selectedModels;
                     }
+                    if (options?.predictionHorizon !== undefined) {
+                      stateUpdates.predictionHorizon = options.predictionHorizon;
+                    }
+                    if (options?.predictionFrequency) {
+                      stateUpdates.predictionFrequency = options.predictionFrequency;
+                    }
+                    if (options?.predictionObjectiveStartDate) {
+                      stateUpdates.predictionObjectiveStartDate = options.predictionObjectiveStartDate;
+                    }
                     if (Object.keys(stateUpdates).length > 0) {
                       console.info(`[Workflow] Syncing project DB state into graph checkpointer for thread ${threadId}: ${Object.keys(stateUpdates).join(", ")}`);
                       await workflow.updateState(config, stateUpdates);
@@ -1361,6 +1376,9 @@ export class IngestionAgentService implements IIngestionAgentService {
                       splitStartDate: options?.splitStartDate || savedAgentState.splitStartDate || "",
                       splitEndDate: options?.splitEndDate || savedAgentState.splitEndDate || "",
                       selectedModels: options?.selectedModels || savedAgentState.selectedModels || [],
+                      predictionHorizon: options?.predictionHorizon ?? savedAgentState.predictionHorizon ?? 12,
+                      predictionFrequency: options?.predictionFrequency || savedAgentState.predictionFrequency || "Weekly",
+                      predictionObjectiveStartDate: options?.predictionObjectiveStartDate || savedAgentState.predictionObjectiveStartDate || "",
                     };
 
                     await workflow.updateState(config, restoredState, predecessorNode);

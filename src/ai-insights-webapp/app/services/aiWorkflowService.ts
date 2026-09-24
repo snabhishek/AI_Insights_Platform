@@ -11,6 +11,9 @@ export interface WorkflowRequestPayload {
   splitStartDate?: string;
   splitEndDate?: string;
   selectedModels?: string[];
+  predictionHorizon?: number;
+  predictionFrequency?: string;
+  predictionObjectiveStartDate?: string;
 }
 
 export interface WorkflowResponseData {
