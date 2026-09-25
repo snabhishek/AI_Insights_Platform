@@ -1192,50 +1192,45 @@ export function buildResultFromGraphState(
 }
 
 export function mapRetryStepToInterruptNode(step?: string): string | undefined {
-  const mapping: Record<string, string> = {
-    inspect: "inspect",
-    profileData: "profileData",
-    preprocess: "profileData",
-    resolveSchema: "resolveSchema",
-    hierarchyMapper: "hierarchyMapperNode",
-    hierarchyMapperNode: "hierarchyMapperNode",
-    "Hierarchy Mapper": "hierarchyMapperNode",
-    featureArchitect: "featureArchitectNode",
-    featureArchitectNode: "featureArchitectNode",
-    "Feature Architect": "featureArchitectNode",
-    featureValidator: "featureArchitectNode",
-    featureValidatorNode: "featureArchitectNode",
-    "Feature Validator": "featureArchitectNode",
-    exogenous: "exogenous",
-    exogenousScout: "exogenous",
-    "Exogenous Scout": "exogenous",
-    "Data Ingestion": "inspect",
-    "Data Profiling": "profileData",
-    "Schema Resolver": "resolveSchema",
-    "Feature Engineering": "hierarchyMapperNode",
-    trainingConfiguration: "trainingConfigurationNode",
-    trainingConfigurationNode: "trainingConfigurationNode",
-    "Training Configuration": "trainingConfigurationNode",
-    preFlight: "preFlightNode",
-    preFlightNode: "preFlightNode",
-    "Pre Flight": "preFlightNode",
-    modelTraining: "modelTrainingNode",
-    modelTrainingNode: "modelTrainingNode",
-    "Model Training": "modelTrainingNode",
-    modelEvaluation: "modelEvaluationNode",
-    modelEvaluationNode: "modelEvaluationNode",
-    "Model Evaluation": "modelEvaluationNode",
-    modelValidation: "modelValidationNode",
-    modelValidationNode: "modelValidationNode",
-    "Model Validation": "modelValidationNode",
-    modelSelection: "modelSelectionNode",
-    modelSelectionNode: "modelSelectionNode",
-    finalModelSelection: "finalModelSelectionNode",
-    finalModelSelectionNode: "finalModelSelectionNode",
-    "Model Selection": "modelSelectionNode",
-    "Model Training & Validation": "modelSelectionNode",
-  };
-  return step ? mapping[step] : undefined;
+  if (!step) return "modelSelectionNode";
+  const s = step.toLowerCase().trim();
+
+  // Data Ingestion stage -> always retry entire stage from inspect
+  if (
+    s === "inspect" ||
+    s === "data inspection" ||
+    s === "profiledata" ||
+    s === "data profiling" ||
+    s === "preprocess" ||
+    s === "resolveschema" ||
+    s === "schema resolver" ||
+    s === "data ingestion"
+  ) {
+    return "inspect";
+  }
+
+  // Feature Engineering stage -> always retry entire stage from hierarchyMapperNode
+  if (
+    s === "hierarchymapper" ||
+    s === "hierarchymappernode" ||
+    s === "hierarchy mapper" ||
+    s === "featurearchitect" ||
+    s === "featurearchitectnode" ||
+    s === "feature architect" ||
+    s === "featurevalidator" ||
+    s === "featurevalidatornode" ||
+    s === "feature validator" ||
+    s === "exogenous" ||
+    s === "exogenousscout" ||
+    s === "exogenous scout" ||
+    s === "feature engineering"
+  ) {
+    return "hierarchyMapperNode";
+  }
+
+  // Model Training & Validation stage -> always retry entire stage from modelSelectionNode
+  // Covers modelSelection, trainingConfiguration, preFlight, modelTrainingCode, modelTrainingExec, modelValidation, etc.
+  return "modelSelectionNode";
 }
 
 export async function logMilestoneThinking(

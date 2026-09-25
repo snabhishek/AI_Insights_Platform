@@ -154,7 +154,6 @@ export const AgentState = Annotation.Root({
         return {
           inspect: "Pending",
           profileData: "Pending",
-          preprocess: "Pending",
           resolveSchema: "Pending",
           hierarchyMapper: "Pending",
           featureArchitect: "Pending",
@@ -172,7 +171,6 @@ export const AgentState = Annotation.Root({
     default: () => ({
       inspect: "Pending",
       profileData: "Pending",
-      preprocess: "Pending",
       resolveSchema: "Pending",
       hierarchyMapper: "Pending",
       featureArchitect: "Pending",

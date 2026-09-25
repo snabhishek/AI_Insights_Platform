@@ -56,6 +56,13 @@ The Model Training phase has prepared and verified the following artifacts in `<
 
    A scikit-learn `ColumnTransformer` or Pipeline fitted strictly on the training partition.
 
+   **MANDATORY PREPROCESSOR REUSE & FEATURE ALIGNMENT**:
+   - Load `preprocessor.joblib` directly from `<runTimestamp>/<projectName>_model_training/artifacts/models/preprocessor.joblib`.
+   - Align input feature columns strictly to `preprocessor.feature_names_in_` or `estimator.feature_names_in_`.
+   - Do NOT invent or synthesize ad-hoc datetime or calendar features that were not present in the training partition.
+   - If any expected column is missing, impute it with default 0.0 or mode; if extra columns exist, drop them.
+   - The transformed feature count (`X_trans.shape[1]`) MUST match what the estimator expects (`estimator.n_features_in_`).
+
    Reuse the fitted preprocessor when required by the trained model's inference contract. Do not fit a new preprocessor on evaluation data unless explicitly required by the existing training/inference design.
 
 3. **Finalized Dataset**
@@ -534,6 +541,8 @@ Preserve the existing output format. For non-time-series prediction tasks, popul
 13. Do not access historical run folders or resources outside the active run scope.
 14. Do not silently ignore model incompatibilities, missing inputs, or evaluation failures.
 15. Do not modify unrelated training workflows or existing artifact contracts unnecessarily.
+16. **NON-ZERO EXIT ON COMPLETE VALIDATION FAILURE**: If zero candidate models successfully generate predictions and valid metrics (e.g. all candidate models fail due to missing dependencies, feature count mismatches, or exception throws), `validation_runner.py` MUST log the failure details, write `model_validation_report.json`, and call `sys.exit(1)`. It **MUST NEVER exit with code 0** when all candidate models fail. Exiting with code 1 ensures the Docker execution registers failure and invokes the Self-Healing Code Rectifier.
+17. **FEATURE DIMENSION INTEGRITY**: Never feed unmatched feature shapes into estimators. Ensure `X_trans.shape[1] == estimator.n_features_in_`.
 
 ---
 
@@ -557,3 +566,4 @@ Preserve the existing output format. For non-time-series prediction tasks, popul
 16. Errors, warnings, model failures, and unavailable evaluation results are clearly represented.
 17. Tests cover forecasting and at least one non-forecasting prediction task.
 18. No unauthorized filesystem access, data leakage, or silent inference fallback is introduced.
+19. At least one candidate model successfully completes inference with valid metrics, or the runner exits with code 1.

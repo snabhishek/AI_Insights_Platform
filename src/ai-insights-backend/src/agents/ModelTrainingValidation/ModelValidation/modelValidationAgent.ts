@@ -121,6 +121,61 @@ export class ModelValidationAgent {
   }
 
   /**
+   * Validates whether a model validation report exists and contains at least
+   * one successfully evaluated candidate model with non-empty metrics.
+   */
+  public static validateReport(reportPath: string): {
+    success: boolean;
+    reason?: string;
+    failedModelErrors?: string[];
+  } {
+    if (!fs.existsSync(reportPath)) {
+      return { success: false, reason: "model_validation_report.json does not exist." };
+    }
+    try {
+      const content = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
+      const modelsList: any[] =
+        content?.ranked_models ||
+        (content?.models
+          ? Array.isArray(content.models)
+            ? content.models
+            : Object.values(content.models)
+          : []);
+
+      if (!modelsList || modelsList.length === 0) {
+        return { success: false, reason: "No models found in model_validation_report.json." };
+      }
+
+      const failedModelErrors: string[] = [];
+      const successful = modelsList.filter((m) => {
+        const status = (m.status || "").toLowerCase();
+        const hasMetrics = m.metrics && typeof m.metrics === "object" && Object.keys(m.metrics).length > 0;
+        if (status !== "completed" || !hasMetrics) {
+          const errMsg = m.error || m.status_message || (hasMetrics ? "Status not Completed" : "Metrics are empty or missing");
+          failedModelErrors.push(`Model '${m.displayName || m.model_id || "unknown"}': ${errMsg}`);
+          return false;
+        }
+        return true;
+      });
+
+      if (successful.length === 0) {
+        return {
+          success: false,
+          reason: `All ${modelsList.length} candidate model(s) failed validation.`,
+          failedModelErrors,
+        };
+      }
+
+      return { success: true, failedModelErrors };
+    } catch (err: any) {
+      return {
+        success: false,
+        reason: `Failed to parse model_validation_report.json: ${err?.message || err}`,
+      };
+    }
+  }
+
+  /**
    * Resolves project directories and artifact locations.
    */
   private static getProjectContext(state: AgentStateType, services: IngestionServices) {
@@ -345,6 +400,22 @@ export class ModelValidationAgent {
 
     const baseValidationPackages = ["pandas", "numpy", "scikit-learn", "pyarrow", "pyyaml", "joblib", "lightgbm"];
     let accumulatedPackages: string[] = [...baseValidationPackages];
+
+    // Inherit packages from model training requirements.txt if present
+    const trainingReqPath = path.join(modelTrainingDir, "requirements.txt");
+    if (fs.existsSync(trainingReqPath)) {
+      try {
+        const trainingReqLines = fs
+          .readFileSync(trainingReqPath, "utf-8")
+          .split("\n")
+          .map((line) => line.trim())
+          .filter((line) => line && !line.startsWith("#"));
+        accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...trainingReqLines]));
+      } catch (err: any) {
+        console.warn("[ModelValidationAgent] Failed to read training requirements.txt:", err?.message || err);
+      }
+    }
+
     if (Array.isArray(codingResult.requiredPackages)) {
       accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...codingResult.requiredPackages]));
     }
@@ -401,6 +472,14 @@ export class ModelValidationAgent {
       };
     }
 
+    // Ensure initial requirements.txt exists in modelValidationDir
+    try {
+      const valReqPath = path.join(modelValidationDir, "requirements.txt");
+      fs.writeFileSync(valReqPath, accumulatedPackages.join("\n"), "utf-8");
+    } catch (writeErr: any) {
+      console.warn("[ModelValidationAgent] Failed to write initial requirements.txt:", writeErr?.message || writeErr);
+    }
+
     // 4. Execution in Container Sandbox
     const relDatasetPath = path.relative(projectRootDir, datasetPath).replace(/\\/g, "/");
     const relModelsDir = path.relative(projectRootDir, modelsDir).replace(/\\/g, "/");
@@ -441,20 +520,23 @@ export class ModelValidationAgent {
       extraArgs
     );
 
-    // 5. Self-Healing Rectification Loop if Container Execution Fails
+    // 5. Self-Healing Rectification Loop if Container Execution Fails or all candidate models failed
     const maxRetries = options?.maxRetries ?? 20;
     let attempts = 0;
 
     const reportPath = path.join(modelValidationDir, "reports", "model_validation_report.json");
+    let validationHealth = ModelValidationAgent.validateReport(reportPath);
 
-    while ((!execResult.success || !fs.existsSync(reportPath)) && attempts < maxRetries) {
+    while ((!execResult.success || !validationHealth.success) && attempts < maxRetries) {
       attempts++;
-      console.warn(`[ModelValidationAgent] Execution attempt ${attempts} failed. Invoking Self-Healing Rectifier...`);
+      console.warn(
+        `[ModelValidationAgent] Validation execution attempt ${attempts} failed (exec success: ${execResult.success}, valid report: ${validationHealth.success}, reason: ${validationHealth.reason || "N/A"}). Invoking Self-Healing Rectifier...`
+      );
 
       await logMilestoneThinking(
         services,
         "Model Validation",
-        `Validation execution attempt ${attempts} encountered error. Diagnosing and rectifying...`
+        `Validation execution attempt ${attempts} encountered error (${validationHealth.reason || "Process error"}). Diagnosing and rectifying...`
       );
 
       const rectifierPrompt = await getPromptFromFile(
@@ -462,19 +544,25 @@ export class ModelValidationAgent {
         "You are an expert AI Python Debugger and Diagnostic Advisor."
       );
 
+      const failedModelDetails = validationHealth.failedModelErrors?.length
+        ? `\n--- Candidate Model Failures ---\n${validationHealth.failedModelErrors.join("\n")}`
+        : "";
+
       const rectifierContext = [
         `Validation runner execution failed for project '${projectName}'.`,
-        `--- Error Traceback ---`,
-        execResult.stderr || execResult.stdout || "Report was not generated.",
+        validationHealth.reason ? `Validation Health Check: ${validationHealth.reason}` : "",
+        failedModelDetails,
+        `--- Error Traceback / Logs ---`,
+        execResult.stderr || execResult.stdout || "Report was not generated or models failed.",
         `--- Execution Command Arguments ---`,
         extraArgs.join(" "),
-        `Diagnose the root cause and advise on exact code modifications to '${runTimestamp}/${projectName}_model_validation/validation_runner.py'.`,
-      ].join("\n\n");
+        `Diagnose the root cause (e.g. missing package dependencies, feature count/preprocessing mismatch such as preprocessor.joblib vs validation features, or model inference exceptions) and advise on exact code modifications to '${runTimestamp}/${projectName}_model_validation/validation_runner.py'. If packages are missing, list them in requiredPackages.`,
+      ].filter(Boolean).join("\n\n");
 
       const rectifierFallback: ValidationRectifierResult = {
         status: "NeedsRectification",
         failingFile: "validation_runner.py",
-        rootCause: "Execution failed to generate report.",
+        rootCause: validationHealth.reason || "Execution failed to generate a valid report.",
       };
 
       try {
@@ -492,22 +580,19 @@ export class ModelValidationAgent {
           }
         );
 
-        if (Array.isArray(diagnostic.requiredPackages)) {
+        if (Array.isArray(diagnostic.requiredPackages) && diagnostic.requiredPackages.length > 0) {
           accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...diagnostic.requiredPackages]));
+          try {
+            const valReqPath = path.join(modelValidationDir, "requirements.txt");
+            fs.writeFileSync(valReqPath, accumulatedPackages.join("\n"), "utf-8");
+          } catch (writeErr: any) {
+            console.warn("[ModelValidationAgent] Failed to update validation requirements.txt:", writeErr?.message || writeErr);
+          }
         }
 
         if (diagnostic.recommendedCodeSnippet && diagnostic.failingFile) {
           const targetFile = path.join(modelValidationDir, path.basename(diagnostic.failingFile));
-          if (fs.existsSync(targetFile)) {
-            fs.writeFileSync(targetFile, diagnostic.recommendedCodeSnippet, "utf-8");
-          } else {
-            // File doesn't exist yet — write the recommended snippet as the new file
-            fs.writeFileSync(
-              path.join(modelValidationDir, path.basename(diagnostic.failingFile)),
-              diagnostic.recommendedCodeSnippet,
-              "utf-8"
-            );
-          }
+          fs.writeFileSync(targetFile, diagnostic.recommendedCodeSnippet, "utf-8");
         } else {
           // Rectifier did not provide a code fix — re-invoke the coding agent
           console.warn("[ModelValidationAgent] Rectifier did not provide code snippet. Re-invoking coding agent...");
@@ -520,7 +605,7 @@ export class ModelValidationAgent {
             const regenResult = await invokeAgentJson<ValidationCodingAgentResult>(
               "modelValidationCode",
               model,
-              userPrompt + `\n\nPREVIOUS EXECUTION FAILED:\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
+              userPrompt + `\n\nPREVIOUS EXECUTION FAILED:\n${validationHealth.reason || ""}\n${failedModelDetails}\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
               codingFallback,
               services,
               {
@@ -532,8 +617,14 @@ export class ModelValidationAgent {
                 recursionLimit: 150,
               }
             );
-            if (Array.isArray(regenResult?.requiredPackages)) {
+            if (Array.isArray(regenResult?.requiredPackages) && regenResult.requiredPackages.length > 0) {
               accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...regenResult.requiredPackages]));
+              try {
+                const valReqPath = path.join(modelValidationDir, "requirements.txt");
+                fs.writeFileSync(valReqPath, accumulatedPackages.join("\n"), "utf-8");
+              } catch (writeErr: any) {
+                console.warn("[ModelValidationAgent] Failed to update validation requirements.txt:", writeErr?.message || writeErr);
+              }
             }
           } catch (regenErr: any) {
             console.warn("[ModelValidationAgent] Coding agent re-invocation failed:", regenErr?.message || regenErr);
@@ -551,7 +642,7 @@ export class ModelValidationAgent {
           const fallbackResult = await invokeAgentJson<ValidationCodingAgentResult>(
             "modelValidationCode",
             model,
-            userPrompt + `\n\nPREVIOUS EXECUTION FAILED:\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
+            userPrompt + `\n\nPREVIOUS EXECUTION FAILED:\n${validationHealth.reason || ""}\n${failedModelDetails}\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
             codingFallback,
             services,
             {
@@ -563,8 +654,14 @@ export class ModelValidationAgent {
               recursionLimit: 150,
             }
           );
-          if (Array.isArray(fallbackResult?.requiredPackages)) {
+          if (Array.isArray(fallbackResult?.requiredPackages) && fallbackResult.requiredPackages.length > 0) {
             accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...fallbackResult.requiredPackages]));
+            try {
+              const valReqPath = path.join(modelValidationDir, "requirements.txt");
+              fs.writeFileSync(valReqPath, accumulatedPackages.join("\n"), "utf-8");
+            } catch (writeErr: any) {
+              console.warn("[ModelValidationAgent] Failed to update validation requirements.txt:", writeErr?.message || writeErr);
+            }
           }
         } catch (regenErr: any) {
           console.warn("[ModelValidationAgent] Coding agent fallback re-invocation failed:", regenErr?.message || regenErr);
@@ -581,6 +678,8 @@ export class ModelValidationAgent {
         accumulatedPackages,
         extraArgs
       );
+
+      validationHealth = ModelValidationAgent.validateReport(reportPath);
     }
 
     // 6. Parse Output Report
@@ -594,14 +693,19 @@ export class ModelValidationAgent {
     }
 
     const runs: CandidateModelValidationRun[] = report?.ranked_models || (report?.models ? Object.values(report.models) : []);
-    const championModel = runs.find((r) => r.model_id === report?.champion_model_id) || runs[0];
+    const successfulRuns = runs.filter(
+      (r) => (r.status || "").toLowerCase() === "completed" && r.metrics && Object.keys(r.metrics).length > 0
+    );
+    const championModel =
+      runs.find((r) => r.model_id === report?.champion_model_id && (r.status || "").toLowerCase() === "completed") ||
+      successfulRuns[0];
 
-    const executionSuccess = execResult.success && !!report;
-    const finalStatus = executionSuccess || runs.length > 0 ? "Completed" : "Failed";
+    const executionSuccess = execResult.success && !!report && successfulRuns.length > 0;
+    const finalStatus = executionSuccess ? "Completed" : "Failed";
 
     const summary = executionSuccess
-      ? `Model Validation completed successfully in ${mode.replace("_", " ")} mode for ${runs.length} candidate model(s). Champion: ${championModel?.displayName || championModel?.model_id || "selected model"}.`
-      : `Model Validation finished with warnings: ${execResult.stderr.slice(0, 250)}`;
+      ? `Model Validation completed successfully in ${mode.replace("_", " ")} mode for ${successfulRuns.length} candidate model(s). Champion: ${championModel?.displayName || championModel?.model_id || "selected model"}.`
+      : `Model Validation failed: ${runs.length === 0 ? "No models validated" : "All candidate models failed during validation"}. ${execResult.stderr.slice(0, 250)}`;
 
     await logMilestoneThinking(
       services,
@@ -625,7 +729,7 @@ export class ModelValidationAgent {
       predictionsArtifact: `${projectName}_model_validation/artifacts/predictions/validation_predictions.parquet`,
       reportArtifact: `${projectName}_model_validation/reports/model_validation_report.json`,
       warnings: report?.warnings || [],
-      error: executionSuccess ? undefined : execResult.stderr,
+      error: executionSuccess ? undefined : (execResult.stderr || summary),
     };
   }
 }

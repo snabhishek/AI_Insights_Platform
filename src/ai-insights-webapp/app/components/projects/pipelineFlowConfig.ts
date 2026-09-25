@@ -202,12 +202,18 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
   const outputsToClear: string[] = [];
 
   if (targetPhase === "Feature Engineering") {
-    // Starting Feature Engineering: clear all downstream model phase state
+    // Starting Feature Engineering: earlier phase Data Ingestion is complete
+    statusesToUpdate["Data Ingestion"] = "Completed";
+    statusesToUpdate["Data Inspection"] = "Completed";
+    statusesToUpdate["Data Profiling"] = "Completed";
+    statusesToUpdate["Schema Resolver"] = "Completed";
+
     statusesToUpdate["Feature Engineering"] = "In Progress";
     statusesToUpdate["Hierarchy Mapper"] = "In Progress";
     statusesToUpdate["Feature Architect"] = "Pending";
     statusesToUpdate["Feature Validator"] = "Pending";
     statusesToUpdate["Exogenous Scout"] = "Pending";
+    statusesToUpdate["Model Training & Validation"] = "Pending";
     statusesToUpdate["Model Selection"] = "Pending";
     statusesToUpdate["Training Configuration"] = "Pending";
     statusesToUpdate["Pre Flight"] = "Pending";
@@ -223,6 +229,18 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
       "modelValidation"
     );
   } else if (targetPhase === "Model Selection") {
+    // Starting Model Phase: Data Ingestion and Feature Engineering are complete
+    statusesToUpdate["Data Ingestion"] = "Completed";
+    statusesToUpdate["Data Inspection"] = "Completed";
+    statusesToUpdate["Data Profiling"] = "Completed";
+    statusesToUpdate["Schema Resolver"] = "Completed";
+    statusesToUpdate["Feature Engineering"] = "Completed";
+    statusesToUpdate["Hierarchy Mapper"] = "Completed";
+    statusesToUpdate["Feature Architect"] = "Completed";
+    statusesToUpdate["Feature Validator"] = "Completed";
+    statusesToUpdate["Exogenous Scout"] = "Completed";
+
+    statusesToUpdate["Model Training & Validation"] = "In Progress";
     statusesToUpdate["Model Selection"] = "In Progress";
     statusesToUpdate["Training Configuration"] = "Pending";
     statusesToUpdate["Pre Flight"] = "Pending";

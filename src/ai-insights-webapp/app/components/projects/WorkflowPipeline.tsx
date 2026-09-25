@@ -180,35 +180,30 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
   const s2 = (pipelineStatuses["Data Profiling"] as PipelineStatus) ?? "Not Started";
   const s3 = (pipelineStatuses["Schema Resolver"] as PipelineStatus) ?? "Not Started";
 
-  // If Data Ingestion is explicitly In Progress or any of its substeps is In Progress, it is In Progress!
-  if (
-    pipelineStatuses["Data Ingestion"] === "In Progress" ||
-    [s1, s2, s3].some((s) => s === "In Progress")
-  ) {
-    return "In Progress";
-  }
-
-  // If all 3 substeps are Completed, then it's Completed
-  if (s1 === "Completed" && s2 === "Completed" && s3 === "Completed") {
-    return "Completed";
-  }
-
-  // If some are completed while others are running or not started, it's In Progress
-  if ([s1, s2, s3].some((s) => s === "Completed")) {
-    return "In Progress";
-  }
-
+  // 1. Explicitly marked completed
   if (pipelineStatuses["Data Ingestion"] === "Completed") {
     return "Completed";
   }
 
-  const isDownstreamActive =
+  // 2. All 3 substeps Completed, or terminal substep (Schema Resolver) Completed
+  if ((s1 === "Completed" && s2 === "Completed" && s3 === "Completed") || s3 === "Completed") {
+    return "Completed";
+  }
+
+  // 3. Downstream phase is active, pending, or completed -> Data Ingestion MUST be Completed
+  const isDownstreamActiveOrPending =
     pipelineStatuses["Feature Engineering"] === "Completed" ||
     pipelineStatuses["Feature Engineering"] === "In Progress" ||
+    pipelineStatuses["Feature Engineering"] === "Pending" ||
+    pipelineStatuses["Hierarchy Mapper"] === "Completed" ||
+    pipelineStatuses["Hierarchy Mapper"] === "In Progress" ||
+    pipelineStatuses["Hierarchy Mapper"] === "Pending" ||
     pipelineStatuses["Model Selection"] === "Completed" ||
     pipelineStatuses["Model Selection"] === "In Progress" ||
+    pipelineStatuses["Model Selection"] === "Pending" ||
     pipelineStatuses["Training Configuration"] === "Completed" ||
     pipelineStatuses["Training Configuration"] === "In Progress" ||
+    pipelineStatuses["Training Configuration"] === "Pending" ||
     pipelineStatuses["Pre Flight"] === "Completed" ||
     pipelineStatuses["Pre Flight"] === "In Progress" ||
     pipelineStatuses["Model Training"] === "Completed" ||
@@ -216,8 +211,21 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
     pipelineStatuses["Model Validation"] === "Completed" ||
     pipelineStatuses["Model Validation"] === "In Progress";
 
-  if (isDownstreamActive) {
+  if (isDownstreamActiveOrPending) {
     return "Completed";
+  }
+
+  // 4. In Progress if explicitly In Progress or any substep is actively In Progress
+  if (
+    pipelineStatuses["Data Ingestion"] === "In Progress" ||
+    [s1, s2, s3].some((s) => s === "In Progress")
+  ) {
+    return "In Progress";
+  }
+
+  // 5. If some are completed while others are not started or pending, it's In Progress
+  if ([s1, s2, s3].some((s) => s === "Completed")) {
+    return "In Progress";
   }
 
   if ([s1, s2, s3].some((s) => s === "Pending")) {
@@ -239,33 +247,19 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
   const s3 = (pipelineStatuses["Feature Validator"] as PipelineStatus) ?? "Not Started";
   const s4 = (pipelineStatuses["Exogenous Scout"] as PipelineStatus) ?? "Not Started";
 
-  // If Feature Engineering is explicitly In Progress or any of its substeps is In Progress, it is In Progress!
-  if (
-    pipelineStatuses["Feature Engineering"] === "In Progress" ||
-    [s1, s2, s3, s4].some((s) => s === "In Progress")
-  ) {
-    return "In Progress";
-  }
-
-  // Completed if all core steps completed
-  if (s1 === "Completed" && s2 === "Completed" && (s3 === "Completed" || s4 === "Completed")) {
-    return "Completed";
-  }
-
-  // In progress if partially completed
-  if ([s1, s2, s3, s4].some((s) => s === "Completed")) {
-    return "In Progress";
-  }
-
+  // 1. Explicitly marked completed
   if (pipelineStatuses["Feature Engineering"] === "Completed") {
     return "Completed";
   }
 
+  // 2. Downstream model phase is active, pending, or completed -> Feature Engineering MUST be Completed
   const isModelPhaseActiveOrCompleted =
     pipelineStatuses["Model Selection"] === "Completed" ||
     pipelineStatuses["Model Selection"] === "In Progress" ||
+    pipelineStatuses["Model Selection"] === "Pending" ||
     pipelineStatuses["Training Configuration"] === "Completed" ||
     pipelineStatuses["Training Configuration"] === "In Progress" ||
+    pipelineStatuses["Training Configuration"] === "Pending" ||
     pipelineStatuses["Pre Flight"] === "Completed" ||
     pipelineStatuses["Pre Flight"] === "In Progress" ||
     pipelineStatuses["Model Training"] === "Completed" ||
@@ -275,6 +269,24 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
 
   if (isModelPhaseActiveOrCompleted) {
     return "Completed";
+  }
+
+  // 3. Completed if all core steps completed
+  if (s1 === "Completed" && s2 === "Completed" && (s3 === "Completed" || s4 === "Completed")) {
+    return "Completed";
+  }
+
+  // 4. In Progress if explicitly In Progress or any substep is In Progress
+  if (
+    pipelineStatuses["Feature Engineering"] === "In Progress" ||
+    [s1, s2, s3, s4].some((s) => s === "In Progress")
+  ) {
+    return "In Progress";
+  }
+
+  // 5. In progress if partially completed
+  if ([s1, s2, s3, s4].some((s) => s === "Completed")) {
+    return "In Progress";
   }
 
   if ([s1, s2, s3, s4].some((s) => s === "Pending")) {
@@ -293,9 +305,18 @@ const MODEL_SUBSTEPS = [
 
 function calculateModelStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
   const statuses = MODEL_SUBSTEPS.map((step) => (pipelineStatuses[step] as PipelineStatus) ?? "Not Started");
-  if (statuses.every((status) => status === "Completed")) return "Completed";
-  if (statuses.some((status) => status === "In Progress" || status === "Completed")) return "In Progress";
-  if (statuses.some((status) => status === "Pending")) return "Pending";
+  if (pipelineStatuses["Model Training & Validation"] === "Completed" || statuses.every((status) => status === "Completed")) {
+    return "Completed";
+  }
+  if (pipelineStatuses["Model Training & Validation"] === "In Progress" || statuses.some((status) => status === "In Progress")) {
+    return "In Progress";
+  }
+  if (statuses.some((status) => status === "Completed")) {
+    return "In Progress";
+  }
+  if (pipelineStatuses["Model Training & Validation"] === "Pending" || statuses.some((status) => status === "Pending")) {
+    return "Pending";
+  }
   return "Not Started";
 }
 
@@ -619,7 +640,7 @@ export default function WorkflowPipeline({
               View Details
             </button>
             <button
-              onClick={() => onRetry(currentStage || mainSelectedStage)}
+              onClick={() => onRetry(mainSelectedStage)}
               className="inline-flex items-center gap-2 px-3 py-2 border border-border rounded-lg text-xs font-semibold text-foreground hover:bg-surface-muted transition-colors cursor-pointer"
             >
               <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">

@@ -135,7 +135,7 @@ services:
     - You **MUST** use a standard **70/15/15 ratio split** (70% train, 15% validation, 15% test).
   - If problem type is classification and class balance allows, use stratified splitting when using ratio split.
 - Implements appropriate preprocessing transformers (e.g., `SimpleImputer`, `OneHotEncoder`, `StandardScaler`) fitted **ONLY** on the training set and transformed on validation/test sets to prevent data leakage.
-- **MANDATORY PREPROCESSOR PERSISTENCE**: You **MUST ALWAYS** save the fitted preprocessor / ColumnTransformer to `artifacts/models/preprocessor.joblib`. Downstream validation and real-time inference MUST load this exact preprocessor to guarantee identical feature shapes and encodings.
+- **MANDATORY PREPROCESSOR PERSISTENCE**: You **MUST ALWAYS** save the fitted preprocessor / ColumnTransformer to `artifacts/models/preprocessor.joblib` using `joblib.dump(self.preprocessor, "artifacts/models/preprocessor.joblib")`. Ensure the directory exists with `os.makedirs("artifacts/models", exist_ok=True)`. Also persist it from `pipeline.py`. Downstream validation and real-time inference MUST load this exact preprocessor to guarantee identical feature shapes and encodings.
 
 ### 2. `models/base_model.py`
 - Abstract class `BaseModelTrainer` defining:

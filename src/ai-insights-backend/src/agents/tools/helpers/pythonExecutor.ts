@@ -26,6 +26,10 @@ const IMPORT_TO_PACKAGE: Record<string, string> = {
   torch: "torch",
   transformers: "transformers",
   statsmodels: "statsmodels",
+  lightgbm: "lightgbm",
+  xgboost: "xgboost",
+  catboost: "catboost",
+  scipy: "scipy",
 };
 
 /**
@@ -38,8 +42,16 @@ export function normalizeRequiredPackages(explicitPackages?: string[]): string[]
     for (const pkg of explicitPackages) {
       if (typeof pkg === "string" && pkg.trim().length > 0) {
         const cleanPkg = pkg.trim();
-        const mapped = IMPORT_TO_PACKAGE[cleanPkg] || cleanPkg;
-        packages.add(mapped);
+        const nameMatch = cleanPkg.match(/^([a-zA-Z0-9_-]+)/);
+        if (nameMatch) {
+          const rawName = nameMatch[1];
+          const mapped = IMPORT_TO_PACKAGE[rawName];
+          if (mapped) {
+            packages.add(cleanPkg.replace(rawName, mapped));
+            continue;
+          }
+        }
+        packages.add(cleanPkg);
       }
     }
   }
@@ -47,21 +59,8 @@ export function normalizeRequiredPackages(explicitPackages?: string[]): string[]
   return Array.from(packages);
 }
 
-/**
- * Creates a platform-aware Docker instance.
- * On Windows, connects to the Docker Desktop named pipe '//./pipe/docker_engine'.
- */
-export function getDockerClient(): Docker {
-  if (process.env.DOCKER_HOST) {
-    return new Docker();
-  }
+function getDockerClient(): Docker {
   if (process.platform === "win32") {
-    const winPipes = ["//./pipe/docker_engine", "//./pipe/docker_desktop_engine"];
-    for (const pipe of winPipes) {
-      if (fs.existsSync(pipe)) {
-        return new Docker({ socketPath: pipe });
-      }
-    }
     return new Docker({ socketPath: "//./pipe/docker_engine" });
   }
   return new Docker({ socketPath: "/var/run/docker.sock" });
@@ -206,7 +205,7 @@ export function ensureRequirementsTxt(
   explicitPackages: string[] = []
 ): string {
   const reqPath = path.join(targetDir, "requirements.txt");
-  const defaultPkgs = ["pandas", "numpy", "scikit-learn", "duckdb", "pyarrow", "pyyaml"];
+  const defaultPkgs = ["pandas", "numpy", "scikit-learn", "duckdb", "pyarrow", "pyyaml", "joblib", "lightgbm"];
   const allNeeded = normalizeRequiredPackages([...defaultPkgs, ...explicitPackages]);
 
   let existingPkgs: string[] = [];
@@ -215,10 +214,32 @@ export function ensureRequirementsTxt(
     existingPkgs = content
       .split("\n")
       .map((l) => l.trim().split("#")[0].trim())
-      .filter(Boolean);
+      .filter(Boolean)
+      .map((pkg) => {
+        const nameMatch = pkg.match(/^([a-zA-Z0-9_-]+)/);
+        if (nameMatch) {
+          const rawName = nameMatch[1];
+          const mapped = IMPORT_TO_PACKAGE[rawName];
+          if (mapped && mapped !== rawName) {
+            return pkg.replace(rawName, mapped);
+          }
+        }
+        return pkg;
+      });
   }
 
-  const merged = Array.from(new Set([...existingPkgs, ...allNeeded]));
+  // De-duplicate based on canonical package names (preferring version-pinned ones if present)
+  const pkgMap = new Map<string, string>();
+  for (const pkg of [...allNeeded, ...existingPkgs]) {
+    const nameMatch = pkg.match(/^([a-zA-Z0-9_-]+)/);
+    const key = nameMatch ? nameMatch[1].toLowerCase() : pkg.toLowerCase();
+    // If we already have a pinned package, keep it; otherwise set current
+    if (!pkgMap.has(key) || pkg.includes("==") || pkg.includes(">=") || pkg.includes("<=")) {
+      pkgMap.set(key, pkg);
+    }
+  }
+
+  const merged = Array.from(pkgMap.values());
   fs.mkdirSync(targetDir, { recursive: true });
   fs.writeFileSync(reqPath, merged.join("\n") + "\n", "utf-8");
   return reqPath;
@@ -229,20 +250,31 @@ export function ensureRequirementsTxt(
  */
 export function ensureDockerfile(targetDir: string): string {
   const dockerfilePath = path.join(targetDir, "Dockerfile");
+  const dockerfileContent = [
+    "FROM python:3.12-slim",
+    "WORKDIR /workspace",
+    "RUN apt-get update && apt-get install -y --no-install-recommends \\",
+    "    build-essential \\",
+    "    python3-dev \\",
+    "    cmake \\",
+    "    libgomp1 \\",
+    "    && rm -rf /var/lib/apt/lists/*",
+    "COPY requirements.txt /tmp/requirements.txt",
+    "RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=120 --retries 3 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r /tmp/requirements.txt",
+    "",
+  ].join("\n");
+
   if (!fs.existsSync(dockerfilePath)) {
-    const dockerfileContent = [
-      "FROM python:3.12-slim",
-      "WORKDIR /workspace",
-      "RUN apt-get update && apt-get install -y --no-install-recommends \\",
-      "    build-essential \\",
-      "    libgomp1 \\",
-      "    && rm -rf /var/lib/apt/lists/*",
-      "COPY requirements.txt /tmp/requirements.txt",
-      "RUN pip install --no-cache-dir --disable-pip-version-check --trusted-host pypi.org --trusted-host files.pythonhosted.org -r /tmp/requirements.txt",
-      "",
-    ].join("\n");
     fs.mkdirSync(targetDir, { recursive: true });
     fs.writeFileSync(dockerfilePath, dockerfileContent, "utf-8");
+  } else {
+    // If Dockerfile exists but lacks essential build dependencies, update it
+    try {
+      const existing = fs.readFileSync(dockerfilePath, "utf-8");
+      if (!existing.includes("python3-dev") || !existing.includes("libgomp1")) {
+        fs.writeFileSync(dockerfilePath, dockerfileContent, "utf-8");
+      }
+    } catch {}
   }
   return dockerfilePath;
 }

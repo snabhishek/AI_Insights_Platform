@@ -453,9 +453,11 @@ export async function modelValidationNode(state: State, config?: RunnableConfig)
     console.warn("[modelValidationNode] Postgres persistence warning:", persistErr?.message || persistErr);
   }
 
+  const isFailed = output.status === "Failed";
+
   return {
     modelValidation: output,
-    status: "completed",
+    status: isFailed ? "failed" : "completed",
     summary: output.summary,
     stageOutputs: {
       modelValidation: output,
@@ -464,12 +466,12 @@ export async function modelValidationNode(state: State, config?: RunnableConfig)
       modelSelection: "Completed",
       trainingConfiguration: "Completed",
       modelTraining: "Completed",
-      modelValidation: "Completed",
+      modelValidation: isFailed ? "Failed" : "Completed",
     },
     steps: [
       {
         name: "Model Validation",
-        status: output.status === "Failed" ? "failed" : "completed",
+        status: isFailed ? "failed" : "completed",
         summary: output.summary,
       },
     ],

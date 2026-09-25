@@ -502,7 +502,12 @@ export class ModelTrainingAgent {
         const reportPathInRun = path.join(runDir, "model_training_report.json");
         const reportExists = fs.existsSync(reportPathInProject) || fs.existsSync(reportPathInRun);
 
-        if (execResult.success && reportExists) {
+        const preprocessorExists =
+          fs.existsSync(path.join(modelTrainingDir, "artifacts", "models", "preprocessor.joblib")) ||
+          fs.existsSync(path.join(modelTrainingDir, "models", "preprocessor.joblib")) ||
+          fs.existsSync(path.join(runDir, "artifacts", "models", "preprocessor.joblib"));
+
+        if (execResult.success && reportExists && preprocessorExists) {
           await logMilestoneThinking(
             services,
             "Model Training",
@@ -512,10 +517,15 @@ export class ModelTrainingAgent {
         }
 
         // Subagent Orchestration: Invoke Rectifier Advisor (READ-ONLY access)
+        const missingDetails: string[] = [];
+        if (!execResult.success) missingDetails.push("Container execution returned failure exit code.");
+        if (!reportExists) missingDetails.push("model_training_report.json was not generated.");
+        if (!preprocessorExists) missingDetails.push("artifacts/models/preprocessor.joblib was not persisted.");
+
         await logMilestoneThinking(
           services,
           "Model Training",
-          `Pipeline execution error encountered. Invoking Rectifier advisor subagent to diagnose issues and provide rectification steps...`
+          `Pipeline issues encountered (${missingDetails.join(" ")}). Invoking Rectifier advisor subagent to diagnose issues and provide rectification steps...`
         );
 
         const rectifierPrompt = await getPromptFromFile(
@@ -754,7 +764,7 @@ export class ModelTrainingAgent {
       {};
 
     const durationMs = Date.now() - startTime;
-    const finalStatus = executionSuccess || rankedCandidates.length > 0 ? "Completed" : "Failed";
+    const finalStatus = executionSuccess && rankedCandidates.length > 0 ? "Completed" : "Failed";
     const trainedCount = runs.length > 0 ? runs.length : configuredCandidateModels.length;
     const finalSummary = executionSuccess
       ? `Model Training completed successfully in ${durationMs}ms. Trained ${trainedCount} candidate model(s). Champion: ${selectedModel}.`

@@ -11,9 +11,9 @@ import {
   RestApiIcon,
 } from "../datasource/Icons";
 import { useApp, Project, BACKEND_URL } from "../providers/AppContext";
-import { PipelineStatuses, RunStatus } from "../projects/types";
+import { PipelineStatus, PipelineStatuses, RunStatus } from "../projects/types";
 import { INITIAL_PIPELINE_STATUSES } from "../projects/constants";
-import { resolveNextWorkflowPhase, STEP_TO_NODE_MAP } from "../projects/pipelineFlowConfig";
+import { resolveNextWorkflowPhase, STEP_TO_NODE_MAP, PIPELINE_PHASES, SUBSTEP_TO_PIPELINE_MAP } from "../projects/pipelineFlowConfig";
 import ProjectsListPage from "../projects/ProjectsListPage";
 import ProjectDetailPage from "../projects/ProjectDetailPage";
 import ProjectCreatePage from "../projects/ProjectCreatePage";
@@ -202,17 +202,32 @@ export default function ProjectsPage() {
     mapSingle("modelValidation", "Model Validation");
     mapSingle("modelValidationNode", "Model Validation");
 
-    // Merged stage: Data Profiling = profileData + preprocess
-    const profileVal = stageStatuses.profileData;
-    const preprocessVal = stageStatuses.preprocess;
-    if (profileVal || preprocessVal) {
-      if (isRunning(profileVal) || isRunning(preprocessVal)) {
+    // Data Profiling
+    const profileVal = stageStatuses.profileData || stageStatuses.preprocess;
+    if (profileVal) {
+      if (isRunning(profileVal)) {
         next["Data Profiling"] = "In Progress";
-      } else if (isCompleted(profileVal) && (isCompleted(preprocessVal) || !preprocessVal)) {
+      } else if (isCompleted(profileVal)) {
         next["Data Profiling"] = "Completed";
-      } else if (isCompleted(profileVal) || isCompleted(preprocessVal)) {
-        next["Data Profiling"] = "In Progress";
+      } else if (profileVal === "Failed" || profileVal === "failed") {
+        next["Data Profiling"] = "Pending";
+      } else if ((profileVal === "Pending" || profileVal === "pending") && next["Data Profiling"] !== "Completed") {
+        next["Data Profiling"] = "Pending";
       }
+    }
+
+    // Ingestion completion: if resolveSchema is completed or both inspect & profileData completed without active running
+    const isDIRunning = isRunning(stageStatuses.inspect) || isRunning(stageStatuses.profileData) || isRunning(stageStatuses.resolveSchema);
+    const isDIDone = !isDIRunning && (
+      isCompleted(stageStatuses.resolveSchema) ||
+      (isCompleted(stageStatuses.inspect) && isCompleted(stageStatuses.profileData))
+    );
+
+    if (isDIDone) {
+      next["Data Inspection"] = "Completed";
+      next["Data Profiling"] = "Completed";
+      next["Schema Resolver"] = "Completed";
+      next["Data Ingestion"] = "Completed";
     }
 
     // Feature Engineering composite status
@@ -222,15 +237,17 @@ export default function ProjectsPage() {
     const exoVal = stageStatuses.exogenousScout || stageStatuses.exogenous;
 
     const isFERunning = isRunning(hmVal) || isRunning(faVal) || isRunning(fvVal) || isRunning(exoVal);
-    const isDIRunning = isRunning(stageStatuses.inspect) || isRunning(profileVal) || isRunning(preprocessVal) || isRunning(stageStatuses.resolveSchema);
+    const isFEDone = isCompleted(hmVal) && isCompleted(faVal) && (isCompleted(exoVal) || isCompleted(fvVal));
 
     if (isFERunning) {
       next["Feature Engineering"] = "In Progress";
-    } else if (isCompleted(hmVal) && isCompleted(faVal) && (isCompleted(exoVal) || isCompleted(fvVal))) {
+    } else if (isFEDone) {
       next["Feature Engineering"] = "Completed";
     } else if (isCompleted(hmVal) || isCompleted(faVal) || isCompleted(fvVal) || isCompleted(exoVal)) {
       next["Feature Engineering"] = "In Progress";
     }
+
+    const isFEActiveOrDone = isFERunning || isFEDone || isCompleted(hmVal) || isCompleted(faVal) || isCompleted(fvVal) || isCompleted(exoVal);
 
     // If Model Selection / Training / Validation is active or completed, earlier phases are guaranteed Completed
     // ONLY if Data Ingestion or Feature Engineering is NOT currently running.
@@ -258,10 +275,14 @@ export default function ProjectsPage() {
         isCompleted(stageStatuses.modelValidationNode) ||
         isRunning(stageStatuses.modelValidationNode));
 
-    if (isModelPhaseActiveOrDone) {
+    if (isFEActiveOrDone || isModelPhaseActiveOrDone) {
       next["Data Inspection"] = "Completed";
       next["Data Profiling"] = "Completed";
       next["Schema Resolver"] = "Completed";
+      next["Data Ingestion"] = "Completed";
+    }
+
+    if (isModelPhaseActiveOrDone) {
       next["Hierarchy Mapper"] = "Completed";
       next["Feature Architect"] = "Completed";
       next["Feature Validator"] = "Completed";
@@ -1224,8 +1245,98 @@ export default function ProjectsPage() {
   };
 
   const handleRetry = (step?: string) => {
-    const normalizedStep = typeof step === "string" ? STEP_TO_NODE_MAP[step] || step : undefined;
-    void runWorkflow("retry", normalizedStep);
+    const rawStep = step || activeStage || "inspect";
+    const phase = SUBSTEP_TO_PIPELINE_MAP[rawStep] || PIPELINE_PHASES.MODEL_TRAINING_VALIDATION;
+
+    let rootNode: string;
+    const statusesToUpdate: Record<string, PipelineStatus> = {};
+    const outputsToClear: string[] = [];
+
+    if (phase === PIPELINE_PHASES.DATA_INGESTION) {
+      rootNode = "inspect";
+      statusesToUpdate["Data Ingestion"] = "In Progress";
+      statusesToUpdate["Data Inspection"] = "In Progress";
+      statusesToUpdate["Data Profiling"] = "Pending";
+      statusesToUpdate["Schema Resolver"] = "Pending";
+      statusesToUpdate["Feature Engineering"] = "Not Started";
+      statusesToUpdate["Hierarchy Mapper"] = "Not Started";
+      statusesToUpdate["Feature Architect"] = "Not Started";
+      statusesToUpdate["Feature Validator"] = "Not Started";
+      statusesToUpdate["Exogenous Scout"] = "Not Started";
+      statusesToUpdate["Model Training & Validation"] = "Not Started";
+      statusesToUpdate["Model Selection"] = "Not Started";
+      statusesToUpdate["Training Configuration"] = "Not Started";
+      statusesToUpdate["Pre Flight"] = "Not Started";
+      statusesToUpdate["Model Training"] = "Not Started";
+      statusesToUpdate["Model Validation"] = "Not Started";
+      outputsToClear.push(
+        "inspect", "profileData", "resolveSchema", "schemaResolution", "dataProfile",
+        "hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout",
+        "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation"
+      );
+    } else if (phase === PIPELINE_PHASES.FEATURE_ENGINEERING) {
+      rootNode = "hierarchyMapperNode";
+      statusesToUpdate["Data Ingestion"] = "Completed";
+      statusesToUpdate["Data Inspection"] = "Completed";
+      statusesToUpdate["Data Profiling"] = "Completed";
+      statusesToUpdate["Schema Resolver"] = "Completed";
+      statusesToUpdate["Feature Engineering"] = "In Progress";
+      statusesToUpdate["Hierarchy Mapper"] = "In Progress";
+      statusesToUpdate["Feature Architect"] = "Pending";
+      statusesToUpdate["Feature Validator"] = "Pending";
+      statusesToUpdate["Exogenous Scout"] = "Pending";
+      statusesToUpdate["Model Training & Validation"] = "Not Started";
+      statusesToUpdate["Model Selection"] = "Not Started";
+      statusesToUpdate["Training Configuration"] = "Not Started";
+      statusesToUpdate["Pre Flight"] = "Not Started";
+      statusesToUpdate["Model Training"] = "Not Started";
+      statusesToUpdate["Model Validation"] = "Not Started";
+      outputsToClear.push(
+        "hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout", "exogenous",
+        "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation"
+      );
+    } else {
+      // Model Training & Validation stage -> full stage retry from root node modelSelectionNode!
+      rootNode = "modelSelectionNode";
+      statusesToUpdate["Data Ingestion"] = "Completed";
+      statusesToUpdate["Data Inspection"] = "Completed";
+      statusesToUpdate["Data Profiling"] = "Completed";
+      statusesToUpdate["Schema Resolver"] = "Completed";
+      statusesToUpdate["Feature Engineering"] = "Completed";
+      statusesToUpdate["Hierarchy Mapper"] = "Completed";
+      statusesToUpdate["Feature Architect"] = "Completed";
+      statusesToUpdate["Feature Validator"] = "Completed";
+      statusesToUpdate["Exogenous Scout"] = "Completed";
+      statusesToUpdate["Model Training & Validation"] = "In Progress";
+      statusesToUpdate["Model Selection"] = "In Progress";
+      statusesToUpdate["Training Configuration"] = "Pending";
+      statusesToUpdate["Pre Flight"] = "Pending";
+      statusesToUpdate["Model Training"] = "Pending";
+      statusesToUpdate["Model Validation"] = "Pending";
+      outputsToClear.push(
+        "modelSelection", "trainingConfiguration", "datasetAnalyserAgent", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation", "modelEvaluation"
+      );
+    }
+
+    setPipelineStatuses((prev) => ({
+      ...prev,
+      ...statusesToUpdate,
+    }));
+
+    setStageOutputs((prev) => {
+      const next = { ...prev };
+      for (const key of outputsToClear) {
+        delete next[key];
+      }
+      return next;
+    });
+
+    setRequiresApproval(false);
+    setIsAwaitingResponse(false);
+    setApprovalNextStep(null);
+    setRunStatus("Running");
+
+    void runWorkflow("retry", rootNode);
   };
 
   const handlePauseWorkflow = () => {
