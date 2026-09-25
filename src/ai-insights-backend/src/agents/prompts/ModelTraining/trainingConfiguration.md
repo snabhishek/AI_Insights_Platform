@@ -52,10 +52,10 @@ Synthesize a comprehensive, production-grade configuration that populates the fo
 - `description`: Summarize the purpose of this training job and what the resulting model is expected to accomplish.
 
 ### C. ML Task Definition (`task`)
-- `task_type`: Identify the machine learning problem represented by the use case, target, and prediction objective.
-- `task_subtype`: Describe the specific form of the identified machine learning problem.
-- `learning_type`: Identify how the model should learn based on the availability and nature of the target and training information.
-- `prediction_type`: Describe what the trained model should return to satisfy the prediction requirement.
+- `task_type`: Identify the machine learning problem represented by the use case, target, and prediction objective: MUST be `"forecasting"` (for time-series/demand forecasting), `"regression"` (for continuous quantitative targets), or `"classification"` (for discrete categories/labels). NEVER classify continuous numeric targets as classification!
+- `task_subtype`: Describe the specific form (e.g. `"panel_forecasting"`, `"univariate_forecasting"`, `"standard_regression"`, `"binary"`, `"multiclass"`).
+- `learning_type`: "supervised"
+- `prediction_type`: MUST be `"value"` or `"point"` for continuous forecasting and regression; MUST be `"probability"` for classification.
 - `prediction_horizon`: Describe the future period or point for which the prediction is intended, when the use case involves a future outcome.
 - `prediction_timestamp`: Identify the point in time at which the information available for making the prediction should be considered valid.
 
@@ -116,16 +116,25 @@ Synthesize a comprehensive, production-grade configuration that populates the fo
   - `values`: List the parameter values that should be considered when the parameter has a defined set of alternatives.
 
 ### I. Training Objective (`objective`)
-- `training_loss`: Identify the loss function that should be optimized during model training for the selected prediction problem.
-- `optimization_metric`: Optimization metric guiding the training objective.
-- `direction`: Determine whether improvement in the optimization objective corresponds to increasing or decreasing its value.
+- `training_loss`: Identify the loss function that should be optimized during model training:
+  - For forecasting & regression: Continuous loss functions (e.g. `"mse"`, `"mae"`, `"huber"`). NEVER use logloss!
+  - For classification: Categorical loss functions (e.g. `"logloss"`, `"cross_entropy"`).
+- `optimization_metric`: Optimization metric guiding the training objective (matches primary metric).
+- `direction`: Determine whether improvement in the optimization objective corresponds to increasing or decreasing its value (`"minimize"` for error metrics like WAPE, RMSE, MAE; `"maximize"` for accuracy, F1, R²).
 - `custom_objective`:
   - `enabled`: Determine whether the standard training objective is insufficient and a custom training objective is needed.
   - `definition`: Describe the custom objective that should be optimized and how it relates to the prediction goal, when applicable.
 
 ### J. Comprehensive Evaluation Protocol (`evaluation`)
 - `primary_metric`: Primary performance metric definition.
-- `secondary_metrics`: Identify additional performance metrics that provide useful information beyond the primary metric.
+  - For forecasting: e.g. `"wape"`, `"rmse"`, `"mae"`.
+  - For regression: e.g. `"rmse"`, `"mae"`, `"r2"`.
+  - For classification: e.g. `"f1_score"`, `"roc_auc"`, `"accuracy"`.
+- `secondary_metrics`: Identify additional performance metrics matching the task:
+  - For forecasting: `["MAE", "RMSE", "WAPE", "MAPE"]`.
+  - For regression: `["MAE", "RMSE", "R2"]`.
+  - For classification: `["accuracy", "precision", "recall", "roc_auc"]`.
+  - NEVER output classification metrics for forecasting or regression!
 - `thresholds`:
   - `primary_metric_min`: Specify the minimum primary metric performance required for a model to be considered acceptable.
   - `secondary_metric_constraints`: Define any minimum or maximum performance requirements for secondary metrics that are important to the use case.
@@ -203,6 +212,7 @@ Synthesize a comprehensive, production-grade configuration that populates the fo
 - `models`: List of models to be trained, each with `model_id`, `framework`, `algorithm`, `enabled`, `parameters`, and `training_steps`.
 - **`training_steps`**:
   You MUST NOT use predefined or generic placeholder code. You MUST use your web search tools (`web_search` and `extract_url_content`) to actively research the official, modern Python implementation and execution recipes for each candidate model and write these concrete fields:
+  - **MANDATORY ESTIMATOR TASK ALIGNMENT**: For forecasting and regression tasks, you MUST research and specify Regressor estimator classes (e.g. `lgb.LGBMRegressor`, `xgb.XGBRegressor`, `sklearn.ensemble.RandomForestRegressor`, `catboost.CatBoostRegressor`). NEVER instantiate a Classifier class (such as `LGBMClassifier`) when predicting continuous numeric targets!
   - `package_dependencies`: List pip package dependencies required to train this model with version specifiers (e.g. `["lightgbm>=4.0.0", "scikit-learn>=1.4.0"]`).
   - `import_statement`: Write the exact Python import statement to import the model class.
   - `class_name`: Write the exact model class name.

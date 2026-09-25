@@ -16,6 +16,22 @@ export interface ExecutionResult {
   success: boolean;
   stdout: string;
   stderr: string;
+  logFilePath?: string;
+}
+
+/**
+ * Generates a timestamp formatted as YYYYMMDD-HHmmss for the current time
+ * when Docker execution and log writing begins.
+ */
+export function generateLogTimestamp(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  const hours = String(now.getHours()).padStart(2, "0");
+  const minutes = String(now.getMinutes()).padStart(2, "0");
+  const seconds = String(now.getSeconds()).padStart(2, "0");
+  return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
 
 const IMPORT_TO_PACKAGE: Record<string, string> = {
@@ -118,7 +134,8 @@ async function ensureDockerDaemon(docker: Docker): Promise<boolean> {
 }
 
 /**
- * Runs a CLI process via spawn with live streaming to console.log, maxBuffer and timeout handling.
+ * Runs a CLI process via spawn with live streaming to log file, maxBuffer and timeout handling.
+ * By default, raw container logs are suppressed from console.log to keep the backend console clean.
  */
 function executeProcess(
   command: string,
@@ -127,6 +144,8 @@ function executeProcess(
     env?: NodeJS.ProcessEnv;
     timeoutMs?: number;
     onLog?: (line: string) => void;
+    silentConsole?: boolean;
+    logFilePath?: string;
   }
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
@@ -136,6 +155,7 @@ function executeProcess(
 
     let stdoutData = "";
     let stderrData = "";
+    const silentConsole = options.silentConsole !== false;
 
     const child = spawn(shell, [shellFlag, command], {
       cwd: options.cwd,
@@ -147,6 +167,13 @@ function executeProcess(
     if (options.timeoutMs) {
       timeoutTimer = setTimeout(() => {
         try {
+          if (options.logFilePath) {
+            fs.appendFileSync(
+              options.logFilePath,
+              `\n[Process Timeout] Timed out after ${options.timeoutMs}ms. Terminating process.\n`,
+              "utf-8"
+            );
+          }
           child.kill("SIGTERM");
         } catch {}
       }, options.timeoutMs);
@@ -159,11 +186,25 @@ function executeProcess(
       } else {
         stdoutData += text;
       }
-      const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-      for (const line of lines) {
-        // Stream live progress directly into the backend terminal console
-        console.log(`[DockerExecutor] ${line}`);
-        if (options.onLog) {
+
+      // Append raw stream directly into the dedicated log file
+      if (options.logFilePath) {
+        try {
+          fs.appendFileSync(options.logFilePath, text, "utf-8");
+        } catch {}
+      }
+
+      // Stream to backend console only if silentConsole is explicitly disabled
+      if (!silentConsole) {
+        const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+        for (const line of lines) {
+          console.log(`[DockerExecutor] ${line}`);
+        }
+      }
+
+      if (options.onLog) {
+        const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
+        for (const line of lines) {
           options.onLog(line);
         }
       }
@@ -183,6 +224,11 @@ function executeProcess(
 
     child.on("error", (err) => {
       if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (options.logFilePath) {
+        try {
+          fs.appendFileSync(options.logFilePath, `\n[Process Error] ${err.message}\n`, "utf-8");
+        } catch {}
+      }
       resolve({
         exitCode: 1,
         stdout: stdoutData,
@@ -342,9 +388,13 @@ function resolveExecutionDirectory(
   effectiveTimestamp: string
 ): string {
   const scriptDir = path.dirname(scriptPath);
+  const baseName = path.basename(scriptDir).toLowerCase();
 
-  // 1. If script is in a specialized subfolder (e.g. <projectName>_model_training or python_script)
+  // 1. If script is in a specialized subfolder (e.g. <projectName>_model_training, <projectName>_model_validation, python_script)
   if (
+    baseName.endsWith("_model_training") ||
+    baseName.endsWith("_model_validation") ||
+    baseName === "python_script" ||
     fs.existsSync(path.join(scriptDir, "docker-compose.yml")) ||
     fs.existsSync(path.join(scriptDir, "docker-compose.yaml")) ||
     fs.existsSync(path.join(scriptDir, "Dockerfile"))
@@ -520,22 +570,94 @@ export async function executePythonScript(
 
   console.info(`[DockerExecutor] Building and running via Docker Compose in [${execDir}] for script [${relFromProjectRoot}]`);
 
+  // Ensure dedicated docker_logs directory inside execDir
+  const dockerLogsDir = path.join(execDir, "docker_logs");
+  ensureDirectoryExists(dockerLogsDir);
+
+  // Generate log timestamp based purely on current timestamp when logs start to write
+  const logTimestamp = generateLogTimestamp();
+  let logFileName = `${logTimestamp}.txt`;
+  let logFilePath = path.join(dockerLogsDir, logFileName);
+  let duplicateIndex = 1;
+  while (fs.existsSync(logFilePath)) {
+    logFileName = `${logTimestamp}_${duplicateIndex}.txt`;
+    logFilePath = path.join(dockerLogsDir, logFileName);
+    duplicateIndex++;
+  }
+
+  // Initialize log file header
+  const initLogHeader = [
+    "=".repeat(80),
+    `DOCKER CONTAINER EXECUTION LOG`,
+    `Execution Start Time: ${new Date().toISOString()}`,
+    `Execution Directory: ${execDir}`,
+    `Script Relative Path: ${relFromProjectRoot}`,
+    `Host Project Root: ${normProjectDir}`,
+    `Arguments: ${args.join(" ")}`,
+    "=".repeat(80),
+    "",
+  ].join("\n");
+  fs.writeFileSync(logFilePath, initLogHeader, "utf-8");
+
+  console.info(`[DockerExecutor] Docker container logs writing to: ${logFilePath}`);
+
   // Step 1: Build Docker Compose image
   const buildCmd = `docker compose -f "${composeFileName}" build`;
+  fs.appendFileSync(
+    logFilePath,
+    [
+      "-".repeat(80),
+      `STEP 1: DOCKER COMPOSE BUILD`,
+      `Command: ${buildCmd}`,
+      `Time: ${new Date().toISOString()}`,
+      "-".repeat(80),
+      "",
+    ].join("\n"),
+    "utf-8"
+  );
+
   const buildResult = await executeProcess(buildCmd, {
     cwd: execDir,
     env,
     timeoutMs: 300000, // 5 min build timeout
+    silentConsole: true,
+    logFilePath,
   });
 
   if (buildResult.exitCode !== 0) {
-    console.error(`[DockerExecutor] Docker Compose build failed in [${execDir}]:`, buildResult.stderr);
+    fs.appendFileSync(
+      logFilePath,
+      [
+        "",
+        "-".repeat(80),
+        `BUILD FAILED (exit code: ${buildResult.exitCode})`,
+        `Time: ${new Date().toISOString()}`,
+        "-".repeat(80),
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+    console.error(`[DockerExecutor] Docker Compose build failed (exit code ${buildResult.exitCode}). Check logs: ${logFilePath}`);
     return {
       success: false,
       stdout: buildResult.stdout,
-      stderr: `Docker Compose build error:\n${buildResult.stderr || buildResult.stdout}`,
+      stderr: `Docker Compose build error:\n${buildResult.stderr || buildResult.stdout}\n(Docker build logs saved to: ${logFilePath})`,
+      logFilePath,
     };
   }
+
+  fs.appendFileSync(
+    logFilePath,
+    [
+      "",
+      "-".repeat(80),
+      `BUILD COMPLETED SUCCESSFULLY (exit code: 0)`,
+      `Time: ${new Date().toISOString()}`,
+      "-".repeat(80),
+      "",
+    ].join("\n"),
+    "utf-8"
+  );
 
   // Step 2: Run service via Docker Compose
   // Determine service name from compose file (default: app, or first service defined)
@@ -549,17 +671,53 @@ export async function executePythonScript(
   } catch {}
 
   const runCmd = `docker compose -f "${composeFileName}" run --rm ${serviceName} python "${relFromProjectRoot}" ${args.join(" ")}`;
+  fs.appendFileSync(
+    logFilePath,
+    [
+      "-".repeat(80),
+      `STEP 2: DOCKER COMPOSE RUN`,
+      `Command: ${runCmd}`,
+      `Time: ${new Date().toISOString()}`,
+      "-".repeat(80),
+      "",
+    ].join("\n"),
+    "utf-8"
+  );
 
   const execResult = await executeProcess(runCmd, {
     cwd: execDir,
     env,
     timeoutMs: 600000, // 10 min execution timeout
+    silentConsole: true,
+    logFilePath,
   });
+
+  fs.appendFileSync(
+    logFilePath,
+    [
+      "",
+      "=".repeat(80),
+      `CONTAINER RUN FINISHED`,
+      `Finished At: ${new Date().toISOString()}`,
+      `Exit Code: ${execResult.exitCode}`,
+      `Status: ${execResult.exitCode === 0 ? "SUCCESS" : "FAILED"}`,
+      "=".repeat(80),
+      "",
+    ].join("\n"),
+    "utf-8"
+  );
+
+  if (execResult.exitCode === 0) {
+    console.info(`[DockerExecutor] Container execution completed successfully. Logs: ${logFilePath}`);
+  } else {
+    console.warn(`[DockerExecutor] Container execution exited with code ${execResult.exitCode}. Logs: ${logFilePath}`);
+  }
 
   return {
     success: execResult.exitCode === 0,
     stdout: execResult.stdout,
     stderr: execResult.stderr,
+    logFilePath,
   };
 }
 
@@ -576,7 +734,7 @@ export async function cleanupRunContainer(projectId: string, runTimestamp?: stri
       console.info(`[DockerExecutor] Tearing down Docker Compose in [${session.composeDir}]`);
       await executeProcess(
         `docker compose -f "${path.basename(session.composeFile)}" down --volumes --remove-orphans`,
-        { cwd: session.composeDir }
+        { cwd: session.composeDir, silentConsole: true }
       );
       activeComposeSessions.delete(sessionKey);
     } catch (err: any) {
@@ -590,7 +748,7 @@ export async function cleanupRunContainer(projectId: string, runTimestamp?: stri
       try {
         await executeProcess(
           `docker compose -f "${path.basename(sess.composeFile)}" down --volumes --remove-orphans`,
-          { cwd: sess.composeDir }
+          { cwd: sess.composeDir, silentConsole: true }
         );
         activeComposeSessions.delete(key);
       } catch {}
@@ -607,7 +765,7 @@ export async function cleanupAllRunContainers(): Promise<void> {
       if (fs.existsSync(sess.composeFile)) {
         await executeProcess(
           `docker compose -f "${path.basename(sess.composeFile)}" down --volumes --remove-orphans`,
-          { cwd: sess.composeDir }
+          { cwd: sess.composeDir, silentConsole: true }
         );
       }
     } catch {}

@@ -297,10 +297,30 @@ export class ModelValidationAgent {
 
     const mode = this.determineValidationMode(predictionStartDate);
 
-    const timeCol = trainingConfig?.split?.time_column || "Order_Date";
-    const targetCol = trainingConfig?.task?.target_column || "Order_Quantity";
-    const groupCol = trainingConfig?.split?.group_by || "SKU";
-    const problemType = trainingConfig?.task?.task_type || "forecasting";
+    const timeCol =
+      trainingConfig?.split?.time_column ||
+      trainingConfig?.data_splitting?.time_column ||
+      (state as any).timeColumn ||
+      (state.featureArchitect as any)?.orchestrationDecision?.timeColumn ||
+      (state.schemaResolution as any)?.timeColumn ||
+      "";
+    const targetCol =
+      trainingConfig?.task?.target_column ||
+      trainingConfig?.model_selection?.target_entity?.name ||
+      (state as any).targetColumn ||
+      (state.featureArchitect as any)?.orchestrationDecision?.targetColumn ||
+      "";
+    const groupCol =
+      trainingConfig?.split?.group_by ||
+      (state as any).entityColumn ||
+      (state.featureArchitect as any)?.orchestrationDecision?.entityColumns?.[0] ||
+      "";
+    const problemType =
+      trainingConfig?.task?.task_type ||
+      trainingConfig?.problem_type ||
+      (state as any).problemType ||
+      (state.featureArchitect as any)?.orchestrationDecision?.problemType ||
+      "";
 
     const effectiveSelectedModels: string[] = Array.isArray(state.selectedModels) && state.selectedModels.length > 0
       ? state.selectedModels
@@ -793,33 +813,20 @@ export class ModelValidationAgent {
       let primaryMetricName = m.primaryMetricName;
 
       if (score === undefined) {
-        if (isClassification) {
-          const rocAuc = extractMetricNum(rawMetrics.roc_auc ?? rawMetrics.rocAuc ?? rawMetrics.auc);
-          const acc = extractMetricNum(rawMetrics.accuracy ?? rawMetrics.acc);
-          const f1 = extractMetricNum(rawMetrics.f1_score ?? rawMetrics.f1Score ?? rawMetrics.f1);
-          if (rocAuc !== null) {
-            score = rocAuc;
-            primaryMetricName = primaryMetricName || "ROC AUC";
-          } else if (acc !== null) {
-            score = acc;
-            primaryMetricName = primaryMetricName || "Accuracy";
-          } else if (f1 !== null) {
-            score = f1;
-            primaryMetricName = primaryMetricName || "F1 Score";
+        if (primaryMetricName) {
+          const directMatch = extractMetricNum(rawMetrics[primaryMetricName] ?? rawMetrics[primaryMetricName.toLowerCase()]);
+          if (directMatch !== null) {
+            score = directMatch;
           }
-        } else {
-          const wape = extractMetricNum(rawMetrics.WAPE ?? rawMetrics.wape);
-          const mae = extractMetricNum(rawMetrics.MAE ?? rawMetrics.mae);
-          const rmse = extractMetricNum(rawMetrics.RMSE ?? rawMetrics.rmse);
-          if (wape !== null) {
-            score = wape;
-            primaryMetricName = primaryMetricName || "WAPE";
-          } else if (mae !== null) {
-            score = mae;
-            primaryMetricName = primaryMetricName || "MAE";
-          } else if (rmse !== null) {
-            score = rmse;
-            primaryMetricName = primaryMetricName || "RMSE";
+        }
+        if (score === undefined) {
+          for (const [k, v] of Object.entries(rawMetrics)) {
+            const num = extractMetricNum(v);
+            if (num !== null) {
+              score = num;
+              primaryMetricName = primaryMetricName || k;
+              break;
+            }
           }
         }
       }
@@ -830,7 +837,7 @@ export class ModelValidationAgent {
         framework,
         status: (status.toLowerCase() === "completed" ? "Completed" : "Failed") as "Completed" | "Failed",
         score,
-        primaryMetricName: primaryMetricName || (isClassification ? "ROC AUC" : "Score"),
+        primaryMetricName: primaryMetricName || "Score",
         metrics,
         totals: {
           actualTotal: typeof m.totals?.actualTotal === "number" ? m.totals.actualTotal : null,

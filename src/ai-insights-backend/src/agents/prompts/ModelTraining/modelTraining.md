@@ -126,6 +126,12 @@ services:
 - Accepts the dataset path (e.g. `/workspace/<runTimestamp>/validated_features.parquet` or `/workspace/<runTimestamp>/dataset.parquet`).
 - Supports both Parquet (via `duckdb` or `pandas` / `pyarrow`) and CSV fallback.
 - Validates that the target column exists. Drops rows where the target column is null.
+- **CRITICAL TARGET INTEGRITY (STRICT AGENTIC MANDATE)**:
+  - **NEVER BINARIZE OR THRESHOLD CONTINUOUS TARGETS**: You are **EXPLICITLY FORBIDDEN** from converting continuous target values into binary indicators (e.g. NEVER do `y = (y_raw > threshold).astype(int)`). The target vector `y` must remain its authentic numeric value for regression and forecasting tasks.
+- **TARGET LEAKAGE PREVENTION**:
+  - Automatically detect and exclude from feature set `X` any columns derived from the target or volume-discount tiers that trigger conditionally on the target (e.g. `Promotion_Type_Volume`, `Order_Discount_Rate`, `price_discount_amount`, `target_*`).
+- **HIGH-CARDINALITY CATEGORICAL HANDLING**:
+  - Do NOT perform `OneHotEncoder` on high-cardinality text, identifier, or entity name columns (columns with > 50 unique values such as `Customer_Name`, `Supplier_Name`, `Product_Name`, `Order_ID`, `SKU`). Drop high-cardinality identifiers from `X` or use frequency/label encoding. Never generate thousands of one-hot sparse features.
 - **Dataset Splitting Logic**:
   - Check whether a timestamp or date column exists in the dataset AND a split cutoff date is configured (`split_end_date` or `split_date` in `YYYY-MM` format).
   - If a date/timestamp column exists:
@@ -134,7 +140,7 @@ services:
   - **MANDATORY FALLBACK**: If **NO date or timestamp column exists** in the dataset (or split dates are not provided):
     - You **MUST** use a standard **70/15/15 ratio split** (70% train, 15% validation, 15% test).
   - If problem type is classification and class balance allows, use stratified splitting when using ratio split.
-- Implements appropriate preprocessing transformers (e.g., `SimpleImputer`, `OneHotEncoder`, `StandardScaler`) fitted **ONLY** on the training set and transformed on validation/test sets to prevent data leakage.
+- Implements appropriate preprocessing transformers (e.g., `SimpleImputer`, `OneHotEncoder` for low-cardinality nominal features, `StandardScaler`) fitted **ONLY** on the training set and transformed on validation/test sets to prevent data leakage.
 - **MANDATORY PREPROCESSOR PERSISTENCE**: You **MUST ALWAYS** save the fitted preprocessor / ColumnTransformer to `artifacts/models/preprocessor.joblib` using `joblib.dump(self.preprocessor, "artifacts/models/preprocessor.joblib")`. Ensure the directory exists with `os.makedirs("artifacts/models", exist_ok=True)`. Also persist it from `pipeline.py`. Downstream validation and real-time inference MUST load this exact preprocessor to guarantee identical feature shapes and encodings.
 
 ### 2. `models/base_model.py`
@@ -142,20 +148,24 @@ services:
   - `__init__(self, config: dict)`
   - `train(self, X_train, y_train, X_val=None, y_val=None) -> dict`
   - `predict(self, X) -> np.ndarray`
-  - `predict_proba(self, X) -> np.ndarray` (for classification)
+  - `predict_proba(self, X) -> np.ndarray` (for classification only; raises NotImplementedError for regression/forecasting)
   - `save(self, filepath: str) -> None`
   - `load(self, filepath: str) -> None`
 
 ### 3. Model Trainers in `models/`
 - One trainer class per candidate model identified in the Training Job Contract.
+- **MANDATORY ESTIMATOR TASK ALIGNMENT**:
+  - For forecasting or regression: Candidate models MUST instantiate **Regressor** estimators (e.g. `lgb.LGBMRegressor`, `xgb.XGBRegressor`, `sklearn.ensemble.RandomForestRegressor`, `catboost.CatBoostRegressor`). NEVER instantiate a Classifier class (such as `LGBMClassifier`) for a continuous target!
+  - For classification: Candidate models instantiate **Classifier** estimators (`LGBMClassifier`, `RandomForestClassifier`, etc.).
 - Common frameworks: `scikit-learn`, `lightgbm`, `xgboost`, `catboost`.
 - Hyperparameters must match or cover the hyperparameter search space in the contract.
 - Implement robust exception handling so if one model fails, subsequent models still execute.
 
 ### 4. `evaluation/metrics.py` & `evaluation/visualizer.py`
 - **Metrics calculation**:
-  - Regression: `rmse`, `mae`, `r2`, `mape`, `explained_variance`.
-  - Classification: `accuracy`, `precision_weighted`, `recall_weighted`, `f1_weighted`, `roc_auc` (when probabilities available), `log_loss`, `confusion_matrix`.
+  - For forecasting & regression: Compute continuous metrics `wape` (Weighted Absolute Percentage Error), `mae`, `rmse`, `r2`, `mape`.
+  - For classification: Compute `accuracy`, `precision_weighted`, `recall_weighted`, `f1_weighted`, `roc_auc` (when probabilities available), `log_loss`, `confusion_matrix`.
+  - Populate the primary metric specified in the contract into `score` and `primaryMetricName`.
 - **Visualizations (Saved as PNG)**:
   - Per-model plots: ROC curve, PR curve, Confusion Matrix heatmap (classification), Residual scatter plot / Q-Q plot (regression), Feature Importance bar chart (if model supports it).
   - **MANDATORY MULTICLASS & VISUALIZATION SAFETY**:

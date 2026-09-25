@@ -880,14 +880,18 @@ export async function saveModularTrainingJobContract(
     rawData["x-primary-metric-name"] ||
     rawData.primary_metric_name ||
     rawData.primary_metric ||
+    rawData.objective?.optimization_metric ||
+    (typeof rawData.evaluation?.primary_metric === "object" ? rawData.evaluation.primary_metric?.value : rawData.evaluation?.primary_metric) ||
+    rawData.model_selection?.primary_metric ||
     existingObj["x-primary-metric-name"] ||
     existingObj.primary_metric_name ||
     existingObj.model_selection?.primary_metric ||
-    "f1_score";
+    "";
 
   const primaryMetricDef =
     rawData["x-primary-metric-def"] ||
     rawData.primary_metric_def ||
+    (typeof rawData.evaluation?.primary_metric === "object" ? rawData.evaluation.primary_metric : null) ||
     existingObj["x-primary-metric-def"] ||
     existingObj.primary_metric_def || {
       value: primaryMetricName,
@@ -895,7 +899,7 @@ export async function saveModularTrainingJobContract(
       confidence: 0.95,
       confirmation_threshold: 0.85,
       requires_confirmation: false,
-      rationale: "Selected primary metric representing business goal",
+      rationale: `Selected ${primaryMetricName || "primary metric"} representing business goal`,
       evidence: [],
     };
 
@@ -1009,11 +1013,23 @@ export async function saveModularTrainingJobContract(
     description: `Training pipeline contract for ${cleanProjectTitle}`,
   };
 
+  const detectedProblemType = String(
+    rawData.task?.task_type ||
+    rawData.problemType ||
+    rawData.problem_type ||
+    existingObj.task?.task_type ||
+    ""
+  ).toLowerCase();
+
+  const isForecast = detectedProblemType.includes("forecast");
+  const isClass = detectedProblemType.includes("class");
+  const isReg = detectedProblemType.includes("regress");
+
   const taskData = rawData.task || existingObj.task || {
-    task_type: rawData.problemType || existingObj.task?.task_type || "classification",
-    task_subtype: rawData.problemType === "regression" ? "single" : "binary",
+    task_type: rawData.task?.task_type || rawData.problemType || rawData.problem_type || existingObj.task?.task_type || (isForecast ? "forecasting" : isReg ? "regression" : "classification"),
+    task_subtype: rawData.task_subtype || (isForecast ? "panel_forecasting" : isReg ? "standard_regression" : "binary"),
     learning_type: "supervised",
-    prediction_type: rawData.problemType === "regression" ? "value" : "label",
+    prediction_type: rawData.prediction_type || (isClass ? "probability" : "value"),
     prediction_horizon: null,
     prediction_timestamp: null,
   };
@@ -1070,7 +1086,7 @@ export async function saveModularTrainingJobContract(
     enabled: false,
     method: "bayesian",
     objective_metric: primaryMetricName,
-    direction: "maximize",
+    direction: ["wape", "mae", "rmse", "mse", "loss"].includes(String(primaryMetricName).toLowerCase()) ? "minimize" : "maximize",
     max_trials: 0,
     timeout: null,
     search_space: {},
@@ -1082,9 +1098,9 @@ export async function saveModularTrainingJobContract(
   const searchSpaceData = rawData.search_space || existingObj.search_space || {};
 
   const objectiveData = rawData.objective || existingObj.objective || {
-    training_loss: rawData.problemType === "regression" ? "mse" : "logloss",
+    training_loss: isClass ? "logloss" : "mse",
     optimization_metric: primaryMetricName,
-    direction: "maximize",
+    direction: ["wape", "mae", "rmse", "mse", "loss"].includes(String(primaryMetricName).toLowerCase()) ? "minimize" : "maximize",
     custom_objective: {
       enabled: false,
       definition: null,
@@ -1093,7 +1109,11 @@ export async function saveModularTrainingJobContract(
 
   const evaluationData = rawData.evaluation || existingObj.evaluation || {
     primary_metric: primaryMetricDef,
-    secondary_metrics: rawData.problemType === "regression" ? ["MAE", "RMSE", "R2"] : ["accuracy", "precision", "recall", "roc_auc"],
+    secondary_metrics: isForecast
+      ? ["MAE", "RMSE", "WAPE"]
+      : isReg
+      ? ["MAE", "RMSE", "R2"]
+      : ["accuracy", "precision", "recall", "roc_auc"],
     thresholds: {
       primary_metric_min: null,
       secondary_metric_constraints: {},

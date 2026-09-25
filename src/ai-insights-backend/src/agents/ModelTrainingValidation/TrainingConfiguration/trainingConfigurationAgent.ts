@@ -58,7 +58,7 @@ export class TrainingConfigurationAgent {
       )
     );
 
-    // Discover candidate models from modelSelection
+    // Discover candidate models strictly from modelSelection
     let allCandidates: Array<{ model_id: string; rank?: number; score?: number; framework?: string; algorithm?: string; isDynamic?: boolean }> = [];
 
     if (Array.isArray(modelSelection.candidates) && modelSelection.candidates.length > 0) {
@@ -69,15 +69,6 @@ export class TrainingConfigurationAgent {
         framework: c.framework,
         algorithm: c.algorithm || c.displayName || c.model_id,
         isDynamic: c.source_type === "external" || c.source === "web_search",
-      }));
-    } else if (Array.isArray(modelSelection.models) && modelSelection.models.length > 0) {
-      allCandidates = modelSelection.models.map((m: any, idx: number) => ({
-        model_id: typeof m === "string" ? m : m.model_id,
-        rank: idx + 1,
-        score: 0.9,
-        framework: typeof m === "string" ? "sklearn" : m.framework,
-        algorithm: typeof m === "string" ? m : (m.algorithm || m.model_id),
-        isDynamic: false,
       }));
     } else if (modelSelection.recommended_model?.model_id) {
       allCandidates = [
@@ -91,10 +82,9 @@ export class TrainingConfigurationAgent {
         },
       ];
     } else {
-      allCandidates = [
-        { model_id: "lightgbm_classifier", rank: 1, score: 0.92, framework: "lightgbm", algorithm: "LGBMClassifier" },
-        { model_id: "random_forest_classifier", rank: 2, score: 0.88, framework: "sklearn", algorithm: "RandomForestClassifier" },
-      ];
+      throw new Error(
+        "[TrainingConfigurationAgent] Model Selection candidate models are missing from state. Model Selection agent must execute and provide candidate models."
+      );
     }
 
     // Execute the LangGraph StateGraph

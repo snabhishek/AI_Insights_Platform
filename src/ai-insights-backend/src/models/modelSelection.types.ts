@@ -174,8 +174,13 @@ export interface ModelSelectionDecision {
   prediction_horizon?: string | null;
   recommended_model: RecommendedModel;
   candidates: ModelSelectionCandidate[];
+  problem_type?: string;
+  task_type?: string;
+  task_subtype?: string;
+  prediction_type?: string;
   primary_metric?: string;
   direction?: "maximize" | "minimize";
+  secondary_metrics?: string[];
   tie_breakers?: string[];
   constraints?: Record<string, unknown>;
   selection_strategy?: string;

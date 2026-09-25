@@ -77,7 +77,7 @@ export class PreFlightValidator {
       config.task_type ||
       config.problem_type ||
       config.task ||
-      "classification"
+      ""
     ).toLowerCase();
     const primaryMetric = (
       rawCfg.primary_metric ||
@@ -87,11 +87,11 @@ export class PreFlightValidator {
       config.primary_metric ||
       config.metric ||
       config.evaluation_metric ||
-      "accuracy"
+      ""
     ).toLowerCase();
 
     const classificationMetrics = ["accuracy", "f1", "f1_score", "precision", "recall", "roc_auc", "auc", "log_loss", "balanced_accuracy"];
-    const regressionMetrics = ["rmse", "mse", "mae", "r2", "r2_score", "mape", "smape", "explained_variance"];
+    const regressionMetrics = ["wape", "rmse", "mse", "mae", "r2", "r2_score", "mape", "smape", "explained_variance", "bias"];
 
     if (taskType.includes("class") || taskType.includes("binary") || taskType.includes("multiclass")) {
       if (regressionMetrics.includes(primaryMetric) && !classificationMetrics.includes(primaryMetric)) {

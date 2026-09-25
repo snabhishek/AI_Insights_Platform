@@ -111,6 +111,10 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
 
   return {
     modelSelection: decision,
+    problemType: decision.problem_type || metadata.problemType,
+    targetColumn: decision.target_entity?.name || metadata.targetColumn,
+    primaryMetric: decision.primary_metric,
+    direction: decision.direction,
     runTimestamp: effectiveRunTimestamp,
     status: "running",
     summary,
@@ -140,13 +144,17 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     return { status: state.status || "failed" };
   }
 
+  const meta = featureMetadata(state);
+  const effectiveProblemType = (state as any).problemType || (state.modelSelection as any)?.problem_type || meta.problemType || "";
+  const effectiveTarget = (state as any).targetColumn || (state.modelSelection as any)?.target_entity?.name || meta.targetColumn || "";
+
   const fallbackOutput = {
     status: "Failed",
-    summary: "Training Configuration fallback triggered",
+    summary: "Training Configuration failed to synthesize configuration",
     phase: "Training Configuration",
     dataset: "",
-    targetColumn: "",
-    problemType: "classification",
+    targetColumn: effectiveTarget,
+    problemType: effectiveProblemType,
     features: [],
     contractPath: "",
     configuration: {},

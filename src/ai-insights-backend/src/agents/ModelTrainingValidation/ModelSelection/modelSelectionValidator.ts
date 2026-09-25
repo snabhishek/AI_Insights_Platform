@@ -28,6 +28,29 @@ export class ModelSelectionValidator {
       return { isValid: errors.length === 0, errors };
     }
 
+    // 1.1 Problem Specification & Evaluation Metrics Validation
+    if (!decision.problem_type || typeof decision.problem_type !== "string" || !decision.problem_type.trim()) {
+      errors.push("Missing required field: problem_type");
+    }
+    if (!decision.task_type || typeof decision.task_type !== "string" || !decision.task_type.trim()) {
+      errors.push("Missing required field: task_type");
+    }
+    if (!decision.task_subtype || typeof decision.task_subtype !== "string" || !decision.task_subtype.trim()) {
+      errors.push("Missing required field: task_subtype");
+    }
+    if (!decision.prediction_type || typeof decision.prediction_type !== "string" || !decision.prediction_type.trim()) {
+      errors.push("Missing required field: prediction_type");
+    }
+    if (!decision.primary_metric || typeof decision.primary_metric !== "string" || !decision.primary_metric.trim()) {
+      errors.push("Missing required field: primary_metric");
+    }
+    if (!decision.direction || !["maximize", "minimize"].includes(decision.direction.toLowerCase())) {
+      errors.push(`Invalid or missing direction: "${decision.direction}". Must be "maximize" or "minimize"`);
+    }
+    if (!Array.isArray(decision.secondary_metrics) || decision.secondary_metrics.length === 0) {
+      errors.push("Missing required field: secondary_metrics (must contain at least one metric)");
+    }
+
     // 2. Target Entity & Grain validation
     if (!decision.target_entity || typeof decision.target_entity !== "object") {
       errors.push("Missing required field: target_entity");

@@ -103,14 +103,7 @@ export class ModelTrainingAgent {
       (state.modelSelection as any)?.models ||
       [];
 
-    return (
-      Array.isArray(rawCandidates) && rawCandidates.length > 0
-        ? rawCandidates
-        : [
-            { model_id: "lightgbm_classifier", displayName: "LightGBM Classifier", framework: "lightgbm" },
-            { model_id: "random_forest_classifier", displayName: "Random Forest Classifier", framework: "sklearn" },
-          ]
-    ).map((m: any, idx: number) => {
+    return (Array.isArray(rawCandidates) && rawCandidates.length > 0 ? rawCandidates : []).map((m: any, idx: number) => {
       const modelId = typeof m === "string" ? m : (m.model_id || m.id || `candidate_${idx + 1}`);
       const displayName = typeof m === "string" ? m : (m.displayName || m.algorithm || modelId);
       const framework = typeof m === "string" ? "sklearn" : (m.framework || "sklearn");
@@ -226,6 +219,30 @@ export class ModelTrainingAgent {
       `Deep Coding Agent generating Python model training program in '${pythonProjectName}'...`
     );
 
+    const problemType =
+      contractData?.task?.task_type ||
+      contractData?.problem_type ||
+      (state as any).problemType ||
+      (state.featureArchitect as any)?.orchestrationDecision?.problemType ||
+      "";
+    const taskSubtype = contractData?.task?.task_subtype || "";
+    const targetColumn =
+      contractData?.model_selection?.target_entity?.name ||
+      contractData?.task?.target_column ||
+      (state as any).targetColumn ||
+      (state.featureArchitect as any)?.orchestrationDecision?.targetColumn ||
+      "";
+    const primaryMetric =
+      contractData?.["x-primary-metric-name"] ||
+      contractData?.objective?.optimization_metric ||
+      contractData?.evaluation?.primary_metric?.value ||
+      (state as any).primaryMetric ||
+      "";
+    const direction =
+      contractData?.objective?.direction ||
+      (state as any).direction ||
+      (["wape", "mae", "rmse", "mse", "loss"].includes(String(primaryMetric).toLowerCase()) ? "minimize" : "maximize");
+
     const userPrompt = [
       `Generate the complete, modular Python model training project in '${runTimestamp}/${pythonProjectName}'.`,
       `--- Active Run Context ---`,
@@ -234,6 +251,15 @@ export class ModelTrainingAgent {
       `Target Project Folder: ${runTimestamp}/${pythonProjectName}`,
       `Host Path: ${modelTrainingDir}`,
       `Contract Path: ${contractPath || "schemas/<contract>.yaml"}`,
+      `--- ML Task & Objective Specifications ---`,
+      ...(problemType ? [`Problem Type: ${problemType}`] : []),
+      ...(taskSubtype ? [`Task Subtype: ${taskSubtype}`] : []),
+      ...(targetColumn ? [`Target Column: ${targetColumn}`] : []),
+      ...(primaryMetric ? [`Primary Optimization Metric: ${primaryMetric} (Direction: ${direction})`] : []),
+      `CRITICAL IMPLEMENTATION MANDATES:`,
+      `1. DO NOT convert or binarize continuous target '${targetColumn}'. Train regression estimators (e.g. LGBMRegressor, RandomForestRegressor) for continuous forecasting/regression tasks.`,
+      `2. Drop target-derived volume discount, promotion tiers, or leakage features that encode target quantity thresholds from feature set X.`,
+      `3. Do NOT one-hot encode high-cardinality nominal entity IDs (e.g. Customer_Name, Supplier_Name, SKU with >50 unique values). Drop high-cardinality IDs from X or use frequency/label encoding.`,
       `--- Host Hardware & PreFlight Runtime Limits ---`,
       `Allocated Container CPUs: ${containerCpuStr}`,
       `Allocated Container RAM: ${containerRamStr}`,
@@ -417,6 +443,15 @@ export class ModelTrainingAgent {
               `Target Project Folder: ${runTimestamp}/${pythonProjectName}`,
               `Host Path: ${modelTrainingDir}`,
               `Contract Path: ${contractPath || "schemas/<contract>.yaml"}`,
+              `--- ML Task & Objective Specifications ---`,
+              ...(contractData?.task?.task_type ? [`Problem Type: ${contractData.task.task_type}`] : []),
+              ...(contractData?.task?.task_subtype ? [`Task Subtype: ${contractData.task.task_subtype}`] : []),
+              ...(contractData?.model_selection?.target_entity?.name || contractData?.task?.target_column ? [`Target Column: ${contractData.model_selection?.target_entity?.name || contractData.task.target_column}`] : []),
+              ...(contractData?.["x-primary-metric-name"] || contractData?.objective?.optimization_metric ? [`Primary Optimization Metric: ${contractData["x-primary-metric-name"] || contractData.objective.optimization_metric}`] : []),
+              `CRITICAL IMPLEMENTATION MANDATES:`,
+              `1. DO NOT convert or binarize continuous target variables into classification. Train regression estimators (e.g. LGBMRegressor, RandomForestRegressor) for continuous forecasting/regression tasks.`,
+              `2. Drop target-derived volume discount, promotion tiers, or leakage features that encode target quantity thresholds from feature set X.`,
+              `3. Do NOT one-hot encode high-cardinality nominal entity IDs (e.g. Customer_Name, Supplier_Name, SKU with >50 unique values). Drop high-cardinality IDs from X or use frequency/label encoding.`,
               `--- Host Hardware & PreFlight Runtime Limits ---`,
               `Allocated Container CPUs: ${containerCpuStr}`,
               `Allocated Container RAM: ${containerRamStr}`,
@@ -701,25 +736,20 @@ export class ModelTrainingAgent {
         score = validationMetrics[primaryMetricKey];
       } else if (primaryMetricKey && typeof testMetrics?.[primaryMetricKey] === "number") {
         score = testMetrics[primaryMetricKey];
-      } else if (typeof validationMetrics?.roc_auc === "number") {
-        score = validationMetrics.roc_auc;
-      } else if (typeof validationMetrics?.accuracy === "number") {
-        score = validationMetrics.accuracy;
-      } else if (typeof validationMetrics?.f1_score === "number") {
-        score = validationMetrics.f1_score;
-      } else if (typeof validationMetrics?.r2 === "number") {
-        score = validationMetrics.r2;
-      } else if (typeof testMetrics?.roc_auc === "number") {
-        score = testMetrics.roc_auc;
-      } else if (typeof testMetrics?.accuracy === "number") {
-        score = testMetrics.accuracy;
-      } else if (typeof testMetrics?.f1_score === "number") {
-        score = testMetrics.f1_score;
-      } else if (typeof r.suitability_score === "number") {
-        score = r.suitability_score;
+      } else if (primaryMetricKey && typeof validationMetrics?.[primaryMetricKey] === "number") {
+        score = validationMetrics[primaryMetricKey];
+      } else if (primaryMetricKey && typeof testMetrics?.[primaryMetricKey] === "number") {
+        score = testMetrics[primaryMetricKey];
       } else {
-        const num = Object.values(validationMetrics).find((v) => typeof v === "number" && !isNaN(v as number));
-        if (typeof num === "number") score = num;
+        const firstValMetric = Object.values(validationMetrics).find((v) => typeof v === "number" && !isNaN(v as number));
+        const firstTestMetric = Object.values(testMetrics).find((v) => typeof v === "number" && !isNaN(v as number));
+        if (typeof firstValMetric === "number") {
+          score = firstValMetric;
+        } else if (typeof firstTestMetric === "number") {
+          score = firstTestMetric;
+        } else if (typeof r.suitability_score === "number") {
+          score = r.suitability_score;
+        }
       }
 
       // Duration extraction from fit_time_seconds, training_metadata, or standard duration fields
@@ -842,26 +872,26 @@ export class ModelTrainingAgent {
     success: boolean,
     errorMsg: string
   ): ModelTrainingReport {
-    const targetColumn = contractData?.target_column || "target";
-    const problemType = contractData?.task_type || contractData?.problem_type || "classification";
-    const candidates = contractData?.models || contractData?.candidate_models || [];
+    const targetColumn = contractData?.target_column || contractData?.model_selection?.target_entity?.name || "target";
+    const problemType = contractData?.task_type || contractData?.problem_type || contractData?.task?.task_type || "";
+    const candidates = contractData?.models || contractData?.candidate_models || contractData?.model_selection?.models || [];
     const runs: CandidateModelRun[] = candidates.map((c: any, idx: number) => ({
       model_id: typeof c === "string" ? c : c.model_id || `model_${idx + 1}`,
-      displayName: typeof c === "string" ? c : c.algorithm || c.model_id,
+      displayName: typeof c === "string" ? c : c.algorithm || c.displayName || c.model_id,
       framework: typeof c === "string" ? "sklearn" : c.framework || "sklearn",
       status: success ? "Completed" : "Failed",
-      score: success ? 0.85 - idx * 0.05 : 0,
-      validationMetrics: success ? { accuracy: 0.85, f1: 0.84 } : undefined,
-      testMetrics: success ? { accuracy: 0.84, f1: 0.83 } : undefined,
+      score: success ? (c.suitability_score || 0.85) : 0,
+      validationMetrics: undefined,
+      testMetrics: undefined,
       error: success ? undefined : errorMsg,
     }));
 
     return {
       problemType,
       targetColumn,
-      rowCount: 1000,
-      featureCount: 20,
-      splits: { train: 700, validation: 150, test: 150 },
+      rowCount: contractData?.upstream_artifacts?.row_count || 0,
+      featureCount: contractData?.upstream_artifacts?.column_count || 0,
+      splits: { train: 0, validation: 0, test: 0 },
       selectedModel: runs[0]?.model_id || "selected_model",
       selectedModelArtifact: "artifacts/models/selected_model.joblib",
       runs,

@@ -439,14 +439,18 @@ The validation runner MUST output a JSON report adhering to the existing structu
       "displayName": "LightGBM SOTA",
       "framework": "lightgbm",
       "status": "Completed",
-      "score": 81.42,
-      "primaryMetricName": "Test F1",
-      "metrics": {},
+      "score": 0.1842,
+      "primaryMetricName": "wape",
+      "metrics": {
+        "wape": { "value": 0.1842, "status": "available" },
+        "mae": { "value": 12.45, "status": "available" },
+        "rmse": { "value": 18.2, "status": "available" }
+      },
       "totals": {
-        "actualTotal": null,
-        "forecastTotal": 69.6,
-        "difference": null,
-        "differencePercentage": null
+        "actualTotal": 12500.0,
+        "forecastTotal": 12100.0,
+        "difference": -400.0,
+        "differencePercentage": -3.2
       },
       "chartData": {
         "dates": [],
@@ -455,7 +459,7 @@ The validation runner MUST output a JSON report adhering to the existing structu
         "residuals": null
       },
       "evaluationRecordCount": 500,
-      "actualDataCoverage": null,
+      "actualDataCoverage": 100.0,
       "modelArtifactPath": "<modelPath>"
     }
   },
@@ -464,6 +468,12 @@ The validation runner MUST output a JSON report adhering to the existing structu
   "created_at": "<ISO8601 UTC>"
 }
 ```
+
+### CRITICAL EVALUATION MANDATE (STRICT NO-BINARIZATION RULE)
+- **NEVER BINARIZE GROUND TRUTH CONTINUOUS TARGETS**: For forecasting and regression tasks, predictions and actual outcomes MUST be compared in their authentic continuous numeric scale. You are **EXPLICITLY FORBIDDEN** from thresholding continuous actual targets (such as `y > 25`) into binary labels `{0, 1}` to compute artificial classification metrics (`accuracy`, `f1_score`, `precision`, `recall`).
+- For continuous prediction tasks (forecasting, regression): Calculate and report continuous metrics: `wape`, `mae`, `rmse`, `r2`, `mape`.
+- For discrete classification tasks: Calculate and report classification metrics: `accuracy`, `f1_score`, `precision`, `recall`, `roc_auc`.
+- The `score` and `primaryMetricName` must strictly match the primary optimization metric declared in `training_config.yaml`.
 
 Preserve the existing report fields and naming conventions.
 
