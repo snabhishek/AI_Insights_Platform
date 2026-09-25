@@ -52,9 +52,13 @@ export interface ModelValidationReport {
   prediction_objective_frequency: "Weekly" | "Monthly" | "Yearly";
   time_column: string;
   target_column: string;
+  problem_type?: string;
   champion_model_id: string;
-  models: Record<string, CandidateModelValidationRun>;
+  models: Record<string, CandidateModelValidationRun> | CandidateModelValidationRun[];
   ranked_models: CandidateModelValidationRun[];
+  candidate_models?: any[];
+  candidateModels?: any[];
+  metadata?: Record<string, any>;
   warnings?: string[];
   created_at: string;
 }
@@ -145,17 +149,47 @@ function formatScoreBadge(score: number | undefined, metricName?: string): strin
   return score.toFixed(1);
 }
 
-function resolveMetric(metrics: Record<string, MetricDetail> | undefined, ...names: string[]): MetricDetail | null {
-  if (!metrics) return null;
+function getMetricNumericValue(metricItem: any): number | null {
+  if (metricItem === null || metricItem === undefined) return null;
+  if (typeof metricItem === "number") {
+    return isNaN(metricItem) ? null : metricItem;
+  }
+  if (typeof metricItem === "object" && metricItem.value !== undefined && metricItem.value !== null) {
+    const v = Number(metricItem.value);
+    return isNaN(v) ? null : v;
+  }
+  const parsed = Number(metricItem);
+  return isNaN(parsed) ? null : parsed;
+}
+
+function resolveMetric(
+  metrics: Record<string, any> | undefined,
+  ...names: string[]
+): { value: number | null; unit?: string; reason?: string } | null {
+  if (!metrics || typeof metrics !== "object") return null;
   for (const name of names) {
-    if (metrics[name]) return metrics[name];
-    const found = Object.keys(metrics).find((k) => k.toLowerCase() === name.toLowerCase());
-    if (found && metrics[found]) return metrics[found];
+    if (name in metrics && metrics[name] !== undefined && metrics[name] !== null) {
+      const val = getMetricNumericValue(metrics[name]);
+      const reason = typeof metrics[name] === "object" ? metrics[name].reason : undefined;
+      const unit = typeof metrics[name] === "object" ? metrics[name].unit : undefined;
+      return { value: val, unit, reason };
+    }
+    const foundKey = Object.keys(metrics).find((k) => k.toLowerCase() === name.toLowerCase());
+    if (foundKey && metrics[foundKey] !== undefined && metrics[foundKey] !== null) {
+      const val = getMetricNumericValue(metrics[foundKey]);
+      const reason = typeof metrics[foundKey] === "object" ? metrics[foundKey].reason : undefined;
+      const unit = typeof metrics[foundKey] === "object" ? metrics[foundKey].unit : undefined;
+      return { value: val, unit, reason };
+    }
   }
   return null;
 }
 
-function formatMetricValue(m: MetricDetail | null, isPercent = false, decimals = 1): string {
+function formatMetricValue(
+  m: { value: number | null; unit?: string; reason?: string } | null,
+  isPercent = false,
+  decimals = 1
+): string {
   if (!m || m.value === null || m.value === undefined || isNaN(m.value)) return "N/A";
   let v = m.value;
   if (isPercent) {
@@ -163,6 +197,28 @@ function formatMetricValue(m: MetricDetail | null, isPercent = false, decimals =
     return `${v.toFixed(decimals)}%`;
   }
   return v.toFixed(decimals);
+}
+
+function getCandidateScoreInfo(cand: any, isClassification: boolean): { score: number | undefined; primaryMetricName: string } {
+  if (typeof cand?.score === "number" && !isNaN(cand.score)) {
+    return { score: cand.score, primaryMetricName: cand.primaryMetricName || (isClassification ? "ROC AUC" : "Score") };
+  }
+  if (isClassification) {
+    const roc = resolveMetric(cand?.metrics, "roc_auc", "rocAuc", "roc", "auc");
+    if (roc?.value !== null && roc?.value !== undefined) return { score: roc.value, primaryMetricName: "ROC AUC" };
+    const acc = resolveMetric(cand?.metrics, "accuracy", "acc");
+    if (acc?.value !== null && acc?.value !== undefined) return { score: acc.value, primaryMetricName: "Accuracy" };
+    const f1 = resolveMetric(cand?.metrics, "f1_score", "f1Score", "f1");
+    if (f1?.value !== null && f1?.value !== undefined) return { score: f1.value, primaryMetricName: "F1 Score" };
+  } else {
+    const wape = resolveMetric(cand?.metrics, "WAPE", "wape");
+    if (wape?.value !== null && wape?.value !== undefined) return { score: wape.value, primaryMetricName: "WAPE" };
+    const mae = resolveMetric(cand?.metrics, "MAE", "mae");
+    if (mae?.value !== null && mae?.value !== undefined) return { score: mae.value, primaryMetricName: "MAE" };
+    const rmse = resolveMetric(cand?.metrics, "RMSE", "rmse");
+    if (rmse?.value !== null && rmse?.value !== undefined) return { score: rmse.value, primaryMetricName: "RMSE" };
+  }
+  return { score: undefined, primaryMetricName: cand?.primaryMetricName || "Score" };
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -190,27 +246,58 @@ export default function ModelValidationStepOutput({
     if (modelValidation?.candidates && Array.isArray(modelValidation.candidates)) {
       return modelValidation.candidates;
     }
-    if (rawReport?.models && typeof rawReport.models === "object") {
-      return Object.values(rawReport.models);
+    if (rawReport?.models) {
+      return Array.isArray(rawReport.models) ? rawReport.models : Object.values(rawReport.models);
+    }
+    if (rawReport?.candidate_models && Array.isArray(rawReport.candidate_models)) {
+      return rawReport.candidate_models;
+    }
+    if (rawReport?.candidateModels && Array.isArray(rawReport.candidateModels)) {
+      return rawReport.candidateModels;
     }
     return [];
   }, [rawReport, modelValidation]);
 
-  const championModelId = rawReport?.champion_model_id || modelValidation?.championModel?.model_id || candidates[0]?.model_id;
+  const championModelId =
+    rawReport?.champion_model_id ||
+    modelValidation?.championModel?.model_id ||
+    candidates[0]?.model_id ||
+    (candidates[0] as any)?.modelId;
+
+  const problemType = useMemo(() => {
+    return (
+      rawReport?.problem_type ||
+      (rawReport as any)?.metadata?.problemType ||
+      modelValidation?.metadata?.problemType ||
+      trainingConfiguration?.problemType ||
+      trainingConfiguration?.configuration?.problem_type ||
+      trainingConfiguration?.contract?.problem_type ||
+      "forecasting"
+    );
+  }, [rawReport, modelValidation, trainingConfiguration]);
+
+  const isClassification = useMemo(() => {
+    const pt = (problemType || "").toLowerCase();
+    if (pt.includes("class")) return true;
+    return candidates.some((c) => {
+      const m = c?.metrics;
+      return m && (m.accuracy !== undefined || m.roc_auc !== undefined || m.f1_score !== undefined || m.precision !== undefined);
+    });
+  }, [problemType, candidates]);
 
   // Active selected candidate model for tabs
   const [selectedModelId, setSelectedModelId] = useState<string>("");
 
   React.useEffect(() => {
     if (candidates.length > 0) {
-      if (!selectedModelId || !candidates.some((c) => c.model_id === selectedModelId)) {
-        setSelectedModelId(championModelId || candidates[0].model_id);
+      if (!selectedModelId || !candidates.some((c) => (c.model_id || (c as any).modelId) === selectedModelId)) {
+        setSelectedModelId(championModelId || candidates[0]?.model_id || (candidates[0] as any)?.modelId);
       }
     }
   }, [candidates, championModelId, selectedModelId]);
 
   const activeCandidate = useMemo(() => {
-    return candidates.find((c) => c.model_id === selectedModelId) || candidates[0] || null;
+    return candidates.find((c) => (c.model_id || (c as any).modelId) === selectedModelId) || candidates[0] || null;
   }, [candidates, selectedModelId]);
 
   const [dateRangeInfo, setDateRangeInfo] = useState<any>(null);
@@ -635,12 +722,14 @@ export default function ModelValidationStepOutput({
                 Candidate Models:
               </span>
               {candidates.map((cand) => {
-                const isSelected = cand.model_id === selectedModelId;
-                const isChampion = cand.model_id === championModelId;
+                const candId = cand.model_id || (cand as any).modelId;
+                const isSelected = candId === selectedModelId;
+                const isChampion = candId === championModelId;
+                const candScoreInfo = getCandidateScoreInfo(cand, isClassification);
                 return (
                   <button
-                    key={cand.model_id}
-                    onClick={() => setSelectedModelId(cand.model_id)}
+                    key={candId}
+                    onClick={() => setSelectedModelId(candId)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                       isSelected
                         ? "bg-primary text-primary-foreground border-primary shadow-sm"
@@ -648,10 +737,10 @@ export default function ModelValidationStepOutput({
                     }`}
                   >
                     {isChampion && <TrophyIcon className={`w-3.5 h-3.5 ${isSelected ? "text-amber-300" : "text-amber-500"}`} />}
-                    <span>{cand.displayName || cand.model_id}</span>
-                    {cand.score !== undefined && (
+                    <span>{cand.displayName || candId}</span>
+                    {candScoreInfo.score !== undefined && (
                       <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-mono ${isSelected ? "bg-primary-foreground/20 text-primary-foreground" : "bg-muted text-muted-foreground"}`}>
-                        {cand.primaryMetricName ? `${cand.primaryMetricName.replace(" Score", "")}: ` : ""}{formatScoreBadge(cand.score, cand.primaryMetricName)}
+                        {candScoreInfo.primaryMetricName ? `${candScoreInfo.primaryMetricName.replace(" Score", "")}: ` : ""}{formatScoreBadge(candScoreInfo.score, candScoreInfo.primaryMetricName)}
                       </span>
                     )}
                   </button>
@@ -660,32 +749,36 @@ export default function ModelValidationStepOutput({
             </div>
           )}
 
-          {/* ─── Primary Reference Card UI (Matches media_1790185107669.png) ─── */}
+          {/* ─── Primary Reference Card UI ─── */}
           <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
             {/* Card Header: Model Name, Score Badge, and Legend */}
-            <div className="p-5 pb-3 border-b border-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div className="flex items-center gap-2.5">
-                {activeCandidate.model_id === championModelId && (
-                  <span className="p-1 rounded-lg bg-amber-500/10 text-amber-500 border border-amber-500/20">
-                    <TrophyIcon className="w-4 h-4" />
-                  </span>
-                )}
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base font-bold text-foreground">
-                      Selected Model: {activeCandidate.displayName || activeCandidate.model_id}
-                    </h3>
-                    {activeCandidate.score !== undefined && (
-                      <Badge variant="primary" className="text-[11px] font-bold py-0.5 px-2">
-                        {activeCandidate.primaryMetricName || "Score"}: {formatScoreBadge(activeCandidate.score, activeCandidate.primaryMetricName)}
-                      </Badge>
+            {(() => {
+              const activeCandidateId = activeCandidate.model_id || (activeCandidate as any).modelId;
+              const activeScoreInfo = getCandidateScoreInfo(activeCandidate, isClassification);
+              return (
+                <div className="p-5 pb-3 border-b border-border/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-2.5">
+                    {activeCandidateId === championModelId && (
+                      <span className="p-1 rounded-lg bg-amber-500/10 text-amber-500 border border-amber-500/20">
+                        <TrophyIcon className="w-4 h-4" />
+                      </span>
                     )}
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-bold text-foreground">
+                          Selected Model: {activeCandidate.displayName || activeCandidateId}
+                        </h3>
+                        {activeScoreInfo.score !== undefined && (
+                          <Badge variant="primary" className="text-[11px] font-bold py-0.5 px-2">
+                            {activeScoreInfo.primaryMetricName || "Score"}: {formatScoreBadge(activeScoreInfo.score, activeScoreInfo.primaryMetricName)}
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Framework: {activeCandidate.framework || "AutoML"} • Problem Type: {isClassification ? "Classification" : "Forecasting"} {dates.length > 0 ? `• Evaluation Horizon: ${dates.length} periods (${frequencyInput})` : ""}
+                      </p>
+                    </div>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-0.5">
-                    Framework: {activeCandidate.framework || "AutoML"} • Evaluation Horizon: {dates.length} periods ({frequencyInput})
-                  </p>
-                </div>
-              </div>
 
               {/* Top Right Chart Legend */}
               <div className="flex items-center gap-4 text-xs font-semibold">
@@ -701,6 +794,8 @@ export default function ModelValidationStepOutput({
                 </div>
               </div>
             </div>
+          );
+        })()}
 
             {/* Middle Section: SVG Curve Chart */}
             <div className="p-5 relative select-none">
@@ -889,6 +984,65 @@ export default function ModelValidationStepOutput({
                     </div>
                   )}
                 </div>
+              ) : isClassification ? (
+                <div className="p-6 rounded-xl bg-card border border-border/60">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border/60">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                        <h4 className="text-sm font-bold text-foreground">Classification Evaluation Metrics</h4>
+                      </div>
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Target: <span className="font-semibold text-foreground">{rawReport?.target_column || "Target"}</span> • Model: <span className="font-semibold text-foreground">{activeCandidate.displayName || activeCandidate.model_id}</span>
+                      </p>
+                    </div>
+                    <Badge variant="neutral" className="text-xs">
+                      Holdout Partition Validation
+                    </Badge>
+                  </div>
+
+                  <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    <div className="p-3 rounded-xl bg-surface-muted/40 border border-border/50 text-center">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                        Accuracy
+                      </span>
+                      <span className="text-xl font-extrabold text-foreground mt-1 block">
+                        {formatMetricValue(resolveMetric(activeCandidate.metrics, "accuracy", "acc"), true, 1)}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">Test Partition</span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-surface-muted/40 border border-border/50 text-center">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                        ROC AUC
+                      </span>
+                      <span className="text-xl font-extrabold text-foreground mt-1 block">
+                        {formatMetricValue(resolveMetric(activeCandidate.metrics, "roc_auc", "rocAuc", "auc"), false, 4)}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">Discrimination</span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-surface-muted/40 border border-border/50 text-center">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                        F1 Score
+                      </span>
+                      <span className="text-xl font-extrabold text-foreground mt-1 block">
+                        {formatMetricValue(resolveMetric(activeCandidate.metrics, "f1_score", "f1"), false, 3)}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">Harmonic Mean</span>
+                    </div>
+
+                    <div className="p-3 rounded-xl bg-surface-muted/40 border border-border/50 text-center">
+                      <span className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider block">
+                        Log Loss
+                      </span>
+                      <span className="text-xl font-extrabold text-foreground mt-1 block">
+                        {formatMetricValue(resolveMetric(activeCandidate.metrics, "log_loss", "logLoss"), false, 4)}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground">Cross-Entropy</span>
+                    </div>
+                  </div>
+                </div>
               ) : (
                 <div className="h-44 flex items-center justify-center text-xs text-muted-foreground">
                   No time series projection data available for this candidate model.
@@ -896,156 +1050,277 @@ export default function ModelValidationStepOutput({
               )}
             </div>
 
-            {/* Bottom Section: 3-Row Metric Grid (Exact Match to Reference UI) */}
+            {/* Bottom Section: 3-Row Metric Grid */}
             <div className="p-5 border-t border-border bg-surface-muted/30">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Row 1, Col 1: ACTUAL TOTAL */}
-                <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
-                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Actual Total
+              {isClassification ? (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Row 1, Col 1: ACCURACY */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Accuracy
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatMetricValue(resolveMetric(activeCandidate.metrics, "accuracy", "acc"), true, 2)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Overall correct classification rate
+                    </div>
                   </div>
-                  <div className="text-xl font-extrabold text-foreground mt-1">
-                    {activeCandidate.totals?.actualTotal !== null && activeCandidate.totals?.actualTotal !== undefined
-                      ? formatNumber(activeCandidate.totals.actualTotal)
-                      : "N/A"}
+
+                  {/* Row 1, Col 2: ROC AUC */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      ROC AUC
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatMetricValue(resolveMetric(activeCandidate.metrics, "roc_auc", "rocAuc", "auc"), false, 4)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Area under receiver operating curve
+                    </div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {activeCandidate.totals?.actualTotal !== null && activeCandidate.totals?.actualTotal !== undefined
-                      ? (activeCandidate.actualDataCoverage !== null ? `${activeCandidate.actualDataCoverage}% coverage` : "Out-of-sample ground truth")
-                      : "Future Mode: Ground truth not yet observed"}
+
+                  {/* Row 1, Col 3: LOG LOSS */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Log Loss
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatMetricValue(resolveMetric(activeCandidate.metrics, "log_loss", "logLoss"), false, 4)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Cross-entropy loss (lower is better)
+                    </div>
+                  </div>
+
+                  {/* Row 2, Col 1: PRECISION */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Precision
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatMetricValue(resolveMetric(activeCandidate.metrics, "precision", "prec"), true, 1)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Positive predictive value
+                    </div>
+                  </div>
+
+                  {/* Row 2, Col 2: RECALL */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Recall
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatMetricValue(resolveMetric(activeCandidate.metrics, "recall", "rec"), true, 1)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Sensitivity / true positive rate
+                    </div>
+                  </div>
+
+                  {/* Row 2, Col 3: F1 SCORE */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      F1 Score
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatMetricValue(resolveMetric(activeCandidate.metrics, "f1_score", "f1"), false, 3)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Harmonic mean of precision & recall
+                    </div>
+                  </div>
+
+                  {/* Row 3, Col 1: TARGET COLUMN */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Target Column
+                    </div>
+                    <div className="text-lg font-bold text-foreground mt-1 truncate">
+                      {rawReport?.target_column || "Target"}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Problem Type: Classification
+                    </div>
+                  </div>
+
+                  {/* Row 3, Col 2: CANDIDATE MODELS */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Evaluated Models
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {candidates.length} Candidate Models
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Champion: {activeCandidate.displayName || championModelId}
+                    </div>
+                  </div>
+
+                  {/* Row 3, Col 3: EVALUATION STATUS */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Validation Status
+                    </div>
+                    <div className="text-xl font-extrabold text-emerald-600 dark:text-emerald-400 mt-1">
+                      {activeCandidate.status || "Completed"}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Evaluated on holdout validation split
+                    </div>
                   </div>
                 </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  {/* Row 1, Col 1: ACTUAL TOTAL */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Actual Total
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {activeCandidate.totals?.actualTotal !== null && activeCandidate.totals?.actualTotal !== undefined
+                        ? formatNumber(activeCandidate.totals.actualTotal)
+                        : "N/A"}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {activeCandidate.totals?.actualTotal !== null && activeCandidate.totals?.actualTotal !== undefined
+                        ? (activeCandidate.actualDataCoverage !== null ? `${activeCandidate.actualDataCoverage}% coverage` : "Out-of-sample ground truth")
+                        : "Future Mode: Ground truth not yet observed"}
+                    </div>
+                  </div>
 
-                {/* Row 1, Col 2: FORECAST TOTAL */}
-                <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
-                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Forecast Total
+                  {/* Row 1, Col 2: FORECAST TOTAL */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Forecast Total
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatNumber(activeCandidate.totals?.forecastTotal)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Cumulative projection over horizon
+                    </div>
                   </div>
-                  <div className="text-xl font-extrabold text-foreground mt-1">
-                    {formatNumber(activeCandidate.totals?.forecastTotal)}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    Cumulative projection over horizon
-                  </div>
-                </div>
 
-                {/* Row 1, Col 3: DIFFERENCE (+/- %) */}
-                <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
-                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Difference (+ / -)
-                  </div>
-                  <div className="flex items-baseline gap-2 mt-1">
-                    <span className="text-xl font-extrabold text-foreground">
+                  {/* Row 1, Col 3: DIFFERENCE (+/- %) */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Difference (+ / -)
+                    </div>
+                    <div className="flex items-baseline gap-2 mt-1">
+                      <span className="text-xl font-extrabold text-foreground">
+                        {activeCandidate.totals?.difference !== null && activeCandidate.totals?.difference !== undefined
+                          ? (activeCandidate.totals.difference > 0 ? "+" : "") + formatNumber(activeCandidate.totals.difference)
+                          : (isBacktesting ? "N/A" : "Forward Forecast")}
+                      </span>
+                      {activeCandidate.totals?.differencePercentage !== null && activeCandidate.totals?.differencePercentage !== undefined && (
+                        <Badge
+                          variant={Math.abs(activeCandidate.totals.differencePercentage) < 5 ? "success" : "warning"}
+                          className="text-[10px]"
+                        >
+                          {formatPercentage(activeCandidate.totals.differencePercentage)}
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
                       {activeCandidate.totals?.difference !== null && activeCandidate.totals?.difference !== undefined
-                        ? (activeCandidate.totals.difference > 0 ? "+" : "") + formatNumber(activeCandidate.totals.difference)
-                        : (isBacktesting ? "N/A" : "Forward Forecast")}
-                    </span>
-                    {activeCandidate.totals?.differencePercentage !== null && activeCandidate.totals?.differencePercentage !== undefined && (
-                      <Badge
-                        variant={Math.abs(activeCandidate.totals.differencePercentage) < 5 ? "success" : "warning"}
-                        className="text-[10px]"
-                      >
-                        {formatPercentage(activeCandidate.totals.differencePercentage)}
-                      </Badge>
-                    )}
+                        ? "Total aggregate bias"
+                        : "Future projection without historical baseline delta"}
+                    </div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {activeCandidate.totals?.difference !== null && activeCandidate.totals?.difference !== undefined
-                      ? "Total aggregate bias"
-                      : "Future projection without historical baseline delta"}
-                  </div>
-                </div>
 
-                {/* Row 2, Col 1: WAPE */}
-                <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
-                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    WAPE (Weighted Abs Error)
+                  {/* Row 2, Col 1: WAPE */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      WAPE (Weighted Abs Error)
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatMetricValue(resolveMetric(activeCandidate.metrics, "WAPE", "wape"), true, 1)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {isBacktesting ? "Primary accuracy metric (lower is better)" : "Unavailable in future prediction mode"}
+                    </div>
                   </div>
-                  <div className="text-xl font-extrabold text-foreground mt-1">
-                    {formatMetricValue(resolveMetric(activeCandidate.metrics, "WAPE", "wape"), true, 1)}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {isBacktesting ? "Primary accuracy metric (lower is better)" : "Unavailable in future prediction mode"}
-                  </div>
-                </div>
 
-                {/* Row 2, Col 2: MAE / RMSE */}
-                <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
-                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    MAE / RMSE
-                  </div>
-                  <div className="text-base font-bold text-foreground mt-1 flex items-center gap-3">
-                    <span>
-                      MAE:{" "}
-                      <span className="text-foreground font-extrabold">
-                        {formatMetricValue(resolveMetric(activeCandidate.metrics, "MAE", "mae"), false, 2)}
+                  {/* Row 2, Col 2: MAE / RMSE */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      MAE / RMSE
+                    </div>
+                    <div className="text-base font-bold text-foreground mt-1 flex items-center gap-3">
+                      <span>
+                        MAE:{" "}
+                        <span className="text-foreground font-extrabold">
+                          {formatMetricValue(resolveMetric(activeCandidate.metrics, "MAE", "mae"), false, 2)}
+                        </span>
                       </span>
-                    </span>
-                    <span className="text-muted-foreground">|</span>
-                    <span>
-                      RMSE:{" "}
-                      <span className="text-foreground font-extrabold">
-                        {formatMetricValue(resolveMetric(activeCandidate.metrics, "RMSE", "rmse"), false, 2)}
+                      <span className="text-muted-foreground">|</span>
+                      <span>
+                        RMSE:{" "}
+                        <span className="text-foreground font-extrabold">
+                          {formatMetricValue(resolveMetric(activeCandidate.metrics, "RMSE", "rmse"), false, 2)}
+                        </span>
                       </span>
-                    </span>
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Mean absolute vs root mean squared error
+                    </div>
                   </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    Mean absolute vs root mean squared error
-                  </div>
-                </div>
 
-                {/* Row 2, Col 3: PRECISION */}
-                <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
-                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Precision
+                  {/* Row 2, Col 3: PRECISION */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Precision
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatMetricValue(resolveMetric(activeCandidate.metrics, "Precision", "precision"), true, 1)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {resolveMetric(activeCandidate.metrics, "Precision", "precision")?.reason || "Classification threshold precision"}
+                    </div>
                   </div>
-                  <div className="text-xl font-extrabold text-foreground mt-1">
-                    {formatMetricValue(resolveMetric(activeCandidate.metrics, "Precision", "precision"), true, 1)}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {resolveMetric(activeCandidate.metrics, "Precision", "precision")?.reason || "Classification threshold precision"}
-                  </div>
-                </div>
 
-                {/* Row 3, Col 1: RECALL */}
-                <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
-                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Recall
+                  {/* Row 3, Col 1: RECALL */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Recall
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatMetricValue(resolveMetric(activeCandidate.metrics, "Recall", "recall"), true, 1)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      {resolveMetric(activeCandidate.metrics, "Recall", "recall")?.reason || "Classification sensitivity / true positive rate"}
+                    </div>
                   </div>
-                  <div className="text-xl font-extrabold text-foreground mt-1">
-                    {formatMetricValue(resolveMetric(activeCandidate.metrics, "Recall", "recall"), true, 1)}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {resolveMetric(activeCandidate.metrics, "Recall", "recall")?.reason || "Classification sensitivity / true positive rate"}
-                  </div>
-                </div>
 
-                {/* Row 3, Col 2: F1 SCORE */}
-                <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
-                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    F1 Score
+                  {/* Row 3, Col 2: F1 SCORE */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      F1 Score
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {formatMetricValue(resolveMetric(activeCandidate.metrics, "F1", "f1_score", "f1"), false, 3)}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Harmonic mean of precision and recall
+                    </div>
                   </div>
-                  <div className="text-xl font-extrabold text-foreground mt-1">
-                    {formatMetricValue(resolveMetric(activeCandidate.metrics, "F1", "f1_score", "f1"), false, 3)}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    {resolveMetric(activeCandidate.metrics, "F1", "f1_score", "f1")?.reason || "Harmonic mean of precision and recall"}
-                  </div>
-                </div>
 
-                {/* Row 3, Col 3: WEEKS / HORIZON */}
-                <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
-                  <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
-                    Weeks / Horizon
-                  </div>
-                  <div className="text-xl font-extrabold text-foreground mt-1">
-                    {dates.length > 0 ? `${dates.length} Periods` : `${horizonInput} Periods`}
-                  </div>
-                  <div className="text-[11px] text-muted-foreground mt-0.5">
-                    Frequency: {frequencyInput}
+                  {/* Row 3, Col 3: WEEKS / HORIZON */}
+                  <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
+                    <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
+                      Weeks / Horizon
+                    </div>
+                    <div className="text-xl font-extrabold text-foreground mt-1">
+                      {dates.length > 0 ? `${dates.length} Periods` : `${horizonInput} Periods`}
+                    </div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">
+                      Frequency: {frequencyInput}
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
             </div>
 
             {/* Status Footer */}
@@ -1053,7 +1328,7 @@ export default function ModelValidationStepOutput({
               <div className="flex items-center gap-2">
                 <CheckCircleIcon className="w-4 h-4 text-emerald-500" />
                 <span>
-                  Validation executed across {dates.length} records.
+                  Validation executed across {candidates.length} candidate model(s).
                   {rawReport?.created_at && ` Run at ${new Date(rawReport.created_at).toLocaleString()}`}
                 </span>
               </div>
@@ -1078,49 +1353,81 @@ export default function ModelValidationStepOutput({
                       <th className="pb-2">Model</th>
                       <th className="pb-2">Framework</th>
                       <th className="pb-2">Score</th>
-                      <th className="pb-2">WAPE</th>
-                      <th className="pb-2">MAE</th>
-                      <th className="pb-2">RMSE</th>
+                      {isClassification ? (
+                        <>
+                          <th className="pb-2">Accuracy</th>
+                          <th className="pb-2">ROC AUC</th>
+                          <th className="pb-2">Precision</th>
+                          <th className="pb-2">Recall</th>
+                          <th className="pb-2">F1 Score</th>
+                        </>
+                      ) : (
+                        <>
+                          <th className="pb-2">WAPE</th>
+                          <th className="pb-2">MAE</th>
+                          <th className="pb-2">RMSE</th>
+                        </>
+                      )}
                       <th className="pb-2">Status</th>
                       <th className="pb-2 text-right">Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
-                    {candidates.map((cand, idx) => {
-                      const isCandChampion = cand.model_id === championModelId;
-                      const isCurrent = cand.model_id === selectedModelId;
+                    {candidates.map((cand) => {
+                      const candId = cand.model_id || (cand as any).modelId;
+                      const isCandChampion = candId === championModelId;
+                      const isCurrent = candId === selectedModelId;
+                      const candScoreInfo = getCandidateScoreInfo(cand, isClassification);
                       return (
                         <tr
-                          key={cand.model_id}
+                          key={candId}
                           className={`hover:bg-muted/40 transition cursor-pointer ${isCurrent ? "bg-primary/5 font-semibold" : ""}`}
-                          onClick={() => setSelectedModelId(cand.model_id)}
+                          onClick={() => setSelectedModelId(candId)}
                         >
                           <td className="py-2.5 flex items-center gap-1.5">
                             {isCandChampion && <TrophyIcon className="w-3.5 h-3.5 text-amber-500" />}
-                            <span>{cand.displayName || cand.model_id}</span>
+                            <span>{cand.displayName || candId}</span>
                             {isCandChampion && (
                               <Badge variant="warning" className="text-[9px] py-0 px-1.5">Champion</Badge>
                             )}
                           </td>
                           <td className="py-2.5 text-muted-foreground">{cand.framework || "AutoML"}</td>
                           <td className="py-2.5 font-bold text-foreground">
-                            {cand.score !== undefined ? cand.score.toFixed(4) : "N/A"}
-                          </td>
-                          <td className="py-2.5">
-                            {cand.metrics?.WAPE?.value !== null && cand.metrics?.WAPE?.value !== undefined
-                              ? (cand.metrics.WAPE.value * 100).toFixed(2) + "%"
+                            {candScoreInfo.score !== undefined
+                              ? formatScoreBadge(candScoreInfo.score, candScoreInfo.primaryMetricName)
                               : "N/A"}
                           </td>
-                          <td className="py-2.5">
-                            {cand.metrics?.MAE?.value !== null && cand.metrics?.MAE?.value !== undefined
-                              ? cand.metrics.MAE.value.toFixed(2)
-                              : "N/A"}
-                          </td>
-                          <td className="py-2.5">
-                            {cand.metrics?.RMSE?.value !== null && cand.metrics?.RMSE?.value !== undefined
-                              ? cand.metrics.RMSE.value.toFixed(2)
-                              : "N/A"}
-                          </td>
+                          {isClassification ? (
+                            <>
+                              <td className="py-2.5">
+                                {formatMetricValue(resolveMetric(cand.metrics, "accuracy", "acc"), true, 1)}
+                              </td>
+                              <td className="py-2.5">
+                                {formatMetricValue(resolveMetric(cand.metrics, "roc_auc", "rocAuc", "auc"), false, 4)}
+                              </td>
+                              <td className="py-2.5">
+                                {formatMetricValue(resolveMetric(cand.metrics, "precision", "prec"), true, 1)}
+                              </td>
+                              <td className="py-2.5">
+                                {formatMetricValue(resolveMetric(cand.metrics, "recall", "rec"), true, 1)}
+                              </td>
+                              <td className="py-2.5">
+                                {formatMetricValue(resolveMetric(cand.metrics, "f1_score", "f1"), false, 3)}
+                              </td>
+                            </>
+                          ) : (
+                            <>
+                              <td className="py-2.5">
+                                {formatMetricValue(resolveMetric(cand.metrics, "WAPE", "wape"), true, 2)}
+                              </td>
+                              <td className="py-2.5">
+                                {formatMetricValue(resolveMetric(cand.metrics, "MAE", "mae"), false, 2)}
+                              </td>
+                              <td className="py-2.5">
+                                {formatMetricValue(resolveMetric(cand.metrics, "RMSE", "rmse"), false, 2)}
+                              </td>
+                            </>
+                          )}
                           <td className="py-2.5">
                             <Badge variant={cand.status === "Completed" ? "success" : "error"}>
                               {cand.status}
@@ -1131,7 +1438,7 @@ export default function ModelValidationStepOutput({
                               type="button"
                               onClick={(e) => {
                                 e.stopPropagation();
-                                setSelectedModelId(cand.model_id);
+                                setSelectedModelId(candId);
                               }}
                               className={`text-[11px] px-2 py-1 rounded-md border transition ${
                                 isCurrent
@@ -1139,7 +1446,7 @@ export default function ModelValidationStepOutput({
                                   : "border-border text-foreground hover:bg-muted"
                               }`}
                             >
-                              {isCurrent ? "Viewing" : "View Chart"}
+                              {isCurrent ? "Viewing" : "View"}
                             </button>
                           </td>
                         </tr>

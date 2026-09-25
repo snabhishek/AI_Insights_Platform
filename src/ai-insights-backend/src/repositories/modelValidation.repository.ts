@@ -15,45 +15,64 @@ export class PostgresModelValidationRepository implements IModelValidationReposi
     validationDirectory: string,
     predictionsArtifactPath?: string
   ): Promise<void> {
+    const effectiveRunId = (runId && runId !== "undefined" && runId.trim())
+      ? runId.slice(0, 50)
+      : (report.validation_run_id && report.validation_run_id !== "undefined")
+        ? report.validation_run_id.slice(0, 50)
+        : `val-${Date.now()}`;
+
     const existing = await this.db
       .select()
       .from(schema.modelValidationRuns)
-      .where(eq(schema.modelValidationRuns.id, runId))
+      .where(eq(schema.modelValidationRuns.id, effectiveRunId))
       .limit(1);
 
+    const mode = (report.mode || (report as any).evaluation_mode || "backtesting").slice(0, 50);
+
+    const modelsList: any[] =
+      report.ranked_models ||
+      (report.models
+        ? Array.isArray(report.models)
+          ? report.models
+          : Object.values(report.models)
+        : []);
+
+    const championId = report.champion_model_id || modelsList[0]?.model_id || modelsList[0]?.modelId || null;
+    const championModel = modelsList.find((m) => (m.model_id || m.modelId) === championId) || modelsList[0] || null;
+
     const runValues = {
-      id: runId,
+      id: effectiveRunId,
       projectId,
-      evaluationMode: report.mode,
-      predictionObjectiveStartDate: report.prediction_objective_start_date,
-      predictionObjectiveHorizon: report.prediction_objective_horizon,
-      predictionObjectiveFrequency: report.prediction_objective_frequency,
-      datasetReference: report.dataset_reference,
+      evaluationMode: mode,
+      predictionObjectiveStartDate: report.prediction_objective_start_date ? String(report.prediction_objective_start_date).slice(0, 50) : null,
+      predictionObjectiveHorizon: typeof report.prediction_objective_horizon === "number" ? report.prediction_objective_horizon : 12,
+      predictionObjectiveFrequency: (report.prediction_objective_frequency || "Weekly").slice(0, 50),
+      datasetReference: report.dataset_reference || null,
       datasetSchemaVersion: report.dataset_schema_version || null,
-      actualDataCoverage: report.coverage_percentage !== null ? report.coverage_percentage : null,
-      championModelId: report.champion_model_id || null,
+      actualDataCoverage: typeof report.coverage_percentage === "number" ? report.coverage_percentage : null,
+      championModelId: championId ? String(championId).slice(0, 100) : null,
       status: "Completed",
-      summary: `Validation run ${runId} completed in ${report.mode} mode for ${Object.keys(report.models || {}).length} model(s).`,
-      validationDirectory,
+      summary: `Validation run ${effectiveRunId} completed in ${mode} mode for ${modelsList.length} model(s).`,
+      validationDirectory: validationDirectory ? validationDirectory.slice(0, 500) : null,
       reportArtifactPath: `${validationDirectory}/reports/model_validation_report.json`,
       predictionsArtifactPath: predictionsArtifactPath || `${validationDirectory}/artifacts/predictions/validation_predictions.parquet`,
       chartData: {
-        championModel: report.models?.[report.champion_model_id]?.chartData || null,
-        modelsSummary: Object.values(report.models || {}).map((m) => ({
-          modelId: m.model_id,
-          displayName: m.displayName,
-          score: m.score,
-          totals: m.totals,
-          chartData: m.chartData,
+        championModel: championModel?.chartData || null,
+        modelsSummary: modelsList.map((m) => ({
+          modelId: m.model_id || m.modelId,
+          displayName: m.displayName || m.model_id || m.modelId,
+          score: typeof m.score === "number" ? m.score : null,
+          totals: m.totals || null,
+          chartData: m.chartData || null,
         })),
       },
       warnings: report.warnings || [],
       metadata: {
-        timeColumn: report.time_column,
-        targetColumn: report.target_column,
+        timeColumn: report.time_column || null,
+        targetColumn: report.target_column || null,
         entityColumn: report.entity_column || null,
-        problemType: report.problem_type,
-        evaluationPeriod: report.evaluation_period,
+        problemType: report.problem_type || null,
+        evaluationPeriod: report.evaluation_period || null,
       },
       updatedAt: new Date(),
     };
@@ -62,12 +81,12 @@ export class PostgresModelValidationRepository implements IModelValidationReposi
       await this.db
         .update(schema.modelValidationRuns)
         .set(runValues)
-        .where(eq(schema.modelValidationRuns.id, runId));
+        .where(eq(schema.modelValidationRuns.id, effectiveRunId));
 
       // Remove previous candidate results for this runId to allow clean idempotent rewrite
       await this.db
         .delete(schema.modelValidationResults)
-        .where(eq(schema.modelValidationResults.validationRunId, runId));
+        .where(eq(schema.modelValidationResults.validationRunId, effectiveRunId));
     } else {
       await this.db.insert(schema.modelValidationRuns).values({
         ...runValues,
@@ -76,31 +95,35 @@ export class PostgresModelValidationRepository implements IModelValidationReposi
     }
 
     // Insert model-level validation result records
-    const modelEntries = Object.values(report.models || {});
-    for (const m of modelEntries) {
-      const resultId = `mvr-${uuidv4()}`;
-      await this.db.insert(schema.modelValidationResults).values({
-        id: resultId,
-        validationRunId: runId,
-        modelId: m.model_id,
-        displayName: m.displayName || m.model_id,
-        framework: m.framework || "custom",
-        executionStatus: m.status || "Completed",
-        score: typeof m.score === "number" ? m.score : null,
-        primaryMetricName: m.primaryMetricName || null,
-        metrics: m.metrics || {},
-        totals: m.totals || {},
-        actualTotal: typeof m.totals?.actualTotal === "number" ? m.totals.actualTotal : null,
-        forecastTotal: typeof m.totals?.forecastTotal === "number" ? m.totals.forecastTotal : null,
-        difference: typeof m.totals?.difference === "number" ? m.totals.difference : null,
-        differencePercentage: typeof m.totals?.differencePercentage === "number" ? m.totals.differencePercentage : null,
-        evaluationRecordCount: m.evaluationRecordCount || 0,
-        actualDataCoverage: typeof m.actualDataCoverage === "number" ? m.actualDataCoverage : null,
-        chartSeries: m.chartData || {},
-        modelArtifactPath: m.modelArtifactPath || null,
-        errorMessage: m.error || null,
-        createdAt: new Date(),
-      });
+    for (const m of modelsList) {
+      const modelId = String(m.model_id || m.modelId || "model").slice(0, 100);
+      const resultId = `mvr-${uuidv4()}`.slice(0, 50);
+      try {
+        await this.db.insert(schema.modelValidationResults).values({
+          id: resultId,
+          validationRunId: effectiveRunId,
+          modelId,
+          displayName: String(m.displayName || modelId).slice(0, 255),
+          framework: String(m.framework || "custom").slice(0, 50),
+          executionStatus: String(m.status || "Completed").slice(0, 50),
+          score: typeof m.score === "number" && !isNaN(m.score) ? m.score : null,
+          primaryMetricName: m.primaryMetricName ? String(m.primaryMetricName).slice(0, 100) : null,
+          metrics: m.metrics && typeof m.metrics === "object" ? m.metrics : {},
+          totals: m.totals && typeof m.totals === "object" ? m.totals : {},
+          actualTotal: typeof m.totals?.actualTotal === "number" ? m.totals.actualTotal : null,
+          forecastTotal: typeof m.totals?.forecastTotal === "number" ? m.totals.forecastTotal : null,
+          difference: typeof m.totals?.difference === "number" ? m.totals.difference : null,
+          differencePercentage: typeof m.totals?.differencePercentage === "number" ? m.totals.differencePercentage : null,
+          evaluationRecordCount: typeof m.evaluationRecordCount === "number" ? m.evaluationRecordCount : 0,
+          actualDataCoverage: typeof m.actualDataCoverage === "number" ? m.actualDataCoverage : null,
+          chartSeries: m.chartData && typeof m.chartData === "object" ? m.chartData : {},
+          modelArtifactPath: m.modelArtifactPath ? String(m.modelArtifactPath) : null,
+          errorMessage: m.error ? String(m.error) : null,
+          createdAt: new Date(),
+        });
+      } catch (insertModelErr: any) {
+        console.warn(`[modelValidationRepository] Failed to insert result for model ${modelId}:`, insertModelErr?.message || insertModelErr);
+      }
     }
   }
 

@@ -441,8 +441,9 @@ export async function modelValidationNode(state: State, config?: RunnableConfig)
     const db = drizzle(pool, { schema: modelValidationSchema });
     const repo = new PostgresModelValidationRepository(db);
     if (output.report) {
+      const runId = output.report.validation_run_id || `val-${state.runTimestamp || Date.now()}`;
       await repo.saveValidationRun(
-        output.report.validation_run_id,
+        runId,
         projectId,
         output.report,
         output.validationDirectory,

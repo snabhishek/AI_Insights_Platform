@@ -733,30 +733,187 @@ export class ModelValidationAgent {
       validationHealth = ModelValidationAgent.validateReport(reportPath);
     }
 
-    // 6. Parse Output Report
-    let report: ModelValidationReport | undefined;
+    // 6. Parse Output Report and Normalize
+    let rawReport: any = undefined;
     if (fs.existsSync(reportPath)) {
       try {
-        report = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
+        rawReport = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
       } catch (err: any) {
         console.warn(`[ModelValidationAgent] Failed to parse validation report:`, err?.message || err);
       }
     }
 
-    const runs: CandidateModelValidationRun[] = report?.ranked_models || (report?.models ? Object.values(report.models) : []);
-    const successfulRuns = runs.filter(
-      (r) => (r.status || "").toLowerCase() === "completed" && r.metrics && Object.keys(r.metrics).length > 0
+    // Extract raw candidates from any supported schema format
+    const rawCandidatesList: any[] =
+      rawReport?.ranked_models ||
+      (rawReport?.models
+        ? Array.isArray(rawReport.models)
+          ? rawReport.models
+          : Object.values(rawReport.models)
+        : []) ||
+      (rawReport?.candidate_models && Array.isArray(rawReport.candidate_models) ? rawReport.candidate_models : []) ||
+      (rawReport?.candidateModels && Array.isArray(rawReport.candidateModels) ? rawReport.candidateModels : []);
+
+    const effectiveProblemType = rawReport?.problem_type || problemType || "classification";
+    const isClassification = effectiveProblemType.toLowerCase().includes("class");
+
+    // Helper to safely extract a numeric metric value from either number or object format
+    const extractMetricNum = (val: any): number | null => {
+      if (val === null || val === undefined) return null;
+      if (typeof val === "number") return isNaN(val) ? null : val;
+      if (typeof val === "object" && val.value !== undefined && val.value !== null) {
+        const n = Number(val.value);
+        return isNaN(n) ? null : n;
+      }
+      const parsed = Number(val);
+      return isNaN(parsed) ? null : parsed;
+    };
+
+    const normalizedCandidates: CandidateModelValidationRun[] = rawCandidatesList.map((m: any) => {
+      const modelId = m.model_id || m.modelId || "model";
+      const displayName = m.displayName || m.name || modelId;
+      const framework = m.framework || (modelId.toLowerCase().includes("lightgbm") ? "lightgbm" : modelId.toLowerCase().includes("chronos") ? "chronos" : "custom");
+      const status = m.status || "Completed";
+
+      // Normalize metrics dictionary
+      const rawMetrics: Record<string, any> = m.metrics && typeof m.metrics === "object" ? m.metrics : {};
+      const metrics: Record<string, any> = {};
+      for (const [k, v] of Object.entries(rawMetrics)) {
+        const numVal = extractMetricNum(v);
+        metrics[k] = {
+          value: numVal,
+          status: numVal !== null ? "available" : "unavailable",
+          unit: typeof v === "object" ? v.unit : undefined,
+          reason: typeof v === "object" ? v.reason : undefined,
+        };
+      }
+
+      // Determine score and primary metric name
+      let score: number | undefined = typeof m.score === "number" && !isNaN(m.score) ? m.score : undefined;
+      let primaryMetricName = m.primaryMetricName;
+
+      if (score === undefined) {
+        if (isClassification) {
+          const rocAuc = extractMetricNum(rawMetrics.roc_auc ?? rawMetrics.rocAuc ?? rawMetrics.auc);
+          const acc = extractMetricNum(rawMetrics.accuracy ?? rawMetrics.acc);
+          const f1 = extractMetricNum(rawMetrics.f1_score ?? rawMetrics.f1Score ?? rawMetrics.f1);
+          if (rocAuc !== null) {
+            score = rocAuc;
+            primaryMetricName = primaryMetricName || "ROC AUC";
+          } else if (acc !== null) {
+            score = acc;
+            primaryMetricName = primaryMetricName || "Accuracy";
+          } else if (f1 !== null) {
+            score = f1;
+            primaryMetricName = primaryMetricName || "F1 Score";
+          }
+        } else {
+          const wape = extractMetricNum(rawMetrics.WAPE ?? rawMetrics.wape);
+          const mae = extractMetricNum(rawMetrics.MAE ?? rawMetrics.mae);
+          const rmse = extractMetricNum(rawMetrics.RMSE ?? rawMetrics.rmse);
+          if (wape !== null) {
+            score = wape;
+            primaryMetricName = primaryMetricName || "WAPE";
+          } else if (mae !== null) {
+            score = mae;
+            primaryMetricName = primaryMetricName || "MAE";
+          } else if (rmse !== null) {
+            score = rmse;
+            primaryMetricName = primaryMetricName || "RMSE";
+          }
+        }
+      }
+
+      return {
+        model_id: modelId,
+        displayName,
+        framework,
+        status: (status.toLowerCase() === "completed" ? "Completed" : "Failed") as "Completed" | "Failed",
+        score,
+        primaryMetricName: primaryMetricName || (isClassification ? "ROC AUC" : "Score"),
+        metrics,
+        totals: {
+          actualTotal: typeof m.totals?.actualTotal === "number" ? m.totals.actualTotal : null,
+          forecastTotal: typeof m.totals?.forecastTotal === "number" ? m.totals.forecastTotal : 0,
+          difference: typeof m.totals?.difference === "number" ? m.totals.difference : null,
+          differencePercentage: typeof m.totals?.differencePercentage === "number" ? m.totals.differencePercentage : null,
+        },
+        chartData: {
+          dates: Array.isArray(m.chartData?.dates) ? m.chartData.dates : [],
+          actualSeries: Array.isArray(m.chartData?.actualSeries) ? m.chartData.actualSeries : [],
+          predictedSeries: Array.isArray(m.chartData?.predictedSeries) ? m.chartData.predictedSeries : [],
+          residuals: Array.isArray(m.chartData?.residuals) ? m.chartData.residuals : null,
+        },
+        evaluationRecordCount: typeof m.evaluationRecordCount === "number" ? m.evaluationRecordCount : (rawReport?.total_records || 0),
+        actualDataCoverage: typeof m.actualDataCoverage === "number" ? m.actualDataCoverage : null,
+        modelArtifactPath: m.modelArtifactPath || `artifacts/models/${modelId}.joblib`,
+        error: m.error || m.status_message,
+      };
+    });
+
+    // Rank candidates by performance
+    const rankedCandidates = [...normalizedCandidates].sort((a, b) => {
+      const isErrorMetric =
+        (a.primaryMetricName || "").toUpperCase().includes("WAPE") ||
+        (a.primaryMetricName || "").toUpperCase().includes("MAE") ||
+        (a.primaryMetricName || "").toUpperCase().includes("RMSE") ||
+        (a.primaryMetricName || "").toUpperCase().includes("LOSS");
+      const scoreA = a.score ?? (isErrorMetric ? 999999 : -999999);
+      const scoreB = b.score ?? (isErrorMetric ? 999999 : -999999);
+      return isErrorMetric ? scoreA - scoreB : scoreB - scoreA;
+    });
+
+    const successfulRuns = rankedCandidates.filter(
+      (r) => r.status === "Completed" && r.metrics && Object.keys(r.metrics).length > 0
     );
+
     const championModel =
-      runs.find((r) => r.model_id === report?.champion_model_id && (r.status || "").toLowerCase() === "completed") ||
-      successfulRuns[0];
+      rankedCandidates.find((r) => r.model_id === rawReport?.champion_model_id && r.status === "Completed") ||
+      successfulRuns[0] ||
+      rankedCandidates[0];
+
+    const effectiveRunId = (rawReport?.validation_run_id || rawReport?.run_id || `val-${runTimestamp || Date.now()}`).slice(0, 50);
+
+    const report: ModelValidationReport = {
+      validation_run_id: effectiveRunId,
+      project_id: rawReport?.project_id || projectId,
+      mode: (rawReport?.mode || rawReport?.evaluation_mode || mode) as ValidationMode,
+      prediction_objective_start_date: rawReport?.prediction_objective_start_date || predictionStartDate,
+      prediction_objective_horizon: typeof rawReport?.prediction_objective_horizon === "number" ? rawReport.prediction_objective_horizon : horizon,
+      prediction_objective_frequency: (rawReport?.prediction_objective_frequency || frequency) as ValidationFrequency,
+      time_column: rawReport?.time_column || timeCol || "",
+      target_column: rawReport?.target_column || targetCol || "",
+      entity_column: rawReport?.entity_column || groupCol || null,
+      problem_type: effectiveProblemType,
+      dataset_reference: rawReport?.dataset_reference || datasetPath || "",
+      dataset_schema_version: rawReport?.dataset_schema_version || undefined,
+      evaluation_period: rawReport?.evaluation_period || {
+        start_date: predictionStartDate,
+        end_date: new Date().toISOString().slice(0, 10),
+      },
+      coverage_percentage: typeof rawReport?.coverage_percentage === "number" ? rawReport.coverage_percentage : 100.0,
+      champion_model_id: championModel?.model_id || "",
+      models: Object.fromEntries(rankedCandidates.map((c) => [c.model_id, c])),
+      ranked_models: rankedCandidates,
+      warnings: rawReport?.warnings || [],
+      created_at: rawReport?.timestamp || rawReport?.created_at || new Date().toISOString(),
+    };
+
+    // Save enriched report back to disk so file consumers get the normalized format
+    if (fs.existsSync(path.dirname(reportPath))) {
+      try {
+        fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), "utf-8");
+      } catch (writeErr: any) {
+        console.warn("[ModelValidationAgent] Failed to write back enriched validation report:", writeErr?.message || writeErr);
+      }
+    }
 
     const executionSuccess = execResult.success && !!report && successfulRuns.length > 0;
     const finalStatus = executionSuccess ? "Completed" : "Failed";
 
     const summary = executionSuccess
       ? `Model Validation completed successfully in ${mode.replace("_", " ")} mode for ${successfulRuns.length} candidate model(s). Champion: ${championModel?.displayName || championModel?.model_id || "selected model"}.`
-      : `Model Validation failed: ${runs.length === 0 ? "No models validated" : "All candidate models failed during validation"}. ${execResult.stderr.slice(0, 250)}`;
+      : `Model Validation failed: ${rankedCandidates.length === 0 ? "No models validated" : "All candidate models failed during validation"}. ${execResult.stderr.slice(0, 250)}`;
 
     await logMilestoneThinking(
       services,
@@ -775,7 +932,7 @@ export class ModelValidationAgent {
       predictionObjectiveHorizon: horizon,
       predictionObjectiveFrequency: frequency,
       report,
-      candidates: runs,
+      candidates: rankedCandidates,
       championModel,
       predictionsArtifact: `${projectName}_model_validation/artifacts/predictions/validation_predictions.parquet`,
       reportArtifact: `${projectName}_model_validation/reports/model_validation_report.json`,
