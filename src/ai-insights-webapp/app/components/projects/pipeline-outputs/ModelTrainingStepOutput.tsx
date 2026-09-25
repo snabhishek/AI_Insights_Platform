@@ -155,7 +155,8 @@ export default function ModelTrainingStepOutput({
     modelTraining?.report?.leaderboard ||
     modelTraining?.report?.results ||
     modelTraining?.report?.candidates ||
-    modelTraining?.report?.trained_models;
+    modelTraining?.report?.trained_models ||
+    modelTraining?.report?.evaluations;
 
   if (Array.isArray(rawReportPayload)) {
     reportCandidates = rawReportPayload;
@@ -188,6 +189,8 @@ export default function ModelTrainingStepOutput({
                   ? modelSelection.models
                   : [];
 
+  const primaryMetricKey = modelTraining?.report?.primary_metric || modelTraining?.report?.primary_metric_name;
+
   const rawCandidateList: CandidateModelItem[] = sourceCandidates.map((c: any, idx: number) => {
     const modelId = String(typeof c === "string" ? c : (c.model_id || c.id || c.name || c.model_name || `candidate_${idx + 1}`));
     const displayName = String(typeof c === "string" ? c : (c.displayName || c.display_name || c.algorithm || c.name || modelId));
@@ -212,6 +215,10 @@ export default function ModelTrainingStepOutput({
       score = c.metric_score;
     } else if (typeof c.primary_metric_value === "number" && !isNaN(c.primary_metric_value)) {
       score = c.primary_metric_value;
+    } else if (primaryMetricKey && typeof validationMetrics?.[primaryMetricKey] === "number") {
+      score = validationMetrics[primaryMetricKey];
+    } else if (primaryMetricKey && typeof testMetrics?.[primaryMetricKey] === "number") {
+      score = testMetrics[primaryMetricKey];
     } else if (typeof c.test_score === "number" && !isNaN(c.test_score)) {
       score = c.test_score;
     } else if (typeof validationMetrics?.roc_auc === "number") {
@@ -245,6 +252,8 @@ export default function ModelTrainingStepOutput({
     const durationSeconds =
       c.durationSeconds ??
       c.duration_seconds ??
+      (c.fit_time_seconds != null ? Number(c.fit_time_seconds) + Number(c.scoring_time_seconds || 0) : undefined) ??
+      c.fit_time_seconds ??
       c.training_metadata?.training_time_seconds ??
       c.training_time_seconds ??
       c.training_time ??
@@ -414,19 +423,44 @@ export default function ModelTrainingStepOutput({
   );
 
   const report = modelTraining?.report;
-  const championModelId = modelTraining?.selectedModel || report?.selectedModel || candidateModels[0]?.model_id;
+  const championModelId =
+    modelTraining?.selectedModel ||
+    report?.selectedModel ||
+    report?.champion_model ||
+    report?.best_model_id ||
+    report?.champion_model_id ||
+    candidateModels[0]?.model_id;
+
   const championArtifact =
     modelTraining?.selectedModelArtifact ||
     report?.selectedModelArtifact ||
+    report?.champion_artifact ||
+    report?.artifacts?.selected_model ||
     candidateModels.find((c) => c.model_id === championModelId)?.artifact ||
     `artifacts/models/${championModelId || "model"}.joblib`;
 
   const championCandidate = candidateModels.find((c) => c.model_id === championModelId) || candidateModels[0];
 
-  // Visual plots collection
+  // Visual plots collection from report, modelTraining, and candidate plots
+  const candidatePlots: Record<string, string> = {};
+  for (const c of candidateModels) {
+    if (c.plots && typeof c.plots === "object") {
+      for (const [pKey, pVal] of Object.entries(c.plots)) {
+        if (typeof pVal === "string" && pVal.trim()) {
+          const plotKey = `${c.model_id}_${pKey}`;
+          candidatePlots[plotKey] = pVal;
+        }
+      }
+    }
+  }
+
   const plots: Record<string, string> = {
+    ...(typeof report?.comparison_plot === "string" ? { cross_model_comparison: report.comparison_plot } : {}),
+    ...(typeof report?.comparison_plots === "object" && report?.comparison_plots ? report.comparison_plots : {}),
+    ...(typeof report?.comparisonPlots === "object" && report?.comparisonPlots ? report.comparisonPlots : {}),
+    ...(typeof report?.plots === "object" && report?.plots ? report.plots : {}),
     ...(modelTraining?.plots || {}),
-    ...(report?.comparisonPlots || {}),
+    ...candidatePlots,
   };
 
   return (

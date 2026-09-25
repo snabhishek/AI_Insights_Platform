@@ -645,7 +645,7 @@ export class ModelTrainingAgent {
       );
     }
 
-    // Extract runs from any standard report key (supporting both arrays and dictionary objects like candidate_model_results)
+    // Extract runs from any standard report key (supporting both arrays and dictionary objects like candidate_model_results, evaluations, etc.)
     let rawRuns: any[] = [];
     if (Array.isArray(report)) {
       rawRuns = report;
@@ -658,7 +658,8 @@ export class ModelTrainingAgent {
         report.leaderboard ||
         report.results ||
         report.candidates ||
-        report.trained_models;
+        report.trained_models ||
+        report.evaluations;
 
       if (Array.isArray(candidatesPayload)) {
         rawRuns = candidatesPayload;
@@ -685,6 +686,7 @@ export class ModelTrainingAgent {
 
       // Robust score extraction prioritizing standard regression & classification validation metrics
       let score: number | undefined = undefined;
+      const primaryMetricKey = report?.primary_metric || report?.primary_metric_name;
       if (typeof r.score === "number" && !isNaN(r.score)) {
         score = r.score;
       } else if (typeof r.val_score === "number" && !isNaN(r.val_score)) {
@@ -695,6 +697,10 @@ export class ModelTrainingAgent {
         score = r.metric_score;
       } else if (typeof r.primary_metric_value === "number" && !isNaN(r.primary_metric_value)) {
         score = r.primary_metric_value;
+      } else if (primaryMetricKey && typeof validationMetrics?.[primaryMetricKey] === "number") {
+        score = validationMetrics[primaryMetricKey];
+      } else if (primaryMetricKey && typeof testMetrics?.[primaryMetricKey] === "number") {
+        score = testMetrics[primaryMetricKey];
       } else if (typeof validationMetrics?.roc_auc === "number") {
         score = validationMetrics.roc_auc;
       } else if (typeof validationMetrics?.accuracy === "number") {
@@ -716,10 +722,12 @@ export class ModelTrainingAgent {
         if (typeof num === "number") score = num;
       }
 
-      // Duration extraction from training_metadata or standard duration fields
+      // Duration extraction from fit_time_seconds, training_metadata, or standard duration fields
       const durationSeconds =
         r.durationSeconds ??
         r.duration_seconds ??
+        (r.fit_time_seconds != null ? Number(r.fit_time_seconds) + Number(r.scoring_time_seconds || 0) : undefined) ??
+        r.fit_time_seconds ??
         r.training_metadata?.training_time_seconds ??
         r.training_time_seconds ??
         r.training_time ??
@@ -749,10 +757,19 @@ export class ModelTrainingAgent {
       .filter((r) => r.status === "Completed")
       .sort((a, b) => (b.score || 0) - (a.score || 0));
 
-    const selectedModel = report.selectedModel || report.champion_model || (rankedCandidates[0]?.model_id) || effectiveSelectedModels[0] || "model";
+    const selectedModel =
+      report.selectedModel ||
+      report.champion_model ||
+      report.best_model_id ||
+      report.champion_model_id ||
+      (rankedCandidates[0]?.model_id) ||
+      effectiveSelectedModels[0] ||
+      "model";
+
     const selectedModelArtifact =
       report.selectedModelArtifact ||
       report.champion_artifact ||
+      report.artifacts?.selected_model ||
       (rankedCandidates[0]?.artifact) ||
       `artifacts/models/${selectedModel}.joblib`;
 
@@ -762,6 +779,13 @@ export class ModelTrainingAgent {
       rankedCandidates[0]?.testMetrics ||
       rankedCandidates[0]?.validationMetrics ||
       {};
+
+    const topLevelPlots: Record<string, string> = {
+      ...(typeof report.comparison_plot === "string" ? { cross_model_comparison: report.comparison_plot } : {}),
+      ...(typeof report.comparison_plots === "object" && report.comparison_plots ? report.comparison_plots : {}),
+      ...(typeof report.comparisonPlots === "object" && report.comparisonPlots ? report.comparisonPlots : {}),
+      ...(typeof report.plots === "object" && report.plots ? report.plots : {}),
+    };
 
     const durationMs = Date.now() - startTime;
     const finalStatus = executionSuccess && rankedCandidates.length > 0 ? "Completed" : "Failed";
@@ -787,7 +811,6 @@ export class ModelTrainingAgent {
       selectedModel,
       selectedModelArtifact,
       validationMetrics,
-      plots: report.comparisonPlots || {},
       filesCreated: codingResult.files || [],
       selectedModels: effectiveSelectedModels,
       splitEndDate: effectiveSplitEndDate,

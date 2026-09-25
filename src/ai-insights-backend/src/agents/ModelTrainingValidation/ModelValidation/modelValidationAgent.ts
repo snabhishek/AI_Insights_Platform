@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as yaml from "js-yaml";
+import { BaseMessage } from "@langchain/core/messages";
 import { AgentStateType, IngestionServices } from "../../state";
 import {
   getModel,
@@ -377,6 +378,9 @@ export class ModelValidationAgent {
     };
 
     // 3. Agentic Code Generation
+    const agentMessages: BaseMessage[] = [];
+    const rectifierMessages: BaseMessage[] = [];
+
     let codingResult: ValidationCodingAgentResult = codingFallback;
     try {
       codingResult = await invokeAgentJson<ValidationCodingAgentResult>(
@@ -392,6 +396,15 @@ export class ModelValidationAgent {
           useDeepAgent: true,
           enableTodoList: true,
           recursionLimit: 150,
+          messages: agentMessages,
+          middlewareOptions: {
+            summarization: {
+              triggerTokens: 200000,
+              keepTokens: 25000,
+            },
+            todoList: true,
+            toolRetry: { maxRetries: 2 },
+          },
         }
       );
     } catch (codeErr: any) {
@@ -435,7 +448,7 @@ export class ModelValidationAgent {
         codingResult = await invokeAgentJson<ValidationCodingAgentResult>(
           "modelValidationCode",
           model,
-          userPrompt + `\n\nIMPORTANT: The previous attempt did not produce validation_runner.py. You MUST write the file to '${runTimestamp}/${projectName}_model_validation/validation_runner.py' using the write_text_file tool.`,
+          `The previous attempt did not produce validation_runner.py. You MUST write the file to '${runTimestamp}/${projectName}_model_validation/validation_runner.py' using the write_text_file tool.`,
           codingFallback,
           services,
           {
@@ -445,6 +458,15 @@ export class ModelValidationAgent {
             useDeepAgent: true,
             enableTodoList: true,
             recursionLimit: 150,
+            messages: agentMessages,
+            middlewareOptions: {
+              summarization: {
+                triggerTokens: 200000,
+                keepTokens: 25000,
+              },
+              todoList: true,
+              toolRetry: { maxRetries: 2 },
+            },
           }
         );
         if (Array.isArray(codingResult.requiredPackages)) {
@@ -576,7 +598,18 @@ export class ModelValidationAgent {
             systemPrompt: rectifierPrompt,
             traceLabel: `modelValidation:rectifier:attempt${attempts}`,
             tools: agentTools,
-            useDeepAgent: false,
+            useDeepAgent: true,
+            enableTodoList: true,
+            recursionLimit: 150,
+            messages: rectifierMessages,
+            middlewareOptions: {
+              summarization: {
+                triggerTokens: 200000,
+                keepTokens: 25000,
+              },
+              todoList: true,
+              toolRetry: { maxRetries: 2 },
+            },
           }
         );
 
@@ -605,7 +638,7 @@ export class ModelValidationAgent {
             const regenResult = await invokeAgentJson<ValidationCodingAgentResult>(
               "modelValidationCode",
               model,
-              userPrompt + `\n\nPREVIOUS EXECUTION FAILED:\n${validationHealth.reason || ""}\n${failedModelDetails}\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
+              `PREVIOUS EXECUTION FAILED:\n${validationHealth.reason || ""}\n${failedModelDetails}\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
               codingFallback,
               services,
               {
@@ -615,6 +648,15 @@ export class ModelValidationAgent {
                 useDeepAgent: true,
                 enableTodoList: true,
                 recursionLimit: 150,
+                messages: agentMessages,
+                middlewareOptions: {
+                  summarization: {
+                    triggerTokens: 200000,
+                    keepTokens: 25000,
+                  },
+                  todoList: true,
+                  toolRetry: { maxRetries: 2 },
+                },
               }
             );
             if (Array.isArray(regenResult?.requiredPackages) && regenResult.requiredPackages.length > 0) {
@@ -642,7 +684,7 @@ export class ModelValidationAgent {
           const fallbackResult = await invokeAgentJson<ValidationCodingAgentResult>(
             "modelValidationCode",
             model,
-            userPrompt + `\n\nPREVIOUS EXECUTION FAILED:\n${validationHealth.reason || ""}\n${failedModelDetails}\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
+            `PREVIOUS EXECUTION FAILED:\n${validationHealth.reason || ""}\n${failedModelDetails}\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
             codingFallback,
             services,
             {
@@ -652,6 +694,15 @@ export class ModelValidationAgent {
               useDeepAgent: true,
               enableTodoList: true,
               recursionLimit: 150,
+              messages: agentMessages,
+              middlewareOptions: {
+                summarization: {
+                  triggerTokens: 200000,
+                  keepTokens: 25000,
+                },
+                todoList: true,
+                toolRetry: { maxRetries: 2 },
+              },
             }
           );
           if (Array.isArray(fallbackResult?.requiredPackages) && fallbackResult.requiredPackages.length > 0) {
