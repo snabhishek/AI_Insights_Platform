@@ -1,4 +1,4 @@
-﻿import * as fs from "fs";
+import * as fs from "fs";
 import * as path from "path";
 import * as yaml from "js-yaml";
 import { AgentStateType, IngestionServices } from "../../state";
@@ -343,8 +343,14 @@ export class ModelValidationAgent {
       console.warn("[ModelValidationAgent] Code generation invoke warning:", codeErr?.message || codeErr);
     }
 
+    const baseValidationPackages = ["pandas", "numpy", "scikit-learn", "pyarrow", "pyyaml", "joblib", "lightgbm"];
+    let accumulatedPackages: string[] = [...baseValidationPackages];
+    if (Array.isArray(codingResult.requiredPackages)) {
+      accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...codingResult.requiredPackages]));
+    }
+
     // If the agent failed to produce validation_runner.py, retry the coding agent
-    const maxCodeGenRetries = 2;
+    const maxCodeGenRetries = options?.maxRetries ?? 20;
     let codeGenAttempt = 0;
     while (!fs.existsSync(relativeValidationRunner) && codeGenAttempt < maxCodeGenRetries) {
       codeGenAttempt++;
@@ -370,6 +376,9 @@ export class ModelValidationAgent {
             recursionLimit: 150,
           }
         );
+        if (Array.isArray(codingResult.requiredPackages)) {
+          accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...codingResult.requiredPackages]));
+        }
       } catch (retryErr: any) {
         console.warn(`[ModelValidationAgent] Code generation retry ${codeGenAttempt} failed:`, retryErr?.message || retryErr);
       }
@@ -428,12 +437,12 @@ export class ModelValidationAgent {
       runTimestamp,
       services,
       undefined,
-      ["pandas", "numpy", "scikit-learn", "pyarrow", "pyyaml", "joblib", "lightgbm"],
+      accumulatedPackages,
       extraArgs
     );
 
     // 5. Self-Healing Rectification Loop if Container Execution Fails
-    const maxRetries = options?.maxRetries ?? 2;
+    const maxRetries = options?.maxRetries ?? 20;
     let attempts = 0;
 
     const reportPath = path.join(modelValidationDir, "reports", "model_validation_report.json");
@@ -483,12 +492,16 @@ export class ModelValidationAgent {
           }
         );
 
+        if (Array.isArray(diagnostic.requiredPackages)) {
+          accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...diagnostic.requiredPackages]));
+        }
+
         if (diagnostic.recommendedCodeSnippet && diagnostic.failingFile) {
           const targetFile = path.join(modelValidationDir, path.basename(diagnostic.failingFile));
           if (fs.existsSync(targetFile)) {
             fs.writeFileSync(targetFile, diagnostic.recommendedCodeSnippet, "utf-8");
           } else {
-            // File doesn't exist yet â€” write the recommended snippet as the new file
+            // File doesn't exist yet — write the recommended snippet as the new file
             fs.writeFileSync(
               path.join(modelValidationDir, path.basename(diagnostic.failingFile)),
               diagnostic.recommendedCodeSnippet,
@@ -496,7 +509,7 @@ export class ModelValidationAgent {
             );
           }
         } else {
-          // Rectifier did not provide a code fix â€” re-invoke the coding agent
+          // Rectifier did not provide a code fix — re-invoke the coding agent
           console.warn("[ModelValidationAgent] Rectifier did not provide code snippet. Re-invoking coding agent...");
           await logMilestoneThinking(
             services,
@@ -504,7 +517,7 @@ export class ModelValidationAgent {
             `Rectifier could not provide a fix. Re-generating validation runner (attempt ${attempts})...`
           );
           try {
-            await invokeAgentJson<ValidationCodingAgentResult>(
+            const regenResult = await invokeAgentJson<ValidationCodingAgentResult>(
               "modelValidationCode",
               model,
               userPrompt + `\n\nPREVIOUS EXECUTION FAILED:\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
@@ -519,20 +532,23 @@ export class ModelValidationAgent {
                 recursionLimit: 150,
               }
             );
+            if (Array.isArray(regenResult?.requiredPackages)) {
+              accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...regenResult.requiredPackages]));
+            }
           } catch (regenErr: any) {
             console.warn("[ModelValidationAgent] Coding agent re-invocation failed:", regenErr?.message || regenErr);
           }
         }
       } catch (rectErr: any) {
         console.warn("[ModelValidationAgent] Rectifier invocation warning:", rectErr?.message || rectErr);
-        // Rectifier itself failed â€” re-invoke the coding agent with error context
+        // Rectifier itself failed — re-invoke the coding agent with error context
         await logMilestoneThinking(
           services,
           "Model Validation",
           `Rectifier failed. Re-generating validation runner with error context (attempt ${attempts})...`
         );
         try {
-          await invokeAgentJson<ValidationCodingAgentResult>(
+          const fallbackResult = await invokeAgentJson<ValidationCodingAgentResult>(
             "modelValidationCode",
             model,
             userPrompt + `\n\nPREVIOUS EXECUTION FAILED:\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
@@ -547,6 +563,9 @@ export class ModelValidationAgent {
               recursionLimit: 150,
             }
           );
+          if (Array.isArray(fallbackResult?.requiredPackages)) {
+            accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...fallbackResult.requiredPackages]));
+          }
         } catch (regenErr: any) {
           console.warn("[ModelValidationAgent] Coding agent fallback re-invocation failed:", regenErr?.message || regenErr);
         }
@@ -559,7 +578,7 @@ export class ModelValidationAgent {
         runTimestamp,
         services,
         undefined,
-        ["pandas", "numpy", "scikit-learn", "pyarrow", "pyyaml", "joblib", "lightgbm"],
+        accumulatedPackages,
         extraArgs
       );
     }

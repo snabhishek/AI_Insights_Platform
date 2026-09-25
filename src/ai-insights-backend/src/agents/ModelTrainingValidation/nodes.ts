@@ -431,6 +431,7 @@ export async function modelValidationNode(state: State, config?: RunnableConfig)
     predictionHorizon: (state as any).predictionHorizon,
     predictionFrequency: (state as any).predictionFrequency,
     predictionObjectiveStartDate: (state as any).predictionObjectiveStartDate,
+    maxRetries: 20
   };
 
   const output = await ModelValidationAgent.execute(state, services, options);
