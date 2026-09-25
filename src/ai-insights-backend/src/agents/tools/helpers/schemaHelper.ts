@@ -5,6 +5,7 @@ import * as yaml from 'js-yaml';
 import {
   getProjectDir,
   getProjectSchemasDir,
+  getProjectPythonScriptDir,
   getLatestProjectTimestamp,
   getWorkspacesBasePath,
 } from '../../../config/fileServer.config';
@@ -824,6 +825,63 @@ function dumpSectionYaml(data: Record<string, any>): string {
 }
 
 /**
+ * Reads the feature validation report from project_folder/latest_timestamp/python_script folder
+ * and extracts the array of kept/validated feature names.
+ */
+export async function readValidatedFeaturesFromReport(
+  workspaceName: string,
+  projectName: string,
+  runTimestamp?: string
+): Promise<string[]> {
+  try {
+    const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
+    const pythonScriptDir = getProjectPythonScriptDir(workspaceName, projectName, timestamp);
+
+    const candidatePaths = [
+      path.join(pythonScriptDir, "feature_validation_report.json"),
+      path.join(getProjectDir(workspaceName, projectName), timestamp, "python_script", "feature_validation_report.json"),
+      path.join(getProjectDir(workspaceName, projectName), "python_script", "feature_validation_report.json"),
+    ];
+
+    // If latest timestamp on disk differs from resolved timestamp, check it as well
+    const latestTs = getLatestProjectTimestamp(workspaceName, projectName);
+    if (latestTs && latestTs !== timestamp) {
+      candidatePaths.push(
+        path.join(getProjectDir(workspaceName, projectName), latestTs, "python_script", "feature_validation_report.json")
+      );
+    }
+
+    for (const reportPath of candidatePaths) {
+      if (fsSync.existsSync(reportPath)) {
+        try {
+          const raw = await fs.readFile(reportPath, "utf-8");
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object") {
+            if (Array.isArray(parsed.validatedFeatureSet?.kept) && parsed.validatedFeatureSet.kept.length > 0) {
+              return parsed.validatedFeatureSet.kept;
+            }
+            if (Array.isArray(parsed.kept) && parsed.kept.length > 0) {
+              return parsed.kept;
+            }
+            if (Array.isArray(parsed.validated_features) && parsed.validated_features.length > 0) {
+              return parsed.validated_features;
+            }
+            if (Array.isArray(parsed.validatedFeatures) && parsed.validatedFeatures.length > 0) {
+              return parsed.validatedFeatures;
+            }
+          }
+        } catch (readErr) {
+          console.warn(`[readValidatedFeaturesFromReport] Error parsing report at ${reportPath}:`, readErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[readValidatedFeaturesFromReport] Error reading feature validation report for ${projectName}:`, err);
+  }
+  return [];
+}
+
+/**
  * Saves or updates the modular Training Job Contract YAML file inside
  * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
  * <usecasetitle>_training_job_contract_<timestamp>.yaml
@@ -1034,15 +1092,31 @@ export async function saveModularTrainingJobContract(
     prediction_timestamp: null,
   };
 
-  const upstreamArtifactsData = rawData.upstream_artifacts || existingObj.upstream_artifacts || {
-    dataset_id: `dataset_${cleanProjectTitle}_${timestamp}`,
-    dataset_version: "1.0",
-    feature_set_id: `features_${cleanProjectTitle}_${timestamp}`,
-    feature_set_version: "1.0",
-    profiling_report_id: `profiling_${cleanProjectTitle}_${timestamp}`,
-    relationship_schema_id: null,
-    row_count: 0,
-    column_count: 0,
+  // Resolve validated features by reading the feature validation report from project run python_script folder
+  const reportValidatedFeatures = await readValidatedFeaturesFromReport(workspaceName, projectName, timestamp);
+  const incomingValidatedFeatures =
+    rawData.upstream_artifacts?.validated_features ||
+    rawData.upstream_artifacts?.validatedFeatures ||
+    rawData.validated_features ||
+    rawData.validatedFeatures ||
+    existingObj.upstream_artifacts?.validated_features;
+
+  const finalValidatedFeatures: string[] =
+    Array.isArray(incomingValidatedFeatures) && incomingValidatedFeatures.length > 0
+      ? incomingValidatedFeatures
+      : reportValidatedFeatures;
+
+  const incomingUpstream = rawData.upstream_artifacts || {};
+  const existingUpstream = existingObj.upstream_artifacts || {};
+
+  const upstreamArtifactsData = {
+    dataset_id: incomingUpstream.dataset_id || incomingUpstream.dataset_path || existingUpstream.dataset_id || existingUpstream.dataset_path || `dataset_${cleanProjectTitle}_${timestamp}`,
+    dataset_version: incomingUpstream.dataset_version || existingUpstream.dataset_version || "1.0",
+    validated_features: finalValidatedFeatures,
+    profiling_report_id: incomingUpstream.profiling_report_id || incomingUpstream.profiling_report_path || existingUpstream.profiling_report_id || existingUpstream.profiling_report_path || `profiling_${cleanProjectTitle}_${timestamp}`,
+    relationship_schema_id: incomingUpstream.relationship_schema_id || incomingUpstream.relationship_schema_path || existingUpstream.relationship_schema_id || existingUpstream.relationship_schema_path || null,
+    row_count: incomingUpstream.row_count ?? existingUpstream.row_count ?? 0,
+    column_count: incomingUpstream.column_count ?? (finalValidatedFeatures.length > 0 ? finalValidatedFeatures.length : existingUpstream.column_count ?? 0),
   };
 
   const splitData = rawData.split || existingObj.split || {

@@ -38,18 +38,29 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
       }
     );
 
-    const finalOutput = graphResult.finalOutput || {};
+    const finalOutput: any = graphResult.finalOutput || {};
+    const predictionTargetColumn =
+      graphResult.prediction_target_column ||
+      finalOutput.prediction_target_column ||
+      graphResult.orchestrationDecision?.prediction_target_column ||
+      graphResult.orchestrationDecision?.targetColumn ||
+      finalOutput.orchestrationDecision?.prediction_target_column ||
+      finalOutput.orchestrationDecision?.targetColumn ||
+      "";
+
+    finalOutput.prediction_target_column = predictionTargetColumn;
     const featureValidatorOutput = finalOutput.featureValidator || graphResult.featureValidator || {};
 
     await logMilestoneThinking(
       services,
       "Feature Engineering",
-      "Feature Architect & Validator workflow completed successfully."
+      `Feature Architect & Validator workflow completed successfully. Target column: "${predictionTargetColumn || "not specified"}".`
     );
 
     return {
       featureArchitect: finalOutput,
       featureValidator: featureValidatorOutput,
+      prediction_target_column: predictionTargetColumn,
       status: "running",
       summary: "Feature Engineering completed successfully",
       steps: [

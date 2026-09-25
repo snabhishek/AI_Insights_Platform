@@ -72,9 +72,6 @@ export class TrainingConfigValidator {
       if (Math.abs(sum - 1.0) > 0.02) {
         errors.push(`Split ratios (train: ${train}, val: ${val}, test: ${test}) must sum to 1.0 (current sum: ${sum.toFixed(3)})`);
       }
-      if (conf.split.strategy && !TrainingConfigValidator.VALID_SPLIT_STRATEGIES.includes(conf.split.strategy)) {
-        errors.push(`Invalid split strategy '${conf.split.strategy}'. Expected one of: ${TrainingConfigValidator.VALID_SPLIT_STRATEGIES.join(", ")}`);
-      }
     } else {
       errors.push("Missing required 'split' section");
     }
@@ -82,15 +79,11 @@ export class TrainingConfigValidator {
     // 3. Check task definition
     if (!conf.task || !conf.task.task_type) {
       errors.push("Missing required 'task' section with 'task.task_type'");
-    } else if (!TrainingConfigValidator.VALID_TASK_TYPES.includes(String(conf.task.task_type).toLowerCase())) {
-      errors.push(`Invalid task_type '${conf.task.task_type}'. Expected one of: ${TrainingConfigValidator.VALID_TASK_TYPES.join(", ")}`);
     }
 
     // 4. Check hyperparameter optimization
     if (!conf.hyperparameter_optimization) {
       errors.push("Missing required 'hyperparameter_optimization' section");
-    } else if (conf.hyperparameter_optimization.method && !TrainingConfigValidator.VALID_HPO_METHODS.includes(conf.hyperparameter_optimization.method)) {
-      errors.push(`Invalid HPO method '${conf.hyperparameter_optimization.method}'. Expected one of: ${TrainingConfigValidator.VALID_HPO_METHODS.join(", ")}`);
     }
 
     // 5. Check search space

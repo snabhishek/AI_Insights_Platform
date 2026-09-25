@@ -21,6 +21,101 @@ The feature engineering pipeline executes inside a Docker container managed excl
 - `Dockerfile`: Maintains the base image (`python:3.12-slim`), system dependencies, and package installation.
 - `docker-compose.yml`: Maintains container runtime, resource limits (CPU/Memory limits), `/workspace` volume mounts, environment variables, and execution parameters.
 
+## Aggregated Pipeline Architecture & Script Template
+The feature engineering pipeline is unified into a single aggregated Python script (`aggregated_feature_pipeline.py`). It consists of 8 distinct designated regions surrounded by `# -- REGION: <REGION_NAME> START --` and `# -- REGION: <REGION_NAME> END --` markers, followed by a sequential pipeline runner at the bottom (`# -- PIPELINE_RUNNER START --`).
+
+Here is the exact canonical pipeline template:
+```python
+# Aggregated feature engineering script: aggregated_feature_pipeline.py
+
+# Shared imports region
+# -- REGION: SHARED_IMPORTS START --
+# -- REGION: SHARED_IMPORTS END --
+
+# Feature creation region
+# -- REGION: FEATURE_CREATION START --
+# -- REGION: FEATURE_CREATION END --
+
+# Feature transformation region
+# -- REGION: FEATURE_TRANSFORMATION START --
+# -- REGION: FEATURE_TRANSFORMATION END --
+
+# Build dataset region
+# -- REGION: BUILD_DATASET START --
+# -- REGION: BUILD_DATASET END --
+
+# Data validation region
+# -- REGION: DATA_VALIDATION START --
+# -- REGION: DATA_VALIDATION END --
+
+# Feature extraction region
+# -- REGION: FEATURE_EXTRACTION START --
+# -- REGION: FEATURE_EXTRACTION END --
+
+# Feature selection region
+# -- REGION: FEATURE_SELECTION START --
+# -- REGION: FEATURE_SELECTION END --
+
+# Feature validation region
+# -- REGION: FEATURE_VALIDATION START --
+# -- REGION: FEATURE_VALIDATION END --
+
+# Pipeline Runner - Executes all stages sequentially
+# -- PIPELINE_RUNNER START --
+if __name__ == '__main__':
+    import argparse
+    import os
+    import sys
+
+    parser = argparse.ArgumentParser(description='Feature engineering pipeline runner')
+    parser.add_argument('--db-path', type=str, required=True, help='Path to directory with CSV/data files')
+    parser.add_argument('--split', type=str, default='train', choices=['train', 'val', 'test'])
+    parser.add_argument('--out-dir', type=str, default=None, help='Directory to save/load transformers and outputs')
+    parser.add_argument('--output-path', type=str, default=None, help='Output path for final dataset (Parquet)')
+    parser.add_argument('--metadata-path', type=str, default=None, help='Path to save metadata YAML')
+    parser.add_argument('--features-path', type=str, default=None, help='Path to features parquet/CSV')
+    parser.add_argument('--report-path', type=str, default=None, help='Path to validation report JSON')
+    args, _ = parser.parse_known_args()
+    db_path = args.db_path
+    split = args.split
+    out_dir = args.out_dir or '.'
+    output_path = args.output_path or os.path.join(out_dir, 'dataset.parquet')
+    metadata_path = args.metadata_path or os.path.join(out_dir, 'metadata.yaml')
+    features_path = args.features_path or os.path.join(out_dir, 'order_features.parquet')
+    report_path = args.report_path or os.path.join(out_dir, 'feature_validation_report.json')
+
+    if 'main_feature_creation' in dir():
+        print('=== [1/7] Running Feature Creation ===')
+        main_feature_creation(['--db-path', db_path, '--out-dir', out_dir])
+
+    if 'main_feature_transformation' in dir():
+        print('=== [2/7] Running Feature Transformation ===')
+        main_feature_transformation(['--db-path', db_path, '--split', split, '--out-dir', out_dir])
+
+    if 'main_build_dataset' in dir():
+        print('=== [3/7] Running Build Dataset ===')
+        main_build_dataset(['--db-path', db_path, '--output-path', output_path, '--metadata-path', metadata_path])
+
+    if 'main_data_validation' in dir():
+        print('=== [4/7] Running Data Validation ===')
+        main_data_validation(['--db-path', db_path, '--output-path', os.path.join(out_dir, 'validation_report.json')])
+
+    if 'main_feature_extraction' in dir():
+        print('=== [5/7] Running Feature Extraction ===')
+        main_feature_extraction(['--db-path', db_path, '--out-dir', out_dir])
+
+    if 'main_feature_selection' in dir():
+        print('=== [6/7] Running Feature Selection ===')
+        main_feature_selection(['--db-path', db_path, '--features-path', output_path, '--output-path', os.path.join(out_dir, 'selected_features.parquet')])
+
+    if 'main_feature_validation' in dir():
+        print('=== [7/7] Running Feature Validation ===')
+        main_feature_validation(['--db-path', db_path, '--features-path', os.path.join(out_dir, 'selected_features.parquet'), '--output-path', os.path.join(out_dir, 'validated_features.parquet'), '--report-path', report_path])
+
+    print('=== Pipeline Execution Complete ===')
+# -- PIPELINE_RUNNER END --
+```
+
 ## Supervisor Responsibilities
 
 1. Inputs — The Supervisor receives:
@@ -86,8 +181,10 @@ The feature engineering pipeline executes inside a Docker container managed excl
   - Update an `executionChecklist` entry for the stage with `status`, `artifacts` (paths/names), `timestamp`, and a short `workerSummary`.
   - Only advance to the next stage when the current stage `status` == `OK` and produced the required artifacts.
 
-  Rules for Feature Extraction and Build Dataset (strict enforcement):
+  Rules for Feature Extraction, Feature Selection, and Build Dataset (strict enforcement):
   - `Build Dataset` MUST run before `Feature Extraction`, `Feature Selection`, and `Feature Validator` unless a documented and approved exception is present in the plan. If the last run omitted `Build Dataset`, the Supervisor must detect missing dataset artifacts and re-schedule `buildDataset` before proceeding.
+  - **Target Column Decision**: Once the dataset is assembled by `Build Dataset`, the Supervisor MUST decide and confirm the primary `prediction_target_column` (target variable to predict).
+  - **Target Exclusion Rule**: Whenever dispatching or running `Feature Extraction` and `Feature Selection`, the `prediction_target_column` MUST be strictly excluded from transformation, dimensionality reduction (e.g. PCA, LDA), and feature filtering/dropping.
   - `Feature Extraction` is optional only after the Supervisor evaluates dataset characteristics and explicitly records a `skipExtraction` decision with rationale. If `Feature Extraction` is required, it must be scheduled and completed with `status` == `OK` before feature selection.
 
   Failure handling:
@@ -107,6 +204,7 @@ Return valid JSON with no surrounding prose. Use this schema:
 {
   "status": "OK | ERROR",
   "nextWorker": "featureCreation | featureTransformation | buildDataset | dataValidation | featureExtraction | featureSelection | featureValidator | FINISH",
+  "prediction_target_column": "target_col",
   "rationale": "Clear, technical rationale explaining why this worker is chosen based on pipeline state and validation checks.",
   "executionChecklist": [
     {

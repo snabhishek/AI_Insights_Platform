@@ -9,10 +9,12 @@ interface SupervisorOutput extends Record<string, unknown> {
   status: string;
   nextWorker: string;
   rationale: string;
+  prediction_target_column?: string;
   orchestrationDecision?: {
     summary: string;
     problemType: string;
     targetColumn: string;
+    prediction_target_column?: string;
     predictionEntity: string;
     timeColumn?: string;
     leakageColumns?: string[];
@@ -146,10 +148,24 @@ export async function supervisorNode(
       );
     }
 
+    const targetCol =
+      result.prediction_target_column ||
+      result.orchestrationDecision?.prediction_target_column ||
+      result.orchestrationDecision?.targetColumn ||
+      state.prediction_target_column ||
+      state.orchestrationDecision?.prediction_target_column ||
+      state.orchestrationDecision?.targetColumn ||
+      "";
+
     if (safeNextWorker === "FINISH") {
       const finalOutput = {
         status: "completed",
-        orchestrationDecision: state.orchestrationDecision,
+        prediction_target_column: targetCol,
+        orchestrationDecision: {
+          ...state.orchestrationDecision,
+          targetColumn: targetCol || state.orchestrationDecision?.targetColumn || "",
+          prediction_target_column: targetCol || state.orchestrationDecision?.prediction_target_column || "",
+        },
         featureCreation: state.featureCreation,
         featureTransformation: state.featureTransformation,
         buildDataset: state.buildDataset,
@@ -161,6 +177,7 @@ export async function supervisorNode(
       };
       return {
         nextWorker: safeNextWorker,
+        prediction_target_column: targetCol,
         finalOutput,
       };
     }
@@ -169,12 +186,17 @@ export async function supervisorNode(
       nextWorker: safeNextWorker,
     };
 
+    if (targetCol) {
+      updates.prediction_target_column = targetCol;
+    }
+
     if (result.orchestrationDecision) {
       updates.orchestrationDecision = {
         status: "OK",
         summary: result.orchestrationDecision.summary || "",
         problemType: result.orchestrationDecision.problemType || "",
-        targetColumn: result.orchestrationDecision.targetColumn || "",
+        targetColumn: targetCol || result.orchestrationDecision.targetColumn || "",
+        prediction_target_column: targetCol || result.orchestrationDecision.prediction_target_column || result.orchestrationDecision.targetColumn || "",
         predictionEntity: result.orchestrationDecision.predictionEntity || "",
         timeColumn: result.orchestrationDecision.timeColumn || "",
         leakageColumns: result.orchestrationDecision.leakageColumns || [],

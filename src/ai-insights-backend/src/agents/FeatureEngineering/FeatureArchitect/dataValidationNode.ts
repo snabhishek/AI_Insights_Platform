@@ -5,7 +5,7 @@ import { validateWithRetry } from "../../validator/validatorNode";
 import { FeatureArchitectAnnotation, DataValidationOutput } from "./state";
 import * as path from "path";
 import * as fs from "fs";
-import { getMcpFilesystemTools, getPythonScriptDirectory, makePipelineTemplate } from "../../tools";
+import { getMcpFilesystemTools, getPythonScriptDirectory } from "../../tools";
 
 export async function dataValidationNode(
   state: typeof FeatureArchitectAnnotation.State,
@@ -39,9 +39,6 @@ export async function dataValidationNode(
   const pythonScriptDir = getPythonScriptDirectory(services, state.runTimestamp);
   const scriptName = state.aggregatedScriptPath || "aggregated_feature_pipeline.py";
   const scriptPath = path.join(pythonScriptDir, scriptName);
-  if (!fs.existsSync(scriptPath)) {
-    fs.writeFileSync(scriptPath, makePipelineTemplate(scriptName), "utf-8");
-  }
 
   const userMessage = [
     "Generate data validation script to audit the baseline dataset.",
@@ -52,7 +49,7 @@ export async function dataValidationNode(
     `Target Pipeline File: ${scriptPath}`,
     `Region to Edit: DATA_VALIDATION`,
     "Action Required:",
-    `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the exact region markers and line structure.`,
+    `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the exact region markers and line structure (or initialize it using 'write_file' if it does not exist).`,
     `2. Use MCP tool 'edit_file' (or 'write_file') to write/insert your data validation code into the DATA_VALIDATION region in '${scriptPath}'.`,
     "3. Return the final JSON summary.",
   ].join("\n\n");

@@ -10,7 +10,6 @@ import {
   ensureFeatureEngineeringEnvironment,
   getMcpFilesystemTools,
   getPythonScriptDirectory,
-  makePipelineTemplate,
 } from "../../tools";
 
 interface RectifierOutput extends Record<string, unknown> {
@@ -113,11 +112,6 @@ export async function programRectificationNode(
     aggregated = fs.readFileSync(scriptPath, "utf-8");
   } else {
     aggregated = state.aggregatedScript || "";
-  }
-  if (!aggregated || aggregated.trim() === "") {
-    aggregated = makePipelineTemplate(aggregatedName);
-    fs.mkdirSync(baseDir, { recursive: true });
-    fs.writeFileSync(scriptPath, aggregated, "utf-8");
   }
 
   // Ensure Docker environment (Dockerfile, docker-compose.yml, requirements.txt) exists

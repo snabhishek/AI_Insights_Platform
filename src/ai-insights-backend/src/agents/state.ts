@@ -39,6 +39,7 @@ export interface IngestionServices {
   predictionHorizon?: number;
   predictionFrequency?: string;
   predictionObjectiveStartDate?: string;
+  prediction_target_column?: string;
 }
 
 export const AgentState = Annotation.Root({
@@ -55,6 +56,10 @@ export const AgentState = Annotation.Root({
   summary: Annotation<string>,
   userPrompt: Annotation<string>({
     reducer: (left, right) => (typeof right === "string" ? right : left),
+    default: () => "",
+  }),
+  prediction_target_column: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
     default: () => "",
   }),
   splitDate: Annotation<string>({

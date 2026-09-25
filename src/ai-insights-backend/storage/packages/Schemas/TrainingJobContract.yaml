@@ -104,11 +104,7 @@ upstream_artifacts:
   dataset_version:
     "<Write the version of the finalized dataset used for this training job. Get it from the directory>"
 
-  feature_set_path:
-    "<Write the identifier of the finalized feature set used for training. Get it from the directory>"
-
-  feature_set_version:
-    "<Write the version of the finalized feature set used for this training job. Get it from the directory>"
+  validated_features: []
 
   profiling_report_path:
     "<Write the identifier of the profiling information used when making training decisions. Get it from the directory>"

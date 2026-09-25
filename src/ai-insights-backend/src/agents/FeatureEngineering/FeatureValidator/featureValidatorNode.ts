@@ -9,8 +9,7 @@ import {
   createGetTableColumnsAndProfileTool, 
   createGetSplitBoundariesTool, 
   getMcpFilesystemTools, 
-  getPythonScriptDirectory, 
-  makePipelineTemplate 
+  getPythonScriptDirectory 
 } from "../../tools";
 
 export async function featureValidatorNode(
@@ -73,9 +72,6 @@ export async function featureValidatorNode(
   const pythonScriptDir = getPythonScriptDirectory(services, state.runTimestamp);
   const scriptName = state.aggregatedScriptPath || "aggregated_feature_pipeline.py";
   const scriptPath = path.join(pythonScriptDir, scriptName);
-  if (!fs.existsSync(scriptPath)) {
-    fs.writeFileSync(scriptPath, makePipelineTemplate(scriptName), "utf-8");
-  }
 
   const userMessage = [
     "Design and generate the feature validation Python code to audit the feature matrix.",
@@ -92,7 +88,7 @@ export async function featureValidatorNode(
     "4. Assess feature drift via Population Stability Index (PSI) or KS-test between splits (flag only in driftReport, do NOT auto-drop).",
     "5. Assemble validatedFeatureSet ({ kept: string[], dropped: { featureName, reason }[] }) and export validated features to '--output-path' (validated_features.parquet) and the full report to '--report-path' (feature_validation_report.json).",
     "Action Required:",
-    `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the exact region markers and line structure.`,
+    `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the exact region markers and line structure (or initialize it using 'write_file' if it does not exist).`,
     `2. Use MCP tool 'edit_file' (or 'write_file') to write/insert your validation function 'main_feature_validation' into the FEATURE_VALIDATION region in '${scriptPath}'.`,
     "3. Return the final JSON summary adhering to the FeatureValidatorOutput schema.",
   ].join("\n\n");

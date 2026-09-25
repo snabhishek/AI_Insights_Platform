@@ -6,6 +6,7 @@ export interface OrchestrationDecisionOutput extends Record<string, unknown> {
   summary: string;
   problemType?: string;
   targetColumn?: string;
+  prediction_target_column?: string;
   predictionEntity?: string;
   timeColumn?: string;
   leakageColumns?: string[];
@@ -192,6 +193,10 @@ export const FeatureArchitectAnnotation = Annotation.Root({
   orchestrationDecision: Annotation<OrchestrationDecisionOutput>({
     reducer: (left, right) => right ?? left,
     default: () => ({ status: "Pending", summary: "" }),
+  }),
+  prediction_target_column: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
   }),
 
   // Outputs of individual steps

@@ -62,8 +62,7 @@ Synthesize a comprehensive, production-grade configuration that populates the fo
 ### D. Upstream Artifacts Lineage (`upstream_artifacts`)
 - `dataset_id`: Write the identifier of the finalized dataset that will be used for training found in the project directory. This information can be asked from the *dataanalyseragent*.  
 - `dataset_version`: Write the version of the finalized dataset used for this training job. This information can be asked from the *dataanalyseragent*.
-- `feature_set_id`: Write the identifier of the finalized feature set used for training. This information can be asked from the *dataanalyseragent*.
-- `feature_set_version`: Write the version of the finalized feature set used for this training job. This information can be asked from the *dataanalyseragent*.
+- `validated_features`: No need to fill this field (keep it as an empty array `[]`); it will be automatically read and populated by the system from the feature validation report.
 - `profiling_report_id`: Write the identifier of the profiling information used when making training decisions. This information can be asked from the *dataanalyseragent*.
 - `relationship_schema_id`: Write the identifier of the finalized relationship information used to understand relationships between the training data entities, when applicable. This information can be asked from the *dataanalyseragent*.
 - `row_count`: Write the number of records available in the finalized training dataset. This information can be asked from the *dataanalyseragent*.
@@ -281,8 +280,7 @@ Return this when you have sufficient information and have researched the trainin
   "upstream_artifacts": {
     "dataset_path": "<Write the identifier of the finalized dataset that will be used for training. Get it from the directory>",
     "dataset_version": "<Write the version of the finalized dataset used for this training job. Get it from the directory>",
-    "feature_set_path": "<Write the identifier of the finalized feature set used for training. Get it from the directory>",
-    "feature_set_version": "<Write the version of the finalized feature set used for this training job. Get it from the directory>",
+    "validated_features": [],
     "profiling_report_path": "<Write the identifier of the profiling information used when making training decisions. Get it from the directory>",
     "relationship_schema_path": "<Write the identifier of the finalized relationship information used to understand relationships between the training data entities, when applicable. Get it from the directory>",
     "row_count": "<Write the number of records available in the finalized training dataset.>",
