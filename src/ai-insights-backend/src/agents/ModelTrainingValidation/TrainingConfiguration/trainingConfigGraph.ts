@@ -165,7 +165,7 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     "=== 1. Current State & Dataset Analysis Context ===",
     hasAnalysis
       ? `The Dataset Analyser Agent has provided the following technical findings on the dataset:\n${state.datasetAnalysisExplanation}`
-      : "No dataset analysis has been performed yet in this session. Review what dataset metadata you have and determine if you need the Dataset Analyser Agent to inspect dataset artifacts (validated_features.parquet, dataset.csv), profiling reports, target distributions, class imbalance, or temporal columns.",
+      : "No dataset analysis has been performed yet in this session. Review what dataset metadata you have and determine if you need the Dataset Analyser Agent to inspect dataset artifacts (dataset.parquet, dataset.csv), profiling reports, target distributions, class imbalance, or temporal columns.",
     "",
     "=== 2. Candidate Models & ML Objective ===",
     `Candidate Models: ${JSON.stringify(allCandidates, null, 2)}`,

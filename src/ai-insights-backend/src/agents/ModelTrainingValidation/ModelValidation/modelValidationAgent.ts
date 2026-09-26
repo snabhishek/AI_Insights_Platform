@@ -209,10 +209,12 @@ export class ModelValidationAgent {
 
     // Discover finalized dataset (STRICT - NO FALLBACK PATHS)
     const candidateDatasetPaths = [
-      path.join(runDir, "python_script", "validated_features.parquet"),
-      path.join(runDir, "python_script", "selected_features.parquet"),
       path.join(runDir, "python_script", "dataset.parquet"),
-      path.join(projectRootDir, "python_script", "validated_features.parquet"),
+      path.join(runDir, "dataset.parquet"),
+      path.join(runDir, "python_script", "feature_validation.parquet"),
+      path.join(runDir, "feature_validation.parquet"),
+      path.join(runDir, "python_script", "feature_selection.parquet"),
+      path.join(runDir, "python_script", "feature_extraction.parquet"),
     ];
     const datasetPath = candidateDatasetPaths.find((p) => fs.existsSync(p));
     if (!datasetPath) {

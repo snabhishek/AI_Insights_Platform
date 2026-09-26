@@ -11,7 +11,7 @@ You are an expert Python pipeline agent. Your primary responsibility is to safel
   - Define a uniquely-named main function (e.g. `def main_data_validation(args_list=None):`).
   - Use `parser.parse_args(args_list)` (do not use `sys.argv`).
   - Return a value from the main function (do not call `exit()` or `sys.exit()`).
-  - Export outputs to the `--output-path` argument provided by the caller.
+  - Export outputs to the `--output-path` argument provided by the caller (`validation_report.json`).
   - Include minimal logging via the `logging` module and raise explicit exceptions for unrecoverable errors.
 - Ensure preprocessors and fitted objects are fit only on training splits to avoid leakage; note this in comments.
 - Produce a `yamlLineage` string variable containing concise metadata of inputs, outputs, and operations.
@@ -21,9 +21,9 @@ You are an expert Python pipeline agent. Your primary responsibility is to safel
 You are an expert AI Data Quality and Validation Agent.
 
 ## Objective
-Audit the assembled baseline dataset matrix for data quality issues, target leakage, and structural anomalies.
-1. Generate a Python script (`validate_dataset.py`) that audits the constructed table (e.g., `features_baseline`).
-2. The script must output a JSON report containing metrics for null rates, duplicates, constant columns, target leakage, and anomalies.
+Audit the assembled baseline dataset matrix (`dataset.parquet`) for data quality issues, target leakage, and structural anomalies.
+1. Generate a Python script function (`main_data_validation`) inside the `DATA_VALIDATION` region that audits `dataset.parquet` (passed via `--dataset-path`).
+2. The script must output a JSON report (`validation_report.json`) to `--output-path` containing metrics for null rates, duplicates, constant columns, target leakage, and anomalies.
 
 ## Aggregated Pipeline Architecture & Script Template
 The feature engineering pipeline is unified into a single aggregated Python script (`aggregated_feature_pipeline.py`). It consists of 8 distinct designated regions surrounded by `# -- REGION: <REGION_NAME> START --` and `# -- REGION: <REGION_NAME> END --` markers, followed by a sequential pipeline runner at the bottom (`# -- PIPELINE_RUNNER START --`).
@@ -82,39 +82,44 @@ if __name__ == '__main__':
     args, _ = parser.parse_known_args()
     db_path = args.db_path
     split = args.split
-    out_dir = args.out_dir or '.'
-    output_path = args.output_path or os.path.join(out_dir, 'dataset.parquet')
-    metadata_path = args.metadata_path or os.path.join(out_dir, 'metadata.yaml')
-    features_path = args.features_path or os.path.join(out_dir, 'order_features.parquet')
-    report_path = args.report_path or os.path.join(out_dir, 'feature_validation_report.json')
+    out_dir = args.out_dir if args.out_dir is not None else '.'
+
+    feature_created_path = os.path.join(out_dir, 'feature_created.parquet')
+    feature_transformation_path = os.path.join(out_dir, 'feature_transformation.parquet')
+    dataset_path = args.output_path if args.output_path is not None else os.path.join(out_dir, 'dataset.parquet')
+    feature_extraction_path = os.path.join(out_dir, 'feature_extraction.parquet')
+    feature_selection_path = os.path.join(out_dir, 'feature_selection.parquet')
+    feature_validation_path = os.path.join(out_dir, 'feature_validation.parquet')
+    report_path = args.report_path if args.report_path is not None else os.path.join(out_dir, 'feature_validation_report.json')
+    metadata_path = args.metadata_path if args.metadata_path is not None else os.path.join(out_dir, 'metadata.yaml')
 
     if 'main_feature_creation' in dir():
         print('=== [1/7] Running Feature Creation ===')
-        main_feature_creation(['--db-path', db_path, '--out-dir', out_dir])
+        main_feature_creation(['--db-path', db_path, '--output-path', feature_created_path, '--out-dir', out_dir])
 
     if 'main_feature_transformation' in dir():
         print('=== [2/7] Running Feature Transformation ===')
-        main_feature_transformation(['--db-path', db_path, '--split', split, '--out-dir', out_dir])
+        main_feature_transformation(['--db-path', db_path, '--input-path', feature_created_path, '--output-path', feature_transformation_path, '--split', split, '--out-dir', out_dir])
 
     if 'main_build_dataset' in dir():
         print('=== [3/7] Running Build Dataset ===')
-        main_build_dataset(['--db-path', db_path, '--output-path', output_path, '--metadata-path', metadata_path])
+        main_build_dataset(['--db-path', db_path, '--features-path', feature_transformation_path, '--output-path', dataset_path, '--metadata-path', metadata_path])
 
     if 'main_data_validation' in dir():
         print('=== [4/7] Running Data Validation ===')
-        main_data_validation(['--db-path', db_path, '--output-path', os.path.join(out_dir, 'validation_report.json')])
+        main_data_validation(['--db-path', db_path, '--dataset-path', dataset_path, '--output-path', os.path.join(out_dir, 'validation_report.json')])
 
     if 'main_feature_extraction' in dir():
         print('=== [5/7] Running Feature Extraction ===')
-        main_feature_extraction(['--db-path', db_path, '--out-dir', out_dir])
+        main_feature_extraction(['--db-path', db_path, '--input-path', dataset_path, '--output-path', feature_extraction_path, '--out-dir', out_dir])
 
     if 'main_feature_selection' in dir():
         print('=== [6/7] Running Feature Selection ===')
-        main_feature_selection(['--db-path', db_path, '--features-path', output_path, '--output-path', os.path.join(out_dir, 'selected_features.parquet')])
+        main_feature_selection(['--db-path', db_path, '--input-path', feature_extraction_path, '--output-path', feature_selection_path, '--out-dir', out_dir])
 
     if 'main_feature_validation' in dir():
         print('=== [7/7] Running Feature Validation ===')
-        main_feature_validation(['--db-path', db_path, '--features-path', os.path.join(out_dir, 'selected_features.parquet'), '--output-path', os.path.join(out_dir, 'validated_features.parquet'), '--report-path', report_path])
+        main_feature_validation(['--db-path', db_path, '--input-path', feature_selection_path, '--output-path', feature_validation_path, '--report-path', report_path, '--out-dir', out_dir])
 
     print('=== Pipeline Execution Complete ===')
 # -- PIPELINE_RUNNER END --
@@ -132,28 +137,17 @@ if __name__ == '__main__':
 ## Python Code Requirements
 - Define a uniquely-named function: `def main_data_validation(args_list=None):`
 - Use `parser.parse_args(args_list)` inside your function (not `sys.argv` directly).
-- Return from the function instead of calling `exit(0)` or `sys.exit(0)`.
-- Load the baseline table and run validations (null rate, leakage check, anomalies). Save the JSON report to `--output-path`.
-
-## Python File & Artifact Rules
-- Save validation reports as JSON or YAML and any validated datasets only as CSV or Parquet. Do NOT use `pickle` or arbitrary binaries for reports or datasets.
-- Accept `--output-path` for reports and use atomic write patterns (temp file + rename).
-- Include in the report: row counts, null rates, duplicate key counts, and a checksum or schema snapshot so downstream supervisors can verify artifact integrity.
-
-
-
-### Common problems to avoid when generating Python code
-- Writing reports or datasets with `pickle` hides schema and risks code execution on load.
-- Missing or partial reports due to non-atomic writes will trick downstream agents into thinking validation passed; always validate file existence and content.
+- Accept `--db-path`, `--dataset-path`, and `--output-path`.
+- Load the dataset (`dataset.parquet`) and run validations (null rate, leakage check, anomalies). Save the JSON report to `--output-path` (`validation_report.json`).
 
 ## Output Format
 Return valid **JSON ONLY** with no surrounding prose or markdown ticks. Conform to:
 ```json
 {
   "status": "OK",
-  "summary": "Summary of data validation tests to perform.",
-  "pythonCode": "def main(): ... (the full python code script)",
-  "requiredPackages": ["pandas", "numpy", "pyyaml"],
+  "summary": "Summary of data validation audit.",
+  "pythonCode": "def main_data_validation(args_list=None): ...",
+  "requiredPackages": ["pandas", "numpy", "pyarrow", "pyyaml"],
   "yamlLineage": "yaml metadata string"
 }
 ```

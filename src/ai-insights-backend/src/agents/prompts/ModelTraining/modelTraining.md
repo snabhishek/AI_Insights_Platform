@@ -123,7 +123,8 @@ services:
 ## COMPONENT SPECIFICATIONS
 
 ### 1. `data/data_loader.py`
-- Accepts the dataset path (e.g. `/workspace/<runTimestamp>/validated_features.parquet` or `/workspace/<runTimestamp>/dataset.parquet`).
+- **Primary Dataset Path**: ALWAYS use `dataset.parquet` as the primary dataset path (e.g. `/workspace/<runTimestamp>/dataset.parquet` or `/workspace/dataset.parquet`).
+- **Feature & Target Extraction**: The training configuration specifies the list of validated features (`features` / `features_list`) and the target column (`target_column` / `prediction_target_column`). The data loader MUST load `dataset.parquet`, extract all specified feature columns plus the target column (and date/timestamp column if temporal splitting), construct the modeling DataFrame containing these columns, and use that DataFrame for training and testing.
 - Supports both Parquet (via `duckdb` or `pandas` / `pyarrow`) and CSV fallback.
 - Validates that the target column exists. Drops rows where the target column is null.
 - **CRITICAL TARGET INTEGRITY (STRICT AGENTIC MANDATE)**:

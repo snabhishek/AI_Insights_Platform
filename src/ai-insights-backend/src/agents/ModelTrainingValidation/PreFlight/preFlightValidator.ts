@@ -398,11 +398,30 @@ export class PreFlightValidator {
     }
 
     // 2. Dataset File Existence & Size
+    const candidateParquetNames = [
+      "dataset.parquet",
+      "feature_validation.parquet",
+      "feature_selection.parquet",
+      "feature_extraction.parquet",
+      "feature_transformation.parquet",
+      "feature_created.parquet",
+    ];
+    let resolvedRunDirDataset: string | null = null;
+    if (context?.runDir) {
+      for (const name of candidateParquetNames) {
+        const testPath = path.join(context.runDir, name);
+        if (fs.existsSync(testPath)) {
+          resolvedRunDirDataset = testPath;
+          break;
+        }
+      }
+    }
+
     const datasetPath =
-      context?.datasetPath ||
-      config.dataset_path ||
-      config.datasetPath ||
-      (context?.runDir ? path.join(context.runDir, "validated_features.parquet") : null);
+      context?.datasetPath ??
+      config.dataset_path ??
+      config.datasetPath ??
+      resolvedRunDirDataset;
 
     if (datasetPath && fs.existsSync(datasetPath)) {
       try {

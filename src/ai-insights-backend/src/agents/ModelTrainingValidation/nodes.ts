@@ -43,8 +43,16 @@ function runDirectory(state: State, services: IngestionServices) {
 }
 
 function findDataset(dir: string): string | null {
-  const names = ["validated_features.parquet", "feature_matrix.parquet", "modeling_dataset.parquet", "dataset.parquet", "validated_features.csv", "feature_matrix.csv", "modeling_dataset.csv", "dataset.csv"];
-  return names.find((name) => fs.existsSync(path.join(dir, name))) || null;
+  const names = [
+    "dataset.parquet",
+    "feature_validation.parquet",
+    "feature_selection.parquet",
+    "feature_extraction.parquet",
+    "feature_transformation.parquet",
+    "feature_created.parquet",
+    "dataset.csv",
+  ];
+  return names.find((name) => fs.existsSync(path.join(dir, name))) ?? null;
 }
 
 function readReport(state: State, services: IngestionServices): any {

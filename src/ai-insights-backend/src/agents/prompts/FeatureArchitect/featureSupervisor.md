@@ -78,39 +78,44 @@ if __name__ == '__main__':
     args, _ = parser.parse_known_args()
     db_path = args.db_path
     split = args.split
-    out_dir = args.out_dir or '.'
-    output_path = args.output_path or os.path.join(out_dir, 'dataset.parquet')
-    metadata_path = args.metadata_path or os.path.join(out_dir, 'metadata.yaml')
-    features_path = args.features_path or os.path.join(out_dir, 'order_features.parquet')
-    report_path = args.report_path or os.path.join(out_dir, 'feature_validation_report.json')
+    out_dir = args.out_dir if args.out_dir is not None else '.'
+
+    feature_created_path = os.path.join(out_dir, 'feature_created.parquet')
+    feature_transformation_path = os.path.join(out_dir, 'feature_transformation.parquet')
+    dataset_path = args.output_path if args.output_path is not None else os.path.join(out_dir, 'dataset.parquet')
+    feature_extraction_path = os.path.join(out_dir, 'feature_extraction.parquet')
+    feature_selection_path = os.path.join(out_dir, 'feature_selection.parquet')
+    feature_validation_path = os.path.join(out_dir, 'feature_validation.parquet')
+    report_path = args.report_path if args.report_path is not None else os.path.join(out_dir, 'feature_validation_report.json')
+    metadata_path = args.metadata_path if args.metadata_path is not None else os.path.join(out_dir, 'metadata.yaml')
 
     if 'main_feature_creation' in dir():
         print('=== [1/7] Running Feature Creation ===')
-        main_feature_creation(['--db-path', db_path, '--out-dir', out_dir])
+        main_feature_creation(['--db-path', db_path, '--output-path', feature_created_path, '--out-dir', out_dir])
 
     if 'main_feature_transformation' in dir():
         print('=== [2/7] Running Feature Transformation ===')
-        main_feature_transformation(['--db-path', db_path, '--split', split, '--out-dir', out_dir])
+        main_feature_transformation(['--db-path', db_path, '--input-path', feature_created_path, '--output-path', feature_transformation_path, '--split', split, '--out-dir', out_dir])
 
     if 'main_build_dataset' in dir():
         print('=== [3/7] Running Build Dataset ===')
-        main_build_dataset(['--db-path', db_path, '--output-path', output_path, '--metadata-path', metadata_path])
+        main_build_dataset(['--db-path', db_path, '--features-path', feature_transformation_path, '--output-path', dataset_path, '--metadata-path', metadata_path])
 
     if 'main_data_validation' in dir():
         print('=== [4/7] Running Data Validation ===')
-        main_data_validation(['--db-path', db_path, '--output-path', os.path.join(out_dir, 'validation_report.json')])
+        main_data_validation(['--db-path', db_path, '--dataset-path', dataset_path, '--output-path', os.path.join(out_dir, 'validation_report.json')])
 
     if 'main_feature_extraction' in dir():
         print('=== [5/7] Running Feature Extraction ===')
-        main_feature_extraction(['--db-path', db_path, '--out-dir', out_dir])
+        main_feature_extraction(['--db-path', db_path, '--input-path', dataset_path, '--output-path', feature_extraction_path, '--out-dir', out_dir])
 
     if 'main_feature_selection' in dir():
         print('=== [6/7] Running Feature Selection ===')
-        main_feature_selection(['--db-path', db_path, '--features-path', output_path, '--output-path', os.path.join(out_dir, 'selected_features.parquet')])
+        main_feature_selection(['--db-path', db_path, '--input-path', feature_extraction_path, '--output-path', feature_selection_path, '--out-dir', out_dir])
 
     if 'main_feature_validation' in dir():
         print('=== [7/7] Running Feature Validation ===')
-        main_feature_validation(['--db-path', db_path, '--features-path', os.path.join(out_dir, 'selected_features.parquet'), '--output-path', os.path.join(out_dir, 'validated_features.parquet'), '--report-path', report_path])
+        main_feature_validation(['--db-path', db_path, '--input-path', feature_selection_path, '--output-path', feature_validation_path, '--report-path', report_path, '--out-dir', out_dir])
 
     print('=== Pipeline Execution Complete ===')
 # -- PIPELINE_RUNNER END --
@@ -144,10 +149,13 @@ if __name__ == '__main__':
 
 5. Orchestration & Dynamic Routing — Dispatch workers using dependency-aware flow:
   - Discovery/Ingestion: trigger `getTableNames`, `getTableColumnsAndProfile`
-  - Build Dataset: merge selected tables at prediction-entity grain
-  - Data Validation: run integrity and leakage checks
-  - Feature Creation / Transformation: dispatch creation/transforms
-  - Feature Extraction / Selection: optional extraction then selection
+  - Feature Creation: creates domain features and saves `feature_created.parquet`
+  - Feature Transformation: applies transformations on `feature_created.parquet` and saves `feature_transformation.parquet`
+  - Build Dataset: merges tables and `feature_transformation.parquet` to produce `dataset.parquet`
+  - Data Validation: audits `dataset.parquet` and outputs `validation_report.json`
+  - Feature Extraction: applies extraction on `dataset.parquet` and saves `feature_extraction.parquet`
+  - Feature Selection: filters `feature_extraction.parquet` and saves `feature_selection.parquet`
+  - Feature Validator: audits `feature_selection.parquet` and outputs `feature_validation.parquet` and `feature_validation_report.json`
   - Termination: return final feature set when validation passes
 
 6. Leakage & Entity Boundary Enforcement — Validate and enforce:
@@ -166,30 +174,30 @@ if __name__ == '__main__':
 9. Execution Flow and Mandatory Gates — The Supervisor must enforce a strict ordered pipeline and may not advance or return `FINISH` until required stages complete successfully.
 
   Mandatory ordered sequence (do not skip steps unless explicitly justified in the plan):
-  1. Feature Creation
-  2. Feature Transformation
-  3. Build Dataset
-  4. Data Validation (Integrity & Leakage checks)
-  5. Feature Extraction (evaluate necessity; run if required)
-  6. Feature Selection
-  7. Feature Validator (Leakage, Multicollinearity, Drift, and Importance Validation)
+  1. Feature Creation (`feature_created.parquet`)
+  2. Feature Transformation (`feature_transformation.parquet`)
+  3. Build Dataset (`dataset.parquet`)
+  4. Data Validation (`validation_report.json`)
+  5. Feature Extraction (`feature_extraction.parquet`)
+  6. Feature Selection (`feature_selection.parquet`)
+  7. Feature Validator (`feature_validation.parquet`, `feature_validation_report.json`)
   8. Final Dataset Assembly and Delivery
 
   For each stage the Supervisor MUST:
   - Dispatch the worker and await a structured worker response containing at minimum: `{ "status": "OK|ERROR", "artifacts": { ... }, "summary": "..." }`.
-  - Validate the presence and integrity of expected artifacts (examples: parquet dataset files, YAML lineage, validation JSON report). If artifacts are missing or invalid, mark the stage `ERROR` and provide remediation instructions.
+  - Validate the presence and integrity of expected artifacts. If artifacts are missing or invalid, mark the stage `ERROR` and provide remediation instructions.
   - Update an `executionChecklist` entry for the stage with `status`, `artifacts` (paths/names), `timestamp`, and a short `workerSummary`.
   - Only advance to the next stage when the current stage `status` == `OK` and produced the required artifacts.
 
   Rules for Feature Extraction, Feature Selection, and Build Dataset (strict enforcement):
-  - `Build Dataset` MUST run before `Feature Extraction`, `Feature Selection`, and `Feature Validator` unless a documented and approved exception is present in the plan. If the last run omitted `Build Dataset`, the Supervisor must detect missing dataset artifacts and re-schedule `buildDataset` before proceeding.
+  - `Build Dataset` MUST run before `Feature Extraction`, `Feature Selection`, and `Feature Validator` unless a documented and approved exception is present in the plan.
   - **Target Column Decision**: Once the dataset is assembled by `Build Dataset`, the Supervisor MUST decide and confirm the primary `prediction_target_column` (target variable to predict).
   - **Target Exclusion Rule**: Whenever dispatching or running `Feature Extraction` and `Feature Selection`, the `prediction_target_column` MUST be strictly excluded from transformation, dimensionality reduction (e.g. PCA, LDA), and feature filtering/dropping.
   - `Feature Extraction` is optional only after the Supervisor evaluates dataset characteristics and explicitly records a `skipExtraction` decision with rationale. If `Feature Extraction` is required, it must be scheduled and completed with `status` == `OK` before feature selection.
 
   Failure handling:
   - If any stage returns `ERROR`, the Supervisor must stop downstream execution, produce an actionable remediation plan (fix, rerun, or change the plan), and set `nextWorker` to the remedial worker or `FINISH` with `status` == `ERROR`.
-  - The Supervisor must detect and repair runs where stages were accidentally skipped (for example, missing extraction or build dataset) by inspecting run logs and expected artifact locations, then re-issuing the missing worker calls.
+  - The Supervisor must detect and repair runs where stages were accidentally skipped by inspecting run logs and expected artifact locations, then re-issuing the missing worker calls.
 
   Termination:
   - The Supervisor must not return `FINISH` until all mandatory stages have `status` == `OK` and validation passes. `FINISH` may only be returned with `status` == `OK` when the `executionChecklist` shows all required stages completed and artifacts present.
@@ -234,5 +242,5 @@ Return valid JSON with no surrounding prose. Use this schema:
 
 ## Enforcement of Artifact Rules for Subagents
 - The Supervisor MUST require all worker agents to follow the project's Python File & Artifact Rules: CSV or Parquet only for datasets, no `pickle` for persisted artifacts, atomic writes, CLI-driven output paths, and validation after writes.
-- When dispatching workers, the Supervisor must validate worker-provided `artifacts` in the `executionChecklist` — if an artifact violates artifact rules (e.g., a `.pkl` file or missing schema), the Supervisor must mark the stage `ERROR` and instruct the worker to re-run with compliant outputs.
+- When dispatching workers, the Supervisor must validate worker-provided `artifacts` in the `executionChecklist` — if an artifact violates artifact rules, the Supervisor must mark the stage `ERROR` and instruct the worker to re-run with compliant outputs.
 - The Supervisor should include artifact format checks (file extension, readable by `pandas.read_parquet` / `read_csv`) as part of its validation gate.

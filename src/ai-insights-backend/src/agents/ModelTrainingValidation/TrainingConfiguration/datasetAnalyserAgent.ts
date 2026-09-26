@@ -55,14 +55,14 @@ export class DatasetAnalyserAgent {
       "=== INSTRUCTIONS & CONSTRAINTS ===",
       "1. EXPLANATION FORMAT: Return your analysis as a structured, detailed narrative in markdown explanation format (not raw structured JSON). Use clear headings, bullet points, and analytical justifications.",
       "2. ARTIFACT METADATA: Share critical artifact metadata (e.g. logical artifact names, row counts, feature counts, data types, missingness percentages, cardinality, and class distributions).",
-      "3. ZERO FILE PATH EXPOSURE: NEVER output or reveal raw local filesystem paths (e.g. do not show 'C:\\...', '/workspaces/...', or '/tmp/...'). Refer only to logical artifact names (e.g. 'validated_features.parquet', 'profiling_report.json', 'relationship_schema.json').",
+      "3. ZERO FILE PATH EXPOSURE: NEVER output or reveal raw local filesystem paths (e.g. do not show 'C:\\...', '/workspaces/...', or '/tmp/...'). Refer only to logical artifact names (e.g. 'dataset.parquet', 'profiling_report.json', 'relationship_schema.json').",
       "4. TOOL USAGE: Use 'read_artifact_headers' to inspect column names and types of Parquet/CSV/JSON artifacts. Use MCP filesystem tools or profiling tools to inspect summary files.",
       "5. TOKEN LIMIT: Keep your explanations thorough, concise, and within 5,000 tokens.",
     ].join("\n");
 
     const fallbackExplanation = [
       "### Dataset Characteristics Summary",
-      "- Artifact: validated_features.parquet",
+      "- Artifact: dataset.parquet",
       "- Target Column: Inferred primary target from feature set",
       "- Problem Type: Supervised learning",
       "- Features: Engineered numerical and categorical features ready for model training",

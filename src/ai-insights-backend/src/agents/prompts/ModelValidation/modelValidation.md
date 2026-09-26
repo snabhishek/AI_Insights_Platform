@@ -69,11 +69,11 @@ The Model Training phase has prepared and verified the following artifacts in `<
 
    Located in:
 
-   `<runTimestamp>/python_script/validated_features.parquet`
+   `<runTimestamp>/python_script/dataset.parquet`
 
    or:
 
-   `selected_features.parquet` / `dataset.parquet`.
+   `dataset.parquet` / `<runTimestamp>/dataset.parquet`.
 
    Reuse the finalized dataset produced by the Feature Engineering layer and used by the Training Program. Do not unnecessarily rerun feature selection, extraction, engineering, or preprocessing.
 
