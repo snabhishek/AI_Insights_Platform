@@ -224,7 +224,7 @@ Return valid JSON with no surrounding prose. Use this schema:
     }
   ],
   "orchestrationDecision": {
-    "problemType": "classification | regression | forecasting",
+    "problemType": "Eg values: classification, regression, forecasting and etc",
     "targetColumn": "target_col",
     "predictionEntity": "entity_id",
     "timeColumn": "time_col_or_null",

@@ -30,8 +30,7 @@ const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Data Profiling": [
     "Reading data samples from target sources...",
     "Computing column completeness profiles...",
-    "Running anomaly detection (outliers, formatting errors)...",
-    "Deriving rule-based preprocessing and transformation steps..."
+    "Running anomaly detection (outliers, formatting errors)..."
   ],
   "Schema Resolver": [
     "Analyzing target schemas and downstream constraints...",
@@ -269,7 +268,6 @@ export class IngestionAgentService implements IIngestionAgentService {
         inspection: {},
         dataProfile: {},
         schemaResolution: {},
-        preprocessing: {},
         batchedTables: [],
         steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
         stageOutputs: {},
@@ -399,24 +397,17 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStage = "profileData";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "In Progress";
-            } else if (substep === "preprocess") {
-              currentNode = "preprocess";
-              currentStage = "preprocess";
-              currentStageStatuses.inspect = "Completed";
-              currentStageStatuses.profileData = "In Progress";
             } else if (substep === "Schema Resolver" || substep === "resolveSchema") {
               currentNode = "resolveSchema";
               currentStage = "resolveSchema";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
-              currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "In Progress";
             } else if (substep === "Hierarchy Mapper" || substep === "hierarchyMapper" || substep === "hierarchyMapperNode" || substep === "relationshipBuilder" || substep === "formBuilder") {
               currentNode = "hierarchyMapperNode";
               currentStage = "hierarchyMapperNode";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
-              currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Completed";
               currentStageStatuses.hierarchyMapper = "In Progress";
             } else if (substep === "Feature Architect" || substep === "featureArchitect" || substep === "featureArchitectNode" || substep === "featureSupervisor" || substep === "featureCreation" || substep === "featureTransformation" || substep === "featureExtraction" || substep === "featureSelection") {
@@ -424,7 +415,6 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStage = "featureArchitectNode";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
-              currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Completed";
               currentStageStatuses.hierarchyMapper = "Completed";
               currentStageStatuses.featureArchitect = "In Progress";
@@ -433,7 +423,6 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStage = "featureArchitectNode";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
-              currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Completed";
               currentStageStatuses.hierarchyMapper = "Completed";
               currentStageStatuses.featureArchitect = "Completed";
@@ -443,7 +432,6 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStage = "exogenousScout";
               currentStageStatuses.inspect = "Completed";
               currentStageStatuses.profileData = "Completed";
-              currentStageStatuses.preprocess = "Completed";
               currentStageStatuses.resolveSchema = "Completed";
               currentStageStatuses.hierarchyMapper = "Completed";
               currentStageStatuses.featureArchitect = "Completed";
@@ -772,7 +760,6 @@ export class IngestionAgentService implements IIngestionAgentService {
         inspection: savedAgentState?.inspection || {},
         schemaResolution: savedAgentState?.schemaResolution || {},
         dataProfile: savedAgentState?.dataProfile || {},
-        preprocessing: savedAgentState?.preprocessing || {},
         stageOutputs: options?.action ? (savedAgentState?.stageOutputs || {}) : {},
         message: options?.action === "approve"
           ? approveMessage
@@ -931,7 +918,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                 batchedTables: [],
                 inspection: {},
                 dataProfile: {},
-                preprocess: {},
                 schemaResolution: {},
                 hierarchyMapper: {},
                 featureArchitect: {},
@@ -949,7 +935,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                 stageStatuses: {
                   inspect: "In Progress",
                   profileData: "Pending",
-                  preprocess: "Pending",
                   resolveSchema: "Pending",
                   hierarchyMapper: "Pending",
                   featureArchitect: "Pending",
@@ -1004,7 +989,6 @@ export class IngestionAgentService implements IIngestionAgentService {
 
               const inspectStatus = (activeSubstep === "Data Profiling" || activeSubstep === "Schema Resolver" || isFESubstep || isModelSubstep) ? "Completed" : "In Progress";
               const profileStatus = (activeSubstep === "Schema Resolver" || isFESubstep || isModelSubstep) ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
-              const preprocessStatus = (activeSubstep === "Schema Resolver" || isFESubstep || isModelSubstep) ? "Completed" : (activeSubstep === "Data Profiling" ? "In Progress" : "Pending");
               const schemaStatus = (isFESubstep || isModelSubstep) ? "Completed" : (activeSubstep === "Schema Resolver" ? "In Progress" : "Pending");
 
               const hierarchyStatus = isModelSubstep || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" ? "Completed" : (activeSubstep === "Hierarchy Mapper" ? "In Progress" : "Pending");
@@ -1022,7 +1006,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                 ...(calculatedBase.stageStatuses || {}),
                 inspect: inspectStatus,
                 profileData: profileStatus,
-                preprocess: preprocessStatus,
                 resolveSchema: schemaStatus,
                 hierarchyMapper: hierarchyStatus,
                 featureArchitect: featureArchitectStatus,
@@ -1097,7 +1080,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                   inspection: {},
                   dataProfile: {},
                   schemaResolution: {},
-                  preprocessing: {},
                   batchedTables: [],
                   steps: [],
                   stageOutputs: {},
@@ -1188,7 +1170,6 @@ export class IngestionAgentService implements IIngestionAgentService {
 
                 const predecessorNodeMap: Record<string, string> = {
                   profileData: "inspect",
-                  preprocess: "inspect",
                   resolveSchema: "profileData",
                   hierarchyMapperNode: "resolveSchema",
                   hierarchyMapper: "resolveSchema",
@@ -1333,7 +1314,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                       inspection: {},
                       dataProfile: {},
                       schemaResolution: {},
-                      preprocessing: {},
                       batchedTables: [],
                       steps: [],
                       stageOutputs: {},
@@ -1485,7 +1465,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                 inspection: {},
                 dataProfile: {},
                 schemaResolution: {},
-                preprocessing: {},
                 batchedTables: [],
                 steps: [],
                 stageOutputs: {},
@@ -1505,7 +1484,6 @@ export class IngestionAgentService implements IIngestionAgentService {
               "Data Inspection": "__start__",
               "profileData": "inspect",
               "Data Profiling": "inspect",
-              "preprocess": "inspect",
               "resolveSchema": "profileData",
               "Schema Resolver": "profileData",
               "hierarchyMapperNode": "resolveSchema",
@@ -1711,7 +1689,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                   inspection: savedAgentState?.inspection || {},
                   dataProfile: savedAgentState?.dataProfile || {},
                   schemaResolution: savedAgentState?.schemaResolution || {},
-                  preprocessing: savedAgentState?.preprocessing || {},
                   batchedTables: savedAgentState?.batchedTables || [],
                   steps: savedAgentState?.steps || [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
                   stageOutputs: savedAgentState?.stageOutputs || {},
@@ -1739,7 +1716,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                 inspection: {},
                 dataProfile: {},
                 schemaResolution: {},
-                preprocessing: {},
                 batchedTables: [],
                 steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
                 stageOutputs: {},
@@ -2203,7 +2179,6 @@ export class IngestionAgentService implements IIngestionAgentService {
       const aliasPairs: [string, string][] = [
         ["inspect", "Data Inspection"],
         ["profileData", "Data Profiling"],
-        ["preprocess", "Data Profiling"],
         ["resolveSchema", "Schema Resolver"],
         ["hierarchyMapperNode", "Hierarchy Mapper"],
         ["hierarchyMapper", "Hierarchy Mapper"],

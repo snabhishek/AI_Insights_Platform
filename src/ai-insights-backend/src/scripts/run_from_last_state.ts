@@ -54,7 +54,6 @@ function normalizeGraphNode(node: string): string {
   const map: Record<string, string> = {
     inspect: "inspect",
     profileData: "profileData",
-    preprocess: "profileData",
     resolveSchema: "resolveSchema",
     hierarchyMapper: "hierarchyMapperNode",
     hierarchyMapperNode: "hierarchyMapperNode",

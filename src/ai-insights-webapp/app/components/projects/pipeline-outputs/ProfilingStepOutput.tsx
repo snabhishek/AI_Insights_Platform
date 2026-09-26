@@ -5,7 +5,6 @@ import { Badge, DynamicTable } from "./utils";
 
 interface ProfilingStepOutputProps {
   profileData: any;
-  preprocess?: any;
 }
 
 type TabType = "quality" | "statistics";

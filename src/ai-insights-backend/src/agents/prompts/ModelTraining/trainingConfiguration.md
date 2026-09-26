@@ -56,8 +56,6 @@ Synthesize a comprehensive, production-grade configuration that populates the fo
 - `task_subtype`: Describe the specific form (e.g. `"panel_forecasting"`, `"univariate_forecasting"`, `"standard_regression"`, `"binary"`, `"multiclass"`).
 - `learning_type`: "supervised"
 - `prediction_type`: MUST be `"value"` or `"point"` for continuous forecasting and regression; MUST be `"probability"` for classification.
-- `prediction_horizon`: Describe the future period or point for which the prediction is intended, when the use case involves a future outcome.
-- `prediction_timestamp`: Identify the point in time at which the information available for making the prediction should be considered valid.
 
 ### D. Upstream Artifacts Lineage (`upstream_artifacts`)
 - `dataset_id`: Write the identifier of the finalized dataset that will be used for training found in the project directory. This information can be asked from the *dataanalyseragent*.  
@@ -273,9 +271,7 @@ Return this when you have sufficient information and have researched the trainin
     "task_type": "<Identify the machine learning problem represented by the use case, target, and prediction objective.>",
     "task_subtype": "<Describe the specific form of the identified machine learning problem.>",
     "learning_type": "<Identify how the model should learn based on the availability and nature of the target and training information.>",
-    "prediction_type": "<Describe what the trained model should return to satisfy the prediction requirement.>",
-    "prediction_horizon": "<Describe the future period or point for which the prediction is intended, when the use case involves a future outcome.>",
-    "prediction_timestamp": "<Identify the point in time at which the information available for making the prediction should be considered valid.>"
+    "prediction_type": "<Describe what the trained model should return to satisfy the prediction requirement.>"
   },
   "upstream_artifacts": {
     "dataset_path": "<Write the identifier of the finalized dataset that will be used for training. Get it from the directory>",

@@ -32,7 +32,7 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "inspect",
     interruptBefore: false,
     requiresApproval: false,
-    aliases: ["preprocess", "dataProfile"],
+    aliases: ["dataProfile"],
   },
   {
     id: "resolveSchema",

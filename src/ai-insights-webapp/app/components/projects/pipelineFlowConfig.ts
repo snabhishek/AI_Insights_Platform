@@ -18,7 +18,6 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
   // Data Ingestion
   "inspect": PIPELINE_PHASES.DATA_INGESTION,
   "profileData": PIPELINE_PHASES.DATA_INGESTION,
-  "preprocess": PIPELINE_PHASES.DATA_INGESTION,
   "resolveSchema": PIPELINE_PHASES.DATA_INGESTION,
   "Data Inspection": PIPELINE_PHASES.DATA_INGESTION,
   "Data Profiling": PIPELINE_PHASES.DATA_INGESTION,

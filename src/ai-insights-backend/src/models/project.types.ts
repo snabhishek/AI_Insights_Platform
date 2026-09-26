@@ -11,7 +11,7 @@ export interface Project {
   folderPath?: string;
   status?: string;
   agentState?: Record<string, unknown>;
-  createdAt: string;
+  createdAt: string;  
 }
 
 export interface ProjectRun {

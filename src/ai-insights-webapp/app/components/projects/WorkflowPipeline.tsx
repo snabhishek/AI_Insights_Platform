@@ -17,7 +17,7 @@ interface WorkflowPipelineProps {
   onRunWorkflow: () => void;
   onReRunWorkflow?: () => void;
   onStopWorkflow?: () => void;
-  onViewHistory: () => void;
+  // onViewHistory: () => void;
   onSelectStage: (stepId: string) => void;
   onApprove: () => void;
   onRetry: (stepId: string) => void;
@@ -30,145 +30,12 @@ interface WorkflowPipelineProps {
   approvalNextStep?: string | null;
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return Boolean(value && typeof value === "object" && !Array.isArray(value));
-}
-
-function extractTableNames(source: Record<string, unknown>): string[] {
-  const tables = Array.isArray(source.tables) ? source.tables : [];
-  return tables
-    .map((t: any) => typeof t?.name === "string" ? t.name : typeof t?.tableName === "string" ? t.tableName : "")
-    .filter((n: string) => n.length > 0)
-    .slice(0, 12);
-}
-
-function formatStageOutput(stage: string, stageOutputs: Record<string, unknown>) {
-  const payloads = (stage === "profileData" || stage === "preprocess")
-    ? [
-      { label: "Data Profiling", output: stageOutputs.profileData },
-      { label: "Preprocessing", output: stageOutputs.preprocess },
-    ]
-    : [
-      { label: stage === "inspect" ? "Inspection" : "Schema Resolution", output: stageOutputs[stage] ?? stageOutputs[stage === "inspect" ? "inspect" : stage] },
-    ];
-
-  const groups: Array<{ title: string; body: string }> = [];
-  const add = (title: string, body: string) => {
-    if (body) groups.push({ title, body });
-  };
-
-  payloads.forEach(({ label, output }) => {
-    if (!output) return;
-
-    if (Array.isArray((output as any)?.sources)) {
-      const sources = (output as any).sources as Array<Record<string, unknown>>;
-      add(`${label} overview`, `${sources.length} connector${sources.length === 1 ? "" : "s"} processed`);
-
-      sources.forEach((source, sourceIndex) => {
-        const connectorName = typeof source.connectorName === "string"
-          ? source.connectorName
-          : typeof source.connectorId === "string"
-            ? source.connectorId
-            : `Source ${sourceIndex + 1}`;
-
-        // Inspection: show table names and column counts
-        const tableNames = extractTableNames(source);
-        const tables = Array.isArray(source.tables) ? source.tables : [];
-        if (tableNames.length > 0) {
-          add(`${connectorName} — Tables`, tableNames.join(", ") + (tables.length > 12 ? ` (+${tables.length - 12} more)` : ""));
-          const totalCols = tables.reduce((sum: number, t: any) => sum + (Array.isArray(t?.columns) ? t.columns.length : 0), 0);
-          if (totalCols > 0) add(`${connectorName} — Columns`, `${totalCols} column${totalCols === 1 ? "" : "s"} across ${tables.length} table${tables.length === 1 ? "" : "s"}`);
-        }
-
-        // Schema type
-        if (typeof source.schemaType === "string" && source.schemaType !== "unknown") {
-          add(`${connectorName} — Schema`, source.schemaType as string);
-        }
-
-        // Profiling: completeness & statistics
-        if (Array.isArray((source as any).contentProfile?.columns)) {
-          const cols = (source as any).contentProfile.columns;
-          add(`${connectorName} — Content Profile`, `${cols.length} column${cols.length === 1 ? "" : "s"} profiled`);
-        }
-        if (Array.isArray((source as any).completenessProfile?.columns)) {
-          const cols = (source as any).completenessProfile.columns;
-          const fullyComplete = cols.filter((c: any) => c?.completeness === 1 || c?.completeness === "100%").length;
-          add(`${connectorName} — Completeness`, `${fullyComplete}/${cols.length} columns fully complete`);
-        }
-        if (Array.isArray((source as any).statisticalProfile?.numericColumns)) {
-          const numCols = (source as any).statisticalProfile.numericColumns;
-          add(`${connectorName} — Numeric Stats`, `${numCols.length} numeric column${numCols.length === 1 ? "" : "s"} analyzed`);
-        }
-
-        // Preprocessing: action summary
-        if (isRecord((source as any).summary)) {
-          const s = (source as any).summary as Record<string, unknown>;
-          const parts: string[] = [];
-          if (typeof s.totalActions === "number" && s.totalActions > 0) parts.push(`${s.totalActions} total actions`);
-          if (typeof s.applied === "number" && s.applied > 0) parts.push(`${s.applied} applied`);
-          if (typeof s.skipped === "number" && s.skipped > 0) parts.push(`${s.skipped} skipped`);
-          if (typeof s.failed === "number" && s.failed > 0) parts.push(`${s.failed} failed`);
-          if (parts.length > 0) add(`${connectorName} — Actions`, parts.join(" • "));
-        } else if (typeof source.summary === "string") {
-          add(`${connectorName} — Status`, source.summary as string);
-        } else if (typeof source.status === "string") {
-          add(`${connectorName} — Status`, source.status as string);
-        }
-
-        // Preprocessing: table count
-        if (typeof source.tableCount === "number" && source.tableCount > 0 && tableNames.length === 0) {
-          add(`${connectorName} — Tables`, `${source.tableCount} table${source.tableCount === 1 ? "" : "s"} processed`);
-        }
-
-        // Schema resolution: mappings
-        const mappings = Array.isArray(source.mappings) ? source.mappings.length : 0;
-        const resolvedTables = Array.isArray(source.resolvedTables) ? source.resolvedTables : [];
-        const unmapped = Array.isArray(source.unmappedDatasetFields) ? source.unmappedDatasetFields : [];
-        if (mappings > 0) add(`${connectorName} — Mappings`, `${mappings} field${mappings === 1 ? "" : "s"} mapped to target schema`);
-        if (resolvedTables.length > 0) add(`${connectorName} — Resolved`, resolvedTables.slice(0, 8).join(", ") + (resolvedTables.length > 8 ? ` (+${resolvedTables.length - 8} more)` : ""));
-        if (unmapped.length > 0) add(`${connectorName} — Unmapped`, unmapped.slice(0, 6).join(", ") + (unmapped.length > 6 ? ` (+${unmapped.length - 6} more)` : ""));
-
-        // Warnings
-        const warnings = Array.isArray(source.warnings) ? source.warnings.filter((w: unknown): w is string => typeof w === "string") : [];
-        if (warnings.length > 0) add(`${connectorName} — Findings`, warnings.slice(0, 3).join(" • "));
-      });
-    }
-
-    // Fallback for non-sources structure
-    if (isRecord(output) && !Array.isArray((output as any)?.sources)) {
-      const tableCount = Array.isArray(output.tables) ? output.tables.length : 0;
-      const mappingCount = Array.isArray(output.mappings) ? output.mappings.length : 0;
-      const resolvedTables = Array.isArray(output.resolvedTables) ? output.resolvedTables.length : 0;
-      if (typeof output.status === "string") add(`${label} status`, output.status as string);
-      if (tableCount > 0) add(`${label} tables`, `${tableCount} table${tableCount === 1 ? "" : "s"}`);
-      if (mappingCount > 0) add(`${label} mappings`, `${mappingCount} mapping${mappingCount === 1 ? "" : "s"}`);
-      if (resolvedTables > 0) add(`${label} resolved`, `${resolvedTables} table${resolvedTables === 1 ? "" : "s"} ready`);
-    }
-  });
-
-  if (groups.length === 0) {
-    add("Output", "No output available yet. Run the workflow to populate this stage.");
-  }
-  return groups;
-}
-
-function getStageTitle(stepId: string): string {
-  switch (stepId) {
-    case "Data Inspection":
-    case "Data Ingestion": return "Inspect";
-    case "Data Profiling": return "Profile & Preprocess";
-    case "Schema Resolver": return "Schema Resolution";
-    default: return stepId;
-  }
-}
-
 // Data-driven map associating internal stage/sub-step keys to top-level pipeline card IDs
 import { SUBSTEP_TO_PIPELINE_MAP } from "./pipelineFlowConfig";
 
 const MAIN_STEP_MAPPING = SUBSTEP_TO_PIPELINE_MAP;
 
 const DEFAULT_MAIN_STEP_ID = "Data Ingestion";
-const DATA_INGESTION_SUBSTEPS = ["Data Inspection", "Data Profiling", "Schema Resolver"] as const;
 
 export function getMainStepId(stepOrStageId: string | null): string {
   if (!stepOrStageId) return DEFAULT_MAIN_STEP_ID;
@@ -361,7 +228,7 @@ export function getMainStepStatuses(
 
 export default function WorkflowPipeline({
   pipelineStatuses,
-  completionPercentage,
+
   runStatus,
   lastRunTime,
   activeStage,
@@ -371,7 +238,7 @@ export default function WorkflowPipeline({
   onRunWorkflow,
   onReRunWorkflow,
   onStopWorkflow,
-  onViewHistory,
+  // onViewHistory,
   onSelectStage,
   onApprove,
   onRetry,
@@ -391,11 +258,10 @@ export default function WorkflowPipeline({
   const mainStatuses = PIPELINE_STEPS.map((step) => mainStatusMap[step.id]);
 
   const hasExistingRun =
-    lastRunTime !== "Not run yet" ||
+    (lastRunTime !== "Not run yet" ||
     runStatus === "Success" ||
-    runStatus === "Stopped" ||
     runStatus === "Failed" ||
-    Object.values(pipelineStatuses).some((s) => s === "Completed" || s === "In Progress");
+    Object.values(pipelineStatuses).some((s) => s === "Completed" || s === "In Progress")) && runStatus !== "Stopped";
 
   const runButtonText = hasExistingRun ? "Re-Run Workflow" : "Run Workflow";
   const handleRunClick = () => {
@@ -714,7 +580,7 @@ export default function WorkflowPipeline({
                         : "Idle"}
           </span>
 
-          <button
+          {/* <button
             onClick={onViewHistory}
             className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors cursor-pointer"
           >
@@ -723,7 +589,7 @@ export default function WorkflowPipeline({
               <polyline points="12 6 12 12 16 14" />
             </svg>
             View Run History
-          </button>
+          </button> */}
         </div>
       </div>
     </div>

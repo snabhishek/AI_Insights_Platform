@@ -199,14 +199,12 @@ export class ModelTrainingAgent {
     const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitDate || "";
 
     const timeColumn =
-      contractData?.data_splitting?.time_column ||
       contractData?.split?.time_column ||
-      contractData?.task?.prediction_timestamp ||
-      contractData?.model_selection?.prediction_grain?.time_column ||
+      // contractData?.model_selection?.prediction_grain?.time_column ||
       contractData?.time_column ||
       (state.featureArchitect as any)?.timeColumn ||
       (state.featureArchitect as any)?.orchestrationDecision?.timeColumn ||
-      (state.schemaResolution as any)?.timeColumn ||
+      // (state.schemaResolution as any)?.timeColumn ||
       "";
 
     const splitDateInstructions = effectiveSplitEndDate ? [

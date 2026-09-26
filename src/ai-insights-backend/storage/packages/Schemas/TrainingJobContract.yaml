@@ -160,12 +160,6 @@ task:
   prediction_type:
     "<Describe what the trained model should return to satisfy the prediction requirement.>"
 
-  prediction_horizon:
-    "<Describe the future period or point for which the prediction is intended, when the use case involves a future outcome.>"
-
-  prediction_timestamp:
-    "<Identify the point in time at which the information available for making the prediction should be considered valid.>"
-
 
 # -----------------------------------------------------------------------------
 # UPSTREAM ARTIFACTS

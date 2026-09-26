@@ -502,7 +502,6 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
   const substepMap: Record<string, string> = {
     inspect: "Data Inspection",
     profileData: "Data Profiling",
-    preprocess: "Data Profiling",
     resolveSchema: "Schema Resolver",
     hierarchyMapper: "Hierarchy Mapper",
     hierarchyMapperNode: "Hierarchy Mapper",
@@ -1053,7 +1052,7 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
   if (isHierarchy) return "hierarchyMapperNode";
 
   if (isRunningOrDone(stageStatuses.resolveSchema) || nextNodes.includes("resolveSchema")) return "resolveSchema";
-  if (isRunningOrDone(stageStatuses.preprocess) || isRunningOrDone(stageStatuses.profileData)) return "profileData";
+  if (isRunningOrDone(stageStatuses.profileData)) return "profileData";
   return "inspect";
 }
 
@@ -1111,8 +1110,8 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
   if (isRunning(stageStatuses?.resolveSchema)) {
     return "Resolving schema mappings...";
   }
-  if (isRunning(stageStatuses?.profileData) || isRunning(stageStatuses?.preprocess)) {
-    return "Running data profiling and preprocessing...";
+  if (isRunning(stageStatuses?.profileData)) {
+    return "Running data profiling...";
   }
   if (isRunning(stageStatuses?.inspect)) {
     return "Inspecting data sources...";
@@ -1130,7 +1129,6 @@ export function buildResultFromGraphState(
   const defaultStatuses = {
     inspect: "Pending",
     profileData: "Pending",
-    preprocess: "Pending",
     resolveSchema: "Pending",
     hierarchyMapper: "Pending",
     featureArchitect: "Pending",
@@ -1167,7 +1165,6 @@ export function buildResultFromGraphState(
     inspection: (values.inspection && typeof values.inspection === "object") ? values.inspection : {},
     schemaResolution: (values.schemaResolution && typeof values.schemaResolution === "object") ? values.schemaResolution : {},
     dataProfile: (values.dataProfile && typeof values.dataProfile === "object") ? values.dataProfile : {},
-    preprocessing: (values.preprocessing && typeof values.preprocessing === "object") ? values.preprocessing : {},
     hierarchyMapper: (values.hierarchyMapper && typeof values.hierarchyMapper === "object") ? values.hierarchyMapper : {},
     featureArchitect: (values.featureArchitect && typeof values.featureArchitect === "object") ? values.featureArchitect : {},
     featureValidator: (values.featureValidator && typeof values.featureValidator === "object") ? values.featureValidator : {},
@@ -1201,7 +1198,6 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     s === "data inspection" ||
     s === "profiledata" ||
     s === "data profiling" ||
-    s === "preprocess" ||
     s === "resolveschema" ||
     s === "schema resolver" ||
     s === "data ingestion"

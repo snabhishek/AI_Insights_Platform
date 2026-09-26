@@ -1103,17 +1103,15 @@ export async function saveModularTrainingJobContract(
     ""
   ).toLowerCase();
 
-  const isForecast = detectedProblemType.includes("forecast");
-  const isClass = detectedProblemType.includes("class");
-  const isReg = detectedProblemType.includes("regress");
+  // const isForecast = detectedProblemType.includes("forecast");
+  // const isClass = detectedProblemType.includes("class");
+  // const isReg = detectedProblemType.includes("regress");
 
   const taskData = rawData.task || existingObj.task || {
-    task_type: rawData.task?.task_type || rawData.problemType || rawData.problem_type || existingObj.task?.task_type || (isForecast ? "forecasting" : isReg ? "regression" : "classification"),
-    task_subtype: rawData.task_subtype || (isForecast ? "panel_forecasting" : isReg ? "standard_regression" : "binary"),
-    learning_type: "supervised",
-    prediction_type: rawData.prediction_type || (isClass ? "probability" : "value"),
-    prediction_horizon: null,
-    prediction_timestamp: null,
+    task_type: rawData.task?.task_type || rawData.problemType || rawData.problem_type || existingObj.task?.task_type,
+    task_subtype: rawData.task_subtype ?? '',
+    learning_type: rawData.learning_type ?? '',
+    prediction_type: rawData.prediction_type ?? ''
   };
 
   // Resolve validated features by reading the feature validation report from project run python_script folder
@@ -1195,72 +1193,13 @@ export async function saveModularTrainingJobContract(
 
   const searchSpaceData = rawData.search_space || existingObj.search_space || {};
 
-  const objectiveData = rawData.objective || existingObj.objective || {
-    training_loss: isClass ? "logloss" : "mse",
-    optimization_metric: primaryMetricName,
-    direction: rawData.objective?.direction || rawDirection || existingObj.objective?.direction || "maximize",
-    custom_objective: {
-      enabled: false,
-      definition: null,
-    },
-  };
+  const objectiveData = rawData.objective || existingObj.objective || {}
 
-  const evaluationData = rawData.evaluation || existingObj.evaluation || {
-    primary_metric: primaryMetricDef,
-    secondary_metrics:
-      (Array.isArray(rawData.evaluation?.secondary_metrics) && rawData.evaluation.secondary_metrics.length > 0)
-        ? rawData.evaluation.secondary_metrics
-        : (Array.isArray(rawSecondaryMetrics) && rawSecondaryMetrics.length > 0)
-        ? rawSecondaryMetrics
-        : (Array.isArray(existingObj.evaluation?.secondary_metrics) ? existingObj.evaluation.secondary_metrics : []),
-    thresholds: {
-      primary_metric_min: null,
-      secondary_metric_constraints: {},
-    },
-    segment_analysis: [],
-    confidence_intervals: {
-      enabled: false,
-    },
-    bootstrap: {
-      enabled: false,
-      samples: null,
-    },
-    fairness_scope: {
-      protected_attributes: [],
-      metric: null,
-      max_disparity: null,
-    },
-  };
+  const evaluationData = rawData.evaluation || existingObj.evaluation || {}
 
-  const thresholdingData = rawData.thresholding || existingObj.thresholding || {
-    enabled: false,
-    default_threshold: null,
-    optimization: {
-      enabled: false,
-      metric: null,
-      constraints: {},
-    },
-  };
+  const thresholdingData = rawData.thresholding || existingObj.thresholding || {}
 
-  const validationGatesData = rawData.validation_gates || existingObj.validation_gates || {
-    minimum_primary_metric: null,
-    maximum_overfitting_gap: null,
-    maximum_latency: null,
-    maximum_model_size: null,
-    fairness_requirements: null,
-    data_quality_requirements: {
-      max_null_rate: null,
-      schema_match: "strict",
-    },
-    calibration_requirement: {
-      method: "none",
-      max_calibration_error: null,
-    },
-    stability_requirement: {
-      metric_variance_across_folds_max: null,
-    },
-    pass_condition: "all_gates_must_pass",
-  };
+  const validationGatesData = rawData.validation_gates || existingObj.validation_gates || {}
 
   const artifactsData = rawData.artifacts || existingObj.artifacts || {
     output_path: `/workspace/${timestamp}/python_script`,

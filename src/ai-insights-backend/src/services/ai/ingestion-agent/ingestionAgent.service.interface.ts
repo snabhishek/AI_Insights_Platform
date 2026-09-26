@@ -12,7 +12,6 @@ export interface IngestionAgentRunResult {
   inspection: Record<string, unknown>;
   schemaResolution: Record<string, unknown>;
   dataProfile: Record<string, unknown>;
-  preprocessing: Record<string, unknown>;
   batchedTables?: Array<{ tableName: string; status: string; node: string; summary: string }>;
   sessionId?: string;
   requiresApproval?: boolean;

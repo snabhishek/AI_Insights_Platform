@@ -36,7 +36,6 @@ interface WorkflowResponse {
     inspection?: Record<string, unknown>;
     schemaResolution?: Record<string, unknown>;
     dataProfile?: Record<string, unknown>;
-    preprocessing?: Record<string, unknown>;
     runTimestamp?: string;
   };
 }
@@ -203,7 +202,7 @@ export default function ProjectsPage() {
     mapSingle("modelValidationNode", "Model Validation");
 
     // Data Profiling
-    const profileVal = stageStatuses.profileData || stageStatuses.preprocess;
+    const profileVal = stageStatuses.profileData;
     if (profileVal) {
       if (isRunning(profileVal)) {
         next["Data Profiling"] = "In Progress";
@@ -342,7 +341,7 @@ export default function ProjectsPage() {
     if (currentNode === "resolveSchema") {
       return "Schema Resolver";
     }
-    if (currentNode === "profileData" || currentNode === "preprocess") {
+    if (currentNode === "profileData") {
       return "Data Profiling";
     }
     if (currentNode === "inspect") {
@@ -775,11 +774,12 @@ export default function ProjectsPage() {
           setIsPaused(false);
           setRequiresApproval(false);
           setApprovalNextStep(null);
+          resetPipeline()
         }
       } catch (pollErr) {
         console.warn("[ProjectsPage] Background poll sync error:", pollErr);
       }
-    }, 2000);
+    }, 5000);
 
     return () => {
       isMounted = false;
@@ -1114,15 +1114,15 @@ export default function ProjectsPage() {
         });
         return;
       }
-      if (lastData && (lastData.status === "completed" || lastData.stageStatuses?.resolveSchema === "Completed")) {
-        updateWorkflowState(lastData);
-        const completionMsg = lastData.summary || "Data Ingestion completed successfully";
-        if (lastCompletedSummaryRef.current !== completionMsg) {
-          lastCompletedSummaryRef.current = completionMsg;
-          showAlert({ title: completionMsg, type: "success" });
-        }
-        return;
-      }
+      // if (lastData && (lastData.status === "completed" || lastData.stageStatuses?.resolveSchema === "Completed")) {
+      //   updateWorkflowState(lastData);
+      //   const completionMsg = lastData.summary || "Data Ingestion completed successfully";
+      //   if (lastCompletedSummaryRef.current !== completionMsg) {
+      //     lastCompletedSummaryRef.current = completionMsg;
+      //     showAlert({ title: completionMsg, type: "success" });
+      //   }
+      //   return;
+      // }
       if (action !== "approve") {
         setRunStatus("Idle");
         setIsPaused(false);
@@ -1152,7 +1152,6 @@ export default function ProjectsPage() {
     activeRunningProjectIdRef.current = null;
     lastDataRef.current = null;
 
-    resetPipeline();
     setRunStatus("Stopped");
     setWorkflowMessage("Workflow stopped by user");
 
@@ -1175,6 +1174,8 @@ export default function ProjectsPage() {
     if (currentSession || currentProjectId) {
       void stopWorkflowApi(currentSession || undefined, currentProjectId);
     }
+
+    setStageOutputs({});
 
     showAlert({
       title: "Workflow Stopped",
@@ -1543,9 +1544,9 @@ export default function ProjectsPage() {
         onEdit={() =>
           showAlert({ title: "Edit Project is being worked separately in the backend", type: "info" })
         }
-        onViewHistory={() =>
-          showAlert({ title: "Project execution logs are being worked separately in the backend", type: "info" })
-        }
+        // onViewHistory={() =>
+        //   showAlert({ title: "Project execution logs are being worked separately in the backend", type: "info" })
+        // }
         onManageSources={() =>
           showAlert({ title: "Data source management is being worked separately in the backend", type: "info" })
         }
