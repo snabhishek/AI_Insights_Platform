@@ -7,7 +7,7 @@ import { IProjectRepository } from "./project.repository.interface";
 import { Project, ProjectRun, ProjectWithWorkspace } from "../models/project.types";
 
 export class PostgresProjectRepository implements IProjectRepository {
-  constructor(private db: NodePgDatabase<typeof schema>) {}
+  constructor(private db: NodePgDatabase<typeof schema>) { }
 
   private normalizeAgentState(agentState: any): any {
     if (!agentState || typeof agentState !== "object") return agentState;
@@ -126,9 +126,9 @@ export class PostgresProjectRepository implements IProjectRepository {
       project: schema.projects,
       workspaceName: schema.workspaces.name,
     })
-    .from(schema.projects)
-    .innerJoin(schema.workspaces, eq(schema.projects.workspaceId, schema.workspaces.id))
-    .where(eq(schema.projects.id, id));
+      .from(schema.projects)
+      .innerJoin(schema.workspaces, eq(schema.projects.workspaceId, schema.workspaces.id))
+      .where(eq(schema.projects.id, id));
 
     if (res.length === 0) return undefined;
 
@@ -170,25 +170,69 @@ export class PostgresProjectRepository implements IProjectRepository {
       return incoming !== undefined ? incoming : existing;
     };
 
-    const mergedAgentState: Record<string, unknown> = {
-      ...existingState,
-      ...agentState,
-      stageOutputs: mergedStageOutputs,
-      formBuilder: preserveIfIncomingEmpty("formBuilder"),
-      hierarchyMapper: preserveIfIncomingEmpty("hierarchyMapper"),
-      relationshipBuilder: preserveIfIncomingEmpty("relationshipBuilder"),
-      modelSelection: preserveIfIncomingEmpty("modelSelection"),
-      trainingConfiguration: preserveIfIncomingEmpty("trainingConfiguration"),
-      preFlight: preserveIfIncomingEmpty("preFlight"),
-      modelTraining: preserveIfIncomingEmpty("modelTraining"),
-      modelValidation: preserveIfIncomingEmpty("modelValidation"),
-      ...((agentState?.stageStatuses || existingState?.stageStatuses) ? {
-        stageStatuses: {
-          ...((existingState?.stageStatuses as Record<string, unknown>) || {}),
-          ...((agentState?.stageStatuses as Record<string, unknown>) || {}),
+    const getAgentState = () => {
+      if (agentState.status === 'stopped') {
+        return {
+          connectorId: existingState.connectorId,
+          projectId: existingState.projectId,
+          userPrompt: existingState.userPrompt,
+          runTimestamp: existingState.runTimestamp,
+          splitDate: existingState.splitDate || existingState.splitEndDate || "",
+          splitStartDate: existingState.splitStartDate || "",
+          batchedTables: [],
+          inspection: {},
+          dataProfile: {},
+          schemaResolution: {},
+          hierarchyMapper: {},
+          featureArchitect: {},
+          featureValidator: {},
+          exogenousScout: {},
+          modelSelection: {},
+          trainingConfiguration: {},
+          preFlight: {},
+          modelTraining: {},
+          modelValidation: {},
+          summary: "Not started Yet",
+          steps: [],
+          stageStatuses: {
+            inspect: "Pending",
+            profileData: "Pending",
+            resolveSchema: "Pending",
+            hierarchyMapper: "Pending",
+            featureArchitect: "Pending",
+            featureValidator: "Pending",
+            exogenousScout: "Pending",
+            modelSelection: "Pending",
+            trainingConfiguration: "Pending",
+            preFlight: "Pending",
+            modelTraining: "Pending",
+            modelValidation: "Pending"
+          }
         }
-      } : {}),
-    };
+      }
+      else {
+        return {
+          ...existingState,
+          ...agentState,
+          stageOutputs: mergedStageOutputs,
+          formBuilder: preserveIfIncomingEmpty("formBuilder"),
+          hierarchyMapper: preserveIfIncomingEmpty("hierarchyMapper"),
+          relationshipBuilder: preserveIfIncomingEmpty("relationshipBuilder"),
+          modelSelection: preserveIfIncomingEmpty("modelSelection"),
+          trainingConfiguration: preserveIfIncomingEmpty("trainingConfiguration"),
+          preFlight: preserveIfIncomingEmpty("preFlight"),
+          modelTraining: preserveIfIncomingEmpty("modelTraining"),
+          modelValidation: preserveIfIncomingEmpty("modelValidation"),
+          ...((agentState?.stageStatuses || existingState?.stageStatuses) ? {
+            stageStatuses: {
+              ...((existingState?.stageStatuses as Record<string, unknown>) || {}),
+              ...((agentState?.stageStatuses as Record<string, unknown>) || {}),
+            }
+          } : {}),
+        };
+      }
+    }
+
 
     // Update projects table with status and useCase
     const projectUpdates: Record<string, any> = {
@@ -210,7 +254,7 @@ export class PostgresProjectRepository implements IProjectRepository {
         projectId: id,
         useCase: effectiveUseCase || null,
         status: effectiveStatus,
-        agentState: mergedAgentState,
+        agentState: getAgentState(),
       });
     } catch (runErr: any) {
       console.warn(`[ProjectRepository] Failed to insert project run record:`, runErr?.message || runErr);
@@ -218,7 +262,7 @@ export class PostgresProjectRepository implements IProjectRepository {
 
     const updatedProj = await this.getById(id);
     if (updatedProj) {
-      updatedProj.agentState = mergedAgentState;
+      updatedProj.agentState = getAgentState();
       updatedProj.status = effectiveStatus;
     }
     return updatedProj;
@@ -300,10 +344,10 @@ export class PostgresProjectRepository implements IProjectRepository {
   async deleteProject(id: string): Promise<boolean> {
     try {
       await this.db.delete(schema.projectRuns).where(eq(schema.projectRuns.projectId, id));
-    } catch {}
+    } catch { }
     try {
       await this.db.delete(agentThinking).where(eq(agentThinking.projectId, id));
-    } catch {}
+    } catch { }
     const res = await this.db.delete(schema.projects).where(eq(schema.projects.id, id));
     return (res.rowCount ?? 0) > 0;
   }

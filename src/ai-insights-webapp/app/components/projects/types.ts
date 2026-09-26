@@ -1,6 +1,6 @@
 // Shared types for the Projects feature
 
-export type PipelineStatus = "Completed" | "In Progress" | "Pending" | "Not Started";
+export type PipelineStatus = "Completed" | "In Progress" | "Pending" | "None"
 export type RunStatus = "Success" | "Running" | "Paused" | "Stopped" | "Failed" | "Idle";
 
 export type PipelineStatuses = Record<string, PipelineStatus>;

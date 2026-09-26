@@ -992,13 +992,13 @@ export default function ProjectsPage() {
         "Data Inspection": "In Progress",
         "Data Profiling": "Pending",
         "Schema Resolver": "Pending",
-        "Feature Engineering": "Not Started",
-        "Model Selection": "Not Started",
-        "Training Configuration": "Not Started",
-        "Pre Flight": "Not Started",
-        "Model Training": "Not Started",
-        "Model Evaluation": "Not Started",
-        "Model Validation": "Not Started",
+        "Feature Engineering": "Pending",
+        "Model Selection": "Pending",
+        "Training Configuration": "Pending",
+        "Pre Flight": "Pending",
+        "Model Training": "Pending",
+        "Model Evaluation": "Pending",
+        "Model Validation": "Pending",
       });
       // Clear pause state when starting fresh
       setIsPaused(false);
@@ -1156,7 +1156,7 @@ export default function ProjectsPage() {
     setWorkflowMessage("Workflow stopped by user");
 
     const stoppedState = {
-      status: "stopped",
+      status: "Idle",
       summary: "Workflow stopped by user",
       message: "Workflow stopped by user",
       sessionId: currentSession || undefined,
@@ -1259,17 +1259,17 @@ export default function ProjectsPage() {
       statusesToUpdate["Data Inspection"] = "In Progress";
       statusesToUpdate["Data Profiling"] = "Pending";
       statusesToUpdate["Schema Resolver"] = "Pending";
-      statusesToUpdate["Feature Engineering"] = "Not Started";
-      statusesToUpdate["Hierarchy Mapper"] = "Not Started";
-      statusesToUpdate["Feature Architect"] = "Not Started";
-      statusesToUpdate["Feature Validator"] = "Not Started";
-      statusesToUpdate["Exogenous Scout"] = "Not Started";
-      statusesToUpdate["Model Training & Validation"] = "Not Started";
-      statusesToUpdate["Model Selection"] = "Not Started";
-      statusesToUpdate["Training Configuration"] = "Not Started";
-      statusesToUpdate["Pre Flight"] = "Not Started";
-      statusesToUpdate["Model Training"] = "Not Started";
-      statusesToUpdate["Model Validation"] = "Not Started";
+      statusesToUpdate["Feature Engineering"] = "Pending";
+      statusesToUpdate["Hierarchy Mapper"] = "Pending";
+      statusesToUpdate["Feature Architect"] = "Pending";
+      statusesToUpdate["Feature Validator"] = "Pending";
+      statusesToUpdate["Exogenous Scout"] = "Pending";
+      statusesToUpdate["Model Training & Validation"] = "Pending";
+      statusesToUpdate["Model Selection"] = "Pending";
+      statusesToUpdate["Training Configuration"] = "Pending";
+      statusesToUpdate["Pre Flight"] = "Pending";
+      statusesToUpdate["Model Training"] = "Pending";
+      statusesToUpdate["Model Validation"] = "Pending";
       outputsToClear.push(
         "inspect", "profileData", "resolveSchema", "schemaResolution", "dataProfile",
         "hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout",
@@ -1286,12 +1286,12 @@ export default function ProjectsPage() {
       statusesToUpdate["Feature Architect"] = "Pending";
       statusesToUpdate["Feature Validator"] = "Pending";
       statusesToUpdate["Exogenous Scout"] = "Pending";
-      statusesToUpdate["Model Training & Validation"] = "Not Started";
-      statusesToUpdate["Model Selection"] = "Not Started";
-      statusesToUpdate["Training Configuration"] = "Not Started";
-      statusesToUpdate["Pre Flight"] = "Not Started";
-      statusesToUpdate["Model Training"] = "Not Started";
-      statusesToUpdate["Model Validation"] = "Not Started";
+      statusesToUpdate["Model Training & Validation"] = "Pending";
+      statusesToUpdate["Model Selection"] = "Pending";
+      statusesToUpdate["Training Configuration"] = "Pending";
+      statusesToUpdate["Pre Flight"] = "Pending";
+      statusesToUpdate["Model Training"] = "Pending";
+      statusesToUpdate["Model Validation"] = "Pending";
       outputsToClear.push(
         "hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout", "exogenous",
         "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation"
@@ -1457,13 +1457,13 @@ export default function ProjectsPage() {
       "Data Inspection": "In Progress",
       "Data Profiling": "Pending",
       "Schema Resolver": "Pending",
-      "Feature Engineering": "Not Started",
-      "Model Selection": "Not Started",
-      "Training Configuration": "Not Started",
-      "Pre Flight": "Not Started",
-      "Model Training": "Not Started",
-      "Model Evaluation": "Not Started",
-      "Model Validation": "Not Started",
+      "Feature Engineering": "Pending",
+      "Model Selection": "Pending",
+      "Training Configuration": "Pending",
+      "Pre Flight": "Pending",
+      "Model Training": "Pending",
+      "Model Evaluation": "Pending",
+      "Model Validation": "Pending",
     });
 
     // Cleanly clear project agentState in database so stale training configs don't leak into new run

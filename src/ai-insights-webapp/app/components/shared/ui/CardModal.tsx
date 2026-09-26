@@ -93,7 +93,7 @@ export default function CardModal({
 
   const stepsList: WorkflowStep[] = workflowCard?.step || [];
   const activeStep = stepsList[activeStepIndex] || null;
-  const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Not Started") : "Not Started";
+  const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Pending") : "Pending";
 
   // Auto-select active (In Progress) step, or requested substep, or latest completed step
   useEffect(() => {
@@ -201,7 +201,7 @@ export default function CardModal({
   // Synchronize activeTab based on step status and selection
   useEffect(() => {
     if (!activeStep) return;
-    const currentStatus = pipelineStatuses[activeStep.id] ?? "Not Started";
+    const currentStatus = pipelineStatuses[activeStep.id] ?? "Pending";
     const statusChanged = lastStepStatusRef.current !== currentStatus;
     const stepIdChanged = lastStepIdRef.current !== activeStep.id;
 
@@ -247,13 +247,13 @@ export default function CardModal({
   const hasOutput = stepOutputContent !== undefined && stepOutputContent !== null;
 
   // Helper to check overall workflow status
-  const cardStatus = pipelineStatuses[workflowCard.id] ?? "Not Started";
+  const cardStatus = pipelineStatuses[workflowCard.id] ?? "Pending";
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-3 bg-slate-950/50 backdrop-blur-md animate-fade-in select-none">
       {/* Extended width to full screen with minimum gap, reduced border radius to rounded-xl */}
       <div className="relative w-[98vw] h-[96vh] max-w-none overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col sm:flex-row animate-scale-up">
-        
+
         {/* Left Panel: Steps Sidebar */}
         <div className="w-full sm:w-[250px] border-b sm:border-b-0 sm:border-r border-border p-5 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
 
@@ -265,7 +265,7 @@ export default function CardModal({
           <div className="relative flex flex-col gap-5 flex-1 min-h-0">
             {stepsList.map((stepItem, idx) => {
               const isSelected = activeStepIndex === idx;
-              const stepStatus = pipelineStatuses[stepItem.id] ?? "Not Started";
+              const stepStatus = pipelineStatuses[stepItem.id] ?? "Pending";
               const isStepCompleted = stepStatus === "Completed";
               const isStepInProgress = stepStatus === "In Progress";
               const stepColors = CIRCLE_COLOR_MAP[stepItem.color] || CIRCLE_COLOR_MAP.green;
@@ -286,15 +286,14 @@ export default function CardModal({
                   )}
 
                   {/* Circle Indicator */}
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 ${
-                    isStepCompleted 
-                      ? "bg-emerald-500 border-emerald-500 text-white shadow-md" 
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 ${isStepCompleted
+                      ? "bg-emerald-500 border-emerald-500 text-white shadow-md"
                       : isStepInProgress
-                      ? "bg-indigo-500 border-indigo-500 text-white shadow-lg animate-pulse"
-                      : isSelected
-                      ? `${stepColors.border} ${stepColors.text} bg-surface`
-                      : "border-border bg-surface text-muted-foreground/60 group-hover:border-muted-foreground/40"
-                  }`}>
+                        ? "bg-indigo-500 border-indigo-500 text-white shadow-lg animate-pulse"
+                        : isSelected
+                          ? `${stepColors.border} ${stepColors.text} bg-surface`
+                          : "border-border bg-surface text-muted-foreground/60 group-hover:border-muted-foreground/40"
+                    }`}>
                     {isStepCompleted ? (
                       <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
                         <polyline points="20 6 9 17 4 12" />
@@ -312,12 +311,11 @@ export default function CardModal({
                   {/* Step Box Details (Transparent Background - requirement checklist) */}
                   <div className="flex-1 min-w-0 pr-2">
                     <div className="flex items-center justify-between gap-1">
-                      <span className={`text-xs font-bold truncate transition-colors leading-tight ${
-                        isSelected ? "text-foreground font-black" : "text-muted-foreground group-hover:text-foreground"
-                      }`}>
+                      <span className={`text-xs font-bold truncate transition-colors leading-tight ${isSelected ? "text-foreground font-black" : "text-muted-foreground group-hover:text-foreground"
+                        }`}>
                         {stepItem.title}
                       </span>
-                      
+
                       {/* Completed Checkmark / Spinner Badge */}
                       {isStepCompleted && (
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
@@ -335,7 +333,7 @@ export default function CardModal({
 
         {/* Right Panel: Active Step Logs & Custom Output Area */}
         <div className="flex-1 flex flex-col min-h-0 bg-background/30 relative overflow-hidden">
-          
+
           {/* Header of right panel containing Title, Icon, Status and Close button */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-border/80 bg-surface-muted/60 shrink-0 select-none">
             <div className="flex items-center gap-3">
@@ -347,11 +345,10 @@ export default function CardModal({
                   {workflowCard.title} Node
                 </h2>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`w-2 h-2 rounded-full ${
-                    cardStatus === "Completed" ? "bg-emerald-500" :
-                    cardStatus === "In Progress" ? "bg-indigo-500 animate-ping" :
-                    cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
-                  }`} />
+                  <span className={`w-2 h-2 rounded-full ${cardStatus === "Completed" ? "bg-emerald-500" :
+                      cardStatus === "In Progress" ? "bg-indigo-500 animate-ping" :
+                        cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
+                    }`} />
                   <span className="text-[11px] font-semibold text-muted-foreground">
                     {cardStatus === "In Progress" ? "Running" : cardStatus}
                   </span>
@@ -377,9 +374,8 @@ export default function CardModal({
                     type="button"
                     onClick={() => onApprove?.(approvalNextStep || undefined)}
                     disabled={isApproving}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ${
-                      isApproving ? "opacity-75 cursor-not-allowed" : "animate-pulse"
-                    }`}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ${isApproving ? "opacity-75 cursor-not-allowed" : "animate-pulse"
+                      }`}
                   >
                     {isApproving ? (
                       <>
@@ -400,8 +396,8 @@ export default function CardModal({
                 );
               })()}
 
-              <button 
-                onClick={onClose} 
+              <button
+                onClick={onClose}
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-background border border-border text-muted-foreground transition-colors cursor-pointer"
                 title="Close Details"
               >
@@ -415,22 +411,20 @@ export default function CardModal({
             <div className="flex border-b border-border bg-surface-muted/30 px-6 shrink-0 select-none">
               <button
                 onClick={() => setActiveTab("output")}
-                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
-                  activeTab === "output"
+                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${activeTab === "output"
                     ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
                     : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
+                  }`}
               >
                 <span>📥</span>
                 <span>Step Output</span>
               </button>
               <button
                 onClick={() => setActiveTab("thinking")}
-                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
-                  activeTab === "thinking"
+                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${activeTab === "thinking"
                     ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
                     : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
+                  }`}
               >
                 <span>🧠</span>
                 <span>Agent Reasoning</span>
@@ -471,9 +465,8 @@ export default function CardModal({
                             type="button"
                             onClick={() => onApprove?.(approvalNextStep || undefined)}
                             disabled={isApproving}
-                            className={`mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer ${
-                              isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105"
-                            }`}
+                            className={`mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105"
+                              }`}
                           >
                             {isApproving ? (
                               <>

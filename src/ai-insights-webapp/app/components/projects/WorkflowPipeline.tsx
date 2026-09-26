@@ -43,9 +43,9 @@ export function getMainStepId(stepOrStageId: string | null): string {
 }
 
 function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
-  const s1 = (pipelineStatuses["Data Inspection"] as PipelineStatus) ?? "Not Started";
-  const s2 = (pipelineStatuses["Data Profiling"] as PipelineStatus) ?? "Not Started";
-  const s3 = (pipelineStatuses["Schema Resolver"] as PipelineStatus) ?? "Not Started";
+  const s1 = (pipelineStatuses["Data Inspection"] as PipelineStatus) ?? "Pending";
+  const s2 = (pipelineStatuses["Data Profiling"] as PipelineStatus) ?? "Pending";
+  const s3 = (pipelineStatuses["Schema Resolver"] as PipelineStatus) ?? "Pending";
 
   // 1. Explicitly marked completed
   if (pipelineStatuses["Data Ingestion"] === "Completed") {
@@ -61,16 +61,12 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
   const isDownstreamActiveOrPending =
     pipelineStatuses["Feature Engineering"] === "Completed" ||
     pipelineStatuses["Feature Engineering"] === "In Progress" ||
-    pipelineStatuses["Feature Engineering"] === "Pending" ||
     pipelineStatuses["Hierarchy Mapper"] === "Completed" ||
     pipelineStatuses["Hierarchy Mapper"] === "In Progress" ||
-    pipelineStatuses["Hierarchy Mapper"] === "Pending" ||
     pipelineStatuses["Model Selection"] === "Completed" ||
     pipelineStatuses["Model Selection"] === "In Progress" ||
-    pipelineStatuses["Model Selection"] === "Pending" ||
     pipelineStatuses["Training Configuration"] === "Completed" ||
     pipelineStatuses["Training Configuration"] === "In Progress" ||
-    pipelineStatuses["Training Configuration"] === "Pending" ||
     pipelineStatuses["Pre Flight"] === "Completed" ||
     pipelineStatuses["Pre Flight"] === "In Progress" ||
     pipelineStatuses["Model Training"] === "Completed" ||
@@ -90,7 +86,7 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
     return "In Progress";
   }
 
-  // 5. If some are completed while others are not started or pending, it's In Progress
+  // 5. If some are completed while others are Pending or pending, it's In Progress
   if ([s1, s2, s3].some((s) => s === "Completed")) {
     return "In Progress";
   }
@@ -98,7 +94,7 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
   if ([s1, s2, s3].some((s) => s === "Pending")) {
     return "Pending";
   }
-  return "Not Started";
+  return "Pending";
 }
 
 const FEATURE_ENGINEERING_SUBSTEPS = [
@@ -109,10 +105,10 @@ const FEATURE_ENGINEERING_SUBSTEPS = [
 ] as const;
 
 function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
-  const s1 = (pipelineStatuses["Hierarchy Mapper"] as PipelineStatus) ?? "Not Started";
-  const s2 = (pipelineStatuses["Feature Architect"] as PipelineStatus) ?? "Not Started";
-  const s3 = (pipelineStatuses["Feature Validator"] as PipelineStatus) ?? "Not Started";
-  const s4 = (pipelineStatuses["Exogenous Scout"] as PipelineStatus) ?? "Not Started";
+  const s1 = (pipelineStatuses["Hierarchy Mapper"] as PipelineStatus) ?? "Pending";
+  const s2 = (pipelineStatuses["Feature Architect"] as PipelineStatus) ?? "Pending";
+  const s3 = (pipelineStatuses["Feature Validator"] as PipelineStatus) ?? "Pending";
+  const s4 = (pipelineStatuses["Exogenous Scout"] as PipelineStatus) ?? "Pending";
 
   // 1. Explicitly marked completed
   if (pipelineStatuses["Feature Engineering"] === "Completed") {
@@ -123,10 +119,8 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
   const isModelPhaseActiveOrCompleted =
     pipelineStatuses["Model Selection"] === "Completed" ||
     pipelineStatuses["Model Selection"] === "In Progress" ||
-    pipelineStatuses["Model Selection"] === "Pending" ||
     pipelineStatuses["Training Configuration"] === "Completed" ||
     pipelineStatuses["Training Configuration"] === "In Progress" ||
-    pipelineStatuses["Training Configuration"] === "Pending" ||
     pipelineStatuses["Pre Flight"] === "Completed" ||
     pipelineStatuses["Pre Flight"] === "In Progress" ||
     pipelineStatuses["Model Training"] === "Completed" ||
@@ -159,7 +153,7 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
   if ([s1, s2, s3, s4].some((s) => s === "Pending")) {
     return "Pending";
   }
-  return "Not Started";
+  return "Pending";
 }
 
 const MODEL_SUBSTEPS = [
@@ -171,7 +165,7 @@ const MODEL_SUBSTEPS = [
 ] as const;
 
 function calculateModelStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
-  const statuses = MODEL_SUBSTEPS.map((step) => (pipelineStatuses[step] as PipelineStatus) ?? "Not Started");
+  const statuses = MODEL_SUBSTEPS.map((step) => (pipelineStatuses[step] as PipelineStatus) ?? "Pending");
   if (pipelineStatuses["Model Training & Validation"] === "Completed" || statuses.every((status) => status === "Completed")) {
     return "Completed";
   }
@@ -184,7 +178,7 @@ function calculateModelStatus(pipelineStatuses: PipelineStatuses): PipelineStatu
   if (pipelineStatuses["Model Training & Validation"] === "Pending" || statuses.some((status) => status === "Pending")) {
     return "Pending";
   }
-  return "Not Started";
+  return "Pending";
 }
 
 export function getMainStepStatus(stepId: string, pipelineStatuses: PipelineStatuses): PipelineStatus {
@@ -197,15 +191,25 @@ export function getMainStepStatus(stepId: string, pipelineStatuses: PipelineStat
   if (stepId === "Model Training & Validation") {
     return calculateModelStatus(pipelineStatuses);
   }
-  return (pipelineStatuses[stepId] as PipelineStatus) ?? "Not Started";
+  return (pipelineStatuses[stepId] as PipelineStatus) ?? "Pending";
 }
 
 export function getMainStepStatuses(
   pipelineStatuses: PipelineStatuses,
-  runStatus?: RunStatus,
+  runStatus: RunStatus,
   requiresApproval?: boolean
 ): Record<string, PipelineStatus> {
   const result: Record<string, PipelineStatus> = {};
+  if (runStatus === "Stopped" || runStatus === "Failed" || runStatus === "Idle") {
+    PIPELINE_STEPS.forEach((step) => {
+      if (step.step !== undefined) {
+        step.step.forEach((subStep) => {
+          result[subStep.id] = "None";
+        })
+      }
+    })
+    return result;
+  }
   let foundActiveRunning = false;
 
   for (const step of PIPELINE_STEPS) {
@@ -228,7 +232,6 @@ export function getMainStepStatuses(
 
 export default function WorkflowPipeline({
   pipelineStatuses,
-
   runStatus,
   lastRunTime,
   activeStage,
@@ -259,9 +262,9 @@ export default function WorkflowPipeline({
 
   const hasExistingRun =
     (lastRunTime !== "Not run yet" ||
-    runStatus === "Success" ||
-    runStatus === "Failed" ||
-    Object.values(pipelineStatuses).some((s) => s === "Completed" || s === "In Progress")) && runStatus !== "Stopped";
+      runStatus === "Success" ||
+      runStatus === "Failed" ||
+      Object.values(pipelineStatuses).some((s) => s === "Completed" || s === "In Progress")) && runStatus !== "Stopped";
 
   const runButtonText = hasExistingRun ? "Re-Run Workflow" : "Run Workflow";
   const handleRunClick = () => {
@@ -525,7 +528,6 @@ export default function WorkflowPipeline({
             { color: "bg-emerald-500", label: "Completed" },
             { color: "bg-indigo-500", label: "Running" },
             { color: "bg-amber-500", label: "Pending" },
-            { color: "bg-border dark:bg-gray-600", label: "Not Started" },
           ].map(({ color, label }) => (
             <div key={label} className="flex items-center gap-1.5 font-semibold">
               <span className={`w-2.5 h-2.5 rounded-full ${color}`} />
