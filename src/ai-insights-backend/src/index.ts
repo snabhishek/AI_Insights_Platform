@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { LocalFileService } from "./services/file/file.service";
+import { getWorkspacesBasePath } from "./config/fileServer.config";
 import { DuckDBService } from "./services/duckdb/duckdb.service";
 import { ConnectionTesterService } from "./services/connector/connectionTester.service";
 import { PostgresConnectorRepository } from "./repositories/connector.repository";
@@ -30,7 +31,6 @@ const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema
 import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
 import { PostgresModelValidationRepository } from "./repositories/modelValidation.repository";
 import { AgentThinkingService } from "./services/ai/agent-thinking/agentThinking.service";
-// import { AgentController } from "./controllers/agent.controller";
 import { IngestionAgentService } from "./services/ai/ingestion-agent/ingestionAgent.service";
 import { QueueService } from "./services/queue/queue.service";
 import { AIController } from "./controllers/ai.controller";
@@ -145,6 +145,7 @@ async function bootstrap() {
 
   app.use("/api/ai", createAIRouter(aiController));
   app.use("/api/workspaces", createWorkspaceRouter(workspaceController));
+  app.use("/workspaces", express.static(getWorkspacesBasePath()));
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {

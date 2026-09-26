@@ -127,6 +127,15 @@ export interface DateRangeInfo {
   availableYears?: number[];
 }
 
+const fileServerBase = BACKEND_URL.replace(/\/api\/?$/, "");
+
+function resolvePlotUrl(rawUrl: string): string {
+  if (!rawUrl) return "";
+  if (rawUrl.startsWith("http://") || rawUrl.startsWith("https://")) return rawUrl;
+  const cleanPath = rawUrl.startsWith("/") ? rawUrl : `/${rawUrl}`;
+  return `${fileServerBase}${cleanPath}`;
+}
+
 export default function ModelTrainingStepOutput({
   modelTraining,
   trainingConfiguration,
@@ -202,50 +211,35 @@ export default function ModelTrainingStepOutput({
     const testMetrics = c.testMetrics || c.test_metrics || {};
 
     // Extract score prioritizing regression and classification primary metrics
-    let score: number | undefined = undefined;
-    if (typeof c === "number" && !isNaN(c)) {
-      score = c;
-    } else if (typeof c.score === "number" && !isNaN(c.score)) {
-      score = c.score;
-    } else if (typeof c.val_score === "number" && !isNaN(c.val_score)) {
-      score = c.val_score;
-    } else if (typeof c.validation_score === "number" && !isNaN(c.validation_score)) {
-      score = c.validation_score;
-    } else if (typeof c.metric_score === "number" && !isNaN(c.metric_score)) {
-      score = c.metric_score;
-    } else if (typeof c.primary_metric_value === "number" && !isNaN(c.primary_metric_value)) {
-      score = c.primary_metric_value;
-    } else if (primaryMetricKey && typeof validationMetrics?.[primaryMetricKey] === "number") {
-      score = validationMetrics[primaryMetricKey];
-    } else if (primaryMetricKey && typeof testMetrics?.[primaryMetricKey] === "number") {
-      score = testMetrics[primaryMetricKey];
-    } else if (typeof c.test_score === "number" && !isNaN(c.test_score)) {
-      score = c.test_score;
-    } else if (typeof validationMetrics?.roc_auc === "number") {
-      score = validationMetrics.roc_auc;
-    } else if (typeof validationMetrics?.accuracy === "number") {
-      score = validationMetrics.accuracy;
-    } else if (typeof validationMetrics?.f1_score === "number") {
-      score = validationMetrics.f1_score;
-    } else if (typeof validationMetrics?.f1_weighted === "number") {
-      score = validationMetrics.f1_weighted;
-    } else if (typeof validationMetrics?.r2 === "number") {
-      score = validationMetrics.r2;
-    } else if (typeof validationMetrics?.rmse === "number") {
-      score = validationMetrics.rmse;
-    } else if (typeof testMetrics?.roc_auc === "number") {
-      score = testMetrics.roc_auc;
-    } else if (typeof testMetrics?.accuracy === "number") {
-      score = testMetrics.accuracy;
-    } else if (typeof testMetrics?.f1_score === "number") {
-      score = testMetrics.f1_score;
-    } else if (typeof testMetrics?.r2 === "number") {
-      score = testMetrics.r2;
-    } else if (typeof c.suitability_score === "number") {
-      score = c.suitability_score;
-    } else {
-      const numVal = Object.values(validationMetrics).find((v) => typeof v === "number" && !isNaN(v as number));
-      if (typeof numVal === "number") score = numVal as number;
+    const isValidNumber = (value: unknown): value is number => typeof value === "number" && !Number.isNaN(value);
+
+    const candidates = [
+      c,
+      c.score,
+      c.val_score,
+      c.validation_score,
+      c.metric_score,
+      c.primary_metric_value,
+      primaryMetricKey && validationMetrics?.[primaryMetricKey],
+      primaryMetricKey && testMetrics?.[primaryMetricKey],
+      c.test_score,
+      validationMetrics?.roc_auc,
+      validationMetrics?.accuracy,
+      validationMetrics?.f1_score,
+      validationMetrics?.f1_weighted,
+      validationMetrics?.r2,
+      validationMetrics?.rmse,
+      testMetrics?.roc_auc,
+      testMetrics?.accuracy,
+      testMetrics?.f1_score,
+      testMetrics?.r2,
+      c.suitability_score,
+    ];
+
+    let score = candidates.find(isValidNumber);
+
+    if (score === undefined) {
+      score = Object.values(validationMetrics ?? {}).find(isValidNumber);
     }
 
     // Extract duration seconds
@@ -947,7 +941,7 @@ export default function ModelTrainingStepOutput({
               >
                 <div className="h-44 w-full bg-surface-muted flex items-center justify-center overflow-hidden">
                   <img
-                    src={url}
+                    src={resolvePlotUrl(url)}
                     alt={name}
                     className="object-contain w-full h-full transition-transform group-hover:scale-105"
                     onError={(e) => {
@@ -991,7 +985,7 @@ export default function ModelTrainingStepOutput({
             </div>
             <div className="w-full flex items-center justify-center p-2 bg-black/5 dark:bg-black/30 rounded-xl overflow-hidden max-h-[75vh]">
               <img
-                src={activePlotModal.url}
+                src={resolvePlotUrl(activePlotModal.url)}
                 alt={activePlotModal.title}
                 className="max-h-[70vh] w-auto object-contain rounded-lg"
               />

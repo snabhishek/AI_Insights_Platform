@@ -24,6 +24,7 @@ import {
 } from "../../tools/modelTraining/modelTraining.tools";
 import { webSearchTool, extractUrlContentTool } from "../../tools/search";
 import { validateWithRetry } from "../../validator/validatorNode";
+import { sanitizeFolderName } from "../../../config/fileServer.config";
 import { ModelTrainingAgentOutput, ModelTrainingReport, CandidateModelRun } from "./types";
 
 interface CodingAgentResult extends Record<string, unknown> {
@@ -711,6 +712,43 @@ export class ModelTrainingAgent {
       }
     }
 
+    const projectWorkspaceRelPath = path.posix.join(
+      "workspaces",
+      sanitizeFolderName(workspaceName),
+      "projects",
+      sanitizeFolderName(projectName)
+    );
+
+    const toFileServerPlotPath = (rawPath: string): string => {
+      if (!rawPath || typeof rawPath !== "string") return rawPath;
+      if (rawPath.startsWith("http://") || rawPath.startsWith("https://")) return rawPath;
+      const normalized = rawPath.replace(/\\/g, "/");
+      if (normalized.startsWith("/workspace/")) {
+        return `/${projectWorkspaceRelPath}/${normalized.slice("/workspace/".length)}`;
+      }
+      if (normalized.startsWith("workspace/")) {
+        return `/${projectWorkspaceRelPath}/${normalized.slice("workspace/".length)}`;
+      }
+      if (normalized.startsWith("/workspaces/")) {
+        return normalized;
+      }
+      if (normalized.startsWith("workspaces/")) {
+        return `/${normalized}`;
+      }
+      return `/${projectWorkspaceRelPath}/${runTimestamp}/${pythonProjectName}/${normalized.replace(/^\/+/, "")}`;
+    };
+
+    const normalizePlotMap = (plotsObj: any): Record<string, string> => {
+      if (!plotsObj || typeof plotsObj !== "object") return {};
+      const res: Record<string, string> = {};
+      for (const [k, v] of Object.entries(plotsObj)) {
+        if (typeof v === "string" && v.trim()) {
+          res[k] = toFileServerPlotPath(v.trim());
+        }
+      }
+      return res;
+    };
+
     const runs: CandidateModelRun[] = rawRuns.map((r: any, idx: number) => {
       const modelId = String(r.model_id || r.id || r.name || r.model_name || `model_${idx + 1}`);
       const displayName = String(r.displayName || r.display_name || r.algorithm || modelId);
@@ -766,7 +804,7 @@ export class ModelTrainingAgent {
         (r.duration_ms ? r.duration_ms / 1000 : undefined);
 
       const artifact = r.model_artifact || r.artifact || r.model_path || r.artifact_path || `artifacts/models/${modelId}.joblib`;
-      const plots = r.plots || r.comparison_plots || r.plot_paths || {};
+      const plots = normalizePlotMap(r.plots || r.comparison_plots || r.plot_paths || {});
 
       return {
         model_id: modelId,
@@ -810,11 +848,23 @@ export class ModelTrainingAgent {
       rankedCandidates[0]?.validationMetrics ||
       {};
 
+    if (report && typeof report === "object") {
+      if (report.plots) report.plots = normalizePlotMap(report.plots);
+      if (report.comparison_plot) report.comparison_plot = toFileServerPlotPath(report.comparison_plot);
+      if (report.comparison_plots) report.comparison_plots = normalizePlotMap(report.comparison_plots);
+      if (report.comparisonPlots) report.comparisonPlots = normalizePlotMap(report.comparisonPlots);
+      if (report.artifacts && typeof report.artifacts === "object") {
+        if (report.artifacts.comparison_plot) {
+          report.artifacts.comparison_plot = toFileServerPlotPath(report.artifacts.comparison_plot);
+        }
+      }
+    }
+
     const topLevelPlots: Record<string, string> = {
-      ...(typeof report.comparison_plot === "string" ? { cross_model_comparison: report.comparison_plot } : {}),
-      ...(typeof report.comparison_plots === "object" && report.comparison_plots ? report.comparison_plots : {}),
-      ...(typeof report.comparisonPlots === "object" && report.comparisonPlots ? report.comparisonPlots : {}),
-      ...(typeof report.plots === "object" && report.plots ? report.plots : {}),
+      ...(typeof report.comparison_plot === "string" ? { cross_model_comparison: toFileServerPlotPath(report.comparison_plot) } : {}),
+      ...(typeof report.comparison_plots === "object" && report.comparison_plots ? normalizePlotMap(report.comparison_plots) : {}),
+      ...(typeof report.comparisonPlots === "object" && report.comparisonPlots ? normalizePlotMap(report.comparisonPlots) : {}),
+      ...(typeof report.plots === "object" && report.plots ? normalizePlotMap(report.plots) : {}),
     };
 
     const durationMs = Date.now() - startTime;
@@ -841,6 +891,7 @@ export class ModelTrainingAgent {
       selectedModel,
       selectedModelArtifact,
       validationMetrics,
+      plots: topLevelPlots,
       filesCreated: codingResult.files || [],
       selectedModels: effectiveSelectedModels,
       splitEndDate: effectiveSplitEndDate,
