@@ -271,7 +271,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         batchedTables: [],
         steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
         stageOutputs: {},
-        stageStatuses: { inspect: "Running", profileData: "Pending", resolveSchema: "Pending" }
+        stageStatuses: { inspect: "In Progress", profileData: "Pending", resolveSchema: "Pending" }
       };
 
       let savedAgentState: any = null;
@@ -1759,7 +1759,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                   ...(graphState.values.stageOutputs || {}),
                   ...(mergedModelSel ? { modelSelection: mergedModelSel } : {}),
                 },
-                stageStatuses: { ...currentStatuses, ...(graphState.values.stageStatuses || {}) }
+                stageStatuses: { ...(graphState.values.stageStatuses || {}), ...currentStatuses }
               };
               if (mergedModelSel) {
                 latestGraphStateValues.modelSelection = mergedModelSel;
@@ -2287,7 +2287,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         };
         const graphState = await workflow.getState(config).catch(() => null);
         const meta = this.sessionMeta.get(resolvedSessionId);
-
+        
         const updatedValues = {
           ...(graphState?.values || {}),
           status: "stopped",

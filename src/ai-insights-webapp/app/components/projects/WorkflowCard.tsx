@@ -79,6 +79,13 @@ function StatusBadge({ status }: { status: PipelineStatus }) {
       </span>
     );
   }
+  if (status === "Stopped") {
+    return (
+      <span className="w-5.5 h-5.5 rounded-full bg-red-500 text-white flex items-center justify-center shadow-md animate-pulse" title="Pending">
+        <span className="w-1.5 h-1.5 rounded-full bg-white" />
+      </span>
+    );
+  }
   return (
     <span className="w-5.5 h-5.5 rounded-full border border-border/80 dark:border-white/10 bg-surface dark:bg-slate-900 flex items-center justify-center text-muted-foreground/35" title="Pending">
       <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/20" />

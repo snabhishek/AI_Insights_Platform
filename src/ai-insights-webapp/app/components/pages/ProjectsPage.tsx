@@ -154,10 +154,12 @@ export default function ProjectsPage() {
 
   const mapStageToPipelineStatus = (
     stageStatuses?: Record<string, string>,
-    currentStatuses?: PipelineStatuses
+    currentStatuses?: PipelineStatuses,
+    currentNodeOrStage?: string
   ): PipelineStatuses => {
     const next = { ...(currentStatuses || INITIAL_PIPELINE_STATUSES) } as PipelineStatuses;
-    if (!stageStatuses) return next;
+    if (!stageStatuses && !currentNodeOrStage) return next;
+    stageStatuses = stageStatuses || {};
 
     const isCompleted = (v?: string) => v === "Completed" || v === "completed" || v === "Success" || v === "success" || v === "ok" || v === "done";
     const isRunning = (v?: string) => v === "In Progress" || v === "in_progress" || v === "in-progress" || v === "Running" || v === "running" || v === "Retrying" || v === "retrying";
@@ -287,6 +289,41 @@ export default function ProjectsPage() {
       next["Feature Validator"] = "Completed";
       next["Exogenous Scout"] = "Completed";
       next["Feature Engineering"] = "Completed";
+    }
+
+    // Some workflow updates identify the active node separately from stageStatuses.
+    // Use it to keep the matching modal substep visibly running.
+    const activeStepByNode: Record<string, string> = {
+      inspect: "Data Inspection",
+      profileData: "Data Profiling",
+      resolveSchema: "Schema Resolver",
+      "Data Inspection": "Data Inspection",
+      "Data Profiling": "Data Profiling",
+      "Schema Resolver": "Schema Resolver",
+      hierarchyMapper: "Hierarchy Mapper",
+      hierarchyMapperNode: "Hierarchy Mapper",
+      featureArchitect: "Feature Architect",
+      featureArchitectNode: "Feature Architect",
+      featureValidator: "Feature Validator",
+      featureValidatorNode: "Feature Validator",
+      exogenous: "Exogenous Scout",
+      exogenousScout: "Exogenous Scout",
+      modelSelection: "Model Selection",
+      modelSelectionNode: "Model Selection",
+      trainingConfiguration: "Training Configuration",
+      trainingConfigurationNode: "Training Configuration",
+      preFlight: "Pre Flight",
+      preFlightNode: "Pre Flight",
+      modelTraining: "Model Training",
+      modelTrainingNode: "Model Training",
+      modelTrainingExec: "Model Training",
+      modelTrainingExecNode: "Model Training",
+      modelValidation: "Model Validation",
+      modelValidationNode: "Model Validation",
+    };
+    const activeStep = currentNodeOrStage ? activeStepByNode[currentNodeOrStage] : undefined;
+    if (activeStep && next[activeStep] !== "Completed") {
+      next[activeStep] = "In Progress";
     }
 
     return next;
@@ -440,7 +477,11 @@ export default function ProjectsPage() {
     const hasValidState = state && typeof state === "object" && (state.stageStatuses || state.status || state.stageOutputs);
 
     if (hasValidState) {
-      const nextStatuses = mapStageToPipelineStatus(state.stageStatuses, pipelineStatuses);
+      const nextStatuses = mapStageToPipelineStatus(
+        state.stageStatuses,
+        pipelineStatuses,
+        state.currentNode || state.currentStage
+      );
       setPipelineStatuses(nextStatuses);
 
       const rawStatus = (state.status || (projectToHydrate as any).status || "").toLowerCase();
@@ -629,7 +670,13 @@ export default function ProjectsPage() {
             }
 
             if (freshState.stageStatuses) {
-              setPipelineStatuses((prev) => mapStageToPipelineStatus(freshState.stageStatuses, prev));
+              setPipelineStatuses((prev) =>
+                mapStageToPipelineStatus(
+                  freshState.stageStatuses,
+                  prev,
+                  freshState.currentNode || freshState.currentStage
+                )
+              );
             }
             if (freshState.stageOutputs) setStageOutputs(freshState.stageOutputs);
             if (freshState.agentThinking) setAgentThinking((prev) => ({ ...prev, ...freshState.agentThinking }));
@@ -690,7 +737,13 @@ export default function ProjectsPage() {
           prev.map((p) => (p.id === selectedProjectId ? { ...p, ...freshProject } : p))
         );
 
-        setPipelineStatuses((prev) => mapStageToPipelineStatus(freshState.stageStatuses, prev));
+        setPipelineStatuses((prev) =>
+          mapStageToPipelineStatus(
+            freshState.stageStatuses,
+            prev,
+            freshState.currentNode || freshState.currentStage
+          )
+        );
         if (freshState.stageOutputs) setStageOutputs(freshState.stageOutputs);
         if (freshState.agentThinking) setAgentThinking((prev) => ({ ...prev, ...freshState.agentThinking }));
         if (freshState.message || freshState.summary) setWorkflowMessage(freshState.message || freshState.summary);
@@ -774,7 +827,7 @@ export default function ProjectsPage() {
           setIsPaused(false);
           setRequiresApproval(false);
           setApprovalNextStep(null);
-          resetPipeline()
+          // resetPipeline()
         }
       } catch (pollErr) {
         console.warn("[ProjectsPage] Background poll sync error:", pollErr);
@@ -789,7 +842,11 @@ export default function ProjectsPage() {
 
   const updateWorkflowState = (payload: WorkflowResponse["data"]) => {
     setPipelineStatuses((prev) => {
-      const nextStatuses = mapStageToPipelineStatus(payload.stageStatuses, prev);
+      const nextStatuses = mapStageToPipelineStatus(
+        payload.stageStatuses,
+        prev,
+        payload.currentNode || payload.currentStage
+      );
       return nextStatuses;
     });
 
@@ -1174,8 +1231,6 @@ export default function ProjectsPage() {
     if (currentSession || currentProjectId) {
       void stopWorkflowApi(currentSession || undefined, currentProjectId);
     }
-
-    setStageOutputs({});
 
     showAlert({
       title: "Workflow Stopped",

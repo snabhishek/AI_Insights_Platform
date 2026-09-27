@@ -5,46 +5,102 @@ import * as schema from "../db/connectors";
 import { agentThinking } from "../db/agentThinking";
 import { IProjectRepository } from "./project.repository.interface";
 import { Project, ProjectRun, ProjectWithWorkspace } from "../models/project.types";
+import { AgentStateType } from "../agents/state";
+import { Agent } from "http";
+import { raw } from "mysql2";
 
 export class PostgresProjectRepository implements IProjectRepository {
   constructor(private db: NodePgDatabase<typeof schema>) { }
 
-  private normalizeAgentState(agentState: any): any {
-    if (!agentState || typeof agentState !== "object") return agentState;
-    const stageOutputs = agentState.stageOutputs || {};
+  // private normalizeAgentState(agentState: AgentStateType): AgentStateType {
+  //   if (!agentState || typeof agentState !== "object") return agentState;
+  //   const stageOutputs = agentState.stageOutputs || null;
 
-    const hasForms = (obj: any) =>
-      obj &&
-      typeof obj === "object" &&
-      ((Array.isArray(obj.filterGroups) && obj.filterGroups.length > 0) ||
-        (Array.isArray(obj.forms) && obj.forms.length > 0));
+  //   if (agentState.status === 'stopped') {
+  //     agentState = {
+  //       connectorId: agentState.connectorId,
+  //       projectId: agentState.projectId,
+  //       userPrompt: agentState.userPrompt,
+  //       prediction_target_column: agentState.prediction_target_column ?? "",
+  //       runTimestamp: agentState.runTimestamp,
+  //       splitDate: agentState.splitDate,
+  //       splitStartDate: agentState.splitStartDate,
+  //       splitEndDate: agentState.splitEndDate,
+  //       selectedModels: agentState.selectedModels,
+  //       predictionHorizon: agentState.predictionHorizon,
+  //       predictionFrequency: agentState.predictionFrequency,
+  //       predictionObjectiveStartDate: agentState.predictionObjectiveStartDate,
+  //       batchedTables: [],
+  //       inspection: {},
+  //       dataProfile: {},
+  //       schemaResolution: {},
+  //       hierarchyMapper: {},
+  //       relationshipBuilder: {},
+  //       formBuilder: {},
+  //       featureArchitect: {},
+  //       featureValidator: {},
+  //       exogenousScout: {},
+  //       modelSelection: {},
+  //       trainingConfiguration: {},
+  //       preFlight: {},
+  //       modelTraining: {},
+  //       modelEvaluation: {},
+  //       modelValidation: {},
+  //       status: "running",
+  //       summary: "Ingestion workflow started",
+  //       steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
+  //       stageOutputs: {},
+  //       stageStatuses: {
+  //         inspect: "In Progress",
+  //         profileData: "Pending",
+  //         resolveSchema: "Pending",
+  //         hierarchyMapper: "Pending",
+  //         featureArchitect: "Pending",
+  //         featureValidator: "Pending",
+  //         exogenousScout: "Pending",
+  //         modelSelection: "Pending",
+  //         trainingConfiguration: "Pending",
+  //         preFlight: "Pending",
+  //         modelTraining: "Pending",
+  //         modelEvaluation: "Pending",
+  //         modelValidation: "Pending"
+  //       }
+  //     };
+  //     return agentState;
+  //   }
 
-    if (!hasForms(agentState.formBuilder)) {
-      if (hasForms(stageOutputs.formBuilder)) {
-        agentState.formBuilder = stageOutputs.formBuilder;
-      } else if (hasForms(stageOutputs.hierarchyMapper?.formBuilder)) {
-        agentState.formBuilder = stageOutputs.hierarchyMapper.formBuilder;
-      } else if (hasForms(agentState.hierarchyMapper?.formBuilder)) {
-        agentState.formBuilder = agentState.hierarchyMapper.formBuilder;
-      }
-    }
+  //   const hasForms = (obj: any) =>
+  //     obj &&
+  //     typeof obj === "object" &&
+  //     ((Array.isArray(obj.filterGroups) && obj.filterGroups.length > 0) ||
+  //       (Array.isArray(obj.forms) && obj.forms.length > 0));
 
-    if (!agentState.hierarchyMapper || Object.keys(agentState.hierarchyMapper).length === 0) {
-      if (stageOutputs.hierarchyMapper && Object.keys(stageOutputs.hierarchyMapper).length > 0) {
-        agentState.hierarchyMapper = stageOutputs.hierarchyMapper;
-      }
-    }
+  //   if (!hasForms(agentState.formBuilder)) {
+  //     if (hasForms(stageOutputs?.formBuilder)) {
+  //       agentState.formBuilder = stageOutputs?.formBuilder as any;
+  //     } else if (stageOutputs && hasForms(stageOutputs.hierarchyMapper?.formBuilder)) {
+  //       agentState.formBuilder = stageOutputs?.hierarchyMapper?.formBuilder as any;
+  //     } else if (hasForms(agentState.hierarchyMapper?.formBuilder)) {
+  //       agentState.formBuilder = agentState.hierarchyMapper.formBuilder as any;
+  //     }
+  //   }
 
-    if (!agentState.relationshipBuilder || Object.keys(agentState.relationshipBuilder).length === 0) {
-      if (stageOutputs.relationshipBuilder && Object.keys(stageOutputs.relationshipBuilder).length > 0) {
-        agentState.relationshipBuilder = stageOutputs.relationshipBuilder;
-      } else if (stageOutputs.hierarchyMapper?.relationshipBuilder) {
-        agentState.relationshipBuilder = stageOutputs.hierarchyMapper.relationshipBuilder;
-      }
-    }
+  //   if (!agentState.hierarchyMapper || Object.keys(agentState.hierarchyMapper).length === 0) {
+  //     if (stageOutputs.hierarchyMapper && Object.keys(stageOutputs.hierarchyMapper).length > 0) {
+  //       agentState.hierarchyMapper = stageOutputs?.hierarchyMapper || {};
+  //     }
+  //   }
 
-    return agentState;
-  }
+  //   if (!agentState.relationshipBuilder || Object.keys(agentState.relationshipBuilder).length === 0) {
+  //     if (stageOutputs.relationshipBuilder && Object.keys(stageOutputs.relationshipBuilder).length > 0) {
+  //       agentState.relationshipBuilder = stageOutputs.relationshipBuilder;
+  //     } else if (stageOutputs.hierarchyMapper?.relationshipBuilder) {
+  //       agentState.relationshipBuilder = stageOutputs.hierarchyMapper.relationshipBuilder;
+  //     }
+  //   }
+
+  //   return agentState;
+  // }
 
   private mapRowToProject(row: any): Project {
     const rawAgentState = row.agent_state ?? row.agentState ?? {};
@@ -60,7 +116,8 @@ export class PostgresProjectRepository implements IProjectRepository {
       subDomain: row.sub_domain ?? row.subDomain ?? undefined,
       folderPath: row.folder_path ?? row.folderPath ?? undefined,
       status: row.status || (row.agent_state?.status) || "idle",
-      agentState: this.normalizeAgentState(rawAgentState),
+      // agentState: this.normalizeAgentState(rawAgentState),
+      agentState: rawAgentState,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
     };
   }
@@ -72,7 +129,7 @@ export class PostgresProjectRepository implements IProjectRepository {
       projectId: row.project_id || row.projectId,
       useCase: row.use_case ?? row.useCase ?? undefined,
       status: row.status || (row.agent_state?.status) || "idle",
-      agentState: this.normalizeAgentState(rawAgentState),
+      agentState: rawAgentState,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
     };
   }
@@ -89,7 +146,7 @@ export class PostgresProjectRepository implements IProjectRepository {
 
     const project = this.mapRowToProject(res[0]);
     if (latestRuns.length > 0) {
-      project.agentState = this.normalizeAgentState(latestRuns[0].agentState);
+      project.agentState = latestRuns[0].agentState as AgentStateType;
       project.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || project.status || "idle";
       if (project.agentState && typeof project.agentState === "object") {
         (project.agentState as any).status = project.status;
@@ -110,7 +167,7 @@ export class PostgresProjectRepository implements IProjectRepository {
         .orderBy(desc(schema.projectRuns.createdAt))
         .limit(1);
       if (latestRuns.length > 0) {
-        proj.agentState = this.normalizeAgentState(latestRuns[0].agentState);
+        proj.agentState = latestRuns[0].agentState as AgentStateType;
         proj.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || proj.status || "idle";
         if (proj.agentState && typeof proj.agentState === "object") {
           (proj.agentState as any).status = proj.status;
@@ -170,68 +227,27 @@ export class PostgresProjectRepository implements IProjectRepository {
       return incoming !== undefined ? incoming : existing;
     };
 
-    const getAgentState = () => {
-      if (agentState.status === 'stopped') {
-        return {
-          connectorId: existingState.connectorId,
-          projectId: existingState.projectId,
-          userPrompt: existingState.userPrompt,
-          runTimestamp: existingState.runTimestamp,
-          splitDate: existingState.splitDate || existingState.splitEndDate || "",
-          splitStartDate: existingState.splitStartDate || "",
-          batchedTables: [],
-          inspection: {},
-          dataProfile: {},
-          schemaResolution: {},
-          hierarchyMapper: {},
-          featureArchitect: {},
-          featureValidator: {},
-          exogenousScout: {},
-          modelSelection: {},
-          trainingConfiguration: {},
-          preFlight: {},
-          modelTraining: {},
-          modelValidation: {},
-          summary: "Not started Yet",
-          steps: [],
+    const getAgentState = () => (
+      {
+        ...existingState,
+        ...agentState,
+        stageOutputs: mergedStageOutputs,
+        formBuilder: preserveIfIncomingEmpty("formBuilder"),
+        hierarchyMapper: preserveIfIncomingEmpty("hierarchyMapper"),
+        relationshipBuilder: preserveIfIncomingEmpty("relationshipBuilder"),
+        modelSelection: preserveIfIncomingEmpty("modelSelection"),
+        trainingConfiguration: preserveIfIncomingEmpty("trainingConfiguration"),
+        preFlight: preserveIfIncomingEmpty("preFlight"),
+        modelTraining: preserveIfIncomingEmpty("modelTraining"),
+        modelValidation: preserveIfIncomingEmpty("modelValidation"),
+        ...((agentState?.stageStatuses || existingState?.stageStatuses) ? {
           stageStatuses: {
-            inspect: "Pending",
-            profileData: "Pending",
-            resolveSchema: "Pending",
-            hierarchyMapper: "Pending",
-            featureArchitect: "Pending",
-            featureValidator: "Pending",
-            exogenousScout: "Pending",
-            modelSelection: "Pending",
-            trainingConfiguration: "Pending",
-            preFlight: "Pending",
-            modelTraining: "Pending",
-            modelValidation: "Pending"
+            ...((existingState?.stageStatuses as Record<string, unknown>) || {}),
+            ...((agentState?.stageStatuses as Record<string, unknown>) || {}),
           }
-        }
-      }
-      else {
-        return {
-          ...existingState,
-          ...agentState,
-          stageOutputs: mergedStageOutputs,
-          formBuilder: preserveIfIncomingEmpty("formBuilder"),
-          hierarchyMapper: preserveIfIncomingEmpty("hierarchyMapper"),
-          relationshipBuilder: preserveIfIncomingEmpty("relationshipBuilder"),
-          modelSelection: preserveIfIncomingEmpty("modelSelection"),
-          trainingConfiguration: preserveIfIncomingEmpty("trainingConfiguration"),
-          preFlight: preserveIfIncomingEmpty("preFlight"),
-          modelTraining: preserveIfIncomingEmpty("modelTraining"),
-          modelValidation: preserveIfIncomingEmpty("modelValidation"),
-          ...((agentState?.stageStatuses || existingState?.stageStatuses) ? {
-            stageStatuses: {
-              ...((existingState?.stageStatuses as Record<string, unknown>) || {}),
-              ...((agentState?.stageStatuses as Record<string, unknown>) || {}),
-            }
-          } : {}),
-        };
-      }
-    }
+        } : {}),
+      } as AgentStateType
+    )
 
 
     // Update projects table with status and useCase
@@ -311,7 +327,7 @@ export class PostgresProjectRepository implements IProjectRepository {
         .orderBy(desc(schema.projectRuns.createdAt))
         .limit(1);
       if (latestRuns.length > 0) {
-        proj.agentState = this.normalizeAgentState(latestRuns[0].agentState);
+        proj.agentState = latestRuns[0].agentState as AgentStateType;
         proj.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || proj.status || "idle";
         if (proj.agentState && typeof proj.agentState === "object") {
           (proj.agentState as any).status = proj.status;

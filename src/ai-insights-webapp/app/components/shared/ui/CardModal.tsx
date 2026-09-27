@@ -240,14 +240,19 @@ export default function CardModal({
     );
   }
 
-
+  const getWorkflowStageStatus = (stage: string) => {
+    if (pipelineStatuses[stage] !== "Completed" && runStatus === "Stopped") {
+      return "Stopped";
+    }
+    return pipelineStatuses[stage];
+  }
 
   // Check if output is received for the active step (provided as prop by parent)
   const stepOutputContent = activeStep ? stepOutputs[activeStep.id] : null;
   const hasOutput = stepOutputContent !== undefined && stepOutputContent !== null;
 
   // Helper to check overall workflow status
-  const cardStatus = pipelineStatuses[workflowCard.id] ?? "Pending";
+  const cardStatus = getWorkflowStageStatus(workflowCard.id);
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-3 bg-slate-950/50 backdrop-blur-md animate-fade-in select-none">
@@ -267,8 +272,10 @@ export default function CardModal({
               const isSelected = activeStepIndex === idx;
               const stepStatus = pipelineStatuses[stepItem.id] ?? "Pending";
               const isStepCompleted = stepStatus === "Completed";
-              const isStepInProgress = stepStatus === "In Progress";
+              const isStepInProgress = stepStatus === "In Progress" && runStatus !== "Stopped";
+              const isStopped = runStatus === "Stopped" && stepStatus === "In Progress";
               const stepColors = CIRCLE_COLOR_MAP[stepItem.color] || CIRCLE_COLOR_MAP.green;
+              const isPaused = runStatus === "Paused" && stepStatus === "In Progress";
 
               return (
                 <button
@@ -286,23 +293,28 @@ export default function CardModal({
                   )}
 
                   {/* Circle Indicator */}
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 ${isStepCompleted
-                      ? "bg-emerald-500 border-emerald-500 text-white shadow-md"
-                      : isStepInProgress
-                        ? "bg-indigo-500 border-indigo-500 text-white shadow-lg animate-pulse"
-                        : isSelected
-                          ? `${stepColors.border} ${stepColors.text} bg-surface`
-                          : "border-border bg-surface text-muted-foreground/60 group-hover:border-muted-foreground/40"
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 
+                    ${isStepCompleted ? "bg-emerald-500 border-emerald-500 text-white shadow-md"
+                      : isStopped ? "bg-rose-100 border-rose-300 text-rose-600 dark:bg-rose-950/40 dark:border-rose-700 dark:text-rose-400"
+                        : isPaused ? "bg-yellow-500 border-yellow-500 text-white shadow-md animate-pulse"
+                          : isStepInProgress
+                            ? "bg-indigo-500 border-indigo-500 text-white shadow-lg animate-pulse"
+                            : isSelected
+                              ? `${stepColors.border} ${stepColors.text} bg-surface`
+                              : "border-border bg-surface text-muted-foreground/60 group-hover:border-muted-foreground/40"
                     }`}>
                     {isStepCompleted ? (
                       <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
-                    ) : isStepInProgress ? (
-                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
+                    ) : isPaused ? (<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>) :
+                      isStepInProgress ? (
+                        <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
                     ) : (
                       idx + 1
                     )}
@@ -346,8 +358,8 @@ export default function CardModal({
                 </h2>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className={`w-2 h-2 rounded-full ${cardStatus === "Completed" ? "bg-emerald-500" :
-                      cardStatus === "In Progress" ? "bg-indigo-500 animate-ping" :
-                        cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
+                    cardStatus === "In Progress" ? "bg-indigo-500 animate-ping" :
+                      cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
                     }`} />
                   <span className="text-[11px] font-semibold text-muted-foreground">
                     {cardStatus === "In Progress" ? "Running" : cardStatus}
@@ -412,8 +424,8 @@ export default function CardModal({
               <button
                 onClick={() => setActiveTab("output")}
                 className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${activeTab === "output"
-                    ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
+                  ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
                   }`}
               >
                 <span>📥</span>
@@ -422,8 +434,8 @@ export default function CardModal({
               <button
                 onClick={() => setActiveTab("thinking")}
                 className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${activeTab === "thinking"
-                    ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
+                  ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
                   }`}
               >
                 <span>🧠</span>
@@ -510,7 +522,7 @@ export default function CardModal({
                         <p className="text-[10px] text-muted-foreground">Detailed logic trace executed by the agent</p>
                       </div>
                     </div>
-                    {activeStepStatus === "In Progress" && (
+                    {activeStepStatus === "In Progress" && runStatus === 'Running' && (
                       <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 animate-pulse bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md">
                         Processing...
                       </span>

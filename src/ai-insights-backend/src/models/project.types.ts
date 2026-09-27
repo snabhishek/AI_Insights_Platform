@@ -1,3 +1,5 @@
+import { AgentStateType } from "../agents/state";
+
 export interface Project {
   id: string;
   name: string;
@@ -10,7 +12,7 @@ export interface Project {
   subDomain?: string;
   folderPath?: string;
   status?: string;
-  agentState?: Record<string, unknown>;
+  agentState?: AgentStateType | undefined;
   createdAt: string;  
 }
 
@@ -19,7 +21,7 @@ export interface ProjectRun {
   projectId: string;
   useCase?: string;
   status?: string;
-  agentState: Record<string, unknown>;
+  agentState: AgentStateType | undefined;
   createdAt: string;
 }
 

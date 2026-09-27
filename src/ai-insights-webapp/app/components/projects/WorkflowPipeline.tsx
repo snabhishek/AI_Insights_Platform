@@ -200,16 +200,16 @@ export function getMainStepStatuses(
   requiresApproval?: boolean
 ): Record<string, PipelineStatus> {
   const result: Record<string, PipelineStatus> = {};
-  if (runStatus === "Stopped" || runStatus === "Failed" || runStatus === "Idle") {
-    PIPELINE_STEPS.forEach((step) => {
-      if (step.step !== undefined) {
-        step.step.forEach((subStep) => {
-          result[subStep.id] = "None";
-        })
-      }
-    })
-    return result;
-  }
+  // if (runStatus === "Stopped" || runStatus === "Failed" || runStatus === "Idle") {
+  //   PIPELINE_STEPS.forEach((step) => {
+  //     if (step.step !== undefined) {
+  //       step.step.forEach((subStep) => {
+  //         result[subStep.id] = "None";
+  //       })
+  //     }
+  //   })
+  //   return result;
+  // }
   let foundActiveRunning = false;
 
   for (const step of PIPELINE_STEPS) {
@@ -274,6 +274,13 @@ export default function WorkflowPipeline({
       onRunWorkflow();
     }
   };
+
+  const getWorkflowStageStatus = (stage: string) => {
+    if (mainStatusMap[stage] !== "Completed" && runStatus === "Stopped") {
+      return "Stopped";
+    }
+    return mainStatusMap[stage];
+  }
 
   return (
     <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-background border border-border rounded-lg p-6 shadow-soft">
@@ -459,7 +466,7 @@ export default function WorkflowPipeline({
               <div className="flex min-w-0 flex-[0_1_155px] justify-center">
                 <WorkflowCard
                   step={step}
-                  status={mainStatusMap[step.id]}
+                  status={getWorkflowStageStatus(step.id)}
                   index={idx}
                   isActive={mainSelectedStage === step.id}
                   onSelect={onSelectStage}
