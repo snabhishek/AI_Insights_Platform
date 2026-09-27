@@ -21,26 +21,101 @@
 # -----------------------------------------------------------------------------
 # PRIMARY METRIC
 # -----------------------------------------------------------------------------
+# Single source of truth for the metric used throughout training, optimization,
+# evaluation, validation, model selection, and UI reporting.
+# The actual metric must be determined dynamically by the Model Selection Agent.
+# -----------------------------------------------------------------------------
 
-x-primary-metric-name: &primary_metric_name
-  "<Write the metric that most appropriately measures success for the prediction objective and business goal.>"
+x-primary-metric-name:
+  definition: >
+    The single primary evaluation metric that best represents model performance
+    for the identified business objective and ML problem. The value must be
+    selected dynamically based on the business objective, target characteristics,
+    ML task, data characteristics, and metric validity.
 
-x-primary-metric-def: &primary_metric_def
-  value: *primary_metric_name
+  selection_rules:
+    - >
+      The metric must be mathematically valid for the identified ML task.
+    - >
+      The metric must directly reflect the business objective whenever possible.
+    - >
+      Prefer a metric that is easy for a business user to interpret when it does
+      not materially misrepresent model performance.
+    - >
+      Do not select a metric solely because it is commonly associated with the
+      identified ML task.
+    - >
+      Consider target distribution, class imbalance, error characteristics,
+      zero or near-zero target values, and business consequences of prediction
+      errors where applicable.
+    - >
+      The selected metric must be used consistently across training optimization,
+      evaluation, validation, model comparison, model selection, and UI reporting.
+    - >
+      If the available information is insufficient to reliably determine the
+      appropriate primary metric, return NEEDS_CLARIFICATION rather than
+      inventing an assumption.
+
+x-primary-metric-def:
+  value:
+    definition: >
+      The dynamically selected primary metric name. Examples include Accuracy,
+      Precision, Recall, F1, MAE, RMSE, WAPE, or another valid metric supported
+      by the identified ML problem and platform capabilities.
+
   source:
-    "<State whether the metric was derived from the use case, explicitly provided by the user, or selected as a general platform choice.>"
+    definition: >
+      Evidence-based explanation describing where the selected metric decision
+      originated, such as the business objective, problem formulation, target
+      characteristics, upstream analysis, or metric-selection reasoning.
+
   confidence:
-    "<State how confident you are that the selected metric correctly represents the business objective.>"
+    definition: >
+      Confidence in the correctness of the selected primary metric based on the
+      completeness and reliability of the available business, problem, target,
+      and data evidence.
+
   confirmation_threshold:
-    "<State the confidence level above which explicit confirmation of the metric is not required.>"
+    definition: >
+      The confidence threshold used to determine whether explicit confirmation
+      of the selected metric is required.
+
   requires_confirmation:
-    "<State whether the selected metric requires confirmation before training proceeds.>"
+    definition: >
+      Indicates whether the selected primary metric requires confirmation because
+      the available evidence does not provide sufficient confidence for an
+      unambiguous metric decision.
+
+  direction:
+    definition: >
+      The optimization direction for the selected primary metric. Use maximize
+      when higher values indicate better model performance and minimize when
+      lower values indicate better model performance.
 
   rationale:
-    "<Explain why this metric best represents the business objective and prediction goal.>"
+    definition: >
+      Evidence-based explanation of why the selected metric is the most
+      appropriate primary business-facing metric for the identified use case.
+      Explain its relationship to the business objective and why competing
+      metrics are not selected as the primary metric.
+
+  business_interpretation:
+    definition: >
+      A concise, business-user-friendly explanation of what the selected metric
+      represents. This explanation should allow a non-technical user to
+      understand what the primary metric means when displayed in the UI.
 
   evidence:
-    - "<Describe the business requirement, prediction objective, target behavior, or other evidence that supports selecting this metric.>"
+    definition: >
+      The specific business, problem, target, dataset, or upstream-analysis
+      evidence used to justify the primary metric selection.
+
+  secondary_metrics:
+    definition: >
+      Additional technically relevant evaluation metrics that complement the
+      primary metric and provide diagnostic or supporting information. Secondary
+      metrics must not replace the selected primary metric as the main
+      business-facing performance indicator.
 
 
 # -----------------------------------------------------------------------------

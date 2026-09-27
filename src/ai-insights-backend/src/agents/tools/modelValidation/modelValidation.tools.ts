@@ -53,14 +53,17 @@ export const createReadTrainingReportTool = (
           if (fs.existsSync(reportPath)) {
             const raw = fs.readFileSync(reportPath, "utf-8");
             const report = JSON.parse(raw);
-            return {
-              success: true,
-              reportPath,
-              report,
-              candidateModels: Object.keys(report.candidate_model_results || {}),
-              championModelId: report.selected_model || report.champion_model || null,
-              testMetrics: report.candidate_model_results || {},
-            };
+              const modelResults = report.model_results || report.candidate_model_results || report.models || report.runs || {};
+              return {
+                success: true,
+                reportPath,
+                report,
+                candidateModels: Array.isArray(report.candidate_models_evaluated) && report.candidate_models_evaluated.length > 0
+                  ? report.candidate_models_evaluated
+                  : Object.keys(modelResults),
+                championModelId: report.best_model_id || report.champion_model_id || report.selected_model || report.champion_model || null,
+                testMetrics: modelResults,
+              };
           }
         }
 

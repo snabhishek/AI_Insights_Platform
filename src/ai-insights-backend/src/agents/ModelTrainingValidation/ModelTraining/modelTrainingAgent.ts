@@ -101,13 +101,22 @@ export class ModelTrainingAgent {
       contractData?.models ||
       contractData?.candidate_models ||
       (state.modelSelection as any)?.candidates ||
-      (state.modelSelection as any)?.models ||
-      [];
+      (state.modelSelection as any)?.models;
 
-    return (Array.isArray(rawCandidates) && rawCandidates.length > 0 ? rawCandidates : []).map((m: any, idx: number) => {
-      const modelId = typeof m === "string" ? m : (m.model_id || m.id || `candidate_${idx + 1}`);
+    if (!Array.isArray(rawCandidates) || rawCandidates.length === 0) {
+      throw new Error("[ModelTrainingAgent] No candidate models found in training contract or model selection. Candidate models are required.");
+    }
+
+    return rawCandidates.map((m: any, idx: number) => {
+      const modelId = typeof m === "string" ? m : (m.model_id || m.id);
+      if (!modelId) {
+        throw new Error(`[ModelTrainingAgent] Candidate model at index ${idx} is missing 'model_id'.`);
+      }
       const displayName = typeof m === "string" ? m : (m.displayName || m.algorithm || modelId);
-      const framework = typeof m === "string" ? "sklearn" : (m.framework || "sklearn");
+      const framework = typeof m === "string" ? undefined : m.framework;
+      if (!framework) {
+        throw new Error(`[ModelTrainingAgent] Candidate model '${modelId}' is missing required 'framework'.`);
+      }
       const score = typeof m === "object" && typeof m.suitability_score === "number" ? m.suitability_score : undefined;
       return {
         model_id: modelId,
@@ -240,9 +249,11 @@ export class ModelTrainingAgent {
       (state as any).primaryMetric ||
       "";
     const direction =
+      contractData?.["x-primary-metric-def"]?.direction ||
       contractData?.objective?.direction ||
       (state as any).direction ||
-      (["wape", "mae", "rmse", "mse", "loss"].includes(String(primaryMetric).toLowerCase()) ? "minimize" : "maximize");
+      (state.modelSelection as any)?.direction ||
+      "maximize";
 
     const userPrompt = [
       `Generate the complete, modular Python model training project in '${runTimestamp}/${pythonProjectName}'.`,
@@ -343,8 +354,14 @@ export class ModelTrainingAgent {
         ? state.selectedModels
         : Array.isArray((state.stageOutputs as any)?.modelTraining?.selectedModels) && (state.stageOutputs as any).modelTraining.selectedModels.length > 0
         ? (state.stageOutputs as any).modelTraining.selectedModels
-        : configuredCandidateModels.map((c) => c.model_id)
+        : []
     );
+
+    if (effectiveSelectedModels.length === 0) {
+      throw new Error(
+        "[ModelTrainingAgent] No candidate models selected for training. Selected models are required to execute container training."
+      );
+    }
 
     const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || "";
 
@@ -670,23 +687,21 @@ export class ModelTrainingAgent {
       } catch {}
     }
 
-    const executionSuccess = lastExecResult.success && !!report;
-
-    // Synthesize fallback report if none produced
     if (!report) {
-      report = this.synthesizeReportFallback(
-        contractData,
-        executionSuccess,
-        lastExecResult.stderr
+      throw new Error(
+        `[ModelTrainingAgent] Training execution failed: 'model_training_report.json' was not generated in ${modelTrainingDir}/reports/ or runDir. Container stderr: ${lastExecResult.stderr || "N/A"}`
       );
     }
 
-    // Extract runs from any standard report key (supporting both arrays and dictionary objects like candidate_model_results, evaluations, etc.)
+    const executionSuccess = lastExecResult.success && !!report;
+
+    // Extract runs from any standard report key (supporting model_results, arrays and dictionary objects)
     let rawRuns: any[] = [];
     if (Array.isArray(report)) {
       rawRuns = report;
     } else if (report && typeof report === "object") {
       const candidatesPayload =
+        report.model_results ||
         report.candidate_model_results ||
         report.candidate_models ||
         report.models ||
@@ -739,8 +754,18 @@ export class ModelTrainingAgent {
     };
 
     const normalizePlotMap = (plotsObj: any): Record<string, string> => {
-      if (!plotsObj || typeof plotsObj !== "object") return {};
+      if (!plotsObj) return {};
       const res: Record<string, string> = {};
+      if (Array.isArray(plotsObj)) {
+        for (const v of plotsObj) {
+          if (typeof v === "string" && v.trim()) {
+            const basename = path.posix.basename(v.trim()).replace(/\.[^/.]+$/, "");
+            res[basename] = toFileServerPlotPath(v.trim());
+          }
+        }
+        return res;
+      }
+      if (typeof plotsObj !== "object") return {};
       for (const [k, v] of Object.entries(plotsObj)) {
         if (typeof v === "string" && v.trim()) {
           res[k] = toFileServerPlotPath(v.trim());
@@ -751,40 +776,62 @@ export class ModelTrainingAgent {
 
     const runs: CandidateModelRun[] = rawRuns.map((r: any, idx: number) => {
       const modelId = String(r.model_id || r.id || r.name || r.model_name || `model_${idx + 1}`);
-      const displayName = String(r.displayName || r.display_name || r.algorithm || modelId);
-      const framework = String(r.framework || "sklearn");
+      const configuredModel = configuredCandidateModels.find(
+        (c) => c.model_id?.toLowerCase() === modelId.toLowerCase()
+      );
+      const displayName = String(r.displayName || r.display_name || r.algorithm || configuredModel?.displayName || modelId);
+      const framework = String(r.framework || configuredModel?.framework || "sklearn");
       const status = r.status === "SUCCESS" || r.status === "Completed" ? "Completed" : r.status || (r.error ? "Failed" : "Completed");
       const validationMetrics = r.validationMetrics || r.validation_metrics || r.metrics || r.val_metrics || {};
       const testMetrics = r.testMetrics || r.test_metrics || {};
 
-      // Robust score extraction prioritizing standard regression & classification validation metrics
+      const primaryMetricKey =
+        report?.primary_metric ||
+        report?.primary_metric_name ||
+        contractData?.["x-primary-metric-name"] ||
+        contractData?.objective?.optimization_metric ||
+        (typeof contractData?.["x-primary-metric-def"] === "object" ? contractData["x-primary-metric-def"]?.value : contractData?.["x-primary-metric-def"]);
+
+      const findMetric = (metricsObj: any, key?: string): number | undefined => {
+        if (!metricsObj || typeof metricsObj !== "object") return undefined;
+        if (key) {
+          if (typeof metricsObj[key] === "number" && !isNaN(metricsObj[key])) return metricsObj[key];
+          const lowerKey = key.toLowerCase();
+          for (const [k, v] of Object.entries(metricsObj)) {
+            if (k.toLowerCase() === lowerKey && typeof v === "number" && !isNaN(v as number)) {
+              return v as number;
+            }
+          }
+        }
+        if (typeof metricsObj.score === "number" && !isNaN(metricsObj.score)) return metricsObj.score;
+        return undefined;
+      };
+
+      const testScore = findMetric(testMetrics, primaryMetricKey);
+      const valScore = findMetric(validationMetrics, primaryMetricKey);
+
       let score: number | undefined = undefined;
-      const primaryMetricKey = report?.primary_metric || report?.primary_metric_name;
       if (typeof r.score === "number" && !isNaN(r.score)) {
         score = r.score;
+      } else if (testScore !== undefined) {
+        score = testScore;
+      } else if (valScore !== undefined) {
+        score = valScore;
+      } else if (typeof r.primary_metric_value === "number" && !isNaN(r.primary_metric_value)) {
+        score = r.primary_metric_value;
       } else if (typeof r.val_score === "number" && !isNaN(r.val_score)) {
         score = r.val_score;
       } else if (typeof r.validation_score === "number" && !isNaN(r.validation_score)) {
         score = r.validation_score;
       } else if (typeof r.metric_score === "number" && !isNaN(r.metric_score)) {
         score = r.metric_score;
-      } else if (typeof r.primary_metric_value === "number" && !isNaN(r.primary_metric_value)) {
-        score = r.primary_metric_value;
-      } else if (primaryMetricKey && typeof validationMetrics?.[primaryMetricKey] === "number") {
-        score = validationMetrics[primaryMetricKey];
-      } else if (primaryMetricKey && typeof testMetrics?.[primaryMetricKey] === "number") {
-        score = testMetrics[primaryMetricKey];
-      } else if (primaryMetricKey && typeof validationMetrics?.[primaryMetricKey] === "number") {
-        score = validationMetrics[primaryMetricKey];
-      } else if (primaryMetricKey && typeof testMetrics?.[primaryMetricKey] === "number") {
-        score = testMetrics[primaryMetricKey];
       } else {
-        const firstValMetric = Object.values(validationMetrics).find((v) => typeof v === "number" && !isNaN(v as number));
-        const firstTestMetric = Object.values(testMetrics).find((v) => typeof v === "number" && !isNaN(v as number));
-        if (typeof firstValMetric === "number") {
-          score = firstValMetric;
-        } else if (typeof firstTestMetric === "number") {
+        const firstTestMetric = Object.values(testMetrics).find((v) => typeof v === "number" && !isNaN(v as number)) as number | undefined;
+        const firstValMetric = Object.values(validationMetrics).find((v) => typeof v === "number" && !isNaN(v as number)) as number | undefined;
+        if (typeof firstTestMetric === "number") {
           score = firstTestMetric;
+        } else if (typeof firstValMetric === "number") {
+          score = firstValMetric;
         } else if (typeof r.suitability_score === "number") {
           score = r.suitability_score;
         }
@@ -821,31 +868,63 @@ export class ModelTrainingAgent {
       };
     });
 
-    const rankedCandidates = runs
+    const reportDirection = String(
+      report.metric_direction ||
+      report.direction ||
+      contractData?.["x-primary-metric-def"]?.direction ||
+      contractData?.objective?.direction ||
+      (state as any).direction ||
+      (state.modelSelection as any)?.direction ||
+      "maximize"
+    ).toLowerCase();
+
+    const isMinimize = reportDirection === "minimize";
+
+    const rankedCandidates = [...runs]
       .filter((r) => r.status === "Completed")
-      .sort((a, b) => (b.score || 0) - (a.score || 0));
+      .sort((a, b) => {
+        if (a.score == null && b.score == null) return 0;
+        if (a.score == null) return 1;
+        if (b.score == null) return -1;
+        return isMinimize ? a.score - b.score : b.score - a.score;
+      });
 
     const selectedModel =
-      report.selectedModel ||
-      report.champion_model ||
       report.best_model_id ||
       report.champion_model_id ||
-      (rankedCandidates[0]?.model_id) ||
-      effectiveSelectedModels[0] ||
-      "model";
+      report.selected_model ||
+      report.champion_model ||
+      report.selectedModel ||
+      (rankedCandidates[0]?.model_id);
+
+    if (!selectedModel) {
+      throw new Error(
+        "[ModelTrainingAgent] Model training report is missing a best/champion model identifier ('best_model_id' or 'selected_model') and no evaluated candidate models succeeded."
+      );
+    }
+
+    if (runs.length === 0) {
+      throw new Error(
+        `[ModelTrainingAgent] Model training report contains no candidate model results. Training failed. Stderr: ${lastExecResult.stderr || "N/A"}`
+      );
+    }
+
+    const championRun = runs.find((r) => r.model_id?.toLowerCase() === selectedModel.toLowerCase()) || rankedCandidates[0];
 
     const selectedModelArtifact =
+      report.selected_model_path ||
       report.selectedModelArtifact ||
       report.champion_artifact ||
       report.artifacts?.selected_model ||
+      championRun?.artifact ||
       (rankedCandidates[0]?.artifact) ||
       `artifacts/models/${selectedModel}.joblib`;
 
     const validationMetrics =
       report.validationMetrics ||
       report.validation_metrics ||
-      rankedCandidates[0]?.testMetrics ||
-      rankedCandidates[0]?.validationMetrics ||
+      championRun?.testMetrics ||
+      championRun?.validationMetrics ||
       {};
 
     if (report && typeof report === "object") {
@@ -869,7 +948,7 @@ export class ModelTrainingAgent {
 
     const durationMs = Date.now() - startTime;
     const finalStatus = executionSuccess && rankedCandidates.length > 0 ? "Completed" : "Failed";
-    const trainedCount = runs.length > 0 ? runs.length : configuredCandidateModels.length;
+    const trainedCount = runs.length;
     const finalSummary = executionSuccess
       ? `Model Training completed successfully in ${durationMs}ms. Trained ${trainedCount} candidate model(s). Champion: ${selectedModel}.`
       : `Model training execution finished with warnings/errors: ${lastExecResult.stderr.slice(0, 200)}`;
@@ -886,7 +965,8 @@ export class ModelTrainingAgent {
       phase: "Model Training",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
       report,
-      candidates: runs.length > 0 ? runs : configuredCandidateModels,
+      direction: report.metric_direction || report.direction || reportDirection,
+      candidates: runs,
       rankedCandidates,
       selectedModel,
       selectedModelArtifact,
@@ -916,37 +996,6 @@ export class ModelTrainingAgent {
       return await this.executeContainerTraining(state, services);
     }
     return await this.generateProjectCode(state, services);
-  }
-
-  private static synthesizeReportFallback(
-    contractData: any,
-    success: boolean,
-    errorMsg: string
-  ): ModelTrainingReport {
-    const targetColumn = contractData?.target_column || contractData?.model_selection?.target_entity?.name || "target";
-    const problemType = contractData?.task_type || contractData?.problem_type || contractData?.task?.task_type || "";
-    const candidates = contractData?.models || contractData?.candidate_models || contractData?.model_selection?.models || [];
-    const runs: CandidateModelRun[] = candidates.map((c: any, idx: number) => ({
-      model_id: typeof c === "string" ? c : c.model_id || `model_${idx + 1}`,
-      displayName: typeof c === "string" ? c : c.algorithm || c.displayName || c.model_id,
-      framework: typeof c === "string" ? "sklearn" : c.framework || "sklearn",
-      status: success ? "Completed" : "Failed",
-      score: success ? (c.suitability_score || 0.85) : 0,
-      validationMetrics: undefined,
-      testMetrics: undefined,
-      error: success ? undefined : errorMsg,
-    }));
-
-    return {
-      problemType,
-      targetColumn,
-      rowCount: contractData?.upstream_artifacts?.row_count || 0,
-      featureCount: contractData?.upstream_artifacts?.column_count || 0,
-      splits: { train: 0, validation: 0, test: 0 },
-      selectedModel: runs[0]?.model_id || "selected_model",
-      selectedModelArtifact: "artifacts/models/selected_model.joblib",
-      runs,
-    };
   }
 }
 type CandidateModelItem = CandidateModelRun;

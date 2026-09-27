@@ -90,6 +90,22 @@ export const AgentState = Annotation.Root({
     reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
     default: () => "",
   }),
+  direction: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  primaryMetric: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  targetColumn: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  problemType: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
   inspection: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   schemaResolution: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   dataProfile: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),

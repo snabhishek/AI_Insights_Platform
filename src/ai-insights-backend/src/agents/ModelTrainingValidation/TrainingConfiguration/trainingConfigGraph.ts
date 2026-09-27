@@ -3,6 +3,7 @@ import { BaseMessage, AIMessage, HumanMessage } from "@langchain/core/messages";
 import { IngestionServices } from "../../state";
 import { DatasetAnalyserAgent } from "./datasetAnalyserAgent";
 import { ContractPersistence } from "./contractPersistence";
+import { TrainingConfigValidator } from "./trainingConfigValidator";
 import {
   getModel,
   invokeAgentJson,
@@ -107,18 +108,30 @@ export interface ModelTrainingSteps {
 async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
   const { services, projectId, runTimestamp, modelSelection, allCandidates, userSelectedIds, feedbackPrompt, parentState } = state;
 
-  const probType = modelSelection?.problem_type || parentState?.problemType || "";
+  const probType = modelSelection?.problem_type || parentState?.problemType;
   const taskType = modelSelection?.task_type;
   const taskSubtype = modelSelection?.task_subtype;
   const predictionType = modelSelection?.prediction_type;
   const primaryMetric = modelSelection?.primary_metric || (parentState as any)?.primaryMetric;
   const direction = modelSelection?.direction || (parentState as any)?.direction;
   const secondaryMetrics = modelSelection?.secondary_metrics;
-  const targetCol = modelSelection?.target_entity?.name || parentState?.targetColumn || "";
+  const targetCol = modelSelection?.target_entity?.name || parentState?.targetColumn;
 
-  if (!primaryMetric || !direction || !probType) {
+  const missingMSFields: string[] = [];
+  if (!probType) missingMSFields.push("problem_type");
+  if (!taskType) missingMSFields.push("task_type");
+  if (!taskSubtype) missingMSFields.push("task_subtype");
+  if (!predictionType) missingMSFields.push("prediction_type");
+  if (!primaryMetric) missingMSFields.push("primary_metric");
+  if (!direction) missingMSFields.push("direction");
+  if (!targetCol) missingMSFields.push("target_entity.name");
+  if (!secondaryMetrics || !Array.isArray(secondaryMetrics) || secondaryMetrics.length === 0) {
+    missingMSFields.push("secondary_metrics");
+  }
+
+  if (missingMSFields.length > 0) {
     throw new Error(
-      `[TrainingConfigGraph] Missing required Model Selection attributes: primary_metric="${primaryMetric}", direction="${direction}", problem_type="${probType}". Model Selection agent must strictly output these values during execution without fallbacks.`
+      `[TrainingConfigGraph] Missing required Model Selection attributes: ${missingMSFields.join(", ")}. Model Selection agent must strictly output these values during execution without fallbacks.`
     );
   }
 
@@ -190,44 +203,34 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
   ].join("\n");
 
   const model = getModel();
+  if (!model) {
+    throw new Error("[TrainingConfigGraph] No AI provider or API key configured for Training Configuration Agent.");
+  }
+
   let rawConfig: any = {};
-
-  const emptyFallback = state.datasetAnalysisExplanation
-    ? {}
-    : {
-        status: "NEEDS_DATASET_ANALYSIS",
-        inquiry: "Please inspect the project dataset artifacts (e.g. validated_features.parquet or dataset.csv), profiling report (profiling_report.json), and relationship schema (relationship_schema.json). Provide row and column counts, target column name and distribution, class imbalance ratio, temporal indicators, and key feature data types.",
-        reasoning: "Dataset dimensions, target distribution, and temporal properties are needed to configure the training contract.",
-      };
-
-  if (model) {
-    try {
-      rawConfig = await invokeAgentJson(
-        "trainingConfigurationNode",
-        model,
-        userMessage,
-        emptyFallback,
-        services,
-        {
-          systemPrompt,
-          tools,
-          traceLabel: "agent:trainingConfiguration",
-          recursionLimit: 100,
-          middlewareOptions: {
-            summarization: {
-              triggerTokens: 100000,
-              keepTokens: 25000,
-            },
+  try {
+    rawConfig = await invokeAgentJson(
+      "trainingConfigurationNode",
+      model,
+      userMessage,
+      {},
+      services,
+      {
+        systemPrompt,
+        tools,
+        traceLabel: "agent:trainingConfiguration",
+        recursionLimit: 100,
+        middlewareOptions: {
+          summarization: {
+            triggerTokens: 100000,
+            keepTokens: 25000,
           },
-          messages: state.messages,
-        }
-      );
-    } catch (err: any) {
-      console.warn("[TrainingConfigGraph] invokeAgentJson warning:", err?.message || err);
-      rawConfig = emptyFallback;
-    }
-  } else {
-    rawConfig = emptyFallback;
+        },
+        messages: state.messages,
+      }
+    );
+  } catch (err: any) {
+    throw new Error(`[TrainingConfigGraph] Training Configuration Agent invocation failed: ${err?.message || err}`);
   }
 
   // Check if agent decided to request information from Dataset Analyser Agent
@@ -275,73 +278,46 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
 
   const finalConfig = rawConfig;
 
-  if (state.parentState?.splitDate) {
-    if (!finalConfig.split) finalConfig.split = {};
+  if (state.parentState?.splitDate && finalConfig.split) {
     finalConfig.split.split_date = state.parentState.splitDate;
   }
 
-  // Strictly bind Model Selection decision specifications (NO FALLBACKS)
-  finalConfig["x-primary-metric-name"] = primaryMetric;
-  if (!finalConfig["x-primary-metric-def"]) {
-    finalConfig["x-primary-metric-def"] = {
-      value: primaryMetric,
-      source: "model_selection",
-      confidence: 1.0,
-      confirmation_threshold: 0.85,
-      requires_confirmation: false,
-      rationale: `Primary optimization metric ${primaryMetric} established by Model Selection agent.`,
-      evidence: [`Model selection established ${primaryMetric} (${direction}) for ${probType}`],
-    };
+  // Strictly validate the synthesized contract against TrainingJobContract rules (NO SYNTHETIC FALLBACKS)
+  const validationRes = TrainingConfigValidator.validate(finalConfig);
+  if (!validationRes.isValid) {
+    throw new Error(
+      `[TrainingConfigGraph] Training Configuration Agent synthesized an invalid contract:\n${validationRes.errors.join("\n")}`
+    );
   }
 
-  if (!finalConfig.objective) finalConfig.objective = {};
-  finalConfig.objective.optimization_metric = primaryMetric;
-  finalConfig.objective.direction = direction;
-
-  if (!finalConfig.evaluation) finalConfig.evaluation = {};
-  finalConfig.evaluation.primary_metric = primaryMetric;
-  if (secondaryMetrics && Array.isArray(secondaryMetrics) && secondaryMetrics.length > 0) {
-    finalConfig.evaluation.secondary_metrics = secondaryMetrics;
+  const candidateMap = new Map<string, any>();
+  for (const c of allCandidates) {
+    if (c.model_id) candidateMap.set(c.model_id.toLowerCase().trim(), c);
   }
 
-  if (!finalConfig.task) finalConfig.task = {};
-  finalConfig.task.task_type = taskType || probType;
-  if (taskSubtype) finalConfig.task.task_subtype = taskSubtype;
-  if (predictionType) finalConfig.task.prediction_type = predictionType;
-
-  // Preserve researched candidate training steps without hardcoded derivations
-  if (!finalConfig.model_selection) {
-    finalConfig.model_selection = {
-      target_entity: modelSelection?.target_entity || { name: targetCol || "target" },
-      recommended_model: modelSelection?.recommended_model || allCandidates[0],
-      candidates: allCandidates,
-      models: allCandidates,
-    };
-  } else {
-    const rawCandidates = Array.isArray(finalConfig.model_selection.candidates) && finalConfig.model_selection.candidates.length > 0
-      ? finalConfig.model_selection.candidates
-      : allCandidates;
-
-    finalConfig.model_selection.candidates = rawCandidates.map((c: any) => ({
+  finalConfig.model_selection.candidates = finalConfig.model_selection.candidates.map((c: any) => {
+    const modelId = c.model_id || c.id;
+    const match = candidateMap.get(String(modelId).toLowerCase().trim());
+    const framework = c.framework || match?.framework;
+    const algorithm = c.algorithm || match?.algorithm;
+    if (!framework) throw new Error(`[TrainingConfigGraph] Candidate model '${modelId}' is missing framework.`);
+    if (!algorithm) throw new Error(`[TrainingConfigGraph] Candidate model '${modelId}' is missing algorithm.`);
+    return {
       ...c,
+      model_id: modelId,
+      framework,
+      algorithm,
       training_steps: c.training_steps || c.access_and_training_steps || {},
-    }));
+    };
+  });
 
-    const rawModels = Array.isArray(finalConfig.model_selection.models) && finalConfig.model_selection.models.length > 0
-      ? finalConfig.model_selection.models
-      : allCandidates;
-
-    finalConfig.model_selection.models = rawModels.map((m: any) => ({
-      ...m,
-      model_id: typeof m === "string" ? m : (m.model_id || m.id),
-      framework: typeof m === "string" ? "sklearn" : (m.framework || "sklearn"),
-      algorithm: typeof m === "string" ? m : (m.algorithm || m.model_id),
-      enabled: m.enabled !== undefined ? m.enabled : true,
-      training_steps: m.training_steps || m.access_and_training_steps || {},
-    }));
+  const existingModelMap = new Map<string, any>();
+  for (const m of finalConfig.model_selection.models) {
+    const id = typeof m === "string" ? m : (m.model_id || m.id);
+    if (id) existingModelMap.set(String(id).toLowerCase().trim(), typeof m === "string" ? { model_id: m } : m);
   }
 
-  // Strictly enforce user-selected models: Every user-selected model MUST be present in finalConfig.model_selection.models
+  // Strictly enforce user-selected models without fallback dummy objects
   const effectiveUserSelectedIds = (Array.isArray(userSelectedIds) && userSelectedIds.length > 0)
     ? userSelectedIds
     : (Array.isArray(modelSelection?.userSelection?.selectedModelIds) && modelSelection.userSelection.selectedModelIds.length > 0)
@@ -351,51 +327,30 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     : [];
 
   if (effectiveUserSelectedIds.length > 0) {
-    const existingModelMap = new Map<string, any>();
-    for (const m of (finalConfig.model_selection.models || [])) {
-      const id = typeof m === "string" ? m : (m.model_id || m.id);
-      if (id) existingModelMap.set(id.toLowerCase().trim(), typeof m === "string" ? { model_id: m } : m);
-    }
-
-    const candidateMap = new Map<string, any>();
-    for (const c of (allCandidates || [])) {
-      const id = typeof c === "string" ? c : (c.model_id || c.id);
-      if (id) candidateMap.set(id.toLowerCase().trim(), c);
-    }
-
     const enforcedModels: any[] = [];
     for (const selId of effectiveUserSelectedIds) {
       const cleanId = selId.toLowerCase().trim();
       const existing = existingModelMap.get(cleanId);
       const candidate = candidateMap.get(cleanId);
-      if (existing) {
-        enforcedModels.push({
-          ...existing,
-          model_id: typeof existing === "string" ? existing : (existing.model_id || selId),
-          framework: existing.framework || candidate?.framework || "sklearn",
-          algorithm: existing.algorithm || candidate?.algorithm || selId,
-          enabled: true,
-          training_steps: existing.training_steps || candidate?.training_steps || candidate?.access_and_training_steps || {},
-        });
-      } else if (candidate) {
-        enforcedModels.push({
-          model_id: candidate.model_id || selId,
-          framework: candidate.framework || "sklearn",
-          algorithm: candidate.algorithm || candidate.displayName || selId,
-          enabled: true,
-          parameters: candidate.parameters || {},
-          training_steps: candidate.training_steps || candidate.access_and_training_steps || {},
-        });
-      } else {
-        enforcedModels.push({
-          model_id: selId,
-          framework: "sklearn",
-          algorithm: selId,
-          enabled: true,
-          parameters: {},
-          training_steps: {},
-        });
+      if (!existing && !candidate) {
+        throw new Error(
+          `[TrainingConfigGraph] User-selected model '${selId}' was not found in Model Selection candidates. All models must be selected from validated candidates.`
+        );
       }
+      const framework = existing?.framework || candidate?.framework;
+      const algorithm = existing?.algorithm || candidate?.algorithm || candidate?.displayName;
+      if (!framework) throw new Error(`[TrainingConfigGraph] Model '${selId}' is missing framework.`);
+      if (!algorithm) throw new Error(`[TrainingConfigGraph] Model '${selId}' is missing algorithm.`);
+
+      enforcedModels.push({
+        ...(existing || {}),
+        model_id: selId,
+        framework,
+        algorithm,
+        enabled: true,
+        parameters: existing?.parameters || candidate?.parameters || {},
+        training_steps: existing?.training_steps || candidate?.training_steps || candidate?.access_and_training_steps || {},
+      });
     }
 
     finalConfig.model_selection.models = enforcedModels;

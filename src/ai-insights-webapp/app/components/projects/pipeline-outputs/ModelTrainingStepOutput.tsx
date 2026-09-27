@@ -157,6 +157,7 @@ export default function ModelTrainingStepOutput({
   // Extract candidate models with full support for all report schemas, snake_case and camelCase
   let reportCandidates: any[] = [];
   const rawReportPayload =
+    modelTraining?.report?.model_results ||
     modelTraining?.report?.candidate_model_results ||
     modelTraining?.report?.runs ||
     modelTraining?.report?.candidate_models ||
@@ -198,48 +199,92 @@ export default function ModelTrainingStepOutput({
                   ? modelSelection.models
                   : [];
 
-  const primaryMetricKey = modelTraining?.report?.primary_metric || modelTraining?.report?.primary_metric_name;
+  const catalogCandidates: any[] = [
+    ...(Array.isArray(trainingConfiguration?.configuration?.model_selection?.candidates) ? trainingConfiguration.configuration.model_selection.candidates : []),
+    ...(Array.isArray(trainingConfiguration?.configuration?.model_selection?.models) ? trainingConfiguration.configuration.model_selection.models : []),
+    ...(Array.isArray(modelSelection?.candidates) ? modelSelection.candidates : []),
+    ...(Array.isArray(modelSelection?.models) ? modelSelection.models : []),
+  ];
+
+  const primaryMetricKey =
+    modelTraining?.report?.primary_metric ||
+    modelTraining?.report?.primary_metric_name ||
+    trainingConfiguration?.configuration?.["x-primary-metric-name"] ||
+    trainingConfiguration?.configuration?.objective?.optimization_metric ||
+    (typeof trainingConfiguration?.configuration?.["x-primary-metric-def"] === "object"
+      ? trainingConfiguration.configuration["x-primary-metric-def"]?.value
+      : trainingConfiguration?.configuration?.["x-primary-metric-def"]) ||
+    modelSelection?.primary_metric;
 
   const rawCandidateList: CandidateModelItem[] = sourceCandidates.map((c: any, idx: number) => {
     const modelId = String(typeof c === "string" ? c : (c.model_id || c.id || c.name || c.model_name || `candidate_${idx + 1}`));
-    const displayName = String(typeof c === "string" ? c : (c.displayName || c.display_name || c.algorithm || c.name || modelId));
-    const framework = String(typeof c === "string" ? "sklearn" : (c.framework || "sklearn"));
+    const configuredMeta = catalogCandidates.find(
+      (item) => String(item?.model_id || item?.id || "").toLowerCase() === modelId.toLowerCase()
+    );
+    const displayName = String(
+      (typeof c === "object" ? c.displayName || c.display_name || c.algorithm || c.name : null) ||
+      configuredMeta?.displayName ||
+      configuredMeta?.algorithm ||
+      modelId
+    );
+    const framework = String(
+      (typeof c === "object" ? c.framework : null) ||
+      configuredMeta?.framework ||
+      "sklearn"
+    );
     const status = c.status === "SUCCESS" || c.status === "Completed" ? "Completed" : c.status || (c.error ? "Failed" : "Completed");
 
     // Extract metrics from validation_metrics, validationMetrics, metrics, test_metrics, etc.
     const validationMetrics = c.validationMetrics || c.validation_metrics || c.metrics || c.val_metrics || {};
     const testMetrics = c.testMetrics || c.test_metrics || {};
 
-    // Extract score prioritizing regression and classification primary metrics
-    const isValidNumber = (value: unknown): value is number => typeof value === "number" && !Number.isNaN(value);
+    const getMetricValue = (metricsObj: any, metricKey?: string): number | undefined => {
+      if (!metricsObj || typeof metricsObj !== "object") return undefined;
+      if (metricKey) {
+        if (typeof metricsObj[metricKey] === "number" && !Number.isNaN(metricsObj[metricKey])) {
+          return metricsObj[metricKey];
+        }
+        const lower = metricKey.toLowerCase();
+        for (const [k, v] of Object.entries(metricsObj)) {
+          if (k.toLowerCase() === lower && typeof v === "number" && !Number.isNaN(v)) {
+            return v as number;
+          }
+        }
+      }
+      if (typeof metricsObj.score === "number" && !Number.isNaN(metricsObj.score)) {
+        return metricsObj.score;
+      }
+      return undefined;
+    };
 
-    const candidates = [
-      c,
-      c.score,
-      c.val_score,
-      c.validation_score,
-      c.metric_score,
-      c.primary_metric_value,
-      primaryMetricKey && validationMetrics?.[primaryMetricKey],
-      primaryMetricKey && testMetrics?.[primaryMetricKey],
-      c.test_score,
-      validationMetrics?.roc_auc,
-      validationMetrics?.accuracy,
-      validationMetrics?.f1_score,
-      validationMetrics?.f1_weighted,
-      validationMetrics?.r2,
-      validationMetrics?.rmse,
-      testMetrics?.roc_auc,
-      testMetrics?.accuracy,
-      testMetrics?.f1_score,
-      testMetrics?.r2,
-      c.suitability_score,
-    ];
+    const testScore = getMetricValue(testMetrics, primaryMetricKey);
+    const valScore = getMetricValue(validationMetrics, primaryMetricKey);
 
-    let score = candidates.find(isValidNumber);
-
-    if (score === undefined) {
-      score = Object.values(validationMetrics ?? {}).find(isValidNumber);
+    let score: number | undefined = undefined;
+    if (typeof c.score === "number" && !Number.isNaN(c.score)) {
+      score = c.score;
+    } else if (testScore !== undefined) {
+      score = testScore;
+    } else if (valScore !== undefined) {
+      score = valScore;
+    } else if (typeof c.primary_metric_value === "number" && !Number.isNaN(c.primary_metric_value)) {
+      score = c.primary_metric_value;
+    } else if (typeof c.val_score === "number" && !Number.isNaN(c.val_score)) {
+      score = c.val_score;
+    } else if (typeof c.validation_score === "number" && !Number.isNaN(c.validation_score)) {
+      score = c.validation_score;
+    } else if (typeof c.metric_score === "number" && !Number.isNaN(c.metric_score)) {
+      score = c.metric_score;
+    } else {
+      const firstTestMetric = Object.values(testMetrics).find((v) => typeof v === "number" && !Number.isNaN(v as number)) as number | undefined;
+      const firstValMetric = Object.values(validationMetrics).find((v) => typeof v === "number" && !Number.isNaN(v as number)) as number | undefined;
+      if (typeof firstTestMetric === "number") {
+        score = firstTestMetric;
+      } else if (typeof firstValMetric === "number") {
+        score = firstValMetric;
+      } else if (typeof c.suitability_score === "number" && !Number.isNaN(c.suitability_score)) {
+        score = c.suitability_score;
+      }
     }
 
     // Extract duration seconds
@@ -418,11 +463,11 @@ export default function ModelTrainingStepOutput({
 
   const report = modelTraining?.report;
   const championModelId =
+    report?.best_model_id ||
+    report?.champion_model_id ||
     modelTraining?.selectedModel ||
     report?.selectedModel ||
     report?.champion_model ||
-    report?.best_model_id ||
-    report?.champion_model_id ||
     candidateModels[0]?.model_id;
 
   const championArtifact =
@@ -434,6 +479,26 @@ export default function ModelTrainingStepOutput({
     `artifacts/models/${championModelId || "model"}.joblib`;
 
   const championCandidate = candidateModels.find((c) => c.model_id === championModelId) || candidateModels[0];
+
+  const direction = String(
+    report?.direction ||
+    trainingConfiguration?.configuration?.["x-primary-metric-def"]?.direction ||
+    trainingConfiguration?.configuration?.objective?.direction ||
+    trainingConfiguration?.configuration?.model_selection?.direction ||
+    modelSelection?.direction ||
+    "maximize"
+  ).toLowerCase();
+
+  const isMinimize = direction === "minimize";
+
+  const sortedCandidateModels = [...candidateModels].sort((a, b) => {
+    if (a.model_id?.toLowerCase() === championModelId?.toLowerCase()) return -1;
+    if (b.model_id?.toLowerCase() === championModelId?.toLowerCase()) return 1;
+    if (a.score == null && b.score == null) return 0;
+    if (a.score == null) return 1;
+    if (b.score == null) return -1;
+    return isMinimize ? a.score - b.score : b.score - a.score;
+  });
 
   // Visual plots collection from report, modelTraining, and candidate plots
   const candidatePlots: Record<string, string> = {};
@@ -645,10 +710,10 @@ export default function ModelTrainingStepOutput({
             {typeof championCandidate.score === "number" && (
               <div className="p-4 rounded-xl bg-surface border border-emerald-500/30 text-center shrink-0 min-w-[140px]">
                 <span className="text-[10px] uppercase font-bold text-muted-foreground block tracking-wider">
-                  Benchmark Score
+                  {primaryMetricKey ? `${primaryMetricKey} Score` : "Benchmark Score"}
                 </span>
                 <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                  {(championCandidate.score * 100).toFixed(1)}%
+                  {championCandidate.score % 1 !== 0 ? championCandidate.score.toFixed(4) : championCandidate.score}
                 </span>
               </div>
             )}
@@ -657,14 +722,14 @@ export default function ModelTrainingStepOutput({
           {/* Validation Metrics Grid */}
           {(championCandidate.validationMetrics || championCandidate.testMetrics) && (
             <div className="mt-5 pt-4 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {Object.entries(championCandidate.testMetrics || championCandidate.validationMetrics || {}).map(
+              {Object.entries(championCandidate.testMetrics && Object.keys(championCandidate.testMetrics).length > 0 ? championCandidate.testMetrics : championCandidate.validationMetrics || {}).map(
                 ([metricName, val]) => (
                   <div key={metricName} className="p-2.5 rounded-xl bg-surface/80 border border-border text-center">
                     <span className="text-[10px] uppercase font-bold text-muted-foreground block truncate">
                       {metricName}
                     </span>
                     <span className="text-sm font-extrabold text-foreground">
-                      {typeof val === "number" ? val.toFixed(4) : String(val)}
+                      {typeof val === "number" ? (val % 1 !== 0 ? val.toFixed(4) : val) : String(val)}
                     </span>
                   </div>
                 )
@@ -715,20 +780,20 @@ export default function ModelTrainingStepOutput({
                   <th className="py-3 px-4">Rank</th>
                   <th className="py-3 px-4">Model & Algorithm</th>
                   <th className="py-3 px-4">Framework</th>
-                  <th className="py-3 px-4">Score</th>
+                  <th className="py-3 px-4">{primaryMetricKey ? `${primaryMetricKey} Score` : "Score"}</th>
                   <th className="py-3 px-4">Validation Metrics</th>
                   <th className="py-3 px-4">Duration</th>
                   <th className="py-3 px-4 text-right">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
-                {candidateModels.map((m, idx) => {
-                  const isChampion = m.model_id === championModelId;
+                {sortedCandidateModels.map((m, idx) => {
+                  const isChampion = m.model_id?.toLowerCase() === championModelId?.toLowerCase();
                   const metrics =
-                    m.validationMetrics && Object.keys(m.validationMetrics).length > 0
-                      ? m.validationMetrics
-                      : m.testMetrics && Object.keys(m.testMetrics).length > 0
+                    m.testMetrics && Object.keys(m.testMetrics).length > 0
                       ? m.testMetrics
+                      : m.validationMetrics && Object.keys(m.validationMetrics).length > 0
+                      ? m.validationMetrics
                       : {};
                   return (
                     <tr
@@ -762,28 +827,20 @@ export default function ModelTrainingStepOutput({
                       </td>
                       <td className="py-3 px-4 font-extrabold text-foreground">
                         {typeof m.score === "number"
-                          ? m.score >= 0 && m.score <= 1
-                            ? `${(m.score * 100).toFixed(1)}%`
-                            : m.score.toFixed(3)
-                          : typeof metrics.roc_auc === "number"
-                          ? `${(metrics.roc_auc * 100).toFixed(1)}%`
-                          : typeof metrics.accuracy === "number"
-                          ? `${(metrics.accuracy * 100).toFixed(1)}%`
-                          : typeof metrics.r2 === "number"
-                          ? metrics.r2.toFixed(3)
-                          : typeof metrics.rmse === "number"
-                          ? metrics.rmse.toFixed(2)
+                          ? (m.score % 1 !== 0 ? m.score.toFixed(4) : m.score)
+                          : typeof metrics.score === "number"
+                          ? (metrics.score % 1 !== 0 ? metrics.score.toFixed(4) : metrics.score)
                           : "—"}
                       </td>
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1.5">
                           {Object.keys(metrics).length > 0 ? (
-                            Object.entries(metrics).slice(0, 3).map(([k, v]) => (
+                            Object.entries(metrics).map(([k, v]) => (
                               <span
                                 key={k}
                                 className="px-1.5 py-0.5 rounded bg-surface border border-border font-mono text-[10px]"
                               >
-                                {k}: {typeof v === "number" ? (v >= 0 && v <= 1 ? `${(v * 100).toFixed(1)}%` : v.toFixed(3)) : String(v)}
+                                {k}: {typeof v === "number" ? (v % 1 !== 0 ? v.toFixed(4) : v) : String(v)}
                               </span>
                             ))
                           ) : (

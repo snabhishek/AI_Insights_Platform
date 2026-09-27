@@ -1367,6 +1367,35 @@ export class IngestionAgentService implements IIngestionAgentService {
                     if (savedAgentState.userPrompt) {
                       stateUpdates.userPrompt = savedAgentState.userPrompt;
                     }
+                    const effectiveDirection =
+                      savedAgentState.direction ||
+                      savedAgentState.modelSelection?.direction ||
+                      savedAgentState.stageOutputs?.modelSelection?.direction;
+                    if (effectiveDirection) {
+                      stateUpdates.direction = effectiveDirection;
+                    }
+                    const effectivePrimaryMetric =
+                      savedAgentState.primaryMetric ||
+                      savedAgentState.modelSelection?.primary_metric ||
+                      savedAgentState.stageOutputs?.modelSelection?.primary_metric;
+                    if (effectivePrimaryMetric) {
+                      stateUpdates.primaryMetric = effectivePrimaryMetric;
+                    }
+                    const effectiveTargetColumn =
+                      savedAgentState.targetColumn ||
+                      savedAgentState.modelSelection?.target_entity?.name ||
+                      savedAgentState.stageOutputs?.modelSelection?.target_entity?.name;
+                    if (effectiveTargetColumn) {
+                      stateUpdates.targetColumn = effectiveTargetColumn;
+                    }
+                    const effectiveProblemType =
+                      savedAgentState.problemType ||
+                      savedAgentState.modelSelection?.problem_type ||
+                      savedAgentState.modelSelection?.task_type ||
+                      savedAgentState.stageOutputs?.modelSelection?.problem_type;
+                    if (effectiveProblemType) {
+                      stateUpdates.problemType = effectiveProblemType;
+                    }
                     if (options?.splitDate || savedAgentState.splitDate) {
                       stateUpdates.splitDate = options?.splitDate || savedAgentState.splitDate;
                     }
@@ -1416,6 +1445,10 @@ export class IngestionAgentService implements IIngestionAgentService {
                       predictionHorizon: options?.predictionHorizon ?? savedAgentState.predictionHorizon ?? 12,
                       predictionFrequency: options?.predictionFrequency || savedAgentState.predictionFrequency || "Weekly",
                       predictionObjectiveStartDate: options?.predictionObjectiveStartDate || savedAgentState.predictionObjectiveStartDate || "",
+                      direction: savedAgentState.direction || savedAgentState.modelSelection?.direction || savedAgentState.stageOutputs?.modelSelection?.direction || "",
+                      primaryMetric: savedAgentState.primaryMetric || savedAgentState.modelSelection?.primary_metric || savedAgentState.stageOutputs?.modelSelection?.primary_metric || "",
+                      targetColumn: savedAgentState.targetColumn || savedAgentState.modelSelection?.target_entity?.name || savedAgentState.stageOutputs?.modelSelection?.target_entity?.name || "",
+                      problemType: savedAgentState.problemType || savedAgentState.modelSelection?.problem_type || savedAgentState.modelSelection?.task_type || savedAgentState.stageOutputs?.modelSelection?.problem_type || "",
                     };
 
                     await workflow.updateState(config, restoredState, predecessorNode);
@@ -1530,6 +1563,35 @@ export class IngestionAgentService implements IIngestionAgentService {
                     if (savedAgentState.userPrompt) {
                       stateUpdates.userPrompt = savedAgentState.userPrompt;
                     }
+                    const resumeDirection =
+                      savedAgentState.direction ||
+                      savedAgentState.modelSelection?.direction ||
+                      savedAgentState.stageOutputs?.modelSelection?.direction;
+                    if (resumeDirection) {
+                      stateUpdates.direction = resumeDirection;
+                    }
+                    const resumePrimaryMetric =
+                      savedAgentState.primaryMetric ||
+                      savedAgentState.modelSelection?.primary_metric ||
+                      savedAgentState.stageOutputs?.modelSelection?.primary_metric;
+                    if (resumePrimaryMetric) {
+                      stateUpdates.primaryMetric = resumePrimaryMetric;
+                    }
+                    const resumeTargetColumn =
+                      savedAgentState.targetColumn ||
+                      savedAgentState.modelSelection?.target_entity?.name ||
+                      savedAgentState.stageOutputs?.modelSelection?.target_entity?.name;
+                    if (resumeTargetColumn) {
+                      stateUpdates.targetColumn = resumeTargetColumn;
+                    }
+                    const resumeProblemType =
+                      savedAgentState.problemType ||
+                      savedAgentState.modelSelection?.problem_type ||
+                      savedAgentState.modelSelection?.task_type ||
+                      savedAgentState.stageOutputs?.modelSelection?.problem_type;
+                    if (resumeProblemType) {
+                      stateUpdates.problemType = resumeProblemType;
+                    }
                     if (Object.keys(stateUpdates).length > 0) {
                       console.info(`[Workflow] Syncing project DB state into graph checkpointer for resume on thread ${threadId}: ${Object.keys(stateUpdates).join(", ")}`);
                       await workflow.updateState(config, stateUpdates);
@@ -1550,6 +1612,10 @@ export class IngestionAgentService implements IIngestionAgentService {
                       splitStartDate: options?.splitStartDate || savedAgentState.splitStartDate || "",
                       splitEndDate: options?.splitEndDate || savedAgentState.splitEndDate || "",
                       selectedModels: options?.selectedModels || savedAgentState.selectedModels || [],
+                      direction: savedAgentState.direction || savedAgentState.modelSelection?.direction || savedAgentState.stageOutputs?.modelSelection?.direction || "",
+                      primaryMetric: savedAgentState.primaryMetric || savedAgentState.modelSelection?.primary_metric || savedAgentState.stageOutputs?.modelSelection?.primary_metric || "",
+                      targetColumn: savedAgentState.targetColumn || savedAgentState.modelSelection?.target_entity?.name || savedAgentState.stageOutputs?.modelSelection?.target_entity?.name || "",
+                      problemType: savedAgentState.problemType || savedAgentState.modelSelection?.problem_type || savedAgentState.modelSelection?.task_type || savedAgentState.stageOutputs?.modelSelection?.problem_type || "",
                     };
 
                     if (predecessorNode !== "__start__") {

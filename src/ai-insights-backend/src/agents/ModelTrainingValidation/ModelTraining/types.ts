@@ -31,6 +31,7 @@ export interface ModelTrainingAgentOutput {
   phase: "Model Training";
   projectDirectory: string;
   report?: ModelTrainingReport;
+  direction?: string;
   candidates: CandidateModelRun[];
   rankedCandidates: CandidateModelRun[];
   selectedModel?: string;

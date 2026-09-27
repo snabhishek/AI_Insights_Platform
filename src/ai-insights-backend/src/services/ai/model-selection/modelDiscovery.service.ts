@@ -225,7 +225,7 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
         algo: "Oblivious Decision Trees with Symmetric Target Encoding",
         framework: "catboost",
         regex: /\bcatboost\b/i,
-        tasks: ["tabular_classification", "tabular_regression"],
+        tasks: ["tabular_classification", "tabular_regression", "time_series_forecasting"],
         strengths: ["State-of-the-art categorical handling", "Resistant to overfitting with symmetric trees"],
       },
       {
@@ -243,8 +243,17 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
         algo: "Regularized Depth-wise Gradient Boosting",
         framework: "xgboost",
         regex: /\bxgboost\b/i,
-        tasks: ["tabular_classification", "tabular_regression"],
+        tasks: ["tabular_classification", "tabular_regression", "time_series_forecasting"],
         strengths: ["Robust L1/L2 regularization", "Consistently high predictive accuracy"],
+      },
+      {
+        id: "gradient_boosting_regressor",
+        name: "Gradient Boosted Trees",
+        algo: "Gradient Boosted Decision Trees",
+        framework: "lightgbm",
+        regex: /\bgradient[\s_-]*boosting\b|\bgbdt\b/i,
+        tasks: ["tabular_classification", "tabular_regression", "time_series_forecasting"],
+        strengths: ["Strong non-linear predictive power", "Standard competitive tabular benchmark"],
       },
       {
         id: "tabnet_architecture",
@@ -317,14 +326,40 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
 
     // If no specific recognized model pattern matched, but a valid URL and title exists:
     if (candidates.length === 0 && url && title) {
-      const cleanTitle = title.replace(/[^\w\s-]/g, "").trim().slice(0, 50);
-      const generatedId = `explored_${cleanTitle.toLowerCase().replace(/\s+/g, "_")}`.slice(0, 50);
+      const cleanTitle = title.replace(/[^\w\s-]/g, "").trim().slice(0, 80);
+      const generatedId = `explored_${cleanTitle.toLowerCase().replace(/[\s-]+/g, "_")}`.slice(0, 95);
+
+      // Infer appropriate ML framework and algorithm family from title, URL, and search content
+      let inferredFramework = "custom";
+      let inferredAlgo = "Modern Discovered ML Architecture";
+      if (/\blightgbm\b|\blgbm\b/i.test(combined)) {
+        inferredFramework = "lightgbm";
+        inferredAlgo = "LightGBM Regressor / Classifier";
+      } else if (/\bxgboost\b|\bxgb\b/i.test(combined)) {
+        inferredFramework = "xgboost";
+        inferredAlgo = "XGBoost Regressor / Classifier";
+      } else if (/\bcatboost\b/i.test(combined)) {
+        inferredFramework = "catboost";
+        inferredAlgo = "CatBoost Regressor / Classifier";
+      } else if (/\bgradient[\s_-]*boosting\b|\bgbdt\b/i.test(combined)) {
+        inferredFramework = "lightgbm";
+        inferredAlgo = "Gradient Boosted Decision Trees";
+      } else if (/\bpytorch\b|\btorch\b|\btransformer\b|\bhuggingface\b/i.test(combined)) {
+        inferredFramework = "pytorch";
+        inferredAlgo = "Deep Neural Architecture";
+      } else if (/\b(sklearn|scikit-learn|random[\s_-]*forest)\b/i.test(combined)) {
+        inferredFramework = "sklearn";
+        inferredAlgo = "Ensemble Estimator";
+      } else if (/\b(statsmodels|arima|prophet)\b/i.test(combined)) {
+        inferredFramework = "statsmodels";
+        inferredAlgo = "Statistical Forecaster";
+      }
 
       candidates.push({
         modelId: generatedId,
         displayName: cleanTitle || "Explored Machine Learning Model",
-        algorithm: "Modern Discovered ML Architecture",
-        framework: "custom",
+        algorithm: inferredAlgo,
+        framework: inferredFramework,
         supportedTasks: [task],
         supportedSubTasks: [],
         supportedPredictionTypes: ["point", "value"],

@@ -198,38 +198,49 @@ export class ModelValidationAgent {
     const modelValidationDir = path.join(runDir, `${projectName}_model_validation`);
     const modelsDir = path.join(modelTrainingDir, "artifacts", "models");
 
-    // Discover finalized dataset
+    // Discover finalized dataset (STRICT - NO FALLBACK PATHS)
     const candidateDatasetPaths = [
       path.join(runDir, "python_script", "validated_features.parquet"),
       path.join(runDir, "python_script", "selected_features.parquet"),
       path.join(runDir, "python_script", "dataset.parquet"),
       path.join(projectRootDir, "python_script", "validated_features.parquet"),
     ];
-    const datasetPath = candidateDatasetPaths.find((p) => fs.existsSync(p)) || candidateDatasetPaths[0];
-
-    // Read training config
-    let trainingConfig: any = {};
-    const configPath = path.join(modelTrainingDir, "configs", "training_config.yaml");
-    if (fs.existsSync(configPath)) {
-      try {
-        trainingConfig = yaml.load(fs.readFileSync(configPath, "utf-8")) || {};
-      } catch { }
+    const datasetPath = candidateDatasetPaths.find((p) => fs.existsSync(p));
+    if (!datasetPath) {
+      throw new Error(`[ModelValidationAgent] Finalized dataset artifact was not found in ${runDir} or ${projectRootDir}. Validated dataset is required.`);
     }
 
-    // Read training report
+    // Read training config (STRICT - NO FALLBACKS)
+    let trainingConfig: any = {};
+    const configPath = path.join(modelTrainingDir, "configs", "training_config.yaml");
+    if (!fs.existsSync(configPath)) {
+      throw new Error(`[ModelValidationAgent] Training configuration contract not found at ${configPath}. Training configuration is required.`);
+    }
+    try {
+      trainingConfig = yaml.load(fs.readFileSync(configPath, "utf-8")) || {};
+    } catch (e: any) {
+      throw new Error(`[ModelValidationAgent] Failed to read training configuration contract at ${configPath}: ${e?.message || e}`);
+    }
+
+    // Read training report (STRICT - NO FALLBACKS)
     let trainingReport: any = {};
     const reportCandidates = [
       path.join(modelTrainingDir, "reports", "model_training_report.json"),
       path.join(modelTrainingDir, "model_training_report.json"),
       path.join(runDir, "model_training_report.json"),
     ];
-    for (const rp of reportCandidates) {
-      if (fs.existsSync(rp)) {
-        try {
-          trainingReport = JSON.parse(fs.readFileSync(rp, "utf-8")) || {};
-          break;
-        } catch { }
-      }
+    const reportPathFound = reportCandidates.find((rp) => fs.existsSync(rp));
+    if (!reportPathFound) {
+      throw new Error(`[ModelValidationAgent] Model training report not found. Model training must complete successfully before validation.`);
+    }
+    try {
+      trainingReport = JSON.parse(fs.readFileSync(reportPathFound, "utf-8")) || {};
+    } catch (e: any) {
+      throw new Error(`[ModelValidationAgent] Failed to parse model training report at ${reportPathFound}: ${e?.message || e}`);
+    }
+
+    if (!fs.existsSync(modelsDir)) {
+      throw new Error(`[ModelValidationAgent] Trained models directory not found at ${modelsDir}. Model training artifacts are required.`);
     }
 
     return {
@@ -307,26 +318,66 @@ export class ModelValidationAgent {
     const targetCol =
       trainingConfig?.task?.target_column ||
       trainingConfig?.model_selection?.target_entity?.name ||
+      trainingReport?.target_column ||
       (state as any).targetColumn ||
-      (state.featureArchitect as any)?.orchestrationDecision?.targetColumn ||
-      "";
+      (state.modelSelection as any)?.target_entity?.name ||
+      (state.stageOutputs?.modelSelection as any)?.target_entity?.name ||
+      (state.featureArchitect as any)?.orchestrationDecision?.targetColumn;
     const groupCol =
       trainingConfig?.split?.group_by ||
       (state as any).entityColumn ||
       (state.featureArchitect as any)?.orchestrationDecision?.entityColumns?.[0] ||
       "";
     const problemType =
+      trainingConfig?.task?.problem_type ||
       trainingConfig?.task?.task_type ||
       trainingConfig?.problem_type ||
+      trainingReport?.task_type ||
       (state as any).problemType ||
-      (state.featureArchitect as any)?.orchestrationDecision?.problemType ||
-      "";
+      (state.modelSelection as any)?.problem_type ||
+      (state.modelSelection as any)?.task_type ||
+      (state.stageOutputs?.modelSelection as any)?.problem_type ||
+      (state.featureArchitect as any)?.orchestrationDecision?.problemType;
 
-    const effectiveSelectedModels: string[] = Array.isArray(state.selectedModels) && state.selectedModels.length > 0
-      ? state.selectedModels
-      : Array.isArray((state as any).selectedModelsToValidate)
+    const direction =
+      trainingReport?.metric_direction ||
+      trainingReport?.direction ||
+      trainingConfig?.task?.metric_direction ||
+      trainingConfig?.task?.direction ||
+      trainingConfig?.objective?.direction ||
+      trainingConfig?.["x-primary-metric-def"]?.direction ||
+      (state as any).direction ||
+      (state.modelSelection as any)?.direction ||
+      (state.stageOutputs?.modelSelection as any)?.direction ||
+      (state.modelTraining as any)?.direction ||
+      (state.stageOutputs?.modelTraining as any)?.direction ||
+      (state.trainingConfiguration as any)?.configuration?.objective?.direction ||
+      (state.trainingConfiguration as any)?.configuration?.["x-primary-metric-def"]?.direction ||
+      (state.trainingConfiguration as any)?.direction;
+
+    if (!targetCol) {
+      throw new Error("[ModelValidationAgent] Missing required 'target_column' from training configuration or state.");
+    }
+    if (!problemType) {
+      throw new Error("[ModelValidationAgent] Missing required 'task_type' / 'problem_type' from training configuration or state.");
+    }
+    if (!direction || !["maximize", "minimize"].includes(String(direction).toLowerCase())) {
+      throw new Error(`[ModelValidationAgent] Missing or invalid optimization direction ('${direction}'). Must be 'maximize' or 'minimize'.`);
+    }
+
+    const effectiveSelectedModels: string[] = (
+      Array.isArray(state.selectedModels) && state.selectedModels.length > 0
+        ? state.selectedModels
+        : Array.isArray((state as any).selectedModelsToValidate) && (state as any).selectedModelsToValidate.length > 0
         ? (state as any).selectedModelsToValidate
-        : [];
+        : Array.isArray(trainingReport?.candidate_models_evaluated) && trainingReport.candidate_models_evaluated.length > 0
+        ? trainingReport.candidate_models_evaluated
+        : Object.keys(trainingReport?.model_results || {})
+    );
+
+    if (effectiveSelectedModels.length === 0) {
+      throw new Error("[ModelValidationAgent] No candidate models found to validate. Candidate models are required.");
+    }
 
     await logMilestoneThinking(
       services,
@@ -754,13 +805,21 @@ export class ModelValidationAgent {
     }
 
     // 6. Parse Output Report and Normalize
+    if (!fs.existsSync(reportPath)) {
+      throw new Error(
+        `[ModelValidationAgent] Validation execution failed: 'model_validation_report.json' was not generated at ${reportPath}.`
+      );
+    }
+
     let rawReport: any = undefined;
-    if (fs.existsSync(reportPath)) {
-      try {
-        rawReport = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
-      } catch (err: any) {
-        console.warn(`[ModelValidationAgent] Failed to parse validation report:`, err?.message || err);
-      }
+    try {
+      rawReport = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
+    } catch (err: any) {
+      throw new Error(`[ModelValidationAgent] Failed to parse validation report at ${reportPath}: ${err?.message || err}`);
+    }
+
+    if (!rawReport || typeof rawReport !== "object") {
+      throw new Error(`[ModelValidationAgent] Validation report at ${reportPath} is empty or not a valid JSON object.`);
     }
 
     // Extract raw candidates from any supported schema format
@@ -774,8 +833,81 @@ export class ModelValidationAgent {
       (rawReport?.candidate_models && Array.isArray(rawReport.candidate_models) ? rawReport.candidate_models : []) ||
       (rawReport?.candidateModels && Array.isArray(rawReport.candidateModels) ? rawReport.candidateModels : []);
 
-    const effectiveProblemType = rawReport?.problem_type || problemType || "classification";
+    if (!rawCandidatesList || rawCandidatesList.length === 0) {
+      throw new Error(`[ModelValidationAgent] Validation report at ${reportPath} contains no evaluated models.`);
+    }
+
+    const effectiveProblemType = rawReport?.problem_type || problemType;
     const isClassification = effectiveProblemType.toLowerCase().includes("class");
+
+    // Comprehensive framework lookup across all pipeline sources and artifacts
+    const frameworkMap = new Map<string, string>();
+
+    // 1. From training config (training_config.yaml -> candidate_models: { [id]: { model_id, framework } })
+    if (trainingConfig?.candidate_models && typeof trainingConfig.candidate_models === "object") {
+      const cands = Array.isArray(trainingConfig.candidate_models)
+        ? trainingConfig.candidate_models
+        : Object.values(trainingConfig.candidate_models);
+      for (const c of cands as any[]) {
+        const id = c?.model_id || c?.id;
+        const fw = c?.framework;
+        if (id && fw) frameworkMap.set(String(id).toLowerCase().trim(), String(fw));
+      }
+    }
+
+    // 2. From training config contract schema (model_selection.models / candidates)
+    const contractModels = [
+      ...(trainingConfig?.model_selection?.models || []),
+      ...(trainingConfig?.model_selection?.candidates || []),
+    ];
+    for (const m of contractModels) {
+      const id = m?.model_id || m?.id;
+      const fw = m?.framework;
+      if (id && fw) frameworkMap.set(String(id).toLowerCase().trim(), String(fw));
+    }
+
+    // 3. From training report (results, model_results, runs, candidate_models)
+    const reportResults =
+      trainingReport?.results ||
+      trainingReport?.model_results ||
+      trainingReport?.runs ||
+      trainingReport?.candidate_models;
+    if (reportResults) {
+      const runsList = Array.isArray(reportResults) ? reportResults : Object.values(reportResults);
+      for (const r of runsList as any[]) {
+        const id = r?.model_id || r?.id;
+        const fw = r?.framework;
+        if (id && fw) frameworkMap.set(String(id).toLowerCase().trim(), String(fw));
+      }
+    }
+
+    // 4. From state (modelSelection, modelTraining, trainingConfiguration)
+    const stateCandidates = [
+      ...((state.modelSelection as any)?.candidates || []),
+      ...((state.modelSelection as any)?.models || []),
+      ...((state.stageOutputs?.modelSelection as any)?.candidates || []),
+      ...((state.stageOutputs?.modelSelection as any)?.models || []),
+      ...((state.modelTraining as any)?.candidates || []),
+      ...((state.stageOutputs?.modelTraining as any)?.candidates || []),
+      ...((state.trainingConfiguration as any)?.configuration?.model_selection?.candidates || []),
+      ...((state.trainingConfiguration as any)?.configuration?.model_selection?.models || []),
+    ];
+    for (const sc of stateCandidates) {
+      const id = sc?.model_id || sc?.id;
+      const fw = sc?.framework;
+      if (id && fw) frameworkMap.set(String(id).toLowerCase().trim(), String(fw));
+    }
+
+    // 5. From validation report's own models dictionary
+    if (rawReport?.models && typeof rawReport.models === "object") {
+      for (const [k, v] of Object.entries<any>(rawReport.models)) {
+        const id = v?.model_id || k;
+        const fw = v?.framework;
+        if (id && fw && !frameworkMap.has(String(id).toLowerCase().trim())) {
+          frameworkMap.set(String(id).toLowerCase().trim(), String(fw));
+        }
+      }
+    }
 
     // Helper to safely extract a numeric metric value from either number or object format
     const extractMetricNum = (val: any): number | null => {
@@ -789,11 +921,32 @@ export class ModelValidationAgent {
       return isNaN(parsed) ? null : parsed;
     };
 
-    const normalizedCandidates: CandidateModelValidationRun[] = rawCandidatesList.map((m: any) => {
-      const modelId = m.model_id || m.modelId || "model";
-      const displayName = m.displayName || m.name || modelId;
-      const framework = m.framework || (modelId.toLowerCase().includes("lightgbm") ? "lightgbm" : modelId.toLowerCase().includes("chronos") ? "chronos" : "custom");
-      const status = m.status || "Completed";
+    const normalizedCandidates: CandidateModelValidationRun[] = rawCandidatesList.map((candSummary: any) => {
+      const modelId = candSummary.model_id || candSummary.modelId;
+      if (!modelId) {
+        throw new Error("[ModelValidationAgent] Candidate model entry in validation report is missing 'model_id'.");
+      }
+
+      // Merge candidate with full details object from rawReport.models (where chartData, totals, metrics, framework are stored)
+      let detailedModel: any = {};
+      if (rawReport?.models && typeof rawReport.models === "object") {
+        const directMatch = rawReport.models[modelId] || rawReport.models[modelId.toLowerCase()];
+        const matched = directMatch || Object.values(rawReport.models).find((v: any) =>
+          (v?.model_id && String(v.model_id).toLowerCase() === modelId.toLowerCase()) ||
+          (v?.displayName && String(v.displayName).toLowerCase() === String(candSummary.displayName || modelId).toLowerCase())
+        );
+        if (matched && typeof matched === "object") {
+          detailedModel = matched;
+        }
+      }
+
+      const m = { ...detailedModel, ...candSummary };
+      const displayName = candSummary.displayName || detailedModel.displayName || m.name || modelId;
+      const framework = frameworkMap.get(modelId.toLowerCase()) || m.framework || detailedModel.framework;
+      if (!framework) {
+        throw new Error(`[ModelValidationAgent] Candidate model '${modelId}' is missing required 'framework'.`);
+      }
+      const status = m.status || detailedModel.status || "Completed";
 
       // Normalize metrics dictionary
       const rawMetrics: Record<string, any> = m.metrics && typeof m.metrics === "object" ? m.metrics : {};
@@ -858,16 +1011,12 @@ export class ModelValidationAgent {
       };
     });
 
-    // Rank candidates by performance
+    // Rank candidates by performance strictly according to direction
+    const isMinimize = direction.toLowerCase() === "minimize";
     const rankedCandidates = [...normalizedCandidates].sort((a, b) => {
-      const isErrorMetric =
-        (a.primaryMetricName || "").toUpperCase().includes("WAPE") ||
-        (a.primaryMetricName || "").toUpperCase().includes("MAE") ||
-        (a.primaryMetricName || "").toUpperCase().includes("RMSE") ||
-        (a.primaryMetricName || "").toUpperCase().includes("LOSS");
-      const scoreA = a.score ?? (isErrorMetric ? 999999 : -999999);
-      const scoreB = b.score ?? (isErrorMetric ? 999999 : -999999);
-      return isErrorMetric ? scoreA - scoreB : scoreB - scoreA;
+      const scoreA = a.score ?? (isMinimize ? 999999 : -999999);
+      const scoreB = b.score ?? (isMinimize ? 999999 : -999999);
+      return isMinimize ? scoreA - scoreB : scoreB - scoreA;
     });
 
     const successfulRuns = rankedCandidates.filter(
@@ -876,8 +1025,11 @@ export class ModelValidationAgent {
 
     const championModel =
       rankedCandidates.find((r) => r.model_id === rawReport?.champion_model_id && r.status === "Completed") ||
-      successfulRuns[0] ||
-      rankedCandidates[0];
+      successfulRuns[0];
+
+    if (!championModel) {
+      throw new Error(`[ModelValidationAgent] No candidate model completed validation successfully.`);
+    }
 
     const effectiveRunId = (rawReport?.validation_run_id || rawReport?.run_id || `val-${runTimestamp || Date.now()}`).slice(0, 50);
 

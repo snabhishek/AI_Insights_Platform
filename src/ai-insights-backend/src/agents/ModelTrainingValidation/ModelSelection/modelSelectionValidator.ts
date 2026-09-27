@@ -54,10 +54,16 @@ export class ModelSelectionValidator {
     // 2. Target Entity & Grain validation
     if (!decision.target_entity || typeof decision.target_entity !== "object") {
       errors.push("Missing required field: target_entity");
+    } else {
+      if (!decision.target_entity.name) errors.push("target_entity.name is required");
+      if (!decision.target_entity.datatype) errors.push("target_entity.datatype is required");
+      if (!decision.target_entity.description) errors.push("target_entity.description is required");
     }
 
     if (!decision.prediction_grain || typeof decision.prediction_grain !== "object") {
       errors.push("Missing required field: prediction_grain");
+    } else {
+      if (!decision.prediction_grain.entity) errors.push("prediction_grain.entity is required");
     }
 
     // 3. Recommended Model Validation
@@ -96,6 +102,16 @@ export class ModelSelectionValidator {
           errors.push(`Duplicate candidate model_id detected: "${id}"`);
         }
         seenIds.add(id);
+
+        if (!candidate.framework) {
+          errors.push(`Candidate "${id}" is missing required field: framework`);
+        }
+        if (!candidate.algorithm) {
+          errors.push(`Candidate "${id}" is missing required field: algorithm`);
+        }
+        if (!candidate.reasoning || !candidate.reasoning.strengths || !candidate.reasoning.weaknesses || !candidate.reasoning.suitability) {
+          errors.push(`Candidate "${id}" is missing required reasoning fields (strengths, weaknesses, suitability)`);
+        }
 
         // Check registry existence
         if (!registry.isModelSupported(id)) {
@@ -166,30 +182,69 @@ export class ModelSelectionValidator {
       }
     }
 
-    // 5. Baseline model validation
-    const baselineId = decision.training?.baseline_model;
-    if (baselineId && typeof baselineId === "string" && baselineId.trim().length > 0) {
-      if (!registry.isModelSupported(baselineId)) {
+    // 5. Training Strategy validation
+    if (!decision.training || typeof decision.training !== "object") {
+      errors.push("Missing required field: training");
+    } else {
+      if (!decision.training.mode) errors.push("training.mode is required");
+      const baselineId = decision.training.baseline_model;
+      if (!baselineId) {
+        errors.push("training.baseline_model is required");
+      } else if (!registry.isModelSupported(baselineId)) {
         errors.push(`baseline_model "${baselineId}" does not exist in Model Capability Registry`);
       }
     }
 
-    // 6. Confidence score validation
-    if (decision.confidence) {
+    // 6. Feature Requirements validation
+    if (!Array.isArray(decision.featureRequirements) || decision.featureRequirements.length === 0) {
+      errors.push("Missing required field: featureRequirements (must contain at least one requirement)");
+    } else {
+      decision.featureRequirements.forEach((fr, idx) => {
+        if (!fr.feature || !fr.requirement || !fr.reason || !fr.priority) {
+          errors.push(`featureRequirements[${idx}] missing required fields (feature, requirement, reason, priority)`);
+        }
+      });
+    }
+
+    // 7. Hyperparameter Optimization validation
+    if (!decision.hyperparameterOptimization || typeof decision.hyperparameterOptimization !== "object") {
+      errors.push("Missing required field: hyperparameterOptimization");
+    } else {
+      if (!decision.hyperparameterOptimization.approach) {
+        errors.push("hyperparameterOptimization.approach is required");
+      }
+      if (!decision.hyperparameterOptimization.rationale) {
+        errors.push("hyperparameterOptimization.rationale is required");
+      }
+    }
+
+    // 8. Confidence score validation
+    if (!decision.confidence || typeof decision.confidence !== "object") {
+      errors.push("Missing required field: confidence");
+    } else {
       if (
         typeof decision.confidence.score !== "number" ||
         decision.confidence.score < 0 ||
         decision.confidence.score > 1
       ) {
-        errors.push(`confidence.score must be between 0 and 1, received: ${decision.confidence?.score}`);
+        errors.push(`confidence.score must be a number between 0 and 1, received: ${decision.confidence?.score}`);
+      }
+      if (!decision.confidence.rationale) {
+        errors.push("confidence.rationale is required");
       }
     }
 
-    // 7. Models array validation
+    // 9. Models array validation
     if (Array.isArray(decision.models)) {
       decision.models.forEach((m, idx) => {
         if (!m.model_id) {
           errors.push(`models array element at index ${idx} is missing model_id`);
+        }
+        if (!m.framework) {
+          errors.push(`models array element at index ${idx} is missing framework`);
+        }
+        if (!m.algorithm) {
+          errors.push(`models array element at index ${idx} is missing algorithm`);
         }
       });
     }

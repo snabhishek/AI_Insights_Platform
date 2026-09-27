@@ -946,20 +946,44 @@ export async function saveModularTrainingJobContract(
     existingObj.model_selection?.primary_metric ||
     "";
 
-  const primaryMetricDef =
+  const rawMetricDef =
     rawData["x-primary-metric-def"] ||
     rawData.primary_metric_def ||
     (typeof rawData.evaluation?.primary_metric === "object" ? rawData.evaluation.primary_metric : null) ||
     existingObj["x-primary-metric-def"] ||
-    existingObj.primary_metric_def || {
-      value: primaryMetricName,
-      source: "llm_inference",
-      confidence: 0.95,
-      confirmation_threshold: 0.85,
-      requires_confirmation: false,
-      rationale: `Selected ${primaryMetricName || "primary metric"} representing business goal`,
-      evidence: [],
-    };
+    existingObj.primary_metric_def;
+
+  const rawDirection =
+    rawData.direction ||
+    rawData.model_selection?.direction ||
+    rawMetricDef?.direction ||
+    rawData.objective?.direction ||
+    existingObj["x-primary-metric-def"]?.direction ||
+    existingObj.objective?.direction ||
+    existingObj.model_selection?.direction ||
+    "maximize";
+
+  const rawSecondaryMetrics =
+    rawData.secondary_metrics ||
+    rawData.model_selection?.secondary_metrics ||
+    rawMetricDef?.secondary_metrics ||
+    rawData.evaluation?.secondary_metrics ||
+    existingObj["x-primary-metric-def"]?.secondary_metrics ||
+    existingObj.evaluation?.secondary_metrics ||
+    [];
+
+  const primaryMetricDef = {
+    value: rawMetricDef?.value || primaryMetricName,
+    source: rawMetricDef?.source || "model_selection",
+    confidence: typeof rawMetricDef?.confidence === "number" ? rawMetricDef.confidence : 1.0,
+    confirmation_threshold: typeof rawMetricDef?.confirmation_threshold === "number" ? rawMetricDef.confirmation_threshold : 0.85,
+    requires_confirmation: Boolean(rawMetricDef?.requires_confirmation),
+    direction: rawDirection,
+    rationale: rawMetricDef?.rationale || `Selected ${primaryMetricName || "primary metric"} representing business goal`,
+    business_interpretation: rawMetricDef?.business_interpretation || null,
+    evidence: rawMetricDef?.evidence || [],
+    secondary_metrics: rawSecondaryMetrics,
+  };
 
   // Build model_selection data (merging candidates/models with training steps)
   const existingModelSel = existingObj.model_selection || {};
@@ -1035,7 +1059,7 @@ export async function saveModularTrainingJobContract(
     recommended_model: incomingModelSel.recommended_model ?? existingModelSel.recommended_model ?? null,
     candidates: mergedCandidates.length > 0 ? mergedCandidates : (incomingModelSel.candidates || []),
     primary_metric: primaryMetricName,
-    direction: incomingModelSel.direction ?? existingModelSel.direction ?? "maximize",
+    direction: incomingModelSel.direction ?? rawDirection ?? existingModelSel.direction ?? "maximize",
     tie_breakers: incomingModelSel.tie_breakers ?? existingModelSel.tie_breakers ?? ["simplest_model", "fastest_training"],
     constraints: incomingModelSel.constraints ?? existingModelSel.constraints ?? {},
     selection_strategy: incomingModelSel.selection_strategy ?? existingModelSel.selection_strategy ?? "top_k_candidates",
@@ -1160,7 +1184,7 @@ export async function saveModularTrainingJobContract(
     enabled: false,
     method: "bayesian",
     objective_metric: primaryMetricName,
-    direction: ["wape", "mae", "rmse", "mse", "loss"].includes(String(primaryMetricName).toLowerCase()) ? "minimize" : "maximize",
+    direction: rawData.hyperparameter_optimization?.direction || rawDirection || existingObj.hyperparameter_optimization?.direction || "maximize",
     max_trials: 0,
     timeout: null,
     search_space: {},
@@ -1174,7 +1198,7 @@ export async function saveModularTrainingJobContract(
   const objectiveData = rawData.objective || existingObj.objective || {
     training_loss: isClass ? "logloss" : "mse",
     optimization_metric: primaryMetricName,
-    direction: ["wape", "mae", "rmse", "mse", "loss"].includes(String(primaryMetricName).toLowerCase()) ? "minimize" : "maximize",
+    direction: rawData.objective?.direction || rawDirection || existingObj.objective?.direction || "maximize",
     custom_objective: {
       enabled: false,
       definition: null,
@@ -1183,11 +1207,12 @@ export async function saveModularTrainingJobContract(
 
   const evaluationData = rawData.evaluation || existingObj.evaluation || {
     primary_metric: primaryMetricDef,
-    secondary_metrics: isForecast
-      ? ["MAE", "RMSE", "WAPE"]
-      : isReg
-      ? ["MAE", "RMSE", "R2"]
-      : ["accuracy", "precision", "recall", "roc_auc"],
+    secondary_metrics:
+      (Array.isArray(rawData.evaluation?.secondary_metrics) && rawData.evaluation.secondary_metrics.length > 0)
+        ? rawData.evaluation.secondary_metrics
+        : (Array.isArray(rawSecondaryMetrics) && rawSecondaryMetrics.length > 0)
+        ? rawSecondaryMetrics
+        : (Array.isArray(existingObj.evaluation?.secondary_metrics) ? existingObj.evaluation.secondary_metrics : []),
     thresholds: {
       primary_metric_min: null,
       secondary_metric_constraints: {},
