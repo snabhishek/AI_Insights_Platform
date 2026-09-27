@@ -53,15 +53,42 @@ export const createReadTrainingReportTool = (
           if (fs.existsSync(reportPath)) {
             const raw = fs.readFileSync(reportPath, "utf-8");
             const report = JSON.parse(raw);
-              const modelResults = report.model_results || report.candidate_model_results || report.models || report.runs || {};
+              const rawCandidates =
+                report.models_evaluated ||
+                report.candidate_models_evaluated ||
+                report.model_results ||
+                report.candidate_model_results ||
+                report.candidate_models ||
+                report.models ||
+                report.runs ||
+                {};
+
+              const candidateModels = Array.isArray(rawCandidates)
+                ? rawCandidates.map((m: any) => (typeof m === "string" ? m : m.model_id || m.id)).filter(Boolean)
+                : Object.keys(rawCandidates);
+
+              const championModelId =
+                (typeof report.best_model === "string" ? report.best_model : report.best_model?.model_id) ||
+                (typeof report.selected_model === "string" ? report.selected_model : report.selected_model?.model_id) ||
+                (typeof report.champion_model === "string" ? report.champion_model : report.champion_model?.model_id) ||
+                report.best_model_id ||
+                report.champion_model_id ||
+                null;
+
+              const modelResults = Array.isArray(rawCandidates)
+                ? rawCandidates.reduce((acc: any, cur: any) => {
+                    const id = typeof cur === "string" ? cur : (cur.model_id || cur.id);
+                    if (id) acc[id] = cur;
+                    return acc;
+                  }, {})
+                : rawCandidates;
+
               return {
                 success: true,
                 reportPath,
                 report,
-                candidateModels: Array.isArray(report.candidate_models_evaluated) && report.candidate_models_evaluated.length > 0
-                  ? report.candidate_models_evaluated
-                  : Object.keys(modelResults),
-                championModelId: report.best_model_id || report.champion_model_id || report.selected_model || report.champion_model || null,
+                candidateModels,
+                championModelId,
                 testMetrics: modelResults,
               };
           }

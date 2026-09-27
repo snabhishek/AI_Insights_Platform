@@ -701,6 +701,8 @@ export class ModelTrainingAgent {
       rawRuns = report;
     } else if (report && typeof report === "object") {
       const candidatesPayload =
+        report.models_evaluated ||
+        report.candidate_models_evaluated ||
         report.model_results ||
         report.candidate_model_results ||
         report.candidate_models ||
@@ -780,10 +782,31 @@ export class ModelTrainingAgent {
         (c) => c.model_id?.toLowerCase() === modelId.toLowerCase()
       );
       const displayName = String(r.displayName || r.display_name || r.algorithm || configuredModel?.displayName || modelId);
-      const framework = String(r.framework || configuredModel?.framework || "sklearn");
-      const status = r.status === "SUCCESS" || r.status === "Completed" ? "Completed" : r.status || (r.error ? "Failed" : "Completed");
-      const validationMetrics = r.validationMetrics || r.validation_metrics || r.metrics || r.val_metrics || {};
-      const testMetrics = r.testMetrics || r.test_metrics || {};
+      const framework = r.framework || configuredModel?.framework;
+      if (!framework) {
+        throw new Error(`[ModelTrainingAgent] Candidate model '${modelId}' is missing required 'framework'.`);
+      }
+      const normStatus = String(r.status || "").toLowerCase();
+      const status: "Completed" | "Failed" =
+        normStatus === "completed" || normStatus === "success"
+          ? "Completed"
+          : r.error || normStatus === "failed"
+          ? "Failed"
+          : "Completed";
+
+      const validationMetrics =
+        r.validationMetrics ||
+        r.validation_metrics ||
+        r.metrics?.validation ||
+        r.metrics?.val ||
+        r.val_metrics ||
+        (r.metrics && !r.metrics.validation && !r.metrics.test ? r.metrics : {}) ||
+        {};
+      const testMetrics =
+        r.testMetrics ||
+        r.test_metrics ||
+        r.metrics?.test ||
+        {};
 
       const primaryMetricKey =
         report?.primary_metric ||
@@ -837,10 +860,12 @@ export class ModelTrainingAgent {
         }
       }
 
-      // Duration extraction from fit_time_seconds, training_metadata, or standard duration fields
+      // Duration extraction from fit_time_seconds, timing, training_metadata, or standard duration fields
       const durationSeconds =
         r.durationSeconds ??
         r.duration_seconds ??
+        (r.timing?.fit_time_seconds != null ? Number(r.timing.fit_time_seconds) + Number(r.timing.predict_time_seconds || 0) : undefined) ??
+        r.timing?.fit_time_seconds ??
         (r.fit_time_seconds != null ? Number(r.fit_time_seconds) + Number(r.scoring_time_seconds || 0) : undefined) ??
         r.fit_time_seconds ??
         r.training_metadata?.training_time_seconds ??
@@ -869,6 +894,7 @@ export class ModelTrainingAgent {
     });
 
     const reportDirection = String(
+      report.primary_metric_direction ||
       report.metric_direction ||
       report.direction ||
       contractData?.["x-primary-metric-def"]?.direction ||
@@ -890,10 +916,11 @@ export class ModelTrainingAgent {
       });
 
     const selectedModel =
+      (typeof report.best_model === "string" ? report.best_model : report.best_model?.model_id) ||
+      (typeof report.selected_model === "string" ? report.selected_model : report.selected_model?.model_id) ||
+      (typeof report.champion_model === "string" ? report.champion_model : report.champion_model?.model_id) ||
       report.best_model_id ||
       report.champion_model_id ||
-      report.selected_model ||
-      report.champion_model ||
       report.selectedModel ||
       (rankedCandidates[0]?.model_id);
 
@@ -912,6 +939,9 @@ export class ModelTrainingAgent {
     const championRun = runs.find((r) => r.model_id?.toLowerCase() === selectedModel.toLowerCase()) || rankedCandidates[0];
 
     const selectedModelArtifact =
+      report.best_model?.model_path ||
+      report.best_model?.artifact_path ||
+      report.best_model?.artifact ||
       report.selected_model_path ||
       report.selectedModelArtifact ||
       report.champion_artifact ||

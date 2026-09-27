@@ -412,38 +412,79 @@ runTest("TrainingConfigValidator: Rejects missing 'search_space'", () => {
 console.log(colors.cyan(colors.bold("\n--- 3. Model Training Report & Execution Validation ---")));
 
 // Simulate report parsing logic as in ModelTrainingAgent
-function parseTrainingReport(report: any, direction: "minimize" | "maximize") {
+function parseTrainingReport(report: any, direction: "minimize" | "maximize", configuredCandidates?: any[]) {
   if (!report || typeof report !== "object") {
     throw new Error("[ModelTrainingAgent] Training execution failed: 'model_training_report.json' was not generated.");
   }
-  const modelResults = report.model_results || report.candidate_model_results;
-  if (!modelResults || Object.keys(modelResults).length === 0) {
-    throw new Error("[ModelTrainingAgent] 'model_training_report.json' is missing required 'model_results'.");
+  const candidatesPayload =
+    report.models_evaluated ||
+    report.candidate_models_evaluated ||
+    report.model_results ||
+    report.candidate_model_results ||
+    report.models ||
+    report.runs;
+
+  if (!candidatesPayload || (Array.isArray(candidatesPayload) ? candidatesPayload.length === 0 : Object.keys(candidatesPayload).length === 0)) {
+    throw new Error("[ModelTrainingAgent] 'model_training_report.json' is missing required candidate model results.");
   }
 
-  const selectedModel = report.best_model_id || report.champion_model_id || report.selected_model;
-  if (!selectedModel) {
-    throw new Error("[ModelTrainingAgent] 'model_training_report.json' is missing required best model identifier ('best_model_id' or 'selected_model').");
-  }
+  const rawRuns = Array.isArray(candidatesPayload)
+    ? candidatesPayload
+    : Object.entries(candidatesPayload).map(([key, val]: [string, any]) => ({
+        model_id: val.model_id || key,
+        ...val,
+      }));
 
-  const runs = Object.entries(modelResults).map(([key, val]: [string, any]) => {
+  const runs = rawRuns.map((r: any) => {
+    const configured = configuredCandidates?.find((c) => c.model_id === r.model_id);
+    const framework = r.framework || configured?.framework;
+    if (!framework) {
+      throw new Error(`[ModelTrainingAgent] Candidate model '${r.model_id}' is missing required 'framework'.`);
+    }
+    const normStatus = String(r.status || "").toLowerCase();
+    const status = normStatus === "completed" || normStatus === "success" ? "Completed" : "Failed";
+
+    const score =
+      typeof r.score === "number"
+        ? r.score
+        : typeof r.metrics?.validation?.score === "number"
+        ? r.metrics.validation.score
+        : typeof r.validation_metrics?.[report.primary_metric] === "number"
+        ? r.validation_metrics[report.primary_metric]
+        : undefined;
+
     return {
-      model_id: val.model_id || key,
-      framework: val.framework,
-      score: val.validation_metrics ? val.validation_metrics[report.primary_metric] : val.score,
-      status: val.status || "Completed",
+      model_id: r.model_id,
+      framework,
+      status,
+      score,
+      artifact: r.artifact_path || r.model_path || `artifacts/models/${r.model_id}.joblib`,
     };
   });
 
   const isMinimize = direction.toLowerCase() === "minimize";
-  const ranked = [...runs].sort((a, b) => {
-    if (a.score == null && b.score == null) return 0;
-    if (a.score == null) return 1;
-    if (b.score == null) return -1;
-    return isMinimize ? a.score - b.score : b.score - a.score;
-  });
+  const rankedCandidates = [...runs]
+    .filter((r) => r.status === "Completed")
+    .sort((a, b) => {
+      if (a.score == null && b.score == null) return 0;
+      if (a.score == null) return 1;
+      if (b.score == null) return -1;
+      return isMinimize ? a.score - b.score : b.score - a.score;
+    });
 
-  return { selectedModel, ranked, runs };
+  const selectedModel =
+    (typeof report.best_model === "string" ? report.best_model : report.best_model?.model_id) ||
+    (typeof report.selected_model === "string" ? report.selected_model : report.selected_model?.model_id) ||
+    (typeof report.champion_model === "string" ? report.champion_model : report.champion_model?.model_id) ||
+    report.best_model_id ||
+    report.champion_model_id ||
+    (rankedCandidates[0]?.model_id);
+
+  if (!selectedModel) {
+    throw new Error("[ModelTrainingAgent] Model training report is missing a best/champion model identifier ('best_model_id' or 'selected_model') and no evaluated candidate models succeeded.");
+  }
+
+  return { selectedModel, ranked: rankedCandidates, runs };
 }
 
 const mockTrainingReport = {
@@ -475,6 +516,52 @@ runTest("ModelTraining: Successfully parses valid training report without synthe
   assert.strictEqual(result.ranked[0].model_id, "lightgbm_sota");
   assert.strictEqual(result.ranked[0].score, 0.5108);
   assert.strictEqual(result.ranked[1].model_id, "random_forest");
+});
+
+runTest("ModelTraining: Successfully parses report with models_evaluated array and best_model object", () => {
+  const containerReport = {
+    status: "Completed",
+    primary_metric: "WAPE",
+    primary_metric_direction: "minimize",
+    best_model: {
+      model_id: "lightgbm_sota",
+      score: 0.525,
+      model_path: "/workspace/artifacts/models/selected_model.joblib",
+    },
+    models_evaluated: [
+      {
+        model_id: "lightgbm_sota",
+        displayName: "LightGBM Fast GBDT",
+        status: "Success",
+        metrics: {
+          validation: { score: 0.525, primaryMetricName: "WAPE" },
+          test: { score: 0.506, primaryMetricName: "WAPE" },
+        },
+      },
+      {
+        model_id: "catboost_sota",
+        displayName: "CatBoost Gradient Boosting",
+        status: "Success",
+        metrics: {
+          validation: { score: 0.5268, primaryMetricName: "WAPE" },
+          test: { score: 0.5058, primaryMetricName: "WAPE" },
+        },
+      },
+    ],
+  };
+
+  const configuredCandidates = [
+    { model_id: "lightgbm_sota", framework: "lightgbm" },
+    { model_id: "catboost_sota", framework: "catboost" },
+  ];
+
+  const result = parseTrainingReport(containerReport, "minimize", configuredCandidates);
+  assert.strictEqual(result.selectedModel, "lightgbm_sota");
+  assert.strictEqual(result.ranked.length, 2);
+  assert.strictEqual(result.ranked[0].model_id, "lightgbm_sota");
+  assert.strictEqual(result.ranked[0].framework, "lightgbm");
+  assert.strictEqual(result.ranked[1].model_id, "catboost_sota");
+  assert.strictEqual(result.ranked[1].framework, "catboost");
 });
 
 runTest("ModelTraining: Dynamic ranking respects minimize direction (lower is better)", () => {
@@ -514,18 +601,28 @@ runTest("ModelTraining: Throws when model_training_report.json is null or empty"
   }, /Training execution failed: 'model_training_report.json' was not generated/);
 });
 
-runTest("ModelTraining: Throws when model_results is missing from report", () => {
+runTest("ModelTraining: Throws when candidate model results are missing from report", () => {
   const emptyReport = { ...mockTrainingReport, model_results: undefined };
   assert.throws(() => {
     parseTrainingReport(emptyReport, "minimize");
-  }, /missing required 'model_results'/);
+  }, /missing required candidate model results/);
 });
 
-runTest("ModelTraining: Throws when best_model_id is missing from report", () => {
-  const missingBest = { ...mockTrainingReport, best_model_id: undefined };
+runTest("ModelTraining: Throws when best model cannot be identified and no candidates succeed", () => {
+  const missingBest = {
+    ...mockTrainingReport,
+    best_model_id: undefined,
+    model_results: {
+      failing_model: {
+        model_id: "failing_model",
+        framework: "sklearn",
+        status: "Failed",
+      },
+    },
+  };
   assert.throws(() => {
     parseTrainingReport(missingBest, "minimize");
-  }, /missing required best model identifier/);
+  }, /missing a best\/champion model identifier/);
 });
 
 // ---------------------------------------------------------

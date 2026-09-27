@@ -181,6 +181,57 @@ services:
 - Saves the best-performing model as `artifacts/models/selected_model.joblib` (or `.pkl`).
 - Always persist `artifacts/models/preprocessor.joblib`.
 - Generates `model_training_report.json` with the standard report schema. All visualization generator calls in `pipeline.py` must be protected in try-except so plotting never fails a model.
+- **MANDATORY `model_training_report.json` SCHEMA**:
+  The report MUST include:
+  ```json
+  {
+    "status": "Completed",
+    "project_name": "<projectName>",
+    "target_column": "<target_column>",
+    "primary_metric": "<primary_metric>",
+    "primary_metric_direction": "<minimize or maximize>",
+    "best_model_id": "<champion_model_id>",
+    "best_model": {
+      "model_id": "<champion_model_id>",
+      "score": <number>,
+      "model_path": "artifacts/models/selected_model.joblib"
+    },
+    "selected_model": "<champion_model_id>",
+    "selected_model_path": "artifacts/models/selected_model.joblib",
+    "preprocessor_path": "artifacts/models/preprocessor.joblib",
+    "candidate_models_evaluated": ["<model_id_1>", "<model_id_2>"],
+    "models_evaluated": [
+      {
+        "model_id": "<model_id>",
+        "displayName": "<displayName>",
+        "framework": "<framework: lightgbm | xgboost | catboost | scikit-learn>",
+        "status": "Completed",
+        "metrics": {
+          "validation": { "score": <number>, "<primary_metric>": <number>, ... },
+          "test": { "score": <number>, "<primary_metric>": <number>, ... }
+        },
+        "timing": { "fit_time_seconds": <number>, "predict_time_seconds": <number> },
+        "artifact_path": "artifacts/models/<model_id>.joblib",
+        "plots": ["artifacts/plots/<model_id>_actual_vs_predicted.png", ...]
+      }
+    ],
+    "model_results": {
+      "<model_id>": {
+        "model_id": "<model_id>",
+        "displayName": "<displayName>",
+        "framework": "<framework>",
+        "status": "Completed",
+        "score": <number>,
+        "validation_metrics": { ... },
+        "test_metrics": { ... },
+        "duration_seconds": <number>,
+        "model_path": "artifacts/models/<model_id>.joblib",
+        "plots": { ... }
+      }
+    },
+    "comparison_plot": "artifacts/plots/model_comparison.png"
+  }
+  ```
 
 ### 6. `main.py`
 - Accepts arguments:

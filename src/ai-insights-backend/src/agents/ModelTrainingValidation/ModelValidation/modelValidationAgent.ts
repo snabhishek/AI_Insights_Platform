@@ -340,6 +340,7 @@ export class ModelValidationAgent {
       (state.featureArchitect as any)?.orchestrationDecision?.problemType;
 
     const direction =
+      trainingReport?.primary_metric_direction ||
       trainingReport?.metric_direction ||
       trainingReport?.direction ||
       trainingConfig?.task?.metric_direction ||
@@ -365,14 +366,22 @@ export class ModelValidationAgent {
       throw new Error(`[ModelValidationAgent] Missing or invalid optimization direction ('${direction}'). Must be 'maximize' or 'minimize'.`);
     }
 
+    const rawReportModels =
+      trainingReport?.candidate_models_evaluated ||
+      trainingReport?.models_evaluated;
+
+    const evaluatedFromReport: string[] = Array.isArray(rawReportModels)
+      ? rawReportModels.map((m: any) => (typeof m === "string" ? m : m.model_id || m.id)).filter(Boolean)
+      : Object.keys(trainingReport?.model_results || trainingReport?.results || {});
+
     const effectiveSelectedModels: string[] = (
       Array.isArray(state.selectedModels) && state.selectedModels.length > 0
         ? state.selectedModels
         : Array.isArray((state as any).selectedModelsToValidate) && (state as any).selectedModelsToValidate.length > 0
         ? (state as any).selectedModelsToValidate
-        : Array.isArray(trainingReport?.candidate_models_evaluated) && trainingReport.candidate_models_evaluated.length > 0
-        ? trainingReport.candidate_models_evaluated
-        : Object.keys(trainingReport?.model_results || {})
+        : evaluatedFromReport.length > 0
+        ? evaluatedFromReport
+        : []
     );
 
     if (effectiveSelectedModels.length === 0) {
@@ -866,8 +875,10 @@ export class ModelValidationAgent {
       if (id && fw) frameworkMap.set(String(id).toLowerCase().trim(), String(fw));
     }
 
-    // 3. From training report (results, model_results, runs, candidate_models)
+    // 3. From training report (models_evaluated, candidate_models_evaluated, results, model_results, runs, candidate_models)
     const reportResults =
+      trainingReport?.models_evaluated ||
+      trainingReport?.candidate_models_evaluated ||
       trainingReport?.results ||
       trainingReport?.model_results ||
       trainingReport?.runs ||
@@ -1023,8 +1034,15 @@ export class ModelValidationAgent {
       (r) => r.status === "Completed" && r.metrics && Object.keys(r.metrics).length > 0
     );
 
+    const championIdFromReport =
+      (typeof rawReport?.best_model === "object" ? rawReport?.best_model?.model_id : rawReport?.best_model) ||
+      rawReport?.best_model_id ||
+      rawReport?.champion_model_id ||
+      (typeof rawReport?.selected_model === "object" ? rawReport?.selected_model?.model_id : rawReport?.selected_model) ||
+      rawReport?.champion_model;
+
     const championModel =
-      rankedCandidates.find((r) => r.model_id === rawReport?.champion_model_id && r.status === "Completed") ||
+      rankedCandidates.find((r) => r.model_id === championIdFromReport && r.status === "Completed") ||
       successfulRuns[0];
 
     if (!championModel) {
