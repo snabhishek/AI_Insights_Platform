@@ -135,13 +135,20 @@ export class ModelValidationAgent {
     }
     try {
       const content = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
-      const modelsList: any[] =
+      const rawCandidates =
         content?.ranked_models ||
-        (content?.models
-          ? Array.isArray(content.models)
-            ? content.models
-            : Object.values(content.models)
-          : []);
+        content?.models ||
+        content?.candidate_models ||
+        content?.model_results ||
+        content?.candidates;
+
+      const modelsList: any[] = Array.isArray(rawCandidates)
+        ? rawCandidates
+        : rawCandidates && typeof rawCandidates === "object"
+        ? Object.entries(rawCandidates).map(([k, v]: [string, any]) =>
+            v && typeof v === "object" ? { model_id: v.model_id || k, ...v } : { model_id: k, value: v }
+          )
+        : [];
 
       if (!modelsList || modelsList.length === 0) {
         return { success: false, reason: "No models found in model_validation_report.json." };
@@ -162,7 +169,9 @@ export class ModelValidationAgent {
       if (successful.length === 0) {
         return {
           success: false,
-          reason: `All ${modelsList.length} candidate model(s) failed validation.`,
+          reason: `All ${modelsList.length} candidate model(s) failed validation${
+            failedModelErrors.length > 0 ? `: ${failedModelErrors.slice(0, 3).join("; ")}` : "."
+          }`,
           failedModelErrors,
         };
       }
@@ -308,22 +317,45 @@ export class ModelValidationAgent {
 
     const mode = this.determineValidationMode(predictionStartDate);
 
+    // Read feature engineering metadata.yaml if available for physical dataset column bindings
+    let featureMetadata: any = {};
+    const metadataYamlPath = path.join(runDir, "python_script", "metadata.yaml");
+    if (fs.existsSync(metadataYamlPath)) {
+      try {
+        featureMetadata = yaml.load(fs.readFileSync(metadataYamlPath, "utf-8")) || {};
+      } catch {}
+    }
+
     const timeCol =
+      trainingReport?.time_column ||
+      featureMetadata?.time_column ||
+      trainingConfig?.time_column ||
       trainingConfig?.split?.time_column ||
       trainingConfig?.data_splitting?.time_column ||
       (state as any).timeColumn ||
+      (state.featureArchitect as any)?.timeColumn ||
       (state.featureArchitect as any)?.orchestrationDecision?.timeColumn ||
       (state.schemaResolution as any)?.timeColumn ||
       "";
+
     const targetCol =
-      trainingConfig?.task?.target_column ||
-      trainingConfig?.model_selection?.target_entity?.name ||
       trainingReport?.target_column ||
+      featureMetadata?.target_column ||
+      (state.featureArchitect as any)?.orchestrationDecision?.targetColumn ||
       (state as any).targetColumn ||
+      trainingConfig?.task?.target_column ||
+      trainingConfig?.target_column ||
+      trainingConfig?.model_selection?.target_entity?.name ||
       (state.modelSelection as any)?.target_entity?.name ||
       (state.stageOutputs?.modelSelection as any)?.target_entity?.name ||
-      (state.featureArchitect as any)?.orchestrationDecision?.targetColumn;
+      "";
+
     const groupCol =
+      trainingReport?.group_by ||
+      trainingReport?.group_col ||
+      featureMetadata?.entity_key ||
+      trainingConfig?.group_by ||
+      trainingConfig?.group_col ||
       trainingConfig?.split?.group_by ||
       (state as any).entityColumn ||
       (state.featureArchitect as any)?.orchestrationDecision?.entityColumns?.[0] ||
@@ -839,7 +871,16 @@ export class ModelValidationAgent {
           ? rawReport.models
           : Object.values(rawReport.models)
         : []) ||
-      (rawReport?.candidate_models && Array.isArray(rawReport.candidate_models) ? rawReport.candidate_models : []) ||
+      (rawReport?.candidate_models
+        ? Array.isArray(rawReport.candidate_models)
+          ? rawReport.candidate_models
+          : Object.values(rawReport.candidate_models)
+        : []) ||
+      (rawReport?.model_results
+        ? Array.isArray(rawReport.model_results)
+          ? rawReport.model_results
+          : Object.values(rawReport.model_results)
+        : []) ||
       (rawReport?.candidateModels && Array.isArray(rawReport.candidateModels) ? rawReport.candidateModels : []);
 
     if (!rawCandidatesList || rawCandidatesList.length === 0) {
@@ -938,16 +979,29 @@ export class ModelValidationAgent {
         throw new Error("[ModelValidationAgent] Candidate model entry in validation report is missing 'model_id'.");
       }
 
-      // Merge candidate with full details object from rawReport.models (where chartData, totals, metrics, framework are stored)
+      // Merge candidate with full details object from rawReport.models, candidate_models, or model_results
       let detailedModel: any = {};
-      if (rawReport?.models && typeof rawReport.models === "object") {
-        const directMatch = rawReport.models[modelId] || rawReport.models[modelId.toLowerCase()];
-        const matched = directMatch || Object.values(rawReport.models).find((v: any) =>
-          (v?.model_id && String(v.model_id).toLowerCase() === modelId.toLowerCase()) ||
-          (v?.displayName && String(v.displayName).toLowerCase() === String(candSummary.displayName || modelId).toLowerCase())
-        );
-        if (matched && typeof matched === "object") {
-          detailedModel = matched;
+      const detailSources = [rawReport?.models, rawReport?.candidate_models, rawReport?.model_results];
+      for (const src of detailSources) {
+        if (src && typeof src === "object") {
+          if (!Array.isArray(src)) {
+            const directMatch = src[modelId] || src[modelId.toLowerCase()];
+            const matched = directMatch || Object.values(src).find((v: any) =>
+              (v?.model_id && String(v.model_id).toLowerCase() === modelId.toLowerCase()) ||
+              (v?.displayName && String(v.displayName).toLowerCase() === String(candSummary.displayName || modelId).toLowerCase())
+            );
+            if (matched && typeof matched === "object") {
+              detailedModel = { ...matched, ...detailedModel };
+            }
+          } else {
+            const matched = src.find((v: any) =>
+              (v?.model_id && String(v.model_id).toLowerCase() === modelId.toLowerCase()) ||
+              (v?.displayName && String(v.displayName).toLowerCase() === String(candSummary.displayName || modelId).toLowerCase())
+            );
+            if (matched && typeof matched === "object") {
+              detailedModel = { ...matched, ...detailedModel };
+            }
+          }
         }
       }
 
