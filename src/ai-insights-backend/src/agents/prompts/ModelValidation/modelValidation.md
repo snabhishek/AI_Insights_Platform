@@ -412,7 +412,8 @@ Keep training benchmark metrics separate from independently calculated validatio
 
 ### 7. Standard Output Report Schema
 
-The validation runner MUST output a JSON report adhering to the existing structure:
+The validation runner MUST output a JSON report adhering to the exact structured schema.
+**CRITICAL SCHEMA MANDATE**: Candidate model validation outputs MUST always be placed under the exact key `'model_results'` (matching the exact schema and naming convention used in `model_training_report.json`). Do NOT name this key `models`, `candidate_models`, or any other alias. You MUST preserve the exact key-value names and structure specified in the schema without modifying them.
 
 ```json
 {
@@ -433,7 +434,7 @@ The validation runner MUST output a JSON report adhering to the existing structu
   },
   "coverage_percentage": 100.0,
   "champion_model_id": "<top_model_id>",
-  "models": {
+  "model_results": {
     "<model_id>": {
       "model_id": "<model_id>",
       "displayName": "LightGBM SOTA",

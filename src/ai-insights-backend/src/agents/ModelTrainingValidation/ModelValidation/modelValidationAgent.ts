@@ -135,23 +135,20 @@ export class ModelValidationAgent {
     }
     try {
       const content = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
-      const rawCandidates =
-        content?.ranked_models ||
-        content?.models ||
-        content?.candidate_models ||
-        content?.model_results ||
-        content?.candidates;
+      const rawCandidates = content?.model_results;
+
+      if (!rawCandidates || typeof rawCandidates !== "object") {
+        return { success: false, reason: "Missing required 'model_results' in model_validation_report.json." };
+      }
 
       const modelsList: any[] = Array.isArray(rawCandidates)
         ? rawCandidates
-        : rawCandidates && typeof rawCandidates === "object"
-        ? Object.entries(rawCandidates).map(([k, v]: [string, any]) =>
+        : Object.entries(rawCandidates).map(([k, v]: [string, any]) =>
             v && typeof v === "object" ? { model_id: v.model_id || k, ...v } : { model_id: k, value: v }
-          )
-        : [];
+          );
 
-      if (!modelsList || modelsList.length === 0) {
-        return { success: false, reason: "No models found in model_validation_report.json." };
+      if (modelsList.length === 0) {
+        return { success: false, reason: "No candidate models found in model_validation_report.json." };
       }
 
       const failedModelErrors: string[] = [];
@@ -481,6 +478,7 @@ export class ModelValidationAgent {
       `3. In Future Prediction Mode (${mode === "future_prediction"}), generate forward periods without fake past actuals, benchmark using training test scores, and set actualTotal/difference to null.`,
       `4. In Backtesting Mode (${mode === "backtesting"}), slice evaluation records starting from ${predictionStartDate}, compare against ground-truth actuals, and compute deterministic metrics (F1/Accuracy or WAPE/MAE/RMSE).`,
       `5. Save outputs to '${runTimestamp}/${projectName}_model_validation/reports/model_validation_report.json' and 'artifacts/predictions/validation_predictions.parquet'.`,
+      `6. MANDATORY JSON REPORT SCHEMA: 'model_validation_report.json' MUST structure candidate model results under the exact key 'model_results' (i.e. { "model_results": { "<model_id>": { "model_id": ..., "displayName": ..., "framework": ..., "status": "Completed", "score": ..., "metrics": { ... }, "totals": { ... }, "chartData": { ... }, ... } } }), matching the exact convention used in 'model_training_report.json'. DO NOT use 'models', 'candidate_models', or any alternative key names. Do NOT modify the key-value names mentioned in the standard schema.`,
       `Return a JSON summary of your implementation when the runner is created.`,
     ].join("\n\n");
 
@@ -865,28 +863,20 @@ export class ModelValidationAgent {
       throw new Error(`[ModelValidationAgent] Validation report at ${reportPath} is empty or not a valid JSON object.`);
     }
 
-    // Extract raw candidates from any supported schema format
-    const rawCandidatesList: any[] =
-      rawReport?.ranked_models ||
-      (rawReport?.models
-        ? Array.isArray(rawReport.models)
-          ? rawReport.models
-          : Object.values(rawReport.models)
-        : []) ||
-      (rawReport?.candidate_models
-        ? Array.isArray(rawReport.candidate_models)
-          ? rawReport.candidate_models
-          : Object.values(rawReport.candidate_models)
-        : []) ||
-      (rawReport?.model_results
-        ? Array.isArray(rawReport.model_results)
-          ? rawReport.model_results
-          : Object.values(rawReport.model_results)
-        : []) ||
-      (rawReport?.candidateModels && Array.isArray(rawReport.candidateModels) ? rawReport.candidateModels : []);
+    // Extract candidate models strictly from model_results (matching Model Training schema)
+    const rawModelResults = rawReport?.model_results;
+    if (!rawModelResults || typeof rawModelResults !== "object") {
+      throw new Error(`[ModelValidationAgent] Validation report at ${reportPath} is missing required 'model_results'.`);
+    }
 
-    if (!rawCandidatesList || rawCandidatesList.length === 0) {
-      throw new Error(`[ModelValidationAgent] Validation report at ${reportPath} contains no evaluated models.`);
+    const rawCandidatesList: any[] = Array.isArray(rawModelResults)
+      ? rawModelResults
+      : Object.entries(rawModelResults).map(([k, v]: [string, any]) =>
+          v && typeof v === "object" ? { model_id: v.model_id || k, ...v } : { model_id: k, value: v }
+        );
+
+    if (rawCandidatesList.length === 0) {
+      throw new Error(`[ModelValidationAgent] Validation report at ${reportPath} contains empty 'model_results'.`);
     }
 
     const effectiveProblemType = rawReport?.problem_type || problemType;
@@ -952,9 +942,12 @@ export class ModelValidationAgent {
       if (id && fw) frameworkMap.set(String(id).toLowerCase().trim(), String(fw));
     }
 
-    // 5. From validation report's own models dictionary
-    if (rawReport?.models && typeof rawReport.models === "object") {
-      for (const [k, v] of Object.entries<any>(rawReport.models)) {
+    // 5. From validation report's own model_results dictionary
+    if (rawReport?.model_results && typeof rawReport.model_results === "object") {
+      const resultsObj = Array.isArray(rawReport.model_results)
+        ? Object.fromEntries(rawReport.model_results.map((m: any) => [m?.model_id, m]))
+        : rawReport.model_results;
+      for (const [k, v] of Object.entries<any>(resultsObj)) {
         const id = v?.model_id || k;
         const fw = v?.framework;
         if (id && fw && !frameworkMap.has(String(id).toLowerCase().trim())) {
@@ -981,28 +974,17 @@ export class ModelValidationAgent {
         throw new Error("[ModelValidationAgent] Candidate model entry in validation report is missing 'model_id'.");
       }
 
-      // Merge candidate with full details object from rawReport.models, candidate_models, or model_results
+      // Merge candidate with full details object strictly from rawReport.model_results
       let detailedModel: any = {};
-      const detailSources = [rawReport?.models, rawReport?.candidate_models, rawReport?.model_results];
-      for (const src of detailSources) {
-        if (src && typeof src === "object") {
-          if (!Array.isArray(src)) {
-            const directMatch = src[modelId] || src[modelId.toLowerCase()];
-            const matched = directMatch || Object.values(src).find((v: any) =>
-              (v?.model_id && String(v.model_id).toLowerCase() === modelId.toLowerCase()) ||
-              (v?.displayName && String(v.displayName).toLowerCase() === String(candSummary.displayName || modelId).toLowerCase())
-            );
-            if (matched && typeof matched === "object") {
-              detailedModel = { ...matched, ...detailedModel };
-            }
-          } else {
-            const matched = src.find((v: any) =>
-              (v?.model_id && String(v.model_id).toLowerCase() === modelId.toLowerCase()) ||
-              (v?.displayName && String(v.displayName).toLowerCase() === String(candSummary.displayName || modelId).toLowerCase())
-            );
-            if (matched && typeof matched === "object") {
-              detailedModel = { ...matched, ...detailedModel };
-            }
+      if (rawReport?.model_results && typeof rawReport.model_results === "object") {
+        if (!Array.isArray(rawReport.model_results)) {
+          const directMatch = rawReport.model_results[modelId] || rawReport.model_results[modelId.toLowerCase()];
+          const matched = directMatch || Object.values(rawReport.model_results).find((v: any) =>
+            (v?.model_id && String(v.model_id).toLowerCase() === modelId.toLowerCase()) ||
+            (v?.displayName && String(v.displayName).toLowerCase() === String(candSummary.displayName || modelId).toLowerCase())
+          );
+          if (matched && typeof matched === "object") {
+            detailedModel = { ...matched, ...detailedModel };
           }
         }
       }
@@ -1091,11 +1073,9 @@ export class ModelValidationAgent {
     );
 
     const championIdFromReport =
-      (typeof rawReport?.best_model === "object" ? rawReport?.best_model?.model_id : rawReport?.best_model) ||
-      rawReport?.best_model_id ||
       rawReport?.champion_model_id ||
-      (typeof rawReport?.selected_model === "object" ? rawReport?.selected_model?.model_id : rawReport?.selected_model) ||
-      rawReport?.champion_model;
+      rawReport?.best_model_id ||
+      (typeof rawReport?.best_model === "object" ? rawReport?.best_model?.model_id : rawReport?.best_model);
 
     const championModel =
       rankedCandidates.find((r) => r.model_id === championIdFromReport && r.status === "Completed") ||
@@ -1126,7 +1106,7 @@ export class ModelValidationAgent {
       },
       coverage_percentage: typeof rawReport?.coverage_percentage === "number" ? rawReport.coverage_percentage : 100.0,
       champion_model_id: championModel?.model_id || "",
-      models: Object.fromEntries(rankedCandidates.map((c) => [c.model_id, c])),
+      model_results: Object.fromEntries(rankedCandidates.map((c) => [c.model_id, c])),
       ranked_models: rankedCandidates,
       warnings: rawReport?.warnings || [],
       created_at: rawReport?.timestamp || rawReport?.created_at || new Date().toISOString(),

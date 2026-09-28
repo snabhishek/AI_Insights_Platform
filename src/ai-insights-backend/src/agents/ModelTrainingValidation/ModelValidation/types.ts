@@ -58,8 +58,8 @@ export interface ModelValidationReport {
   };
   coverage_percentage: number | null;
   champion_model_id: string;
-  models: Record<string, CandidateModelValidationRun>;
-  ranked_models: CandidateModelValidationRun[];
+  model_results: Record<string, CandidateModelValidationRun>;
+  ranked_models?: CandidateModelValidationRun[];
   warnings: string[];
   created_at: string;
 }

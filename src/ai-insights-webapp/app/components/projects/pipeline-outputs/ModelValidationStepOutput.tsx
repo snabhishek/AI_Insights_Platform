@@ -54,6 +54,7 @@ export interface ModelValidationReport {
   target_column: string;
   problem_type?: string;
   champion_model_id: string;
+  model_results?: Record<string, CandidateModelValidationRun> | CandidateModelValidationRun[];
   models: Record<string, CandidateModelValidationRun> | CandidateModelValidationRun[];
   ranked_models: CandidateModelValidationRun[];
   candidate_models?: any[];
@@ -242,6 +243,9 @@ export default function ModelValidationStepOutput({
   const candidates: CandidateModelValidationRun[] = useMemo(() => {
     if (rawReport?.ranked_models && Array.isArray(rawReport.ranked_models)) {
       return rawReport.ranked_models;
+    }
+    if (rawReport?.model_results) {
+      return Array.isArray(rawReport.model_results) ? rawReport.model_results : Object.values(rawReport.model_results);
     }
     if (modelValidation?.candidates && Array.isArray(modelValidation.candidates)) {
       return modelValidation.candidates;

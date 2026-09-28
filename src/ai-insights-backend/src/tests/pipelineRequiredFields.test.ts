@@ -789,8 +789,12 @@ function buildValidationFrameworkMap(ctx: {
     if (id && fw) frameworkMap.set(String(id).toLowerCase().trim(), String(fw));
   }
 
-  if (rawReport?.models && typeof rawReport.models === "object") {
-    for (const [k, v] of Object.entries<any>(rawReport.models)) {
+  const validationReportResults = rawReport?.model_results || rawReport?.models;
+  if (validationReportResults && typeof validationReportResults === "object") {
+    const resultsObj = Array.isArray(validationReportResults)
+      ? Object.fromEntries(validationReportResults.map((m: any) => [m?.model_id, m]))
+      : validationReportResults;
+    for (const [k, v] of Object.entries<any>(resultsObj)) {
       const id = v?.model_id || k;
       const fw = v?.framework;
       if (id && fw && !frameworkMap.has(String(id).toLowerCase().trim())) {
@@ -817,10 +821,10 @@ runTest("ModelValidation: Resolves candidate framework from trainingConfig.candi
   assert.strictEqual(fwMap.get("catboost_sota"), "catboost");
 });
 
-runTest("ModelValidation: Resolves candidate framework from rawReport.models when ranked_models only has summary", () => {
+runTest("ModelValidation: Resolves candidate framework from rawReport.model_results when ranked_models only has summary", () => {
   const fwMap = buildValidationFrameworkMap({
     rawReport: {
-      models: {
+      model_results: {
         "catboost gradient boosting regressor": {
           model_id: "catboost_sota",
           framework: "catboost",
