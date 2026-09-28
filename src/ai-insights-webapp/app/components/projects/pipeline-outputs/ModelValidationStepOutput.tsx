@@ -465,6 +465,18 @@ export default function ModelValidationStepOutput({
     }
   }, [minSelectableDate]);
 
+  // Synchronize frequency and horizon when rawReport or modelValidation updates
+  useEffect(() => {
+    const reportFreq = rawReport?.prediction_objective_frequency || modelValidation?.predictionObjectiveFrequency;
+    if (reportFreq) {
+      setFrequencyInput(reportFreq as any);
+    }
+    const reportHorizon = rawReport?.prediction_objective_horizon || modelValidation?.predictionObjectiveHorizon;
+    if (reportHorizon && typeof reportHorizon === "number") {
+      setHorizonInput(reportHorizon);
+    }
+  }, [rawReport, modelValidation]);
+
   // Check if date is out of range
   const isDateOutOfRange = useMemo(() => {
     if (!startDateInput) return false;
@@ -744,7 +756,7 @@ export default function ModelValidationStepOutput({
                   candidates={candidates}
                   activeCandidate={activeCandidate}
                   championModelId={championModelId}
-                  frequency={frequencyInput}
+                  frequency={rawReport?.prediction_objective_frequency || modelValidation?.predictionObjectiveFrequency || frequencyInput}
                   isClassification={isClassification}
                 />
               ) : isClassification ? (

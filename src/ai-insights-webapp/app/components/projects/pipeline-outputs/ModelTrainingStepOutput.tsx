@@ -975,7 +975,7 @@ export default function ModelTrainingStepOutput({
       )}
 
       {/* ─── Artifacts & Visualizations Gallery ─── */}
-      {hasExecutionReport && Object.keys(plots).length > 0 && (
+      {/* {hasExecutionReport && Object.keys(plots).length > 0 && (
         <div className="rounded-2xl border border-border bg-surface p-5 space-y-4">
           <div className="flex items-center justify-between">
             <div>
@@ -1016,7 +1016,7 @@ export default function ModelTrainingStepOutput({
             ))}
           </div>
         </div>
-      )}
+      )} */}
 
       {/* ─── Plot Preview Modal ─── */}
       {activePlotModal && (
