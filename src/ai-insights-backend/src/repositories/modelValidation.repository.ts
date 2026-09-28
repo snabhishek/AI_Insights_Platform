@@ -31,10 +31,10 @@ export class PostgresModelValidationRepository implements IModelValidationReposi
 
     const modelsList: any[] =
       report.ranked_models ||
-      (report.models
-        ? Array.isArray(report.models)
-          ? report.models
-          : Object.values(report.models)
+      (report.model_results
+        ? Array.isArray(report.model_results)
+          ? report.model_results
+          : Object.values(report.model_results)
         : []);
 
     const championId = report.champion_model_id || modelsList[0]?.model_id || modelsList[0]?.modelId || null;

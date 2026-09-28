@@ -3,6 +3,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Badge } from "./utils";
 import { BACKEND_URL } from "../../providers/AppContext";
+import ModelValidationApexChart from "./ModelValidationApexChart";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -238,20 +239,43 @@ export default function ModelValidationStepOutput({
   const rawReport: ModelValidationReport | undefined =
     modelValidation?.report ||
     modelValidation?.data?.report ||
-    (modelValidation?.ranked_models ? modelValidation : undefined);
+    (modelValidation?.ranked_models ||
+    modelValidation?.model_results ||
+    modelValidation?.modelResults ||
+    modelValidation?.models ||
+    modelValidation?.candidate_models ||
+    modelValidation?.candidateModels
+      ? modelValidation
+      : undefined);
 
   const candidates: CandidateModelValidationRun[] = useMemo(() => {
     if (rawReport?.ranked_models && Array.isArray(rawReport.ranked_models)) {
       return rawReport.ranked_models;
     }
     if (rawReport?.model_results) {
-      return Array.isArray(rawReport.model_results) ? rawReport.model_results : Object.values(rawReport.model_results);
+      return Array.isArray(rawReport.model_results)
+        ? rawReport.model_results
+        : Object.entries(rawReport.model_results).map(([k, v]: [string, any]) =>
+            v && typeof v === "object" ? { model_id: v.model_id || k, ...v } : { model_id: k, value: v }
+          );
+    }
+    if ((rawReport as any)?.modelResults) {
+      const mr = (rawReport as any).modelResults;
+      return Array.isArray(mr)
+        ? mr
+        : Object.entries(mr).map(([k, v]: [string, any]) =>
+            v && typeof v === "object" ? { model_id: v.model_id || k, ...v } : { model_id: k, value: v }
+          );
     }
     if (modelValidation?.candidates && Array.isArray(modelValidation.candidates)) {
       return modelValidation.candidates;
     }
     if (rawReport?.models) {
-      return Array.isArray(rawReport.models) ? rawReport.models : Object.values(rawReport.models);
+      return Array.isArray(rawReport.models)
+        ? rawReport.models
+        : Object.entries(rawReport.models).map(([k, v]: [string, any]) =>
+            v && typeof v === "object" ? { model_id: v.model_id || k, ...v } : { model_id: k, value: v }
+          );
     }
     if (rawReport?.candidate_models && Array.isArray(rawReport.candidate_models)) {
       return rawReport.candidate_models;
@@ -461,8 +485,7 @@ export default function ModelValidationStepOutput({
     }
   }, [startDateInput]);
 
-  // Tooltip hover state for chart
-  const [hoverIndex, setHoverIndex] = useState<number | null>(null);
+
 
   const handleRunValidation = () => {
     if (onApproveValidation) {
@@ -471,102 +494,28 @@ export default function ModelValidationStepOutput({
   };
 
   // ─── Render Chart ──────────────────────────────────────────────────────────
-  const chartData = activeCandidate?.chartData;
-  const dates = chartData?.dates || [];
-  const actuals = chartData?.actualSeries || [];
-  const forecasts = chartData?.predictedSeries || [];
+  const chartData =
+    activeCandidate?.chartData ||
+    (activeCandidate as any)?.chart_data ||
+    (activeCandidate as any)?.plotData ||
+    (activeCandidate as any)?.plot_data ||
+    (activeCandidate as any)?.predictions_chart;
+  const dates: string[] = chartData?.dates || (chartData as any)?.timestamps || (chartData as any)?.time || [];
+  const actuals: Array<number | null> =
+    chartData?.actualSeries ||
+    (chartData as any)?.actual_series ||
+    (chartData as any)?.actuals ||
+    (chartData as any)?.actual ||
+    [];
+  const forecasts: number[] =
+    chartData?.predictedSeries ||
+    (chartData as any)?.predicted_series ||
+    (chartData as any)?.forecasts ||
+    (chartData as any)?.forecast ||
+    (chartData as any)?.predictions ||
+    [];
 
-  // Compute SVG layout parameters
-  const svgWidth = 850;
-  const svgHeight = 270;
-  const padLeft = 65;
-  const padRight = 35;
-  const padTop = 25;
-  const padBottom = 45;
-  const plotWidth = svgWidth - padLeft - padRight;
-  const plotHeight = svgHeight - padTop - padBottom;
 
-  const { yMin, yMax, yTicks, xPoints, actualPath, forecastPath } = useMemo(() => {
-    if (dates.length === 0 || forecasts.length === 0) {
-      return { yMin: 0, yMax: 100, yTicks: [0, 50, 100], xPoints: [], actualPath: "", forecastPath: "" };
-    }
-
-    const allValues: number[] = [];
-    forecasts.forEach((v) => { if (typeof v === "number" && !isNaN(v)) allValues.push(v); });
-    actuals.forEach((v) => { if (typeof v === "number" && !isNaN(v)) allValues.push(v); });
-
-    const rawMin = allValues.length > 0 ? Math.min(...allValues) : 0;
-    const rawMax = allValues.length > 0 ? Math.max(...allValues) : 100;
-    const range = rawMax - rawMin || 10;
-    const computedMin = Math.max(0, Math.floor(rawMin - range * 0.15));
-    const computedMax = Math.ceil(rawMax + range * 0.15);
-
-    const step = (computedMax - computedMin) / 4 || 1;
-    const ticks = [
-      computedMin,
-      Math.round(computedMin + step),
-      Math.round(computedMin + step * 2),
-      Math.round(computedMin + step * 3),
-      computedMax,
-    ];
-
-    const getX = (idx: number) => {
-      if (dates.length <= 1) return padLeft + plotWidth / 2;
-      return padLeft + (idx / (dates.length - 1)) * plotWidth;
-    };
-
-    const getY = (val: number | null) => {
-      if (val === null || isNaN(val)) return padTop + plotHeight;
-      const normalized = (val - computedMin) / (computedMax - computedMin || 1);
-      return padTop + plotHeight - normalized * plotHeight;
-    };
-
-    const points = dates.map((d, i) => ({
-      date: d,
-      x: getX(i),
-      actualY: actuals[i] !== null && actuals[i] !== undefined ? getY(actuals[i]) : null,
-      forecastY: getY(forecasts[i]),
-      actualVal: actuals[i],
-      forecastVal: forecasts[i],
-    }));
-
-    // Build smooth SVG paths
-    const buildSmoothPath = (pts: Array<{ x: number; y: number }>) => {
-      if (pts.length === 0) return "";
-      if (pts.length === 1) return `M ${pts[0].x} ${pts[0].y}`;
-
-      let path = `M ${pts[0].x} ${pts[0].y}`;
-      for (let i = 0; i < pts.length - 1; i++) {
-        const p0 = pts[i === 0 ? 0 : i - 1];
-        const p1 = pts[i];
-        const p2 = pts[i + 1];
-        const p3 = pts[i + 2] || p2;
-
-        const cp1x = p1.x + (p2.x - p0.x) / 6;
-        const cp1y = p1.y + (p2.y - p0.y) / 6;
-        const cp2x = p2.x - (p3.x - p1.x) / 6;
-        const cp2y = p2.y - (p3.y - p1.y) / 6;
-
-        path += ` C ${cp1x.toFixed(1)} ${cp1y.toFixed(1)}, ${cp2x.toFixed(1)} ${cp2y.toFixed(1)}, ${p2.x.toFixed(1)} ${p2.y.toFixed(1)}`;
-      }
-      return path;
-    };
-
-    const actualValidPts = points
-      .filter((p) => p.actualY !== null)
-      .map((p) => ({ x: p.x, y: p.actualY as number }));
-
-    const forecastValidPts = points.map((p) => ({ x: p.x, y: p.forecastY }));
-
-    return {
-      yMin: computedMin,
-      yMax: computedMax,
-      yTicks: ticks,
-      xPoints: points,
-      actualPath: buildSmoothPath(actualValidPts),
-      forecastPath: buildSmoothPath(forecastValidPts),
-    };
-  }, [dates, actuals, forecasts, padLeft, padRight, padTop, padBottom, plotWidth, plotHeight]);
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
@@ -784,210 +733,20 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-              {/* Top Right Chart Legend */}
-              <div className="flex items-center gap-4 text-xs font-semibold">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block" />
-                  <span className="border-b-2 border-dashed border-emerald-500 w-3 inline-block" />
-                  <span className="text-muted-foreground">Actual</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-800 dark:bg-sky-400 inline-block" />
-                  <span className="border-b-2 border-slate-800 dark:border-sky-400 w-3 inline-block" />
-                  <span className="text-muted-foreground">Forecast</span>
-                </div>
-              </div>
             </div>
           );
         })()}
 
-            {/* Middle Section: SVG Curve Chart */}
-            <div className="p-5 relative select-none">
-              {dates.length > 0 ? (
-                <div className="w-full overflow-x-auto">
-                  <svg
-                    viewBox={`0 0 ${svgWidth} ${svgHeight}`}
-                    className="w-full h-auto min-w-[650px] max-h-[300px]"
-                  >
-                    <defs>
-                      <linearGradient id="forecastGlow" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.25" />
-                        <stop offset="100%" stopColor="#38bdf8" stopOpacity="0.0" />
-                      </linearGradient>
-                    </defs>
-
-                    {/* Horizontal Grid lines and Y-axis labels */}
-                    {yTicks.map((tickVal, i) => {
-                      const yPos = padTop + plotHeight - ((tickVal - yMin) / (yMax - yMin || 1)) * plotHeight;
-                      return (
-                        <g key={i}>
-                          <line
-                            x1={padLeft}
-                            y1={yPos}
-                            x2={svgWidth - padRight}
-                            y2={yPos}
-                            stroke="currentColor"
-                            className="text-border/60"
-                            strokeDasharray="3 3"
-                            strokeWidth="1"
-                          />
-                          <text
-                            x={padLeft - 10}
-                            y={yPos + 4}
-                            textAnchor="end"
-                            className="text-[11px] fill-muted-foreground font-medium"
-                          >
-                            {formatNumber(tickVal, 0)}
-                          </text>
-                        </g>
-                      );
-                    })}
-
-                    {/* Actual Series Path (Dashed Emerald Line) */}
-                    {actualPath && (
-                      <path
-                        d={actualPath}
-                        fill="none"
-                        stroke="#10b981"
-                        strokeWidth="2.5"
-                        strokeDasharray="5 4"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    )}
-
-                    {/* Forecast Series Path (Solid Dark Navy / Sky Line) */}
-                    {forecastPath && (
-                      <path
-                        d={forecastPath}
-                        fill="none"
-                        stroke="currentColor"
-                        className="text-slate-800 dark:text-sky-400"
-                        strokeWidth="2.75"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                      />
-                    )}
-
-                    {/* Point Markers and Hover Hitboxes */}
-                    {xPoints.map((pt, idx) => {
-                      const isHovered = hoverIndex === idx;
-                      return (
-                        <g
-                          key={idx}
-                          onMouseEnter={() => setHoverIndex(idx)}
-                          onMouseLeave={() => setHoverIndex(null)}
-                          className="cursor-pointer"
-                        >
-                          {/* Vertical hover guide */}
-                          {isHovered && (
-                            <line
-                              x1={pt.x}
-                              y1={padTop}
-                              x2={pt.x}
-                              y2={padTop + plotHeight}
-                              stroke="currentColor"
-                              className="text-primary/40"
-                              strokeWidth="1.5"
-                              strokeDasharray="2 2"
-                            />
-                          )}
-
-                          {/* Actual point marker */}
-                          {pt.actualY !== null && (
-                            <circle
-                              cx={pt.x}
-                              cy={pt.actualY}
-                              r={isHovered ? 5.5 : 3.5}
-                              fill="#10b981"
-                              stroke="#ffffff"
-                              strokeWidth="1.5"
-                              className="transition-all"
-                            />
-                          )}
-
-                          {/* Forecast point marker */}
-                          <circle
-                            cx={pt.x}
-                            cy={pt.forecastY}
-                            r={isHovered ? 5.5 : 3.5}
-                            className="fill-slate-800 dark:fill-sky-400 stroke-white dark:stroke-slate-900 transition-all"
-                            strokeWidth="1.5"
-                          />
-
-                          {/* Invisible hover hitbox */}
-                          <rect
-                            x={pt.x - 15}
-                            y={padTop}
-                            width={30}
-                            height={plotHeight}
-                            fill="transparent"
-                          />
-                        </g>
-                      );
-                    })}
-
-                    {/* X-axis date labels */}
-                    {xPoints.map((pt, idx) => {
-                      // Show roughly 6-8 evenly spaced labels
-                      const stepMod = Math.max(1, Math.floor(xPoints.length / 7));
-                      if (idx % stepMod !== 0 && idx !== xPoints.length - 1) return null;
-                      return (
-                        <text
-                          key={idx}
-                          x={pt.x}
-                          y={svgHeight - 12}
-                          textAnchor="middle"
-                          className="text-[10px] fill-muted-foreground font-medium"
-                        >
-                          {pt.date}
-                        </text>
-                      );
-                    })}
-                  </svg>
-
-                  {/* Interactive Tooltip Card */}
-                  {hoverIndex !== null && xPoints[hoverIndex] && (
-                    <div
-                      className="absolute z-20 pointer-events-none p-3 rounded-xl bg-popover text-popover-foreground border border-border shadow-xl text-xs space-y-1 backdrop-blur-md"
-                      style={{
-                        left: `${Math.min(Math.max(xPoints[hoverIndex].x - 60, 20), svgWidth - 180)}px`,
-                        top: "20px",
-                      }}
-                    >
-                      <p className="font-bold text-foreground border-b border-border pb-1">
-                        Period: {xPoints[hoverIndex].date}
-                      </p>
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-emerald-500 font-medium">Actual:</span>
-                        <span className="font-semibold">
-                          {formatNumber(xPoints[hoverIndex].actualVal)}
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-slate-800 dark:text-sky-400 font-medium">Forecast:</span>
-                        <span className="font-semibold">
-                          {formatNumber(xPoints[hoverIndex].forecastVal)}
-                        </span>
-                      </div>
-                      {xPoints[hoverIndex].actualVal !== null && (
-                        <div className="flex items-center justify-between gap-4 pt-1 border-t border-border/50 text-[11px]">
-                          <span className="text-muted-foreground">Variance:</span>
-                          <span
-                            className={
-                              (xPoints[hoverIndex].forecastVal - (xPoints[hoverIndex].actualVal || 0)) >= 0
-                                ? "text-amber-500 font-semibold"
-                                : "text-emerald-500 font-semibold"
-                            }
-                          >
-                            {(xPoints[hoverIndex].forecastVal - (xPoints[hoverIndex].actualVal || 0)) > 0 ? "+" : ""}
-                            {formatNumber(xPoints[hoverIndex].forecastVal - (xPoints[hoverIndex].actualVal || 0))}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </div>
+            {/* Middle Section: ApexCharts Zoomable Timeseries Line Chart */}
+            <div className="p-5 select-none">
+              {!isClassification && dates.length > 0 ? (
+                <ModelValidationApexChart
+                  candidates={candidates}
+                  activeCandidate={activeCandidate}
+                  championModelId={championModelId}
+                  frequency={frequencyInput}
+                  isClassification={isClassification}
+                />
               ) : isClassification ? (
                 <div className="p-6 rounded-xl bg-card border border-border/60">
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-border/60">
