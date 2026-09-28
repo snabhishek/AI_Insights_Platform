@@ -1,3 +1,4 @@
+import { setMaxListeners } from "events";
 import { MemorySaver } from "@langchain/langgraph";
 import { ConnectorService } from "../../connector/connector.service";
 import { ConnectionTesterService } from "../../connector/connectionTester.service";
@@ -351,6 +352,11 @@ export class IngestionAgentService implements IIngestionAgentService {
       this.pausedSessions.delete(threadId);
       this.activeRuns.set(threadId, { threadId, projectId: options?.projectId, startedAt: runStartedAt });
       const sessionAbortController = new AbortController();
+      try {
+        setMaxListeners(100, sessionAbortController.signal);
+      } catch (listenerErr) {
+        // Defensive guard in case runtime environment lacks setMaxListeners on EventTarget
+      }
       this.sessionAbortControllers.set(threadId, sessionAbortController);
 
       // Populate services dependencies context to pass inside LangGraph config
@@ -2067,6 +2073,7 @@ export class IngestionAgentService implements IIngestionAgentService {
           throw err;
         } finally {
           this.activeRuns.delete(threadId);
+          this.sessionAbortControllers.delete(threadId);
           agentJobEvents.emit(`job:close:${threadId}`);
         }
       };

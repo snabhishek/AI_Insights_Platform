@@ -129,13 +129,14 @@ export async function initializeDatabaseSchemas() {
     `);
     await query(`
       CREATE INDEX IF NOT EXISTS project_runs_project_id_idx ON project_runs (project_id);
+      CREATE INDEX IF NOT EXISTS project_runs_status_idx ON project_runs (status);
     `);
 
     // Startup sanitization: any workflow left in 'running' state from previous process crash/restart is marked 'stopped'
     try {
       await query(`
         UPDATE projects SET status = 'stopped' WHERE status = 'running';
-        UPDATE project_runs SET status = 'stopped', agent_state = jsonb_set(agent_state, '{status}', '"stopped"') WHERE status = 'running' OR agent_state->>'status' = 'running';
+        UPDATE project_runs SET status = 'stopped', agent_state = jsonb_set(agent_state, '{status}', '"stopped"') WHERE status = 'running';
       `);
     } catch (cleanErr: any) {
       console.warn("[DB] Startup sanitization warning:", cleanErr?.message || cleanErr);
