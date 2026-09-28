@@ -175,7 +175,7 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     },
     fallbackOutput,
     services,
-    2,
+    20,
     "Ensure all 17 sections of TrainingJobContract are populated, split ratios sum to 1.0, primary metric is specified, and hyperparameter search space covers all candidate models.",
     (result: any) => TrainingConfigValidator.validate(result?.configuration || result)
   );

@@ -336,9 +336,9 @@ export default function WorkflowPipeline({
                   if (approvalNextStep?.toLowerCase().includes("validation")) {
                     buttonLabel = "Review & Validate Models";
                   } else if (approvalNextStep?.toLowerCase().includes("flight")) {
-                    buttonLabel = "Review Pre-Flight Check";
-                  } else if (approvalNextStep?.toLowerCase().includes("training")) {
                     buttonLabel = "Review Training Configuration";
+                  } else if (approvalNextStep?.toLowerCase().includes("training")) {
+                    buttonLabel = "Select & Confirm Models";
                   }
 
                   return (

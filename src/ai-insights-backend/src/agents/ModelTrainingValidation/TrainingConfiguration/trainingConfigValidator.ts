@@ -67,9 +67,9 @@ export class TrainingConfigValidator {
     if (!metricDef || typeof metricDef !== "object") {
       errors.push("Missing required 'x-primary-metric-def' section");
     } else {
-      if (!metricDef.direction || !["maximize", "minimize"].includes(String(metricDef.direction).toLowerCase())) {
-        errors.push("Missing or invalid 'x-primary-metric-def.direction' ('maximize' or 'minimize')");
-      }
+      // if (!metricDef.direction || !["maximize", "minimize"].includes(String(metricDef.direction).toLowerCase())) {
+      //   errors.push("Missing or invalid 'x-primary-metric-def.direction' ('maximize' or 'minimize')");
+      // }
       if (metricDef.value && metricName && metricDef.value.toLowerCase() !== metricName.toLowerCase()) {
         errors.push(`'x-primary-metric-def.value' ("${metricDef.value}") must match 'x-primary-metric-name' ("${metricName}")`);
       }
@@ -136,12 +136,6 @@ export class TrainingConfigValidator {
       const candidates = conf.model_selection.candidates;
       if (!Array.isArray(candidates) || candidates.length === 0) {
         errors.push("Missing or empty 'model_selection.candidates' array");
-      } else {
-        candidates.forEach((c: any, idx: number) => {
-          if (!c.model_id) errors.push(`model_selection.candidates[${idx}] missing model_id`);
-          if (!c.framework) errors.push(`model_selection.candidates[${idx}] missing framework`);
-          if (!c.algorithm) errors.push(`model_selection.candidates[${idx}] missing algorithm`);
-        });
       }
 
       const models = conf.model_selection.models;

@@ -240,19 +240,12 @@ export default function CardModal({
     );
   }
 
-  const getWorkflowStageStatus = (stage: string) => {
-    if (pipelineStatuses[stage] !== "Completed" && runStatus === "Stopped") {
-      return "Stopped";
-    }
-    return pipelineStatuses[stage];
-  }
-
   // Check if output is received for the active step (provided as prop by parent)
   const stepOutputContent = activeStep ? stepOutputs[activeStep.id] : null;
   const hasOutput = stepOutputContent !== undefined && stepOutputContent !== null;
 
   // Helper to check overall workflow status
-  const cardStatus = getWorkflowStageStatus(workflowCard.id);
+  const cardStatus = pipelineStatuses[workflowCard.id] ?? "Pending";
 
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-3 bg-slate-950/50 backdrop-blur-md animate-fade-in select-none">
