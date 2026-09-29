@@ -275,7 +275,10 @@ export default function WorkflowPipeline({
     }
   };
 
-  const getWorkflowStageStatus = (stage: string) => {
+  const getWorkflowStageStatus = (stage: string): PipelineStatus => {
+    if (mainStatusMap[stage] === "Pending" && runStatus ==="Idle") {
+      return "None"
+    }
     if (mainStatusMap[stage] !== "Completed" && runStatus === "Stopped") {
       return "Stopped";
     }

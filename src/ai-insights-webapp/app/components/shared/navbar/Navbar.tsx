@@ -43,6 +43,18 @@ const NAV_ITEMS: NavItem[] = [
       </svg>
     ),
   },
+  {
+    id: "ai-agent-chat",
+    label: "AI Agent Chat",
+    icon: (
+      <svg {...iconProps}>
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        <circle cx="9" cy="10" r="1" fill="currentColor" />
+        <circle cx="12" cy="10" r="1" fill="currentColor" />
+        <circle cx="15" cy="10" r="1" fill="currentColor" />
+      </svg>
+    ),
+  },
 ];
 
 export default function Navbar({ useTab }: { useTab: <T>(tab: T) => any}) {

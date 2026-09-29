@@ -214,11 +214,9 @@ export default function ProjectDetailPage({
         <div className="grid grid-cols-1 lg:grid-cols-12 items-start gap-3">
 
           {/* Left Column: Data Sources & Use Case — flat, no card wrappers */}
-          <div className="col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-3">
+          {/* <div className="col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-3">
 
-            {/* ── Data Sources Section ── */}
             <div className="border border-border rounded-lg shadow-sm bg-background p-5">
-              {/* Header with divider */}
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
                 <div>
                   <h2 className="text-base font-bold text-foreground leading-tight">
@@ -302,9 +300,7 @@ export default function ProjectDetailPage({
               </div>
             </div>
 
-            {/* ── Use Case Section ── */}
             <div className="border border-border rounded-lg shadow-sm bg-background p-5">
-              {/* Header with divider */}
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
                 <h2 className="text-base font-bold text-foreground leading-tight">Project Use Case</h2>
                 {!isEditingUseCase && (
@@ -369,7 +365,7 @@ export default function ProjectDetailPage({
                 </p>
               )}
             </div>
-          </div>
+          </div> */}
 
           {/* Right Column: Workflow Pipeline */}
           <WorkflowPipeline

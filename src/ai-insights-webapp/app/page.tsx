@@ -4,6 +4,7 @@ import React from "react";
 import { createTabContext } from "./components/providers/TabProvider";
 import ProjectsPage from "./components/pages/ProjectsPage";
 import DataSourcePage from "./components/pages/DataSourcePage";
+import AIAgentChatPage from "./components/pages/AIAgentChatPage";
 import { PageType } from "./components/shared/constants";
 import Header from "./components/shared/header/Header";
 import Navbar from "./components/shared/navbar/Navbar";
@@ -16,7 +17,6 @@ export default function Home() {
       <TabProvider initialTab="projects">
         <Header />
         <Navbar useTab={useTab}/>
-        {/* Render content based on active tab */}
         <TabContent useTab={useTab}/>
       </TabProvider>
     </>
@@ -30,6 +30,8 @@ function TabContent({ useTab }: { useTab: <T>(tab: T) => any }) {
   switch (activeTab) {
     case "data-source":
       return <DataSourcePage />;
+    case "ai-agent-chat":
+      return <AIAgentChatPage />;
     case "switcher":
       return null;
     case "projects":
