@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import FilterForm from "../shared/FilterForm/FilterForm";
 import { FormSchema } from "../../hooks/useFilterForm";
-import { useApp, BACKEND_URL } from "../providers/AppContext";
+import { useApp, BACKEND_URL, Project } from "../providers/AppContext";
 
 interface ModernProjectSelectProps {
   projects: Array<{ id: string; name: string }>;
@@ -137,15 +137,21 @@ function extractFormSchemaFromState(state: any, project: any): FormSchema | null
   return null;
 }
 
-export default function ApplicationPage() {
+interface ApplicationPageProps {
+  project?: Project;
+}
+
+export default function ApplicationPage({ project: propProject }: ApplicationPageProps = {}) {
   const { projects } = useApp();
-  const [selectedProjectId, setSelectedProjectId] = useState<string>("");
+  const [selectedProjectId, setSelectedProjectId] = useState<string>(propProject?.id || "");
   const [activeSchema, setActiveSchema] = useState<FormSchema | null>(null);
   const [isLoadingSchema, setIsLoadingSchema] = useState<boolean>(false);
 
-  // Automatically select the first available project or sync when projects change
+  // Automatically select the project or sync when projects change
   useEffect(() => {
-    if (projects.length > 0) {
+    if (propProject?.id) {
+      setSelectedProjectId(propProject.id);
+    } else if (projects.length > 0) {
       if (!selectedProjectId || !projects.some((p) => p.id === selectedProjectId)) {
         setSelectedProjectId(projects[0].id);
       }
@@ -153,25 +159,20 @@ export default function ApplicationPage() {
       setSelectedProjectId("");
       setActiveSchema(null);
     }
-  }, [projects, selectedProjectId]);
+  }, [propProject?.id, projects, selectedProjectId]);
+
+  const currentProject = propProject || projects.find((p) => p.id === selectedProjectId);
 
   // Update active schema based on selected project with synchronous extraction and asynchronous backend fallback
   useEffect(() => {
-    if (!selectedProjectId) {
-      setActiveSchema(null);
-      setIsLoadingSchema(false);
-      return;
-    }
-
-    const project = projects.find((p) => p.id === selectedProjectId);
-    if (!project) {
+    if (!currentProject) {
       setActiveSchema(null);
       setIsLoadingSchema(false);
       return;
     }
 
     // 1. Try immediate synchronous extraction from in-memory project.agentState
-    const inMemorySchema = extractFormSchemaFromState(project.agentState, project);
+    const inMemorySchema = extractFormSchemaFromState(currentProject.agentState, currentProject);
     if (inMemorySchema) {
       setActiveSchema(inMemorySchema);
       setIsLoadingSchema(false);
@@ -183,17 +184,17 @@ export default function ApplicationPage() {
     setIsLoadingSchema(true);
 
     async function fetchFormSchema() {
-      const wsId = project!.workspaceId || "default";
+      const wsId = currentProject!.workspaceId || "default";
       try {
         // First try dedicated form-schema endpoint
-        const schemaRes = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${project!.id}/form-schema`);
+        const schemaRes = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${currentProject!.id}/form-schema`);
         if (schemaRes.ok) {
           const json = await schemaRes.json();
           if (json.success && json.schema && isMounted) {
             setActiveSchema({
-              sourceId: json.schema.sourceId || project!.dataSources?.[0] || "default_source",
-              projectId: project!.id,
-              projectName: project!.name,
+              sourceId: json.schema.sourceId || currentProject!.dataSources?.[0] || "default_source",
+              projectId: currentProject!.id,
+              projectName: currentProject!.name,
               filterGroups: json.schema.filterGroups || json.schema.forms || [],
               forms: json.schema.forms || json.schema.filterGroups || [],
             });
@@ -203,12 +204,12 @@ export default function ApplicationPage() {
         }
 
         // Second fallback: check historical project runs
-        const runsRes = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${project!.id}/runs`);
+        const runsRes = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${currentProject!.id}/runs`);
         if (runsRes.ok) {
           const runs: any[] = await runsRes.json();
           if (Array.isArray(runs) && runs.length > 0) {
             for (const run of runs) {
-              const runSchema = extractFormSchemaFromState(run.agentState, project);
+              const runSchema = extractFormSchemaFromState(run.agentState, currentProject);
               if (runSchema && isMounted) {
                 setActiveSchema(runSchema);
                 setIsLoadingSchema(false);
@@ -232,15 +233,15 @@ export default function ApplicationPage() {
     return () => {
       isMounted = false;
     };
-  }, [selectedProjectId, projects]);
+  }, [currentProject?.id, currentProject?.agentState]);
 
   const hasDesignedForm =
     activeSchema && Array.isArray(activeSchema.filterGroups) && activeSchema.filterGroups.length > 0;
 
   return (
-    <main className="min-h-screen bg-background/50 p-6 md:p-8 space-y-6">
-      {/* Top Bar: Left-Aligned Modern Project Selector */}
-      {projects.length > 0 && (
+    <main className="min-h-full bg-background/50 p-6 md:p-8 space-y-6">
+      {/* Top Bar: Left-Aligned Modern Project Selector if not scoped to a propProject */}
+      {!propProject && projects.length > 0 && (
         <div className="flex items-center justify-between pb-2 border-b border-border/80">
           <ModernProjectSelect
             projects={projects}

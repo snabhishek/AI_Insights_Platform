@@ -5,6 +5,7 @@ import { DataSource, Project, UserProfile } from "../providers/AppContext";
 import { PipelineStatuses, RunStatus } from "./types";
 import ProjectCreatePage from "./ProjectCreatePage";
 import ProjectDetailPage from "./ProjectDetailPage";
+import ApplicationPage from "../pages/ApplicationPage";
 import { createTabContext } from "../providers/TabProvider";
 import { ProjectTabType } from "../shared/constants";
 
@@ -169,6 +170,32 @@ function ProjectWorkspaceContent({
               </span>
             )}
           </button>
+
+          {/* Tab 3: Application */}
+          <button
+            type="button"
+            disabled={!project}
+            onClick={() => {
+              if (project) {
+                handleTabChange("application");
+              }
+            }}
+            title={!project ? "Save the project first to access the Application" : "View Project Application"}
+            className={`py-2 px-2 text-xs font-bold border-b-2 transition-all flex items-center gap-2 ${
+              !project
+                ? "border-transparent opacity-40 cursor-not-allowed text-muted-foreground"
+                : activeTab === "application"
+                ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold cursor-pointer"
+                : "border-transparent text-muted-foreground hover:text-foreground cursor-pointer"
+            }`}
+          >
+            <span>Application</span>
+            {!project && (
+              <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-surface-muted text-muted-foreground border border-border">
+                Disabled
+              </span>
+            )}
+          </button>
         </div>
 
         {/* Right Action: Back to Projects list
@@ -186,7 +213,7 @@ function ProjectWorkspaceContent({
 
       {/* Tab Content */}
       <div className="flex-1 w-full">
-        {activeTab === "project-detail" || !project ? (
+        {!project || activeTab === "project-detail" ? (
           <ProjectCreatePage
             dataSources={dataSources}
             project={project}
@@ -196,7 +223,7 @@ function ProjectWorkspaceContent({
             onUpdate={onUpdateProject}
             onAddDataSource={onAddDataSource}
           />
-        ) : (
+        ) : activeTab === "workflow" ? (
           <ProjectDetailPage
             project={project}
             allDataSources={dataSources}
@@ -235,6 +262,8 @@ function ProjectWorkspaceContent({
             agentThinking={agentThinking}
             showAlert={showAlert}
           />
+        ) : (
+          <ApplicationPage project={project} />
         )}
       </div>
     </div>
