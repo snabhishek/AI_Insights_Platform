@@ -117,6 +117,11 @@ export class ModelSelectionValidator {
             );
           }
         }
+
+        // Validate source metadata format if provided
+        if (candidate.source_type && candidate.source_type !== "external" && candidate.source_type !== "builtin") {
+          errors.push(`Candidate "${id}" source_type must be "external" or "builtin", received: "${candidate.source_type}"`);
+        }
       });
 
       // Exactly one candidate must be primary

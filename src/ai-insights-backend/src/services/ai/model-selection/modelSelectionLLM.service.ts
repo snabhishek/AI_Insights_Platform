@@ -114,6 +114,11 @@ export class ModelSelectionLLMService implements IModelSelectionLLMService {
           strengths: m.strengths,
           weaknesses: m.weaknesses,
           isBaseline: m.isBaseline,
+          source: m.source || "web_search",
+          sourceType: m.sourceType || m.sourceTypeId || "external",
+          repositoryUrl: m.repositoryUrl,
+          version: m.version,
+          license: m.license,
         })),
       },
       null,
@@ -144,6 +149,9 @@ Ensure you output valid JSON matching this schema:
     "suitability_score": 0.95,
     "recommendation": "primary",
     "displayName": "Display Name",
+    "source": "dynamic source name / domain (e.g. huggingface.co, github.com, or provider)",
+    "source_type": "external | builtin",
+    "repository_url": "https://... or null",
     "reasoning": {
       "strengths": ["strength 1", "strength 2"],
       "weaknesses": ["tradeoff 1"],
@@ -155,8 +163,11 @@ Ensure you output valid JSON matching this schema:
       "model_id": "model_id",
       "rank": 1,
       "suitability_score": 0.95,
-      "recommendation": "primary",
+      "recommendation": "primary | alternative",
       "displayName": "Display Name",
+      "source": "dynamic source name / domain",
+      "source_type": "external | builtin",
+      "repository_url": "https://... or null",
       "reasoning": {
         "strengths": ["strength 1", "strength 2"],
         "weaknesses": ["tradeoff 1"],
@@ -315,13 +326,32 @@ Ensure you output valid JSON matching this schema:
         suitability: Array.isArray(c.reasoning?.suitability) ? c.reasoning.suitability : Array.isArray(c.suitability) ? c.suitability : ["Selected based on dataset grain and feature characteristics."],
       };
 
+      const matchedModel = availableModels.find((m) => m.modelId.toLowerCase() === modelId.toLowerCase());
+      const sourceTypeId = c.source_type_id || (c.source_type === "builtin" ? "builtin" : "external") || matchedModel?.sourceTypeId || "external";
+      const source = c.source || matchedModel?.source || "web_search";
+      const repositoryUrl = c.repository_url || c.repositoryUrl || matchedModel?.repositoryUrl || null;
+      const repositoryId = c.repository_id || c.repositoryId || matchedModel?.repositoryId || null;
+      const version = c.version || matchedModel?.version || null;
+      const license = c.license || matchedModel?.license || null;
+      const discoveredAt = c.discovered_at || c.discoveredAt || matchedModel?.discoveredAt || new Date().toISOString();
+
       candidates.push({
         model_id: modelId,
         rank,
         suitability_score: suitabilityScore,
         recommendation: recommendation as "primary" | "alternative",
-        displayName: c.displayName || c.name || modelId,
+        displayName: c.displayName || c.name || matchedModel?.displayName || modelId,
+        framework: c.framework || matchedModel?.framework || "custom",
+        algorithm: c.algorithm || matchedModel?.algorithm || modelId,
         reasoning,
+        source_type_id: sourceTypeId,
+        source_type: sourceTypeId === "builtin" ? "builtin" : "external",
+        source,
+        repository_url: repositoryUrl,
+        repository_id: repositoryId,
+        version,
+        license,
+        discovered_at: discoveredAt,
       });
     }
 
@@ -334,11 +364,21 @@ Ensure you output valid JSON matching this schema:
           suitability_score: Math.max(0.92 - idx * 0.05, 0.6),
           recommendation: idx === 0 ? "primary" : "alternative",
           displayName: m.displayName,
+          framework: m.framework,
+          algorithm: m.algorithm,
           reasoning: {
             strengths: m.strengths,
             weaknesses: m.weaknesses,
-            suitability: ["Default baseline candidate from platform catalog."],
+            suitability: ["Candidate from dynamic discovery catalog."],
           },
+          source_type_id: m.sourceTypeId || "external",
+          source_type: m.sourceType || "external",
+          source: m.source || "web_search",
+          repository_url: m.repositoryUrl || null,
+          repository_id: m.repositoryId || null,
+          version: m.version || null,
+          license: m.license || null,
+          discovered_at: m.discoveredAt || new Date().toISOString(),
         });
       });
     }
@@ -360,14 +400,30 @@ Ensure you output valid JSON matching this schema:
         recommendation: "primary",
         displayName: rawRec.displayName || primaryCandidate.displayName,
         reasoning: primaryCandidate.reasoning,
+        source_type_id: primaryCandidate.source_type_id,
+        source_type: primaryCandidate.source_type,
+        source: primaryCandidate.source,
+        repository_url: primaryCandidate.repository_url,
+        repository_id: primaryCandidate.repository_id,
+        version: primaryCandidate.version,
+        license: primaryCandidate.license,
+        discovered_at: primaryCandidate.discovered_at,
       };
     } else {
+      const topModel = availableModels[0];
       recommended_model = {
-        model_id: availableModels[0]?.modelId || "lightgbm_classifier",
+        model_id: topModel?.modelId || "explored_classifier",
         rank: 1,
         suitability_score: 0.92,
         recommendation: "primary",
-        displayName: availableModels[0]?.displayName || "LightGBM",
+        displayName: topModel?.displayName || "Explored Classifier",
+        source_type_id: topModel?.sourceTypeId || "external",
+        source_type: topModel?.sourceType || "external",
+        source: topModel?.source || "web_search",
+        repository_url: topModel?.repositoryUrl || null,
+        repository_id: topModel?.repositoryId || null,
+        version: topModel?.version || null,
+        license: topModel?.license || null,
       };
     }
 

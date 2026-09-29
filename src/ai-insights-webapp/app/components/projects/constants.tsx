@@ -151,8 +151,9 @@ export const PIPELINE_STEPS: Workflow[] = [
     step: [
       { id: "Model Selection", title: "Model Selection", description: "Initialize model selection and select candidates", metric: "Select", color: "purple", icon: <span>01</span> },
       { id: "Training Configuration", title: "Training Configuration", description: "Configure training environment and dataset splits", metric: "Configure", color: "pink", icon: <span>02</span> },
-      { id: "Model Training", title: "Model Training", description: "Train candidate models from the validated feature dataset", metric: "Train", color: "pink", icon: <span>03</span> },
-      { id: "Model Validation", title: "Model Validation", description: "Validate the leading model on held-out data", metric: "Validate", color: "teal", icon: <span>04</span> },
+      { id: "Pre Flight", title: "Pre Flight", description: "Validate runtime resources, environment and strategy pre-flight", metric: "Validate", color: "pink", icon: <span>03</span> },
+      { id: "Model Training", title: "Model Training", description: "Train candidate models from the validated feature dataset", metric: "Train", color: "pink", icon: <span>04</span> },
+      { id: "Model Validation", title: "Model Validation", description: "Validate the leading model on held-out data", metric: "Validate", color: "teal", icon: <span>05</span> },
     ],
   },
 ];
@@ -164,6 +165,7 @@ export const INITIAL_PIPELINE_STATUSES: Record<string, "Not Started"> = {
   "Feature Engineering": "Not Started",
   "Model Selection": "Not Started",
   "Training Configuration": "Not Started",
+  "Pre Flight": "Not Started",
   "Model Training": "Not Started",
   "Model Validation": "Not Started",
 };

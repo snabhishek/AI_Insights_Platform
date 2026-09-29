@@ -119,7 +119,8 @@ export async function featureValidatorNode(
           }
         ),
       fallback,
-      services
+      services,
+      3
     );
 
     return {

@@ -50,6 +50,7 @@ Return valid **JSON ONLY** with no surrounding prose or markdown ticks. Conform 
 {
   "status": "OK",
   "rectifiedCode": "def main(): ... (the corrected, ready-to-run python script)",
+  "requiredPackages": ["pandas", "numpy", "scikit-learn", "pyyaml"],
   "explanation": "Brief explanation of what caused the error and how you fixed it."
 }
 ```

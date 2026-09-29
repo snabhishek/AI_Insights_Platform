@@ -10,6 +10,7 @@ export default function createWorkspaceRouter(controller: WorkspaceController): 
 
   router.get("/:id/projects", controller.getProjectsByWorkspace);
   router.get("/:id/projects/:pid", controller.getProjectById);
+  router.get("/:id/projects/:pid/form-schema", controller.getProjectFormSchema);
   router.post("/:id/projects", controller.createProject);
   router.put("/:id/projects/:pid", controller.updateProject);
   router.get("/:id/projects/:pid/runs", controller.getProjectRuns);

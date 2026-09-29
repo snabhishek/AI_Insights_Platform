@@ -1,4 +1,7 @@
+import * as fs from "fs";
+import * as path from "path";
 import { RunnableConfig } from "@langchain/core/runnables";
+import { getProjectSchemasDir } from "../../../config/fileServer.config";
 import { AgentState, IngestionServices } from "../../state";
 import {
   createFetchSampleDataTool,
@@ -145,7 +148,8 @@ export async function profileData(connector: any, inspection: Record<string, unk
           }
         ),
       fallback,
-      services
+      services,
+      3
     );
     await logMilestoneThinking(services, "Data Profiling", `Data profiling successfully completed for ${tableNames.length} tables.`);
 
@@ -227,6 +231,35 @@ export async function profilerNode(state: typeof AgentState.State, config?: Runn
       "Table data profile completed"
     )
   );
+  // Persist profiling results as JSON in project schemas directory
+  try {
+    if (services.projectService && services.projectId) {
+      const pWs = await services.projectService.getProjectWithWorkspace(services.projectId);
+      if (pWs?.project) {
+        const workspaceName = pWs.workspaceName || "DefaultWorkspace";
+        const projectName = pWs.project.name;
+        const timestamp = state.runTimestamp || new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "").replace("T", "-");
+        const schemasDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
+        await fs.promises.mkdir(schemasDir, { recursive: true });
+
+        const reportContent = JSON.stringify({
+          sources: profileSources,
+          generatedAt: new Date().toISOString(),
+          runTimestamp: timestamp,
+        }, null, 2);
+
+        await fs.promises.writeFile(path.join(schemasDir, "profiling_report.json"), reportContent, "utf-8");
+        await fs.promises.writeFile(path.join(schemasDir, `profiling_report_${timestamp}.json`), reportContent, "utf-8");
+
+        const globalSchemasDir = getProjectSchemasDir(workspaceName, projectName);
+        await fs.promises.mkdir(globalSchemasDir, { recursive: true });
+        await fs.promises.writeFile(path.join(globalSchemasDir, "profiling_report.json"), reportContent, "utf-8");
+      }
+    }
+  } catch (err: any) {
+    console.warn("[profilerNode] Warning persisting profiling_report.json to schemas folder:", err?.message || err);
+  }
+
   return {
     dataProfile: { sources: profileSources },
     batchedTables: updatedBatchedTables,

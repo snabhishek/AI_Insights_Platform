@@ -91,12 +91,13 @@ export const createGetTableColumnsAndProfileTool = (
  */
 export const createRunPythonScriptTool = (
   projectId: string,
+  workspaceName: string,
   runTimestamp: string,
   services: any,
   connectorId: string[]
 ) =>
   tool(
-    async ({ scriptName, code }: { scriptName: string; code: string }) => {
+    async ({ scriptName, code, requiredPackages }: { scriptName: string; code: string; requiredPackages?: string[] }) => {
       try {
         const result = await executePythonScript(
           scriptName,
@@ -104,7 +105,8 @@ export const createRunPythonScriptTool = (
           projectId || "default",
           runTimestamp || "default",
           services,
-          connectorId
+          connectorId,
+          requiredPackages
         );
         return {
           success: result.success,
@@ -125,6 +127,7 @@ export const createRunPythonScriptTool = (
       schema: z.object({
         scriptName: z.string().describe("The filename of the Python script to write and execute (e.g., 'feature_creation.py')."),
         code: z.string().describe("The full content of the Python code to run."),
+        requiredPackages: z.array(z.string()).optional().describe("List of pip packages required to execute the Python script (e.g., ['pandas', 'scikit-learn', 'duckdb'])."),
       }),
     }
   );
@@ -227,7 +230,7 @@ export function makePipelineTemplate(scriptName: string): string {
     "    args, _ = parser.parse_known_args()",
     "    db_path = args.db_path",
     "    split = args.split",
-    "    out_dir = args.out_dir or db_path",
+    "    out_dir = args.out_dir or '.'",
     "    output_path = args.output_path or os.path.join(out_dir, 'dataset.parquet')",
     "    metadata_path = args.metadata_path or os.path.join(out_dir, 'metadata.yaml')",
     "    features_path = args.features_path or os.path.join(out_dir, 'order_features.parquet')",
@@ -235,7 +238,7 @@ export function makePipelineTemplate(scriptName: string): string {
     "",
     "    if 'main_feature_creation' in dir():",
     "        print('=== [1/7] Running Feature Creation ===')",
-    "        main_feature_creation(['--db-path', db_path])",
+    "        main_feature_creation(['--db-path', db_path, '--out-dir', out_dir])",
     "",
     "    if 'main_feature_transformation' in dir():",
     "        print('=== [2/7] Running Feature Transformation ===')",
@@ -251,7 +254,7 @@ export function makePipelineTemplate(scriptName: string): string {
     "",
     "    if 'main_feature_extraction' in dir():",
     "        print('=== [5/7] Running Feature Extraction ===')",
-    "        main_feature_extraction(['--db-path', db_path])",
+    "        main_feature_extraction(['--db-path', db_path, '--out-dir', out_dir])",
     "",
     "    if 'main_feature_selection' in dir():",
     "        print('=== [6/7] Running Feature Selection ===')",

@@ -1,70 +1,79 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { CheerioWebBaseLoader } from "@langchain/community/document_loaders/web/cheerio";
+import { chromium, Browser } from "playwright";
 
 /**
  * Creates the extract_url_content tool for AI Agents.
- * Uses CheerioWebBaseLoader with fallback HTTP fetch sanitization to extract text from URL links.
+ * Uses Playwright headless Chromium exclusively to execute client-side JavaScript,
+ * ensuring dynamic content (e.g., Hugging Face model cards, tags, GitHub READMEs, SPA pages)
+ * is fully rendered and extracted.
  */
 export const createExtractUrlContentTool = () => {
   return tool(
     async (arg: { url: string; maxChars?: number }) => {
+      const rawUrl = typeof arg === "string" ? arg : arg?.url;
+      if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
+        return "Please provide a valid HTTP/HTTPS URL.";
+      }
+
+      const trimmedUrl = rawUrl.trim();
+      if (!/^https?:\/\//i.test(trimmedUrl)) {
+        return `Invalid URL protocol: "${trimmedUrl}". URL must start with http:// or https://`;
+      }
+
+      const maxChars =
+        typeof arg === "object" && typeof arg?.maxChars === "number" && arg.maxChars > 0
+          ? arg.maxChars
+          : 6000;
+
+      let browser: Browser | null = null;
       try {
-        const rawUrl = typeof arg === "string" ? arg : arg?.url;
-        if (!rawUrl || typeof rawUrl !== "string" || !rawUrl.trim()) {
-          return "Please provide a valid HTTP/HTTPS URL.";
-        }
+        browser = await chromium.launch({
+          headless: true,
+          args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
+        });
 
-        const trimmedUrl = rawUrl.trim();
-        if (!/^https?:\/\//i.test(trimmedUrl)) {
-          return `Invalid URL protocol: "${trimmedUrl}". URL must start with http:// or https://`;
-        }
+        const context = await browser.newContext({
+          userAgent:
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+          viewport: { width: 1280, height: 800 },
+        });
 
-        const maxChars =
-          typeof arg === "object" && typeof arg?.maxChars === "number" && arg.maxChars > 0
-            ? arg.maxChars
-            : 4000;
+        const page = await context.newPage();
 
-        let textContent = "";
+        // Navigate to the URL and wait for DOM loaded
+        await page.goto(trimmedUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: 25000,
+        });
 
-        // 1. Try CheerioWebBaseLoader first
+        // Wait for dynamic JavaScript rendering/hydration
         try {
-          const loader = new CheerioWebBaseLoader(trimmedUrl);
-          const docs = await loader.load();
-          if (Array.isArray(docs) && docs.length > 0) {
-            textContent = docs.map((d) => d.pageContent || "").join("\n\n").trim();
-          }
-        } catch (loaderErr: any) {
-          // Cheerio loader failed (e.g. anti-scraping, custom headers needed), proceed to fallback
+          await page.waitForLoadState("networkidle", { timeout: 7000 });
+        } catch {
+          // If networkidle times out (common on pages with continuous telemetry), proceed with rendered DOM
         }
 
-        // 2. Fallback HTTP fetch if Cheerio loader produced empty output
-        if (!textContent) {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), 10000);
+        // Extract fully rendered text from the dynamic DOM
+        const textContent = await page.evaluate(() => {
+          const doc = (globalThis as any).document;
+          if (!doc) return "";
 
-          try {
-            const response = await fetch(trimmedUrl, {
-              signal: controller.signal,
-              headers: {
-                "User-Agent":
-                  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-                Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,text/plain;q=0.8,*/*;q=0.5",
-              },
-            });
-            clearTimeout(timeoutId);
+          // Remove non-content elements
+          const elementsToRemove = doc.querySelectorAll(
+            "script, style, noscript, svg, nav, footer, header, iframe"
+          );
+          elementsToRemove.forEach((el: any) => el.remove());
 
-            if (!response.ok) {
-              return `Failed to fetch URL ${trimmedUrl}. HTTP status: ${response.status} ${response.statusText}`;
-            }
+          // Prefer main article or readme containers if present
+          const contentContainer =
+            doc.querySelector("article") ||
+            doc.querySelector(".markdown-body") ||
+            doc.querySelector("main") ||
+            doc.body;
 
-            const html = await response.text();
-            textContent = cleanHtmlToText(html);
-          } catch (fetchErr: any) {
-            clearTimeout(timeoutId);
-            return `Error fetching URL ${trimmedUrl}: ${fetchErr?.message || String(fetchErr)}`;
-          }
-        }
+          return contentContainer ? (contentContainer.innerText || contentContainer.textContent || "") : (doc.body?.innerText || "");
+        });
 
         if (!textContent || textContent.trim().length === 0) {
           return `No readable text content could be extracted from URL: ${trimmedUrl}`;
@@ -81,47 +90,31 @@ export const createExtractUrlContentTool = () => {
 
         return cleanedText;
       } catch (error: any) {
-        return `Error extracting content from URL: ${error?.message || String(error)}`;
+        console.error(`[extractUrlContent] Playwright extraction failed for ${trimmedUrl}:`, error?.message || error);
+        return `Error extracting content from URL via Playwright: ${error?.message || String(error)}`;
+      } finally {
+        if (browser) {
+          try {
+            await browser.close();
+          } catch {
+            // Ignore close errors
+          }
+        }
       }
     },
     {
       name: "extract_url_content",
       description:
-        "Extract readable text content from web page URLs (e.g., links obtained from web_search) to analyze documentation, dataset sources, or domain articles.",
+        "Extract readable text content from web page URLs (e.g., links obtained from web_search) using a headless browser to capture JavaScript-rendered content such as Hugging Face model cards, tags, GitHub repositories, documentation, and benchmark leaderboards.",
       schema: z.object({
         url: z.string().describe("The HTTP or HTTPS URL to extract readable text content from"),
         maxChars: z
           .number()
           .optional()
-          .describe("Optional maximum character length of the extracted text (default: 4000)"),
+          .describe("Optional maximum character length of the extracted text (default: 6000)"),
       }),
     }
   );
 };
 
 export const extractUrlContentTool = createExtractUrlContentTool();
-
-/**
- * Strips HTML tags, non-content elements, and decodes HTML entities to return clean body text.
- */
-function cleanHtmlToText(html: string): string {
-  if (!html) return "";
-  let text = html;
-  text = text.replace(/<script\b[^<]*?>[\s\S]*?<\/script>/gi, "");
-  text = text.replace(/<style\b[^<]*?>[\s\S]*?<\/style>/gi, "");
-  text = text.replace(/<noscript\b[^<]*?>[\s\S]*?<\/noscript>/gi, "");
-  text = text.replace(/<svg\b[^<]*?>[\s\S]*?<\/svg>/gi, "");
-  text = text.replace(/<header\b[^<]*?>[\s\S]*?<\/header>/gi, "");
-  text = text.replace(/<footer\b[^<]*?>[\s\S]*?<\/footer>/gi, "");
-  text = text.replace(/<nav\b[^<]*?>[\s\S]*?<\/nav>/gi, "");
-  text = text.replace(/<(?:p|div|br|h[1-6]|li)\b[^>]*>/gi, "\n");
-  text = text.replace(/<[^>]+>/g, "");
-  text = text
-    .replace(/&amp;/g, "&")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&nbsp;/g, " ");
-  return text;
-}

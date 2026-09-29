@@ -26,6 +26,8 @@ interface WorkflowPipelineProps {
   onPause?: () => void;
   onResume?: () => void;
   isApproving?: boolean;
+  isAwaitingResponse?: boolean;
+  approvalNextStep?: string | null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -161,45 +163,9 @@ function getStageTitle(stepId: string): string {
 }
 
 // Data-driven map associating internal stage/sub-step keys to top-level pipeline card IDs
-const MAIN_STEP_MAPPING: Record<string, string> = {
-  "Data Inspection": "Data Ingestion",
-  "Data Ingestion": "Data Ingestion",
-  "Data Profiling": "Data Ingestion",
-  "Schema Resolver": "Data Ingestion",
-  "inspect": "Data Ingestion",
-  "profileData": "Data Ingestion",
-  "preprocess": "Data Ingestion",
-  "resolveSchema": "Data Ingestion",
-  "Exogenous Scout": "Feature Engineering",
-  "exogenousScout": "Feature Engineering",
-  "exogenous": "Feature Engineering",
-  "Hierarchy Mapper": "Feature Engineering",
-  "hierarchyMapper": "Feature Engineering",
-  "hierarchyMapperNode": "Feature Engineering",
-  "Feature Architect": "Feature Engineering",
-  "featureArchitect": "Feature Engineering",
-  "featureArchitectNode": "Feature Engineering",
-  "Feature Validator": "Feature Engineering",
-  "featureValidator": "Feature Engineering",
-  "featureValidatorNode": "Feature Engineering",
-  "Feature Engineering": "Feature Engineering",
-  "Training Configuration": "Model Training & Validation",
-  "trainingConfiguration": "Model Training & Validation",
-  "trainingConfigurationNode": "Model Training & Validation",
-  "Model Training": "Model Training & Validation",
-  "modelTraining": "Model Training & Validation",
-  "modelTrainingNode": "Model Training & Validation",
-  "Model Evaluation": "Model Training & Validation",
-  "modelEvaluation": "Model Training & Validation",
-  "modelEvaluationNode": "Model Training & Validation",
-  "Model Validation": "Model Training & Validation",
-  "modelValidation": "Model Training & Validation",
-  "modelValidationNode": "Model Training & Validation",
-  "Model Selection": "Model Training & Validation",
-  "modelSelection": "Model Training & Validation",
-  "modelSelectionNode": "Model Training & Validation",
-  "Model Training & Validation": "Model Training & Validation",
-};
+import { SUBSTEP_TO_PIPELINE_MAP } from "./pipelineFlowConfig";
+
+const MAIN_STEP_MAPPING = SUBSTEP_TO_PIPELINE_MAP;
 
 const DEFAULT_MAIN_STEP_ID = "Data Ingestion";
 const DATA_INGESTION_SUBSTEPS = ["Data Inspection", "Data Profiling", "Schema Resolver"] as const;
@@ -220,6 +186,8 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
     pipelineStatuses["Model Selection"] === "In Progress" ||
     pipelineStatuses["Training Configuration"] === "Completed" ||
     pipelineStatuses["Training Configuration"] === "In Progress" ||
+    pipelineStatuses["Pre Flight"] === "Completed" ||
+    pipelineStatuses["Pre Flight"] === "In Progress" ||
     pipelineStatuses["Model Training"] === "Completed" ||
     pipelineStatuses["Model Training"] === "In Progress" ||
     pipelineStatuses["Model Validation"] === "Completed" ||
@@ -262,6 +230,8 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
     pipelineStatuses["Model Selection"] === "In Progress" ||
     pipelineStatuses["Training Configuration"] === "Completed" ||
     pipelineStatuses["Training Configuration"] === "In Progress" ||
+    pipelineStatuses["Pre Flight"] === "Completed" ||
+    pipelineStatuses["Pre Flight"] === "In Progress" ||
     pipelineStatuses["Model Training"] === "Completed" ||
     pipelineStatuses["Model Training"] === "In Progress" ||
     pipelineStatuses["Model Validation"] === "Completed" ||
@@ -292,6 +262,7 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
 const MODEL_SUBSTEPS = [
   "Model Selection",
   "Training Configuration",
+  "Pre Flight",
   "Model Training",
   "Model Validation",
 ] as const;
@@ -319,7 +290,8 @@ export function getMainStepStatus(stepId: string, pipelineStatuses: PipelineStat
 
 export function getMainStepStatuses(
   pipelineStatuses: PipelineStatuses,
-  runStatus?: RunStatus
+  runStatus?: RunStatus,
+  requiresApproval?: boolean
 ): Record<string, PipelineStatus> {
   const result: Record<string, PipelineStatus> = {};
   let foundActiveRunning = false;
@@ -327,7 +299,7 @@ export function getMainStepStatuses(
   for (const step of PIPELINE_STEPS) {
     let rawStatus = getMainStepStatus(step.id, pipelineStatuses);
 
-    if (runStatus === "Running" && !foundActiveRunning) {
+    if (runStatus === "Running" && !requiresApproval && !foundActiveRunning) {
       if (rawStatus !== "Completed") {
         rawStatus = "In Progress";
         foundActiveRunning = true;
@@ -360,13 +332,15 @@ export default function WorkflowPipeline({
   pausedAtPhase,
   onPause,
   onResume,
-  isApproving
+  isApproving,
+  isAwaitingResponse,
+  approvalNextStep,
 }: WorkflowPipelineProps) {
   const currentStage = activeStage || "inspect";
   const mainSelectedStage = getMainStepId(currentStage);
 
   // Compute top-level phase statuses and progress across the connections between them.
-  const mainStatusMap = getMainStepStatuses(pipelineStatuses, runStatus);
+  const mainStatusMap = getMainStepStatuses(pipelineStatuses, runStatus, requiresApproval);
   const mainStatuses = PIPELINE_STEPS.map((step) => mainStatusMap[step.id]);
 
   const hasExistingRun =
@@ -377,10 +351,37 @@ export default function WorkflowPipeline({
     Object.values(pipelineStatuses).some((s) => s === "Completed" || s === "In Progress");
 
   const runButtonText = hasExistingRun ? "Re-Run Workflow" : "Run Workflow";
-  const handleRunClick = hasExistingRun && onReRunWorkflow ? onReRunWorkflow : onRunWorkflow;
+  const handleRunClick = () => {
+    if (hasExistingRun && onReRunWorkflow) {
+      onReRunWorkflow();
+    } else {
+      onRunWorkflow();
+    }
+  };
 
   return (
     <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-background border border-border rounded-lg p-6 shadow-soft">
+      {/* HITL Notification Pill */}
+      {isAwaitingResponse && (
+        <div className="mb-5 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-surface border border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-sm animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+            </span>
+            <span className="text-xs font-bold tracking-wide">
+              This process is awaiting your response.
+            </span>
+          </div>
+          <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
+            {workflowMessage && (workflowMessage.toLowerCase().includes("confirm") || workflowMessage.toLowerCase().includes("select"))
+              ? workflowMessage
+              : "Please confirm candidate models in the Model Selection view below to proceed."}
+          </span>
+
+        </div>
+      )}
+
       <div className="flex items-start justify-between gap-4 border-b border-border pb-4 mb-6 select-none">
         <div className="flex flex-col gap-1">
           <h2 className="text-base font-bold text-foreground leading-tight">Data Insights Workflow</h2>
@@ -388,7 +389,59 @@ export default function WorkflowPipeline({
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {runStatus === "Running" ? (
+          {(isAwaitingResponse || requiresApproval) ? (
+            <>
+              {approvalNextStep === "Training Configuration" || pausedAtPhase === "Training Configuration" || isAwaitingResponse ? (
+                <button
+                  type="button"
+                  onClick={() => onSelectStage("Model Training & Validation")}
+                  disabled={isApproving}
+                  className={`inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
+                  title="Open Model Selection to review and confirm candidate models for training"
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M9 11l3 3L22 4" />
+                    <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                  </svg>
+                  <span>Select & Confirm Models</span>
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => onApprove()}
+                  disabled={isApproving}
+                  className={`inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
+                >
+                  {isApproving ? (
+                    <>
+                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                      </svg>
+                      <span>Advancing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>Proceed to Next Phase</span>
+                    </>
+                  )}
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onStopWorkflow}
+                disabled={isApproving}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50"
+              >
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                  <rect x="5" y="5" width="14" height="14" rx="2" />
+                </svg>
+                Stop Workflow
+              </button>
+            </>
+          ) : runStatus === "Running" ? (
             <>
               <button
                 type="button"
@@ -412,43 +465,7 @@ export default function WorkflowPipeline({
                 Stop Workflow
               </button>
             </>
-          ) : requiresApproval ? (
-            <>
-              <button
-                type="button"
-                onClick={onApprove}
-                disabled={isApproving}
-                className={`inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"}`}
-              >
-                {isApproving ? (
-                  <>
-                    <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                      <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
-                    </svg>
-                    Advancing...
-                  </>
-                ) : (
-                  <>
-                    <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    Proceed to Next Phase
-                  </>
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={onStopWorkflow}
-                disabled={isApproving}
-                className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50"
-              >
-                <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
-                  <rect x="5" y="5" width="14" height="14" rx="2" />
-                </svg>
-                Stop Workflow
-              </button>
-            </>
-          ) : isPaused ? (
+          ) : isPaused && !isAwaitingResponse ? (
             <>
               <button
                 type="button"
@@ -577,10 +594,10 @@ export default function WorkflowPipeline({
           <span className="text-muted-foreground">Last run: {lastRunTime}</span>
 
           <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${runStatus === "Running"
-                ? "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
-                : requiresApproval || runStatus === "Paused"
-                  ? "bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${requiresApproval || runStatus === "Paused"
+                ? "bg-amber-100 dark:bg-amber-950/30 text-amber-800 dark:text-amber-400 border border-amber-200 dark:border-amber-800"
+                : runStatus === "Running"
+                  ? "bg-indigo-100 dark:bg-indigo-950/30 text-indigo-800 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800"
                   : runStatus === "Success"
                     ? "bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800"
                     : runStatus === "Stopped"
@@ -591,10 +608,10 @@ export default function WorkflowPipeline({
               }`}
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${runStatus === "Running"
-                  ? "bg-indigo-500 animate-ping"
-                  : requiresApproval || runStatus === "Paused"
-                    ? "bg-amber-500 animate-pulse"
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${requiresApproval || runStatus === "Paused"
+                  ? "bg-amber-500 animate-pulse"
+                  : runStatus === "Running"
+                    ? "bg-indigo-500 animate-ping"
                     : runStatus === "Success"
                       ? "bg-emerald-500"
                       : runStatus === "Stopped"
@@ -604,10 +621,10 @@ export default function WorkflowPipeline({
                           : "bg-muted-foreground"
                 }`}
             />
-            {runStatus === "Running"
-              ? "Running"
-              : requiresApproval
-                ? "Awaiting Approval"
+            {requiresApproval
+              ? "Awaiting Approval"
+              : runStatus === "Running"
+                ? "Running"
                 : runStatus === "Paused"
                   ? "Paused"
                   : runStatus === "Success"

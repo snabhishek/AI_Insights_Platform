@@ -99,17 +99,98 @@ export function computeProjectRelativePath(workspaceName: string, projectName: s
 }
 
 /**
- * Computes the relative path for a project's python_script folder, e.g. "workspaces/Default_Workspace/projects/Demand_Forecasting/python_script"
+ * Returns the absolute directory for a project folder.
  */
-export function computeProjectPythonScriptRelativePath(workspaceName: string, projectName: string): string {
-  return path.posix.join(computeProjectRelativePath(workspaceName, projectName), "python_script");
+export function getProjectDir(workspaceName: string, projectName: string): string {
+  const relPath = computeProjectRelativePath(workspaceName, projectName);
+  return resolveStoragePath(relPath);
+}
+
+/**
+ * Scans the project directory on disk and returns the latest timestamp folder, if one exists.
+ */
+export function getLatestProjectTimestamp(workspaceName: string, projectName: string): string | undefined {
+  try {
+    const projectDir = getProjectDir(workspaceName, projectName);
+    if (!fs.existsSync(projectDir)) return undefined;
+
+    const entries = fs.readdirSync(projectDir, { withFileTypes: true });
+    // Filter directories that match timestamp patterns (e.g., 20260916_110034 or 20260916-110034 or numeric timestamps)
+    const timestampDirs = entries
+      .filter((d) => d.isDirectory() && (d.name.match(/^\d{8}[-_]\d{6}/) || d.name.match(/^\d{10,}$/)))
+      .map((d) => d.name)
+      .sort((a, b) => b.localeCompare(a));
+
+    if (timestampDirs.length > 0) {
+      return timestampDirs[0];
+    }
+  } catch (err) {
+    console.warn(`[getLatestProjectTimestamp] Warning scanning project directory for ${projectName}:`, err);
+  }
+  return undefined;
+}
+
+/**
+ * Resolves the effective run timestamp for a project:
+ * Uses explicit timestamp if provided; otherwise scans for the latest timestamp folder on disk.
+ */
+export function resolveProjectEffectiveTimestamp(
+  workspaceName: string,
+  projectName: string,
+  explicitTimestamp?: string
+): string | undefined {
+  if (explicitTimestamp && explicitTimestamp.trim().length > 0) {
+    return explicitTimestamp.trim();
+  }
+  return getLatestProjectTimestamp(workspaceName, projectName);
+}
+
+/**
+ * Computes the relative path for a project's timestamped run folder, e.g. "workspaces/Default_Workspace/projects/Demand_Forecasting/20260916_110034"
+ */
+export function computeProjectRunRelativePath(workspaceName: string, projectName: string, timestamp?: string): string {
+  const effectiveTs = resolveProjectEffectiveTimestamp(workspaceName, projectName, timestamp) || timestamp || "default";
+  const safeTs = effectiveTs;
+  return path.posix.join(computeProjectRelativePath(workspaceName, projectName), safeTs);
+}
+
+/**
+ * Returns the absolute directory for a project's timestamped run folder.
+ */
+export function getProjectRunDir(workspaceName: string, projectName: string, timestamp?: string): string {
+  const projRel = computeProjectRunRelativePath(workspaceName, projectName, timestamp);
+  return resolveStoragePath(projRel);
+}
+
+/**
+ * Computes the relative path for a project's schemas folder inside its timestamped run folder,
+ * e.g. "workspaces/Default_Workspace/projects/Demand_Forecasting/20260916_110034/schemas"
+ */
+export function computeProjectSchemasRelativePath(workspaceName: string, projectName: string, timestamp?: string): string {
+  return path.posix.join(computeProjectRunRelativePath(workspaceName, projectName, timestamp), "schemas");
+}
+
+/**
+ * Returns the absolute directory for a project's schemas folder.
+ */
+export function getProjectSchemasDir(workspaceName: string, projectName: string, timestamp?: string): string {
+  const schemasRel = computeProjectSchemasRelativePath(workspaceName, projectName, timestamp);
+  return resolveStoragePath(schemasRel);
+}
+
+/**
+ * Computes the relative path for a project's python_script folder inside its timestamped run folder,
+ * e.g. "workspaces/Default_Workspace/projects/Demand_Forecasting/20260916_110034/python_script"
+ */
+export function computeProjectPythonScriptRelativePath(workspaceName: string, projectName: string, timestamp?: string): string {
+  return path.posix.join(computeProjectRunRelativePath(workspaceName, projectName, timestamp), "python_script");
 }
 
 /**
  * Returns the absolute directory for a project's python_script folder.
  */
-export function getProjectPythonScriptDir(workspaceName: string, projectName: string): string {
-  const projRel = computeProjectPythonScriptRelativePath(workspaceName, projectName);
+export function getProjectPythonScriptDir(workspaceName: string, projectName: string, timestamp?: string): string {
+  const projRel = computeProjectPythonScriptRelativePath(workspaceName, projectName, timestamp);
   return resolveStoragePath(projRel);
 }
 
@@ -134,16 +215,12 @@ export function ensureDirectoryExists(dirPath: string): string {
 }
 
 /**
- * Bootstraps the file server root and core subdirectories.
- * NOTE: Datasources are workspace-scoped and created under workspaces/{workspace_name}/datasources.
+ * Bootstraps the file server root and workspaces directory.
  */
 export function ensureFileServerDirectories(): void {
   const base = getFileServerBasePath();
   ensureDirectoryExists(base);
   ensureDirectoryExists(getWorkspacesBasePath());
-  ensureDirectoryExists(path.join(base, "packages"));
-  ensureDirectoryExists(path.join(base, "packages", "projectFiles"));
-  ensureDirectoryExists(path.join(base, "packages", "Schemas"));
 
   // Clean up legacy root datasources directory if it exists and is empty
   const legacyRootDs = path.join(base, "datasources");

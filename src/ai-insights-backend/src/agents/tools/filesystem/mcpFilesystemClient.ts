@@ -6,6 +6,8 @@ import {
   computeProjectRelativePath,
   ensureDirectoryExists,
   getFileServerBasePath,
+  getLatestProjectTimestamp,
+  getProjectDir,
   getWorkspacesBasePath,
   resolveStoragePath,
   sanitizeFolderName,
@@ -94,6 +96,9 @@ export function getProjectDirectory(
 
   // 3. If projectName is provided
   if (projectName) {
+    if (workspaceName) {
+      return getProjectDir(workspaceName, projectName);
+    }
     const safeProj = sanitizeFolderName(projectName);
     const workspacesBase = getWorkspacesBasePath();
 
@@ -152,13 +157,46 @@ export function getProjectDirectory(
 
 /**
  * Resolves the designated project python_script directory path.
- * Resolves to `<FILE_SERVER_PATH>/workspaces/<workspace>/projects/<projectName>/python_script`.
+ * Resolves to `<FILE_SERVER_PATH>/workspaces/<workspace>/projects/<projectName>/<timestamp>/python_script`
+ * (or resolves the latest timestamped folder).
  */
 export function getPythonScriptDirectory(
   optionsOrProjectId?: string | McpFilesystemOptions,
   runTimestamp?: string
 ): string {
+  let effectiveTs = runTimestamp;
+  let workspaceName: string | undefined;
+  let projectName: string | undefined;
+
+  if (optionsOrProjectId && typeof optionsOrProjectId === "object") {
+    effectiveTs = optionsOrProjectId.runTimestamp || effectiveTs;
+    workspaceName = optionsOrProjectId.workspaceName;
+    projectName = optionsOrProjectId.projectName;
+  }
+
   const projectDir = getProjectDirectory(optionsOrProjectId, runTimestamp);
+
+  if (!effectiveTs && workspaceName && projectName) {
+    effectiveTs = getLatestProjectTimestamp(workspaceName, projectName);
+  } else if (!effectiveTs) {
+    try {
+      if (fs.existsSync(projectDir)) {
+        const entries = fs.readdirSync(projectDir, { withFileTypes: true });
+        const timestampDirs = entries
+          .filter((d) => d.isDirectory() && (d.name.match(/^\d{8}[-_]\d{6}/) || d.name.match(/^\d{10,}$/)))
+          .map((d) => d.name)
+          .sort((a, b) => b.localeCompare(a));
+        if (timestampDirs.length > 0) {
+          effectiveTs = timestampDirs[0];
+        }
+      }
+    } catch {}
+  }
+
+  if (effectiveTs && effectiveTs !== "default") {
+    return ensureDirectoryExists(path.join(projectDir, effectiveTs, "python_script"));
+  }
+
   return ensureDirectoryExists(path.join(projectDir, "python_script"));
 }
 

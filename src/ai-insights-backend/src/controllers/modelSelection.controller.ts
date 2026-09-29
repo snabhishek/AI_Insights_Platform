@@ -103,6 +103,38 @@ export class ModelSelectionController {
     }
   };
 
+  selectProjectModels = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const projectId = String(req.params.projectId || "");
+      const { selectedModelIds } = req.body || {};
+
+      if (!projectId) {
+        res.status(400).json({ success: false, message: "projectId parameter is required" });
+        return;
+      }
+
+      if (!Array.isArray(selectedModelIds) || selectedModelIds.length === 0) {
+        res.status(400).json({
+          success: false,
+          message: "selectedModelIds array is required and must contain at least one model ID",
+        });
+        return;
+      }
+
+      const updatedRecord = await this.service.recordUserSelectionByProject(projectId, selectedModelIds);
+      res.status(200).json({
+        success: true,
+        data: updatedRecord,
+      });
+    } catch (error: any) {
+      console.error("[ModelSelectionController] selectProjectModels error:", error);
+      res.status(400).json({
+        success: false,
+        message: error?.message || "Failed to record user model selection for project",
+      });
+    }
+  };
+
   getRegistryModels = async (_req: Request, res: Response): Promise<void> => {
     try {
       const models = this.service.getRegistry().getAllModels();
