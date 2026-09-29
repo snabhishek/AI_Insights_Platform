@@ -1,8 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Workflow, WorkflowStep, PipelineStatus } from "../../projects/types";
 import { fetchAgentThinkingApi } from "../../../services/aiWorkflowService";
+import { createTabContext } from "../../providers/TabProvider";
+import { CardModalTabType } from "../constants";
+
+export type { CardModalTabType };
+
+const { TabProvider, useTab } = createTabContext<CardModalTabType>();
 
 interface CardModalProps {
   isOpen: boolean;
@@ -64,7 +71,17 @@ const CIRCLE_COLOR_MAP: Record<string, { border: string; bg: string; text: strin
   },
 };
 
-export default function CardModal({
+export default function CardModal(props: CardModalProps) {
+  if (!props.isOpen) return null;
+
+  return (
+    <TabProvider initialTab="output">
+      <CardModalContent {...props} />
+    </TabProvider>
+  );
+}
+
+function CardModalContent({
   isOpen,
   onClose,
   render,
@@ -84,12 +101,17 @@ export default function CardModal({
   onApprove,
   onSubstepChange,
 }: CardModalProps) {
+  const [mounted, setMounted] = useState(false);
   const [activeStepIndex, setActiveStepIndex] = useState<number>(0);
   const [thinkingLogs, setThinkingLogs] = useState<Array<{ time: string; text: string; done: boolean }>>([]);
-  const [activeTab, setActiveTab] = useState<"output" | "thinking">("output");
+  const { activeTab, tabswitcher } = useTab("output");
   const lastStepIdRef = useRef<string>("");
   const lastStepStatusRef = useRef<string>("");
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const stepsList: WorkflowStep[] = workflowCard?.step || [];
   const activeStep = stepsList[activeStepIndex] || null;
@@ -207,15 +229,15 @@ export default function CardModal({
 
     if (stepIdChanged) {
       if (currentStatus === "In Progress") {
-        Promise.resolve().then(() => setActiveTab("thinking"));
+        Promise.resolve().then(() => tabswitcher("thinking"));
       } else {
-        Promise.resolve().then(() => setActiveTab("output"));
+        Promise.resolve().then(() => tabswitcher("output"));
       }
     } else if (statusChanged) {
       if (currentStatus === "Completed") {
-        Promise.resolve().then(() => setActiveTab("output"));
+        Promise.resolve().then(() => tabswitcher("output"));
       } else if (currentStatus === "In Progress") {
-        Promise.resolve().then(() => setActiveTab("thinking"));
+        Promise.resolve().then(() => tabswitcher("thinking"));
       }
     }
     lastStepStatusRef.current = currentStatus;
@@ -223,20 +245,22 @@ export default function CardModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStep?.id, activeStepStatus, pipelineStatuses]);
 
-  if (!isOpen) return null;
+
+  if (!isOpen || !mounted) return null;
 
   // Fallback to standard render if workflowCard details are not provided
   if (!workflowCard) {
-    return (
-      <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 transition-all scale-100 flex flex-col max-h-[85vh] p-6 text-foreground">
-        <div className="flex items-center justify-between mb-4 border-b border-border pb-3">
+    return createPortal(
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all scale-100 flex flex-col max-h-[85vh] p-6 text-foreground select-none">
+        <div className="flex items-center justify-between mb-4 border-b border-border pb-3 w-full">
           <h3 className="text-lg font-bold">Stage Details</h3>
           <button onClick={onClose} className="p-1.5 hover:bg-surface-muted rounded-xl transition-colors cursor-pointer text-muted-foreground">
             ✕
           </button>
         </div>
         <div className="flex-1 overflow-y-auto">{render}</div>
-      </div>
+      </div>,
+      document.body
     );
   }
 
@@ -247,10 +271,10 @@ export default function CardModal({
   // Helper to check overall workflow status
   const cardStatus = pipelineStatuses[workflowCard.id] ?? "Pending";
 
-  return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-3 bg-slate-950/50 backdrop-blur-md animate-fade-in select-none">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in select-none">
       {/* Extended width to full screen with minimum gap, reduced border radius to rounded-xl */}
-      <div className="relative w-[98vw] h-[96vh] max-w-none overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col sm:flex-row animate-scale-up">
+      <div className="relative w-[97vw] h-[95vh] overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col sm:flex-row animate-scale-up">
 
         {/* Left Panel: Steps Sidebar */}
         <div className="w-full sm:w-[250px] border-b sm:border-b-0 sm:border-r border-border p-5 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
@@ -415,7 +439,7 @@ export default function CardModal({
           {activeStep && (
             <div className="flex border-b border-border bg-surface-muted/30 px-6 shrink-0 select-none">
               <button
-                onClick={() => setActiveTab("output")}
+                onClick={() => tabswitcher("output")}
                 className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${activeTab === "output"
                   ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -425,7 +449,7 @@ export default function CardModal({
                 <span>Step Output</span>
               </button>
               <button
-                onClick={() => setActiveTab("thinking")}
+                onClick={() => tabswitcher("thinking")}
                 className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${activeTab === "thinking"
                   ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
                   : "border-transparent text-muted-foreground hover:text-foreground"
@@ -552,6 +576,7 @@ export default function CardModal({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

@@ -1,30 +1,52 @@
 "use client";
 
-import React, { createContext, useContext, useState } from "react";
+import React, {
+  createContext,
+  useContext,
+  useState,
+  type ReactNode,
+} from "react";
 
-export type TabType = "projects" | "data-source" | "application";
+export function createTabContext<T extends string | undefined>() {
+  type TabContextType = {
+    activeTab: T;
+    tabswitcher: (tab: T) => void;
+  };
 
-interface TabContextType {
-  activeTab: TabType;
-  setActiveTab: (tab: TabType) => void;
-}
+  const TabContext = createContext<TabContextType | undefined>(undefined);
 
-const TabContext = createContext<TabContextType | undefined>(undefined);
+  function TabProvider({
+    children,
+    initialTab,
+  }: {
+    children: ReactNode;
+    initialTab: T;
+  }) {
+    const [activeTab, setActiveTab] = useState<T>(initialTab);
 
-export function TabProvider({ children }: { children: React.ReactNode }) {
-  const [activeTab, setActiveTab] = useState<TabType>("projects");
+    const tabswitcher = (newTab: T) => {
+      setActiveTab(newTab);
+    };
 
-  return (
-    <TabContext.Provider value={{ activeTab, setActiveTab }}>
-      {children}
-    </TabContext.Provider>
-  );
-}
-
-export function useTab() {
-  const context = useContext(TabContext);
-  if (!context) {
-    throw new Error("useTab must be used within a TabProvider");
+    return (
+      <TabContext.Provider value={{ activeTab, tabswitcher }}>
+        {children}
+      </TabContext.Provider>
+    );
   }
-  return context;
+
+  function useTab<T>(tab: T): TabContextType {
+    const context = useContext(TabContext);
+
+    if (!context) {
+      throw new Error("useTab must be used within a TabProvider");
+    }
+
+    return context;
+  }
+
+  return {
+    TabProvider,
+    useTab,
+  };
 }

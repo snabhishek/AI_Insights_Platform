@@ -15,8 +15,7 @@ import { PipelineStatus, PipelineStatuses, RunStatus } from "../projects/types";
 import { INITIAL_PIPELINE_STATUSES } from "../projects/constants";
 import { resolveNextWorkflowPhase, STEP_TO_NODE_MAP, PIPELINE_PHASES, SUBSTEP_TO_PIPELINE_MAP } from "../projects/pipelineFlowConfig";
 import ProjectsListPage from "../projects/ProjectsListPage";
-import ProjectDetailPage from "../projects/ProjectDetailPage";
-import ProjectCreatePage from "../projects/ProjectCreatePage";
+import ProjectWorkspace, { ProjectTabType } from "../projects/ProjectWorkspace";
 import { executeWorkflowApi, pauseWorkflowApi, stopWorkflowApi, fetchActiveWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
 
 interface WorkflowResponse {
@@ -59,7 +58,7 @@ function renderDataSourceIcon(type: string): React.ReactNode {
 
 // ─── View states ──────────────────────────────────────────────────────────────
 
-type View = "list" | "detail" | "create";
+type View = "list" | "project";
 
 // ─── Root Page Component ──────────────────────────────────────────────────────
 
@@ -79,6 +78,8 @@ export default function ProjectsPage() {
     userProfile,
   } = useApp();
 
+  const [activeProjectTab, setActiveProjectTab] = useState<ProjectTabType>("project-detail");
+
   // Ref to track the currently running project ID across navigation
   const activeRunningProjectIdRef = useRef<string | null>(null);
 
@@ -91,6 +92,7 @@ export default function ProjectsPage() {
   useEffect(() => {
     setView("list");
     setSelectedProjectId(null);
+    setActiveProjectTab("project-detail");
     resetPipeline();
   }, [activeWorkspaceId]);
 
@@ -1328,7 +1330,7 @@ export default function ProjectsPage() {
       outputsToClear.push(
         "inspect", "profileData", "resolveSchema", "schemaResolution", "dataProfile",
         "hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout",
-        "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation"
+        "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation", "modelSelectionNode", "trainingConfigurationNode", "preFlightNode", "modelTrainingNode", "modelValidationNode"
       );
     } else if (phase === PIPELINE_PHASES.FEATURE_ENGINEERING) {
       rootNode = "hierarchyMapperNode";
@@ -1349,7 +1351,7 @@ export default function ProjectsPage() {
       statusesToUpdate["Model Validation"] = "Pending";
       outputsToClear.push(
         "hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout", "exogenous",
-        "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation"
+        "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation", "modelSelectionNode", "trainingConfigurationNode", "preFlightNode", "modelTrainingNode", "modelValidationNode"
       );
     } else {
       // Model Training & Validation stage -> full stage retry from root node modelSelectionNode!
@@ -1370,7 +1372,7 @@ export default function ProjectsPage() {
       statusesToUpdate["Model Training"] = "Pending";
       statusesToUpdate["Model Validation"] = "Pending";
       outputsToClear.push(
-        "modelSelection", "trainingConfiguration", "datasetAnalyserAgent", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation", "modelEvaluation"
+        "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation", "modelSelectionNode", "trainingConfigurationNode", "preFlightNode", "modelTrainingNode", "modelValidationNode"
       );
     }
 
@@ -1538,12 +1540,14 @@ export default function ProjectsPage() {
 
   const openProject = (id: string) => {
     setSelectedProjectId(id);
-    setView("detail");
+    setActiveProjectTab("workflow");
+    setView("project");
   };
 
   const goToList = () => {
     setView("list");
     setSelectedProjectId(null);
+    setActiveProjectTab("project-detail");
   };
 
   const confirmDeleteProject = (project: Project) => {
@@ -1561,58 +1565,58 @@ export default function ProjectsPage() {
 
   // ── Render ────────────────────────────────────────────────────────────────
 
-  if (view === "create") {
+  if (view === "project") {
     return (
-      <ProjectCreatePage
+      <ProjectWorkspace
+        project={selectedProject}
         dataSources={dataSources}
-        onCancel={goToList}
-        onSubmit={async (name, useCase, sources, domain, subDomain) => {
-          const success = await addProject(name, "OWNER", sources, useCase, domain, subDomain);
-          if (success) {
-            goToList();
+        userProfile={userProfile}
+        activeProjectTab={activeProjectTab}
+        onTabChange={(tab) => setActiveProjectTab(tab)}
+        onGoToList={goToList}
+        onSaveProject={async (name, useCase, sources, domain, subDomain) => {
+          const created = await addProject(name, "OWNER", sources, useCase, domain, subDomain);
+          if (created && typeof created === "object" && "id" in created) {
+            setSelectedProjectId(created.id);
+            showAlert({ title: "Project saved successfully", type: "success" });
+            return created;
+          } else if (created) {
+            const found = projects.find((p) => p.name === name);
+            if (found) setSelectedProjectId(found.id);
+            showAlert({ title: "Project saved successfully", type: "success" });
+            return true;
           }
-          return success;
+          return false;
+        }}
+        onUpdateProject={async (id, updates) => {
+          await updateProject(id, updates);
+          showAlert({ title: "Project details updated successfully", type: "success" });
         }}
         onAddDataSource={(name, type, subtext, config) =>
-          addDataSource(name, type, subtext, config)
+          addDataSource(name, type, subtext || "", config as any)
         }
-      />
-    );
-  }
-
-  if (view === "detail" && selectedProject) {
-    return (
-      <ProjectDetailPage
-        project={selectedProject}
-        allDataSources={dataSources}
-        userProfile={userProfile}
+        onDeleteProject={(proj) => confirmDeleteProject(proj)}
         pipelineStatuses={pipelineStatuses}
-        completionPercentage={completionPct}
+        completionPct={completionPct}
         runStatus={runStatus}
         lastRunTime={lastRunTime}
-        onRunWorkflow={runSimulation}
-        onReRunWorkflow={handleReRunWorkflow}
-        onSaveUseCase={(newUseCase) => updateProject(selectedProject.id, { useCase: newUseCase })}
-        onStopWorkflow={handleStopWorkflow}
-        onGoBack={goToList}
-        onDelete={() => confirmDeleteProject(selectedProject)}
-        onEdit={() =>
-          showAlert({ title: "Edit Project is being worked separately in the backend", type: "info" })
-        }
-        // onViewHistory={() =>
-        //   showAlert({ title: "Project execution logs are being worked separately in the backend", type: "info" })
-        // }
-        onManageSources={() =>
-          showAlert({ title: "Data source management is being worked separately in the backend", type: "info" })
-        }
-        onAddTag={() =>
-          showAlert({ title: "Tag management is being worked separately in the backend", type: "info" })
-        }
         activeStage={activeStage}
         stageOutputs={stageOutputs}
         requiresApproval={requiresApproval}
         workflowMessage={workflowMessage}
-        onSelectStage={handleStageSelect}
+        isApproving={isApproving}
+        isPaused={isPaused}
+        pausedAtPhase={pausedAtPhase}
+        approvalNextStep={approvalNextStep}
+        isAwaitingResponse={isAwaitingResponse}
+        agentThinking={agentThinking}
+        showAlert={showAlert}
+        onRunSimulation={runSimulation}
+        onReRunWorkflow={handleReRunWorkflow}
+        onStopWorkflow={handleStopWorkflow}
+        onPauseWorkflow={handlePauseWorkflow}
+        onResumeWorkflow={handleResumeWorkflow}
+        onStageSelect={handleStageSelect}
         onApprove={(override, selectedModels, splitStartDate, splitEndDate, predictionHorizon, predictionFrequency, predictionObjectiveStartDate) =>
           handleApprove(
             typeof override === "string" ? override : undefined,
@@ -1624,16 +1628,7 @@ export default function ProjectsPage() {
             predictionObjectiveStartDate
           )
         }
-        isApproving={isApproving}
         onRetry={(stepId) => handleRetry(stepId)}
-        isPaused={isPaused}
-        pausedAtPhase={pausedAtPhase}
-        onPause={handlePauseWorkflow}
-        onResume={handleResumeWorkflow}
-        approvalNextStep={approvalNextStep}
-        isAwaitingResponse={isAwaitingResponse}
-        agentThinking={agentThinking}
-        showAlert={showAlert}
       />
     );
   }
@@ -1646,7 +1641,12 @@ export default function ProjectsPage() {
       activeWorkspaceId={activeWorkspaceId}
       onOpenProject={openProject}
       onDeleteProject={confirmDeleteProject}
-      onCreateProject={() => setView("create")}
+      onCreateProject={() => {
+        setSelectedProjectId(null);
+        resetPipeline();
+        setActiveProjectTab("workflow");
+        setView("project");
+      }}
       renderIcon={renderDataSourceIcon}
     />
   );

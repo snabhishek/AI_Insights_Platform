@@ -79,7 +79,7 @@ interface AppContextType {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   refreshProjects: () => Promise<void>;
-  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string) => Promise<boolean>;
+  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string) => Promise<Project | null>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   dataSources: DataSource[];
@@ -241,6 +241,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setConfirmOpen(true);
   };
 
+
   const [userProfile, setUserProfile] = useState<UserProfile>({
     name: "SanthoshKumaran",
     email: "santhosh@cei.com",
@@ -367,7 +368,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ─── Projects ───────────────────────────────────────────────────────────────
-  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string): Promise<boolean> => {
+  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string): Promise<Project | null> => {
     const initials = userProfile.name
       .split(" ")
       .map((n) => n[0])
@@ -385,15 +386,15 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (res.ok) {
         const newProject = await res.json();
         setProjects((prev) => [newProject, ...prev]);
-        return true;
+        return newProject;
       } else {
         const err = await res.json();
         showAlert({ title: err.message || "A project with this title already exists", type: "error" });
-        return false;
+        return null;
       }
     } catch (err: any) {
       showAlert({ title: err.message || "Failed to create project", type: "error" });
-      return false;
+      return null;
     }
   };
 

@@ -138,17 +138,6 @@ export default function ProjectDetailPage({
   return (
     <>
       <div className="p-4 w-full flex flex-col min-h-full bg-background animate-fade-in select-none">
-        {/* Breadcrumbs */}
-        <nav className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground mb-2 select-none">
-          <button
-            onClick={onGoBack}
-            className="hover:text-primary cursor-pointer hover:underline transition-colors"
-          >
-            Projects
-          </button>
-          <span className="text-muted-foreground/50">/</span>
-          <span className="text-foreground">{project.name}</span>
-        </nav>
 
         {/* ── Project Header ── */}
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">

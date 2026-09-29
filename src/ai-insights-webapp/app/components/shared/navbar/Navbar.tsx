@@ -1,10 +1,11 @@
 "use client";
 
 import { ReactNode } from "react";
-import { useTab, TabType } from "../../providers/TabProvider";
+import { createTabContext } from "../../providers/TabProvider";
+import { PageType } from "../constants";
 
 interface NavItem {
-  id: TabType;
+  id: PageType;
   label: string;
   icon: ReactNode;
 }
@@ -55,8 +56,8 @@ const NAV_ITEMS: NavItem[] = [
   },
 ];
 
-export default function Navbar() {
-  const { activeTab, setActiveTab } = useTab();
+export default function Navbar({ useTab }: { useTab: <T>(tab: T) => any}) {
+  const { activeTab, tabswitcher } = useTab<PageType>("projects");
 
   return (
     <nav className="w-full bg-surface px-4">
@@ -67,7 +68,12 @@ export default function Navbar() {
             <li key={item.id}>
               <button
                 type="button"
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  tabswitcher('switcher');
+                  setTimeout(() => {
+                    tabswitcher(item.id)
+                  }, 100);
+                }}
                 aria-current={isActive ? "page" : undefined}
                 className={`group inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer ${
                   isActive
