@@ -66,6 +66,13 @@ export class AIController {
       action,
       step,
       projectId,
+      splitDate,
+      splitStartDate,
+      splitEndDate,
+      selectedModels,
+      predictionHorizon,
+      predictionFrequency,
+      predictionObjectiveStartDate,
     } = req.body as {
       connectorId?: string[];
       userPrompt?: string;
@@ -74,12 +81,19 @@ export class AIController {
       action?: "approve" | "retry" | "resume";
       step?: string;
       projectId?: string;
+      splitDate?: string;
+      splitStartDate?: string;
+      splitEndDate?: string;
+      selectedModels?: string[];
+      predictionHorizon?: number;
+      predictionFrequency?: string;
+      predictionObjectiveStartDate?: string;
     };
     // Disable socket timeouts for long-running AI workflow SSE streaming
     req.setTimeout(0);
     res.setTimeout(0);
 
-    console.info(`[Workflow] Ingestion workflow requested — action: ${action || "start"}, projectId: ${projectId || "none"}, sessionId: ${sessionId || "none"}, connectors: [${connectorId?.join(", ") || ""}]`);
+    console.info(`[Workflow] Ingestion workflow requested — action: ${action || "start"}, projectId: ${projectId || "none"}, sessionId: ${sessionId || "none"}, splitStartDate: ${splitStartDate || "none"}, splitEndDate: ${splitEndDate || splitDate || "none"}, selectedModels: ${selectedModels?.join(",") || "none"}, connectors: [${connectorId?.join(", ") || ""}]`);
 
     if (!connectorId || !Array.isArray(connectorId) || connectorId.length === 0) {
       console.warn(`[Workflow] Ingestion workflow rejected: connectorId is required`);
@@ -129,6 +143,13 @@ export class AIController {
         action,
         step,
         projectId,
+        splitDate: splitDate || splitEndDate,
+        splitStartDate,
+        splitEndDate: splitEndDate || splitDate,
+        selectedModels,
+        predictionHorizon,
+        predictionFrequency,
+        predictionObjectiveStartDate,
       });
 
       for await (const update of stream) {

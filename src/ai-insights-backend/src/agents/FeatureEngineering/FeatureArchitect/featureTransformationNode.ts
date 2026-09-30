@@ -4,9 +4,28 @@ import { getModel, invokeAgentJson, getPromptFromFile, logMilestoneThinking } fr
 import { validateWithRetry } from "../../validator/validatorNode";
 import { FeatureArchitectAnnotation, FeatureTransformationOutput } from "./state";
 import * as path from "path";
-import * as fs from "fs";
-import { createGetTableColumnsAndProfileTool, getMcpFilesystemTools, getPythonScriptDirectory, makePipelineTemplate } from "../../tools";
+import { createGetTableColumnsAndProfileTool, getMcpFilesystemTools, getPythonScriptDirectory } from "../../tools";
+import {
+  ARTIFACT_FEATURE_CREATED,
+  ARTIFACT_FEATURE_TRANSFORMATION,
+  DEFAULT_PIPELINE_SCRIPT_NAME,
+  PROMPT_FEATURE_TRANSFORMATION,
+  REGION_FEATURE_TRANSFORMATION,
+  STATUS_FAILED,
+  STATUS_OK,
+  TRACE_FEATURE_TRANSFORMATION,
+  WORKER_FEATURE_TRANSFORMATION,
+} from "./constants";
 
+const DEFAULT_USER_PROMPT = "None provided";
+const DEFAULT_STAGE_TITLE = "Feature Engineering";
+const DEFAULT_STAGE_THINKING = "Generating feature transformation and imputation recommendations based on orchestration decisions...";
+const DEFAULT_TRANSFORMATION_SUCCESS = "Feature Transformation completed successfully";
+const DEFAULT_TRANSFORMATION_FAILED = "Feature Transformation execution failed/fallback triggered";
+const DEFAULT_NO_MODEL_MSG = "No model available for Feature Transformation";
+const DEFAULT_FALLBACK_SUMMARY = "Feature Transformation fallback triggered";
+const DEFAULT_SYSTEM_PROMPT_FALLBACK = "You are an expert AI Feature Engineering Agent specialized in feature transformation and missing value imputation.";
+const MAX_RECURSION_LIMIT = 100;
 
 export async function featureTransformationNode(
   state: typeof FeatureArchitectAnnotation.State,
@@ -16,8 +35,8 @@ export async function featureTransformationNode(
   const model = getModel();
 
   const fallback: FeatureTransformationOutput = {
-    status: "Failed",
-    summary: "Feature Transformation fallback triggered",
+    status: STATUS_FAILED,
+    summary: DEFAULT_FALLBACK_SUMMARY,
     recommendations: [],
   };
 
@@ -26,45 +45,44 @@ export async function featureTransformationNode(
       featureTransformation: fallback,
       history: [
         {
-          worker: "featureTransformation",
-          summary: "No model available for Feature Transformation",
+          worker: WORKER_FEATURE_TRANSFORMATION,
+          summary: DEFAULT_NO_MODEL_MSG,
         },
       ],
     };
   }
 
   const systemPrompt = await getPromptFromFile(
-    "FeatureArchitect/featureTransformation.md",
-    "You are an expert AI Feature Engineering Agent specialized in feature transformation and missing value imputation."
+    PROMPT_FEATURE_TRANSFORMATION,
+    DEFAULT_SYSTEM_PROMPT_FALLBACK
   );
 
   if (services) {
     await logMilestoneThinking(
       services,
-      "Feature Engineering",
-      "Generating feature transformation and imputation recommendations based on orchestration decisions..."
+      DEFAULT_STAGE_TITLE,
+      DEFAULT_STAGE_THINKING
     );
   }
 
   const pythonScriptDir = getPythonScriptDirectory(services, state.runTimestamp);
-  const scriptName = state.aggregatedScriptPath || "aggregated_feature_pipeline.py";
+  const scriptName = state.aggregatedScriptPath ?? DEFAULT_PIPELINE_SCRIPT_NAME;
   const scriptPath = path.join(pythonScriptDir, scriptName);
-  if (!fs.existsSync(scriptPath)) {
-    fs.writeFileSync(scriptPath, makePipelineTemplate(scriptName), "utf-8");
-  }
+  const userPromptText = state.userPrompt ?? DEFAULT_USER_PROMPT;
 
   const userMessage = [
     "Design and generate feature transformation and imputation recommendations based on Orchestrator decisions and created features.",
-    `User Requirements: ${state.userPrompt || "None provided"}`,
+    `User Requirements: ${userPromptText}`,
     `Tables List: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
     `Orchestrator Decisions: ${JSON.stringify(state.orchestrationDecision)}`,
-    // `Inspector details: ${JSON.stringify(state.inspector)}`,
     `Newly Created Features: ${JSON.stringify(state.featureCreation?.recommendations)}`,
+    `Input Feature File: ${ARTIFACT_FEATURE_CREATED}`,
     `Target Pipeline File: ${scriptPath}`,
-    `Region to Edit: FEATURE_TRANSFORMATION`,
+    `Region to Edit: ${REGION_FEATURE_TRANSFORMATION}`,
+    `Output Artifact: ${ARTIFACT_FEATURE_TRANSFORMATION}`,
     "Action Required:",
-    `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the exact region markers and line structure.`,
-    `2. Use MCP tool 'edit_file' (or 'write_file') to write/insert your feature transformation code into the FEATURE_TRANSFORMATION region in '${scriptPath}'.`,
+    `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the exact region markers and line structure (or initialize it using 'write_file' if it does not exist).`,
+    `2. Use MCP tool 'edit_file' (or 'write_file') to write/insert your feature transformation code into the ${REGION_FEATURE_TRANSFORMATION} region in '${scriptPath}', reading from '--input-path' (${ARTIFACT_FEATURE_CREATED}) and saving transformed features to '--output-path' (${ARTIFACT_FEATURE_TRANSFORMATION}).`,
     "3. Return the final JSON summary of recommendations.",
   ].join("\n\n");
 
@@ -73,7 +91,7 @@ export async function featureTransformationNode(
     const fsTools = await getMcpFilesystemTools(services);
 
     const result = await validateWithRetry<FeatureTransformationOutput>(
-      "featureTransformation",
+      WORKER_FEATURE_TRANSFORMATION,
       async () =>
         await invokeAgentJson<FeatureTransformationOutput>(
           "featureArchitect",
@@ -83,21 +101,23 @@ export async function featureTransformationNode(
           services,
           {
             systemPrompt,
-            traceLabel: "featureArchitect:featureTransformation",
+            traceLabel: TRACE_FEATURE_TRANSFORMATION,
             tools: [getTableColumnsAndProfileTool, ...fsTools],
-            recursionLimit: 100,
+            recursionLimit: MAX_RECURSION_LIMIT,
           }
         ),
       fallback,
       services
     );
 
+    const summaryText = result.summary.length > 0 ? result.summary : DEFAULT_TRANSFORMATION_SUCCESS;
+
     return {
       featureTransformation: result,
       history: [
         {
-          worker: "featureTransformation",
-          summary: result.summary || "Feature Transformation completed successfully",
+          worker: WORKER_FEATURE_TRANSFORMATION,
+          summary: summaryText,
         },
       ],
     };
@@ -107,8 +127,8 @@ export async function featureTransformationNode(
       featureTransformation: fallback,
       history: [
         {
-          worker: "featureTransformation",
-          summary: "Feature Transformation execution failed/fallback triggered",
+          worker: WORKER_FEATURE_TRANSFORMATION,
+          summary: DEFAULT_TRANSFORMATION_FAILED,
         },
       ],
     };

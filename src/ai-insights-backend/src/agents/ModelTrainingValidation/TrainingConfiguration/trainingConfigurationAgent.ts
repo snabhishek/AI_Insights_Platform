@@ -58,44 +58,34 @@ export class TrainingConfigurationAgent {
       )
     );
 
-    // Discover candidate models from modelSelection
+    // Discover candidate models strictly from modelSelection
     let allCandidates: Array<{ model_id: string; rank?: number; score?: number; framework?: string; algorithm?: string; isDynamic?: boolean }> = [];
 
-    if (Array.isArray(modelSelection.candidates) && modelSelection.candidates.length > 0) {
-      allCandidates = modelSelection.candidates.map((c: any) => ({
+    if (!Array.isArray(modelSelection.candidates) || modelSelection.candidates.length === 0) {
+      throw new Error(
+        "[TrainingConfigurationAgent] Model Selection candidate models are missing from state. Model Selection agent must execute and provide candidate models without fallback."
+      );
+    }
+
+    allCandidates = modelSelection.candidates.map((c: any, idx: number) => {
+      if (!c.model_id) {
+        throw new Error(`[TrainingConfigurationAgent] Candidate model at index ${idx} is missing 'model_id'.`);
+      }
+      if (!c.framework) {
+        throw new Error(`[TrainingConfigurationAgent] Candidate model '${c.model_id}' is missing required 'framework'.`);
+      }
+      if (!c.algorithm) {
+        throw new Error(`[TrainingConfigurationAgent] Candidate model '${c.model_id}' is missing required 'algorithm'.`);
+      }
+      return {
         model_id: c.model_id,
-        rank: c.rank,
+        rank: typeof c.rank === "number" ? c.rank : idx + 1,
         score: c.suitability_score,
         framework: c.framework,
-        algorithm: c.algorithm || c.displayName || c.model_id,
+        algorithm: c.algorithm,
         isDynamic: c.source_type === "external" || c.source === "web_search",
-      }));
-    } else if (Array.isArray(modelSelection.models) && modelSelection.models.length > 0) {
-      allCandidates = modelSelection.models.map((m: any, idx: number) => ({
-        model_id: typeof m === "string" ? m : m.model_id,
-        rank: idx + 1,
-        score: 0.9,
-        framework: typeof m === "string" ? "sklearn" : m.framework,
-        algorithm: typeof m === "string" ? m : (m.algorithm || m.model_id),
-        isDynamic: false,
-      }));
-    } else if (modelSelection.recommended_model?.model_id) {
-      allCandidates = [
-        {
-          model_id: modelSelection.recommended_model.model_id,
-          rank: 1,
-          score: modelSelection.recommended_model.suitability_score || 0.95,
-          framework: modelSelection.recommended_model.framework,
-          algorithm: modelSelection.recommended_model.algorithm || modelSelection.recommended_model.model_id,
-          isDynamic: false,
-        },
-      ];
-    } else {
-      allCandidates = [
-        { model_id: "lightgbm_classifier", rank: 1, score: 0.92, framework: "lightgbm", algorithm: "LGBMClassifier" },
-        { model_id: "random_forest_classifier", rank: 2, score: 0.88, framework: "sklearn", algorithm: "RandomForestClassifier" },
-      ];
-    }
+      };
+    });
 
     // Execute the LangGraph StateGraph
     const graph = createTrainingConfigGraph();

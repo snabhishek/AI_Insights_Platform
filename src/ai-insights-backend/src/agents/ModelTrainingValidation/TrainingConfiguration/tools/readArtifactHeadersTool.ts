@@ -82,7 +82,7 @@ export function createReadArtifactHeadersTool(services: IngestionServices, runTi
       name: "read_artifact_headers",
       description: "Parses and returns only the headers, column names, and data types of a Parquet, CSV, or JSON artifact in the project folder without reading full data. Closes all connections immediately.",
       schema: z.object({
-        artifactName: z.string().describe("The filename of the artifact (e.g. validated_features.parquet, dataset.csv, profiling_report.json, relationship_schema.json)"),
+        artifactName: z.string().describe("The filename of the artifact (e.g. feature_validation.parquet, dataset.parquet, dataset.csv, profiling_report.json, relationship_schema.json)"),
       }),
     }
   );

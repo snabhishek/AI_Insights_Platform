@@ -1,0 +1,270 @@
+"use client";
+
+import React, { useState } from "react";
+import { ChatMessage } from "./types";
+import ChatThinkingAccordion from "./ChatThinkingAccordion";
+import MarkdownRenderer from "../shared/MarkdownRenderer";
+
+interface ChatMessageItemProps {
+  message: ChatMessage;
+  onSelectAction?: (actionText: string) => void;
+  onRetry?: (messageId: string) => void;
+  onFeedback?: (messageId: string, type: "like" | "dislike") => void;
+}
+
+export default function ChatMessageItem({
+  message,
+  onSelectAction,
+  onRetry,
+  onFeedback,
+}: ChatMessageItemProps) {
+  const [copied, setCopied] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const isUser = message.role === "user";
+
+  const handleCopyMessage = () => {
+    navigator.clipboard.writeText(message.content);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCodeCopied(true);
+    setTimeout(() => setCodeCopied(false), 2000);
+  };
+
+  return (
+    <div
+      className={`flex gap-3.5 rounded-2xl transition-all p-2 ${
+        isUser
+          ? "bg-surface border border-border/40 max-w-[50%] lg:max-w-[40%] relative left-[100%] -translate-x-[100%]"
+          : "bg-surface-muted/20"
+      }`}
+    >
+      {/* Avatar */}
+      {/* <div className="shrink-0 pt-0.5">
+        {isUser ? (
+          <div className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-bold text-xs shadow-md">
+            👤
+          </div>
+        ) : (
+          <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-base shadow-sm">
+            {message.agentAvatar || ""}
+          </div>
+        )}
+      </div> */}
+
+      {/* Message Body */}
+      <div className="flex-1 min-w-0 space-y-3">
+        {/* Header: Name, Badge & Time */}
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-bold text-foreground">
+              {isUser ? "You" : message.agentName || "AI Insights Copilot"}
+            </span>
+            {!isUser && message.agentBadge && (
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                {message.agentBadge}
+              </span>
+            )}
+          </div>
+          <span className="text-[10px] text-muted-foreground">{message.timestamp}</span>
+        </div>
+
+        {/* Thinking Accordion for Assistant */}
+        {!isUser && message.thinking && message.thinking.length > 0 && (
+          <ChatThinkingAccordion
+            thinking={message.thinking}
+            isStreaming={message.isThinking}
+            defaultExpanded={false}
+          />
+        )}
+
+        {/* Text Content */}
+        <MarkdownRenderer content={message.content} />
+
+        {/* Metric Cards if present */}
+        {message.metricCards && message.metricCards.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
+            {message.metricCards.map((metric, mIdx) => (
+              <div
+                key={mIdx}
+                className="p-3 rounded-xl border border-border/80 bg-surface/80 shadow-sm flex flex-col justify-between"
+              >
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                  {metric.label}
+                </span>
+                <div className="flex items-baseline gap-1.5 my-1">
+                  <span className="text-base font-extrabold text-foreground">{metric.value}</span>
+                  {metric.change && (
+                    <span
+                      className={`text-[10px] font-bold ${
+                        metric.trend === "up"
+                          ? "text-emerald-500"
+                          : metric.trend === "down"
+                          ? "text-rose-500"
+                          : "text-muted-foreground"
+                      }`}
+                    >
+                      {metric.change}
+                    </span>
+                  )}
+                </div>
+                {metric.details && (
+                  <span className="text-[9px] text-muted-foreground truncate">{metric.details}</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Interactive Table if present */}
+        {message.tables && message.tables.length > 0 && (
+          <div className="space-y-3 pt-2">
+            {message.tables.map((table, tIdx) => (
+              <div
+                key={tIdx}
+                className="overflow-x-auto rounded-xl border border-border/80 bg-surface/60 shadow-inner"
+              >
+                <table className="w-full text-left text-[11px]">
+                  <thead className="bg-surface-muted/60 text-muted-foreground border-b border-border/80 font-bold uppercase text-[9px] tracking-wider">
+                    <tr>
+                      {table.columns.map((col, cIdx) => (
+                        <th key={cIdx} className="px-3 py-2">
+                          {col}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/40 font-mono">
+                    {table.rows.map((row, rIdx) => (
+                      <tr key={rIdx} className="hover:bg-surface-muted/30 transition-colors">
+                        {table.columns.map((col, cIdx) => (
+                          <td key={cIdx} className="px-3 py-1.5 whitespace-nowrap text-foreground/85">
+                            {row[col] ?? "-"}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Chart Visualization if present */}
+        {message.chart && (
+          <div className="p-3.5 rounded-xl border border-border/80 bg-surface/60 space-y-2 pt-2">
+            <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
+              <span>📊</span>
+              <span>{message.chart.title}</span>
+            </span>
+            <div className="space-y-1.5 pt-1">
+              {message.chart.labels.map((lbl, idx) => {
+                const val = message.chart?.data[idx] || 0;
+                const maxVal = Math.max(...(message.chart?.data || [1]));
+                const pct = Math.min(100, Math.round((val / (maxVal || 1)) * 100));
+                return (
+                  <div key={idx} className="space-y-0.5">
+                    <div className="flex justify-between text-[10px] text-muted-foreground font-mono">
+                      <span>{lbl}</span>
+                      <span className="font-bold text-foreground">{val}%</span>
+                    </div>
+                    <div className="w-full h-2 rounded-full bg-surface-muted overflow-hidden">
+                      <div
+                        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-primary transition-all duration-500"
+                        style={{ width: `${pct}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Code Snippet with Copy if present */}
+        {message.codeSnippet && (
+          <div className="rounded-xl border border-border/80 bg-slate-950 text-slate-100 overflow-hidden text-xs font-mono shadow-sm">
+            <div className="px-3 py-1.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+              <span>{message.codeSnippet.filename || `${message.codeSnippet.language} snippet`}</span>
+              <button
+                type="button"
+                onClick={() => handleCopyCode(message.codeSnippet!.code)}
+                className="hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
+              >
+                {codeCopied ? (
+                  <>
+                    <span className="text-emerald-400">✓</span>
+                    <span className="text-emerald-400">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <span>📋</span>
+                    <span>Copy code</span>
+                  </>
+                )}
+              </button>
+            </div>
+            <pre className="p-3 overflow-x-auto text-[11px] leading-relaxed select-text">
+              <code>{message.codeSnippet.code}</code>
+            </pre>
+          </div>
+        )}
+
+        {/* Suggested Follow-up Actions */}
+        {!isUser && message.suggestedActions && message.suggestedActions.length > 0 && (
+          <div className="pt-2 flex flex-wrap gap-1.5">
+            {message.suggestedActions.map((action, aIdx) => (
+              <button
+                key={aIdx}
+                type="button"
+                onClick={() => onSelectAction?.(action)}
+                className="px-2.5 py-1 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/15 text-primary text-[11px] font-medium transition-colors cursor-pointer text-left flex items-center gap-1.5 group active:scale-95"
+              >
+                <span>💡</span>
+                <span className="group-hover:underline">{action}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        {/* Message Action Footer (Copy, Feedback) */}
+        {!isUser && (
+          <div className="flex items-center gap-3 pt-1 text-muted-foreground text-[10px] select-none">
+            <button
+              type="button"
+              onClick={handleCopyMessage}
+              className="hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+              title="Copy message text"
+            >
+              {copied ? <span className="text-emerald-500 font-bold">✓ Copied</span> : <span>📋 Copy</span>}
+            </button>
+            <button
+              type="button"
+              onClick={() => onFeedback?.(message.id, "like")}
+              className={`hover:text-foreground transition-colors cursor-pointer ${
+                message.userLiked ? "text-emerald-500 font-bold" : ""
+              }`}
+              title="Helpful"
+            >
+              👍 Helpful
+            </button>
+            <button
+              type="button"
+              onClick={() => onFeedback?.(message.id, "dislike")}
+              className={`hover:text-foreground transition-colors cursor-pointer ${
+                message.userDisliked ? "text-rose-500 font-bold" : ""
+              }`}
+              title="Not helpful"
+            >
+              👎
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}

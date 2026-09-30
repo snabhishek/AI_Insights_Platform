@@ -150,7 +150,6 @@ export class WorkspaceService {
       useCase: projectData.useCase || "",
       domain: projectData.domain || "",
       subDomain: projectData.subDomain || "",
-      agentState: {},
       createdAt: new Date().toISOString(),
     };
 

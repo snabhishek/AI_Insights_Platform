@@ -29,9 +29,9 @@ export const PIPELINE_STEPS: Workflow[] = [
       },
       {
         id: "Data Profiling",
-        title: "Data Profiling & Preprocess",
-        description: "Profile and preprocess data quality findings",
-        metric: "Profile + Prep",
+        title: "Data Profiling",
+        description: "Profile data quality findings",
+        metric: "Profile",
         color: "blue",
         icon: (
           <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
@@ -158,14 +158,14 @@ export const PIPELINE_STEPS: Workflow[] = [
   },
 ];
 
-export const INITIAL_PIPELINE_STATUSES: Record<string, "Not Started"> = {
-  "Data Inspection": "Not Started",
-  "Data Profiling": "Not Started",
-  "Schema Resolver": "Not Started",
-  "Feature Engineering": "Not Started",
-  "Model Selection": "Not Started",
-  "Training Configuration": "Not Started",
-  "Pre Flight": "Not Started",
-  "Model Training": "Not Started",
-  "Model Validation": "Not Started",
+export const INITIAL_PIPELINE_STATUSES: Record<string, "Pending"> = {
+  "Data Inspection": "Pending",
+  "Data Profiling": "Pending",
+  "Schema Resolver": "Pending",
+  "Feature Engineering": "Pending",
+  "Model Selection": "Pending",
+  "Training Configuration": "Pending",
+  "Pre Flight": "Pending",
+  "Model Training": "Pending",
+  "Model Validation": "Pending",
 };

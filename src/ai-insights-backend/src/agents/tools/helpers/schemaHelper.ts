@@ -5,6 +5,7 @@ import * as yaml from 'js-yaml';
 import {
   getProjectDir,
   getProjectSchemasDir,
+  getProjectPythonScriptDir,
   getLatestProjectTimestamp,
   getWorkspacesBasePath,
 } from '../../../config/fileServer.config';
@@ -824,6 +825,63 @@ function dumpSectionYaml(data: Record<string, any>): string {
 }
 
 /**
+ * Reads the feature validation report from project_folder/latest_timestamp/python_script folder
+ * and extracts the array of kept/validated feature names.
+ */
+export async function readValidatedFeaturesFromReport(
+  workspaceName: string,
+  projectName: string,
+  runTimestamp?: string
+): Promise<string[]> {
+  try {
+    const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
+    const pythonScriptDir = getProjectPythonScriptDir(workspaceName, projectName, timestamp);
+
+    const candidatePaths = [
+      path.join(pythonScriptDir, "feature_validation_report.json"),
+      path.join(getProjectDir(workspaceName, projectName), timestamp, "python_script", "feature_validation_report.json"),
+      path.join(getProjectDir(workspaceName, projectName), "python_script", "feature_validation_report.json"),
+    ];
+
+    // If latest timestamp on disk differs from resolved timestamp, check it as well
+    const latestTs = getLatestProjectTimestamp(workspaceName, projectName);
+    if (latestTs && latestTs !== timestamp) {
+      candidatePaths.push(
+        path.join(getProjectDir(workspaceName, projectName), latestTs, "python_script", "feature_validation_report.json")
+      );
+    }
+
+    for (const reportPath of candidatePaths) {
+      if (fsSync.existsSync(reportPath)) {
+        try {
+          const raw = await fs.readFile(reportPath, "utf-8");
+          const parsed = JSON.parse(raw);
+          if (parsed && typeof parsed === "object") {
+            if (Array.isArray(parsed.validatedFeatureSet?.kept) && parsed.validatedFeatureSet.kept.length > 0) {
+              return parsed.validatedFeatureSet.kept;
+            }
+            if (Array.isArray(parsed.kept) && parsed.kept.length > 0) {
+              return parsed.kept;
+            }
+            if (Array.isArray(parsed.validated_features) && parsed.validated_features.length > 0) {
+              return parsed.validated_features;
+            }
+            if (Array.isArray(parsed.validatedFeatures) && parsed.validatedFeatures.length > 0) {
+              return parsed.validatedFeatures;
+            }
+          }
+        } catch (readErr) {
+          console.warn(`[readValidatedFeaturesFromReport] Error parsing report at ${reportPath}:`, readErr);
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[readValidatedFeaturesFromReport] Error reading feature validation report for ${projectName}:`, err);
+  }
+  return [];
+}
+
+/**
  * Saves or updates the modular Training Job Contract YAML file inside
  * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
  * <usecasetitle>_training_job_contract_<timestamp>.yaml
@@ -880,24 +938,52 @@ export async function saveModularTrainingJobContract(
     rawData["x-primary-metric-name"] ||
     rawData.primary_metric_name ||
     rawData.primary_metric ||
+    rawData.objective?.optimization_metric ||
+    (typeof rawData.evaluation?.primary_metric === "object" ? rawData.evaluation.primary_metric?.value : rawData.evaluation?.primary_metric) ||
+    rawData.model_selection?.primary_metric ||
     existingObj["x-primary-metric-name"] ||
     existingObj.primary_metric_name ||
     existingObj.model_selection?.primary_metric ||
-    "f1_score";
+    "";
 
-  const primaryMetricDef =
+  const rawMetricDef =
     rawData["x-primary-metric-def"] ||
     rawData.primary_metric_def ||
+    (typeof rawData.evaluation?.primary_metric === "object" ? rawData.evaluation.primary_metric : null) ||
     existingObj["x-primary-metric-def"] ||
-    existingObj.primary_metric_def || {
-      value: primaryMetricName,
-      source: "llm_inference",
-      confidence: 0.95,
-      confirmation_threshold: 0.85,
-      requires_confirmation: false,
-      rationale: "Selected primary metric representing business goal",
-      evidence: [],
-    };
+    existingObj.primary_metric_def;
+
+  const rawDirection =
+    rawData.direction ||
+    rawData.model_selection?.direction ||
+    rawMetricDef?.direction ||
+    rawData.objective?.direction ||
+    existingObj["x-primary-metric-def"]?.direction ||
+    existingObj.objective?.direction ||
+    existingObj.model_selection?.direction ||
+    "maximize";
+
+  const rawSecondaryMetrics =
+    rawData.secondary_metrics ||
+    rawData.model_selection?.secondary_metrics ||
+    rawMetricDef?.secondary_metrics ||
+    rawData.evaluation?.secondary_metrics ||
+    existingObj["x-primary-metric-def"]?.secondary_metrics ||
+    existingObj.evaluation?.secondary_metrics ||
+    [];
+
+  const primaryMetricDef = {
+    value: rawMetricDef?.value || primaryMetricName,
+    source: rawMetricDef?.source || "model_selection",
+    confidence: typeof rawMetricDef?.confidence === "number" ? rawMetricDef.confidence : 1.0,
+    confirmation_threshold: typeof rawMetricDef?.confirmation_threshold === "number" ? rawMetricDef.confirmation_threshold : 0.85,
+    requires_confirmation: Boolean(rawMetricDef?.requires_confirmation),
+    direction: rawDirection,
+    rationale: rawMetricDef?.rationale || `Selected ${primaryMetricName || "primary metric"} representing business goal`,
+    business_interpretation: rawMetricDef?.business_interpretation || null,
+    evidence: rawMetricDef?.evidence || [],
+    secondary_metrics: rawSecondaryMetrics,
+  };
 
   // Build model_selection data (merging candidates/models with training steps)
   const existingModelSel = existingObj.model_selection || {};
@@ -973,7 +1059,7 @@ export async function saveModularTrainingJobContract(
     recommended_model: incomingModelSel.recommended_model ?? existingModelSel.recommended_model ?? null,
     candidates: mergedCandidates.length > 0 ? mergedCandidates : (incomingModelSel.candidates || []),
     primary_metric: primaryMetricName,
-    direction: incomingModelSel.direction ?? existingModelSel.direction ?? "maximize",
+    direction: incomingModelSel.direction ?? rawDirection ?? existingModelSel.direction ?? "maximize",
     tie_breakers: incomingModelSel.tie_breakers ?? existingModelSel.tie_breakers ?? ["simplest_model", "fastest_training"],
     constraints: incomingModelSel.constraints ?? existingModelSel.constraints ?? {},
     selection_strategy: incomingModelSel.selection_strategy ?? existingModelSel.selection_strategy ?? "top_k_candidates",
@@ -1009,24 +1095,50 @@ export async function saveModularTrainingJobContract(
     description: `Training pipeline contract for ${cleanProjectTitle}`,
   };
 
+  const detectedProblemType = String(
+    rawData.task?.task_type ||
+    rawData.problemType ||
+    rawData.problem_type ||
+    existingObj.task?.task_type ||
+    ""
+  ).toLowerCase();
+
+  // const isForecast = detectedProblemType.includes("forecast");
+  // const isClass = detectedProblemType.includes("class");
+  // const isReg = detectedProblemType.includes("regress");
+
   const taskData = rawData.task || existingObj.task || {
-    task_type: rawData.problemType || existingObj.task?.task_type || "classification",
-    task_subtype: rawData.problemType === "regression" ? "single" : "binary",
-    learning_type: "supervised",
-    prediction_type: rawData.problemType === "regression" ? "value" : "label",
-    prediction_horizon: null,
-    prediction_timestamp: null,
+    task_type: rawData.task?.task_type || rawData.problemType || rawData.problem_type || existingObj.task?.task_type,
+    task_subtype: rawData.task_subtype ?? '',
+    learning_type: rawData.learning_type ?? '',
+    prediction_type: rawData.prediction_type ?? ''
   };
 
-  const upstreamArtifactsData = rawData.upstream_artifacts || existingObj.upstream_artifacts || {
-    dataset_id: `dataset_${cleanProjectTitle}_${timestamp}`,
-    dataset_version: "1.0",
-    feature_set_id: `features_${cleanProjectTitle}_${timestamp}`,
-    feature_set_version: "1.0",
-    profiling_report_id: `profiling_${cleanProjectTitle}_${timestamp}`,
-    relationship_schema_id: null,
-    row_count: 0,
-    column_count: 0,
+  // Resolve validated features by reading the feature validation report from project run python_script folder
+  const reportValidatedFeatures = await readValidatedFeaturesFromReport(workspaceName, projectName, timestamp);
+  const incomingValidatedFeatures =
+    rawData.upstream_artifacts?.validated_features ||
+    rawData.upstream_artifacts?.validatedFeatures ||
+    rawData.validated_features ||
+    rawData.validatedFeatures ||
+    existingObj.upstream_artifacts?.validated_features;
+
+  const finalValidatedFeatures: string[] =
+    Array.isArray(incomingValidatedFeatures) && incomingValidatedFeatures.length > 0
+      ? incomingValidatedFeatures
+      : reportValidatedFeatures;
+
+  const incomingUpstream = rawData.upstream_artifacts || {};
+  const existingUpstream = existingObj.upstream_artifacts || {};
+
+  const upstreamArtifactsData = {
+    dataset_id: incomingUpstream.dataset_id || incomingUpstream.dataset_path || existingUpstream.dataset_id || existingUpstream.dataset_path || `dataset_${cleanProjectTitle}_${timestamp}`,
+    dataset_version: incomingUpstream.dataset_version || existingUpstream.dataset_version || "1.0",
+    validated_features: finalValidatedFeatures,
+    profiling_report_id: incomingUpstream.profiling_report_id || incomingUpstream.profiling_report_path || existingUpstream.profiling_report_id || existingUpstream.profiling_report_path || `profiling_${cleanProjectTitle}_${timestamp}`,
+    relationship_schema_id: incomingUpstream.relationship_schema_id || incomingUpstream.relationship_schema_path || existingUpstream.relationship_schema_id || existingUpstream.relationship_schema_path || null,
+    row_count: incomingUpstream.row_count ?? existingUpstream.row_count ?? 0,
+    column_count: incomingUpstream.column_count ?? (finalValidatedFeatures.length > 0 ? finalValidatedFeatures.length : existingUpstream.column_count ?? 0),
   };
 
   const splitData = rawData.split || existingObj.split || {
@@ -1070,7 +1182,7 @@ export async function saveModularTrainingJobContract(
     enabled: false,
     method: "bayesian",
     objective_metric: primaryMetricName,
-    direction: "maximize",
+    direction: rawData.hyperparameter_optimization?.direction || rawDirection || existingObj.hyperparameter_optimization?.direction || "maximize",
     max_trials: 0,
     timeout: null,
     search_space: {},
@@ -1081,67 +1193,13 @@ export async function saveModularTrainingJobContract(
 
   const searchSpaceData = rawData.search_space || existingObj.search_space || {};
 
-  const objectiveData = rawData.objective || existingObj.objective || {
-    training_loss: rawData.problemType === "regression" ? "mse" : "logloss",
-    optimization_metric: primaryMetricName,
-    direction: "maximize",
-    custom_objective: {
-      enabled: false,
-      definition: null,
-    },
-  };
+  const objectiveData = rawData.objective || existingObj.objective || {}
 
-  const evaluationData = rawData.evaluation || existingObj.evaluation || {
-    primary_metric: primaryMetricDef,
-    secondary_metrics: rawData.problemType === "regression" ? ["MAE", "RMSE", "R2"] : ["accuracy", "precision", "recall", "roc_auc"],
-    thresholds: {
-      primary_metric_min: null,
-      secondary_metric_constraints: {},
-    },
-    segment_analysis: [],
-    confidence_intervals: {
-      enabled: false,
-    },
-    bootstrap: {
-      enabled: false,
-      samples: null,
-    },
-    fairness_scope: {
-      protected_attributes: [],
-      metric: null,
-      max_disparity: null,
-    },
-  };
+  const evaluationData = rawData.evaluation || existingObj.evaluation || {}
 
-  const thresholdingData = rawData.thresholding || existingObj.thresholding || {
-    enabled: false,
-    default_threshold: null,
-    optimization: {
-      enabled: false,
-      metric: null,
-      constraints: {},
-    },
-  };
+  const thresholdingData = rawData.thresholding || existingObj.thresholding || {}
 
-  const validationGatesData = rawData.validation_gates || existingObj.validation_gates || {
-    minimum_primary_metric: null,
-    maximum_overfitting_gap: null,
-    maximum_latency: null,
-    maximum_model_size: null,
-    fairness_requirements: null,
-    data_quality_requirements: {
-      max_null_rate: null,
-      schema_match: "strict",
-    },
-    calibration_requirement: {
-      method: "none",
-      max_calibration_error: null,
-    },
-    stability_requirement: {
-      metric_variance_across_folds_max: null,
-    },
-    pass_condition: "all_gates_must_pass",
-  };
+  const validationGatesData = rawData.validation_gates || existingObj.validation_gates || {}
 
   const artifactsData = rawData.artifacts || existingObj.artifacts || {
     output_path: `/workspace/${timestamp}/python_script`,

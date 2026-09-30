@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
+import { BACKEND_URL } from "../components/providers/AppContext";
+
+const DEFAULT_API_BASE = BACKEND_URL.replace(/\/api\/?$/, "");
 
 export interface FormField {
   fieldId: string;
@@ -32,7 +35,7 @@ export interface UseFilterFormOptions {
   apiBaseUrl?: string;
 }
 
-export function useFilterForm({ schema, apiBaseUrl = "http://127.0.0.1:5000" }: UseFilterFormOptions) {
+export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilterFormOptions) {
   const [selectedValues, setSelectedValues] = useState<Record<string, any>>({});
   const [optionsMap, setOptionsMap] = useState<Record<string, any[]>>({});
   const [dateRanges, setDateRanges] = useState<Record<string, { min: string | null; max: string | null }>>({});

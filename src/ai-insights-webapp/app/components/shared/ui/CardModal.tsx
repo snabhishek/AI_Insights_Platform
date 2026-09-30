@@ -1,8 +1,15 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { Workflow, WorkflowStep, PipelineStatus } from "../../projects/types";
 import { fetchAgentThinkingApi } from "../../../services/aiWorkflowService";
+import { createTabContext } from "../../providers/TabProvider";
+import { CardModalTabType } from "../constants";
+
+export type { CardModalTabType };
+
+const { TabProvider, useTab } = createTabContext<CardModalTabType>();
 
 interface CardModalProps {
   isOpen: boolean;
@@ -21,7 +28,8 @@ interface CardModalProps {
   approvalNextStep?: string | null;
   isApproving?: boolean;
   isAwaitingResponse?: boolean;
-  onApprove?: (overrideTargetPhase?: string) => void;
+  onApprove?: (overrideTargetPhase?: string, selectedModels?: string[]) => void;
+  onSubstepChange?: (substepId: string) => void;
 }
 
 // Map color strings to active Tailwind text/border/bg classes for step circles
@@ -63,7 +71,17 @@ const CIRCLE_COLOR_MAP: Record<string, { border: string; bg: string; text: strin
   },
 };
 
-export default function CardModal({
+export default function CardModal(props: CardModalProps) {
+  if (!props.isOpen) return null;
+
+  return (
+    <TabProvider initialTab="output">
+      <CardModalContent {...props} />
+    </TabProvider>
+  );
+}
+
+function CardModalContent({
   isOpen,
   onClose,
   render,
@@ -81,17 +99,23 @@ export default function CardModal({
   isApproving = false,
   isAwaitingResponse = false,
   onApprove,
+  onSubstepChange,
 }: CardModalProps) {
+  const [mounted, setMounted] = useState(false);
   const [activeStepIndex, setActiveStepIndex] = useState<number>(0);
   const [thinkingLogs, setThinkingLogs] = useState<Array<{ time: string; text: string; done: boolean }>>([]);
-  const [activeTab, setActiveTab] = useState<"output" | "thinking">("output");
+  const { activeTab, tabswitcher } = useTab("output");
   const lastStepIdRef = useRef<string>("");
   const lastStepStatusRef = useRef<string>("");
   const logsEndRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const stepsList: WorkflowStep[] = workflowCard?.step || [];
   const activeStep = stepsList[activeStepIndex] || null;
-  const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Not Started") : "Not Started";
+  const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Pending") : "Pending";
 
   // Auto-select active (In Progress) step, or requested substep, or latest completed step
   useEffect(() => {
@@ -115,8 +139,8 @@ export default function CardModal({
       return;
     }
 
-    // 3. If awaiting model confirmation / approval before Training Configuration, select Model Selection
-    if (approvalNextStep === "Training Configuration" || (requiresApproval && steps.some((s) => s.id === "Model Selection"))) {
+    // 3. If specifically awaiting model confirmation / approval before Training Configuration, select Model Selection
+    if (approvalNextStep === "Training Configuration" && (!selectedSubstepId || selectedSubstepId === "Model Selection")) {
       const modelSelIdx = steps.findIndex((s) => s.id === "Model Selection");
       if (modelSelIdx !== -1) {
         setActiveStepIndex(modelSelIdx);
@@ -199,21 +223,21 @@ export default function CardModal({
   // Synchronize activeTab based on step status and selection
   useEffect(() => {
     if (!activeStep) return;
-    const currentStatus = pipelineStatuses[activeStep.id] ?? "Not Started";
+    const currentStatus = pipelineStatuses[activeStep.id] ?? "Pending";
     const statusChanged = lastStepStatusRef.current !== currentStatus;
     const stepIdChanged = lastStepIdRef.current !== activeStep.id;
 
     if (stepIdChanged) {
       if (currentStatus === "In Progress") {
-        Promise.resolve().then(() => setActiveTab("thinking"));
+        Promise.resolve().then(() => tabswitcher("thinking"));
       } else {
-        Promise.resolve().then(() => setActiveTab("output"));
+        Promise.resolve().then(() => tabswitcher("output"));
       }
     } else if (statusChanged) {
       if (currentStatus === "Completed") {
-        Promise.resolve().then(() => setActiveTab("output"));
+        Promise.resolve().then(() => tabswitcher("output"));
       } else if (currentStatus === "In Progress") {
-        Promise.resolve().then(() => setActiveTab("thinking"));
+        Promise.resolve().then(() => tabswitcher("thinking"));
       }
     }
     lastStepStatusRef.current = currentStatus;
@@ -221,37 +245,37 @@ export default function CardModal({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeStep?.id, activeStepStatus, pipelineStatuses]);
 
-  if (!isOpen) return null;
+
+  if (!isOpen || !mounted) return null;
 
   // Fallback to standard render if workflowCard details are not provided
   if (!workflowCard) {
-    return (
-      <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-900/60 transition-all scale-100 flex flex-col max-h-[85vh] p-6 text-foreground">
-        <div className="flex items-center justify-between mb-4 border-b border-border pb-3">
+    return createPortal(
+      <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all scale-100 flex flex-col max-h-[85vh] p-6 text-foreground select-none">
+        <div className="flex items-center justify-between mb-4 border-b border-border pb-3 w-full">
           <h3 className="text-lg font-bold">Stage Details</h3>
           <button onClick={onClose} className="p-1.5 hover:bg-surface-muted rounded-xl transition-colors cursor-pointer text-muted-foreground">
             ✕
           </button>
         </div>
         <div className="flex-1 overflow-y-auto">{render}</div>
-      </div>
+      </div>,
+      document.body
     );
   }
-
-
 
   // Check if output is received for the active step (provided as prop by parent)
   const stepOutputContent = activeStep ? stepOutputs[activeStep.id] : null;
   const hasOutput = stepOutputContent !== undefined && stepOutputContent !== null;
 
   // Helper to check overall workflow status
-  const cardStatus = pipelineStatuses[workflowCard.id] ?? "Not Started";
+  const cardStatus = pipelineStatuses[workflowCard.id] ?? "Pending";
 
-  return (
-    <div className="fixed inset-0 z-[150] flex items-center justify-center p-2 sm:p-3 bg-slate-950/50 backdrop-blur-md animate-fade-in select-none">
+  return createPortal(
+    <div className="fixed inset-0 z-[200] p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in select-none">
       {/* Extended width to full screen with minimum gap, reduced border radius to rounded-xl */}
-      <div className="relative w-[98vw] h-[96vh] max-w-none overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col sm:flex-row animate-scale-up">
-        
+      <div className="relative w-[97vw] h-[95vh] overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col sm:flex-row animate-scale-up">
+
         {/* Left Panel: Steps Sidebar */}
         <div className="w-full sm:w-[250px] border-b sm:border-b-0 sm:border-r border-border p-5 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
 
@@ -263,16 +287,21 @@ export default function CardModal({
           <div className="relative flex flex-col gap-5 flex-1 min-h-0">
             {stepsList.map((stepItem, idx) => {
               const isSelected = activeStepIndex === idx;
-              const stepStatus = pipelineStatuses[stepItem.id] ?? "Not Started";
+              const stepStatus = pipelineStatuses[stepItem.id] ?? "Pending";
               const isStepCompleted = stepStatus === "Completed";
-              const isStepInProgress = stepStatus === "In Progress";
+              const isStepInProgress = stepStatus === "In Progress" && runStatus !== "Stopped";
+              const isStopped = runStatus === "Stopped" && stepStatus === "In Progress";
               const stepColors = CIRCLE_COLOR_MAP[stepItem.color] || CIRCLE_COLOR_MAP.green;
+              const isPaused = runStatus === "Paused" && stepStatus === "In Progress";
 
               return (
                 <button
                   key={stepItem.id}
                   title={stepItem.description}
-                  onClick={() => setActiveStepIndex(idx)}
+                  onClick={() => {
+                    setActiveStepIndex(idx);
+                    onSubstepChange?.(stepItem.id);
+                  }}
                   className={`flex items-center gap-4 text-left w-full relative z-10 py-1.5 focus:outline-none transition-all cursor-pointer group`}
                 >
                   {/* Progress segment line: Stops at the final step circle */}
@@ -281,24 +310,28 @@ export default function CardModal({
                   )}
 
                   {/* Circle Indicator */}
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 ${
-                    isStepCompleted 
-                      ? "bg-emerald-500 border-emerald-500 text-white shadow-md" 
-                      : isStepInProgress
-                      ? "bg-indigo-500 border-indigo-500 text-white shadow-lg animate-pulse"
-                      : isSelected
-                      ? `${stepColors.border} ${stepColors.text} bg-surface`
-                      : "border-border bg-surface text-muted-foreground/60 group-hover:border-muted-foreground/40"
-                  }`}>
+                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 
+                    ${isStepCompleted ? "bg-emerald-500 border-emerald-500 text-white shadow-md"
+                      : isStopped ? "bg-rose-100 border-rose-300 text-rose-600 dark:bg-rose-950/40 dark:border-rose-700 dark:text-rose-400"
+                        : isPaused ? "bg-yellow-500 border-yellow-500 text-white shadow-md animate-pulse"
+                          : isStepInProgress
+                            ? "bg-indigo-500 border-indigo-500 text-white shadow-lg animate-pulse"
+                            : isSelected
+                              ? `${stepColors.border} ${stepColors.text} bg-surface`
+                              : "border-border bg-surface text-muted-foreground/60 group-hover:border-muted-foreground/40"
+                    }`}>
                     {isStepCompleted ? (
                       <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
                         <polyline points="20 6 9 17 4 12" />
                       </svg>
-                    ) : isStepInProgress ? (
-                      <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                      </svg>
+                    ) : isPaused ? (<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>) :
+                      isStepInProgress ? (
+                        <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
+                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                        </svg>
                     ) : (
                       idx + 1
                     )}
@@ -307,12 +340,11 @@ export default function CardModal({
                   {/* Step Box Details (Transparent Background - requirement checklist) */}
                   <div className="flex-1 min-w-0 pr-2">
                     <div className="flex items-center justify-between gap-1">
-                      <span className={`text-xs font-bold truncate transition-colors leading-tight ${
-                        isSelected ? "text-foreground font-black" : "text-muted-foreground group-hover:text-foreground"
-                      }`}>
+                      <span className={`text-xs font-bold truncate transition-colors leading-tight ${isSelected ? "text-foreground font-black" : "text-muted-foreground group-hover:text-foreground"
+                        }`}>
                         {stepItem.title}
                       </span>
-                      
+
                       {/* Completed Checkmark / Spinner Badge */}
                       {isStepCompleted && (
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
@@ -330,7 +362,7 @@ export default function CardModal({
 
         {/* Right Panel: Active Step Logs & Custom Output Area */}
         <div className="flex-1 flex flex-col min-h-0 bg-background/30 relative overflow-hidden">
-          
+
           {/* Header of right panel containing Title, Icon, Status and Close button */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-border/80 bg-surface-muted/60 shrink-0 select-none">
             <div className="flex items-center gap-3">
@@ -342,11 +374,10 @@ export default function CardModal({
                   {workflowCard.title} Node
                 </h2>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`w-2 h-2 rounded-full ${
-                    cardStatus === "Completed" ? "bg-emerald-500" :
+                  <span className={`w-2 h-2 rounded-full ${cardStatus === "Completed" ? "bg-emerald-500" :
                     cardStatus === "In Progress" ? "bg-indigo-500 animate-ping" :
-                    cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
-                  }`} />
+                      cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
+                    }`} />
                   <span className="text-[11px] font-semibold text-muted-foreground">
                     {cardStatus === "In Progress" ? "Running" : cardStatus}
                   </span>
@@ -355,35 +386,47 @@ export default function CardModal({
             </div>
 
             <div className="flex items-center gap-2">
-              {requiresApproval && !(approvalNextStep === "Training Configuration" && activeStep?.id === "Model Selection") && (
-                <button
-                  type="button"
-                  onClick={() => onApprove?.(approvalNextStep || undefined)}
-                  disabled={isApproving}
-                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ${
-                    isApproving ? "opacity-75 cursor-not-allowed" : "animate-pulse"
-                  }`}
-                >
-                  {isApproving ? (
-                    <>
-                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
-                      </svg>
-                      <span>Advancing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                      <span>Proceed to Next Phase</span>
-                    </>
-                  )}
-                </button>
-              )}
+              {(() => {
+                const isModelTrainingCard = workflowCard?.id === "Model Training & Validation" || workflowCard?.title === "Model Training & Validation";
+                const isSubProcessApproval = isModelTrainingCard || [
+                  "Model Selection", "modelSelection", "modelSelectionNode",
+                  "Training Configuration", "trainingConfiguration", "trainingConfigurationNode",
+                  "Pre Flight", "preFlight", "preFlightNode",
+                  "Model Training", "modelTraining", "modelTrainingNode", "modelTrainingCodeNode",
+                  "Model Validation", "modelValidation", "modelValidationNode",
+                ].includes(approvalNextStep || "");
 
-              <button 
-                onClick={onClose} 
+                if (!requiresApproval || isSubProcessApproval) return null;
+
+                return (
+                  <button
+                    type="button"
+                    onClick={() => onApprove?.(approvalNextStep || undefined)}
+                    disabled={isApproving}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ${isApproving ? "opacity-75 cursor-not-allowed" : "animate-pulse"
+                      }`}
+                  >
+                    {isApproving ? (
+                      <>
+                        <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                          <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                        </svg>
+                        <span>Advancing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>Proceed to Next Phase</span>
+                      </>
+                    )}
+                  </button>
+                );
+              })()}
+
+              <button
+                onClick={onClose}
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-background border border-border text-muted-foreground transition-colors cursor-pointer"
                 title="Close Details"
               >
@@ -396,23 +439,21 @@ export default function CardModal({
           {activeStep && (
             <div className="flex border-b border-border bg-surface-muted/30 px-6 shrink-0 select-none">
               <button
-                onClick={() => setActiveTab("output")}
-                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
-                  activeTab === "output"
-                    ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
+                onClick={() => tabswitcher("output")}
+                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${activeTab === "output"
+                  ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 <span>📥</span>
                 <span>Step Output</span>
               </button>
               <button
-                onClick={() => setActiveTab("thinking")}
-                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
-                  activeTab === "thinking"
-                    ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
-                    : "border-transparent text-muted-foreground hover:text-foreground"
-                }`}
+                onClick={() => tabswitcher("thinking")}
+                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${activeTab === "thinking"
+                  ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
+                  : "border-transparent text-muted-foreground hover:text-foreground"
+                  }`}
               >
                 <span>🧠</span>
                 <span>Agent Reasoning</span>
@@ -453,9 +494,8 @@ export default function CardModal({
                             type="button"
                             onClick={() => onApprove?.(approvalNextStep || undefined)}
                             disabled={isApproving}
-                            className={`mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer ${
-                              isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105"
-                            }`}
+                            className={`mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105"
+                              }`}
                           >
                             {isApproving ? (
                               <>
@@ -499,7 +539,7 @@ export default function CardModal({
                         <p className="text-[10px] text-muted-foreground">Detailed logic trace executed by the agent</p>
                       </div>
                     </div>
-                    {activeStepStatus === "In Progress" && (
+                    {activeStepStatus === "In Progress" && runStatus === 'Running' && (
                       <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 animate-pulse bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md">
                         Processing...
                       </span>
@@ -536,6 +576,7 @@ export default function CardModal({
         </div>
 
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }

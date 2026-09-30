@@ -17,6 +17,7 @@ export interface CreateProjectDto {
   useCase?: string;
   domain?: string;
   subDomain?: string;
+  splitDate?: string;
 }
 
 export interface UpdateProjectDto {

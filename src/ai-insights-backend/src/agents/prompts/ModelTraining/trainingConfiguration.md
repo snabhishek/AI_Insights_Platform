@@ -52,38 +52,39 @@ Synthesize a comprehensive, production-grade configuration that populates the fo
 - `description`: Summarize the purpose of this training job and what the resulting model is expected to accomplish.
 
 ### C. ML Task Definition (`task`)
-- `task_type`: Identify the machine learning problem represented by the use case, target, and prediction objective.
-- `task_subtype`: Describe the specific form of the identified machine learning problem.
-- `learning_type`: Identify how the model should learn based on the availability and nature of the target and training information.
-- `prediction_type`: Describe what the trained model should return to satisfy the prediction requirement.
-- `prediction_horizon`: Describe the future period or point for which the prediction is intended, when the use case involves a future outcome.
-- `prediction_timestamp`: Identify the point in time at which the information available for making the prediction should be considered valid.
+- `task_type`: Identify the machine learning problem represented by the use case, target, and prediction objective: MUST be `"forecasting"` (for time-series/demand forecasting), `"regression"` (for continuous quantitative targets), or `"classification"` (for discrete categories/labels). NEVER classify continuous numeric targets as classification!
+- `task_subtype`: Describe the specific form (e.g. `"panel_forecasting"`, `"univariate_forecasting"`, `"standard_regression"`, `"binary"`, `"multiclass"`).
+- `learning_type`: "supervised"
+- `prediction_type`: MUST be `"value"` or `"point"` for continuous forecasting and regression; MUST be `"probability"` for classification.
 
 ### D. Upstream Artifacts Lineage (`upstream_artifacts`)
 - `dataset_id`: Write the identifier of the finalized dataset that will be used for training found in the project directory. This information can be asked from the *dataanalyseragent*.  
 - `dataset_version`: Write the version of the finalized dataset used for this training job. This information can be asked from the *dataanalyseragent*.
-- `feature_set_id`: Write the identifier of the finalized feature set used for training. This information can be asked from the *dataanalyseragent*.
-- `feature_set_version`: Write the version of the finalized feature set used for this training job. This information can be asked from the *dataanalyseragent*.
+- `validated_features`: No need to fill this field (keep it as an empty array `[]`); it will be automatically read and populated by the system from the feature validation report.
 - `profiling_report_id`: Write the identifier of the profiling information used when making training decisions. This information can be asked from the *dataanalyseragent*.
 - `relationship_schema_id`: Write the identifier of the finalized relationship information used to understand relationships between the training data entities, when applicable. This information can be asked from the *dataanalyseragent*.
 - `row_count`: Write the number of records available in the finalized training dataset. This information can be asked from the *dataanalyseragent*.
 - `column_count`: Write the number of columns available in the finalized training dataset. This information can be asked from the *dataanalyseragent*.
 
 ### E. Data Splitting & Cross-Validation Strategy (`split`)
-- `strategy`: Select the data splitting approach that most closely represents how the model will encounter data in its intended usage.
-- `train_ratio`: Specify the proportion of available data that should be used for model training.
-- `validation_ratio`: Specify the proportion of available data that should be used for model validation and model or parameter selection.
-- `test_ratio`: Specify the proportion of available data that should be reserved for final unbiased model evaluation.
-- `random_seed`: Seed value ensuring reproducible splits.
-- `stratify_by`: Identify the target or other variable whose distribution should be preserved across the data splits, when needed.
-- `group_by`: Identify the entity or grouping attribute whose related records must remain within the same data split, when needed.
-- `time_column`: Identify the time attribute that should determine the ordering of records for a time-dependent split, when needed.
+- **Temporal Cutoff vs Ratio Fallback**:
+  - **User-Specified Split Date (`split_date`)**: If the user has provided a `splitDate` AND a timestamp or date column exists in the dataset, configure `strategy: "temporal"` with `time_column: "<date_column>"` and `split_date: "<user_provided_split_date>"`. Training data consists of records with `time_column <= split_date` and test/validation data consists of records with `time_column > split_date`.
+  - **Fallback Splitting (Strict 70/15/15 Ratio)**: If NO timestamp or date column exists in the dataset, OR if `splitDate` was not provided, you MUST configure a standard 70/15/15 ratio split (`train_ratio: 0.70`, `validation_ratio: 0.15`, `test_ratio: 0.15`, summing strictly to 1.0).
+- `strategy`: "temporal" (if date column exists and split_date provided), "stratified" (for classification), or "random".
+- `train_ratio`: Specify 0.70 (unless temporal cutoff overrides).
+- `validation_ratio`: Specify 0.15.
+- `test_ratio`: Specify 0.15.
+- `split_date`: The user-specified cutoff date string (e.g. "2024-01-01") if provided and date column exists; otherwise `null`.
+- `random_seed`: Seed value (default: 42) ensuring reproducible splits.
+- `stratify_by`: Target column name if problem type is classification and not using temporal split.
+- `group_by`: Identify grouping attribute when records must remain in same split, if applicable.
+- `time_column`: Name of the date/time column if temporal splitting is used.
 - `cross_validation`:
-  - `enabled`: Determine whether repeated validation across multiple subsets of the training data is appropriate for this use case.
-  - `strategy`: Select the cross-validation approach that best matches the characteristics of the dataset and prediction problem.
-  - `folds`: Specify the number of validation folds to use when cross-validation is enabled.
-  - `shuffle`: Determine whether records should be reordered before creating cross-validation folds.
-  - `random_seed`: Seed value for fold creation.
+  - `enabled`: Determine whether repeated validation across multiple folds is appropriate.
+  - `strategy`: "k_fold", "stratified_k_fold", or "time_series_split".
+  - `folds`: Number of validation folds (typically 5).
+  - `shuffle`: False if temporal, True if standard cross-validation.
+  - `random_seed`: 42.
 
 ### F. Class Imbalance Handling (`imbalance`)
 - `detected`: Determine whether the target distribution contains a meaningful imbalance that could affect model training.
@@ -112,16 +113,25 @@ Synthesize a comprehensive, production-grade configuration that populates the fo
   - `values`: List the parameter values that should be considered when the parameter has a defined set of alternatives.
 
 ### I. Training Objective (`objective`)
-- `training_loss`: Identify the loss function that should be optimized during model training for the selected prediction problem.
-- `optimization_metric`: Optimization metric guiding the training objective.
-- `direction`: Determine whether improvement in the optimization objective corresponds to increasing or decreasing its value.
+- `training_loss`: Identify the loss function that should be optimized during model training:
+  - For forecasting & regression: Continuous loss functions (e.g. `"mse"`, `"mae"`, `"huber"`). NEVER use logloss!
+  - For classification: Categorical loss functions (e.g. `"logloss"`, `"cross_entropy"`).
+- `optimization_metric`: Optimization metric guiding the training objective (matches primary metric).
+- `direction`: Determine whether improvement in the optimization objective corresponds to increasing or decreasing its value (`"minimize"` for error metrics like WAPE, RMSE, MAE; `"maximize"` for accuracy, F1, R²).
 - `custom_objective`:
   - `enabled`: Determine whether the standard training objective is insufficient and a custom training objective is needed.
   - `definition`: Describe the custom objective that should be optimized and how it relates to the prediction goal, when applicable.
 
 ### J. Comprehensive Evaluation Protocol (`evaluation`)
 - `primary_metric`: Primary performance metric definition.
-- `secondary_metrics`: Identify additional performance metrics that provide useful information beyond the primary metric.
+  - For forecasting: e.g. `"wape"`, `"rmse"`, `"mae"`.
+  - For regression: e.g. `"rmse"`, `"mae"`, `"r2"`.
+  - For classification: e.g. `"f1_score"`, `"roc_auc"`, `"accuracy"`.
+- `secondary_metrics`: Identify additional performance metrics matching the task:
+  - For forecasting: `["MAE", "RMSE", "WAPE", "MAPE"]`.
+  - For regression: `["MAE", "RMSE", "R2"]`.
+  - For classification: `["accuracy", "precision", "recall", "roc_auc"]`.
+  - NEVER output classification metrics for forecasting or regression!
 - `thresholds`:
   - `primary_metric_min`: Specify the minimum primary metric performance required for a model to be considered acceptable.
   - `secondary_metric_constraints`: Define any minimum or maximum performance requirements for secondary metrics that are important to the use case.
@@ -199,6 +209,7 @@ Synthesize a comprehensive, production-grade configuration that populates the fo
 - `models`: List of models to be trained, each with `model_id`, `framework`, `algorithm`, `enabled`, `parameters`, and `training_steps`.
 - **`training_steps`**:
   You MUST NOT use predefined or generic placeholder code. You MUST use your web search tools (`web_search` and `extract_url_content`) to actively research the official, modern Python implementation and execution recipes for each candidate model and write these concrete fields:
+  - **MANDATORY ESTIMATOR TASK ALIGNMENT**: For forecasting and regression tasks, you MUST research and specify Regressor estimator classes (e.g. `lgb.LGBMRegressor`, `xgb.XGBRegressor`, `sklearn.ensemble.RandomForestRegressor`, `catboost.CatBoostRegressor`). NEVER instantiate a Classifier class (such as `LGBMClassifier`) when predicting continuous numeric targets!
   - `package_dependencies`: List pip package dependencies required to train this model with version specifiers (e.g. `["lightgbm>=4.0.0", "scikit-learn>=1.4.0"]`).
   - `import_statement`: Write the exact Python import statement to import the model class.
   - `class_name`: Write the exact model class name.
@@ -260,15 +271,12 @@ Return this when you have sufficient information and have researched the trainin
     "task_type": "<Identify the machine learning problem represented by the use case, target, and prediction objective.>",
     "task_subtype": "<Describe the specific form of the identified machine learning problem.>",
     "learning_type": "<Identify how the model should learn based on the availability and nature of the target and training information.>",
-    "prediction_type": "<Describe what the trained model should return to satisfy the prediction requirement.>",
-    "prediction_horizon": "<Describe the future period or point for which the prediction is intended, when the use case involves a future outcome.>",
-    "prediction_timestamp": "<Identify the point in time at which the information available for making the prediction should be considered valid.>"
+    "prediction_type": "<Describe what the trained model should return to satisfy the prediction requirement.>"
   },
   "upstream_artifacts": {
     "dataset_path": "<Write the identifier of the finalized dataset that will be used for training. Get it from the directory>",
     "dataset_version": "<Write the version of the finalized dataset used for this training job. Get it from the directory>",
-    "feature_set_path": "<Write the identifier of the finalized feature set used for training. Get it from the directory>",
-    "feature_set_version": "<Write the version of the finalized feature set used for this training job. Get it from the directory>",
+    "validated_features": [],
     "profiling_report_path": "<Write the identifier of the profiling information used when making training decisions. Get it from the directory>",
     "relationship_schema_path": "<Write the identifier of the finalized relationship information used to understand relationships between the training data entities, when applicable. Get it from the directory>",
     "row_count": "<Write the number of records available in the finalized training dataset.>",

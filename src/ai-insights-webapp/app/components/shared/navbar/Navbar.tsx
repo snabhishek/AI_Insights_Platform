@@ -1,10 +1,11 @@
 "use client";
 
 import { ReactNode } from "react";
-import { useTab, TabType } from "../../providers/TabProvider";
+import { createTabContext } from "../../providers/TabProvider";
+import { PageType } from "../constants";
 
 interface NavItem {
-  id: TabType;
+  id: PageType;
   label: string;
   icon: ReactNode;
 }
@@ -43,20 +44,21 @@ const NAV_ITEMS: NavItem[] = [
     ),
   },
   {
-    id: "application",
-    label: "Application",
+    id: "ai-agent-chat",
+    label: "AI Agent Chat",
     icon: (
       <svg {...iconProps}>
-        <polygon points="12 2 2 7 12 12 22 7 12 2" />
-        <polyline points="2 17 12 22 22 17" />
-        <polyline points="2 12 12 17 22 12" />
+        <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+        <circle cx="9" cy="10" r="1" fill="currentColor" />
+        <circle cx="12" cy="10" r="1" fill="currentColor" />
+        <circle cx="15" cy="10" r="1" fill="currentColor" />
       </svg>
     ),
   },
 ];
 
-export default function Navbar() {
-  const { activeTab, setActiveTab } = useTab();
+export default function Navbar({ useTab }: { useTab: <T>(tab: T) => any}) {
+  const { activeTab, tabswitcher } = useTab<PageType>("projects");
 
   return (
     <nav className="w-full bg-surface px-4">
@@ -67,7 +69,12 @@ export default function Navbar() {
             <li key={item.id}>
               <button
                 type="button"
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  tabswitcher('switcher');
+                  setTimeout(() => {
+                    tabswitcher(item.id)
+                  }, 100);
+                }}
                 aria-current={isActive ? "page" : undefined}
                 className={`group inline-flex items-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition-colors cursor-pointer ${
                   isActive

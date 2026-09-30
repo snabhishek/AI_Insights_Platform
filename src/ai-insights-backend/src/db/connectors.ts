@@ -66,6 +66,7 @@ export const projectRuns = pgTable("project_runs", {
 }, (table) => {
   return {
     projectIdIdx: index("project_runs_project_id_idx").on(table.projectId),
+    statusIdx: index("project_runs_status_idx").on(table.status),
   };
 });
 

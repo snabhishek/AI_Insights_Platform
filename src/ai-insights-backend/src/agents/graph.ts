@@ -6,7 +6,15 @@ import { schemaResolverNode } from "./IngestionLayer/resolver/schemaResolverNode
 import { hierarchyMapperNode } from "./FeatureEngineering/HierarchyMapper/hierarchyMapperNode";
 import { featureArchitectNode } from "./FeatureEngineering/FeatureArchitect/featureArchitectNode";
 import { exogenousScoutNode } from "./FeatureEngineering/ExogenousScout/exogenousScoutNode";
-import { modelSelectionNode, trainingConfigurationNode, preFlightNode, modelTrainingNode, modelValidationNode } from "./ModelTrainingValidation/nodes";
+import {
+  modelSelectionNode,
+  trainingConfigurationNode,
+  preFlightNode,
+  modelTrainingCodeNode,
+  modelTrainingExecNode,
+  modelValidationNode,
+} from "./ModelTrainingValidation/nodes";
+import { getInterruptBeforeNodes } from "./workflowRules.config";
 
 export function createAgentGraph(checkpointer: any) {
   const workflow = new StateGraph(AgentState)
@@ -19,7 +27,8 @@ export function createAgentGraph(checkpointer: any) {
     .addNode("modelSelectionNode", modelSelectionNode)
     .addNode("trainingConfigurationNode", trainingConfigurationNode)
     .addNode("preFlightNode", preFlightNode)
-    .addNode("modelTrainingNode", modelTrainingNode)
+    .addNode("modelTrainingCodeNode", modelTrainingCodeNode)
+    .addNode("modelTrainingExecNode", modelTrainingExecNode)
     .addNode("modelValidationNode", modelValidationNode)
     .addEdge("__start__", "inspect")
     .addEdge("inspect", "profileData")
@@ -30,16 +39,13 @@ export function createAgentGraph(checkpointer: any) {
     .addEdge("exogenous", "modelSelectionNode")
     .addEdge("modelSelectionNode", "trainingConfigurationNode")
     .addEdge("trainingConfigurationNode", "preFlightNode")
-    .addEdge("preFlightNode", "modelTrainingNode")
-    .addEdge("modelTrainingNode", "modelValidationNode")
+    .addEdge("preFlightNode", "modelTrainingCodeNode")
+    .addEdge("modelTrainingCodeNode", "modelTrainingExecNode")
+    .addEdge("modelTrainingExecNode", "modelValidationNode")
     .addEdge("modelValidationNode", "__end__");
 
   return workflow.compile({
     checkpointer,
-    interruptBefore: [
-      "hierarchyMapperNode",
-      "modelSelectionNode",
-      "trainingConfigurationNode",
-    ],
+    interruptBefore: getInterruptBeforeNodes() as any,
   });
 }

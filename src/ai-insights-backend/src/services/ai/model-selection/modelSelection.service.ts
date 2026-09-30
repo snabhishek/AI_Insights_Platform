@@ -279,6 +279,8 @@ export class ModelSelectionService implements IModelSelectionService {
         delete cleanStageOutputs.modelValidation;
 
         const cleanStageStatuses = { ...(existingState.stageStatuses || {}) };
+        cleanStageStatuses.modelSelection = "Completed";
+        cleanStageStatuses.modelSelectionNode = "Completed";
         cleanStageStatuses.trainingConfiguration = "In Progress";
         cleanStageStatuses.preFlight = "Pending";
         cleanStageStatuses.modelTraining = "Pending";
@@ -393,6 +395,8 @@ export class ModelSelectionService implements IModelSelectionService {
     delete cleanStageOutputs.modelValidation;
 
     const cleanStageStatuses = { ...(existingState.stageStatuses || {}) };
+    cleanStageStatuses.modelSelection = "Completed";
+    cleanStageStatuses.modelSelectionNode = "Completed";
     cleanStageStatuses.trainingConfiguration = "In Progress";
     cleanStageStatuses.preFlight = "Pending";
     cleanStageStatuses.modelTraining = "Pending";

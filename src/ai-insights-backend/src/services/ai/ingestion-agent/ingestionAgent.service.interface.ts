@@ -12,7 +12,6 @@ export interface IngestionAgentRunResult {
   inspection: Record<string, unknown>;
   schemaResolution: Record<string, unknown>;
   dataProfile: Record<string, unknown>;
-  preprocessing: Record<string, unknown>;
   batchedTables?: Array<{ tableName: string; status: string; node: string; summary: string }>;
   sessionId?: string;
   requiresApproval?: boolean;
@@ -30,7 +29,19 @@ export interface IIngestionAgentService {
   run(
     connectorId: string[],
     userPrompt?: string,
-    options?: { sessionId?: string; action?: "approve" | "retry" | "resume"; step?: string; projectId?: string }
+    options?: {
+      sessionId?: string;
+      action?: "approve" | "retry" | "resume";
+      step?: string;
+      projectId?: string;
+      splitDate?: string;
+      splitStartDate?: string;
+      splitEndDate?: string;
+      selectedModels?: string[];
+      predictionHorizon?: number;
+      predictionFrequency?: string;
+      predictionObjectiveStartDate?: string;
+    }
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown>;
   stop(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
   pause(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;

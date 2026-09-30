@@ -34,7 +34,7 @@ interface ProjectDetailPageProps {
   onGoBack: () => void;
   onDelete: () => void;
   onEdit: () => void;
-  onViewHistory: () => void;
+  // onViewHistory: () => void;
   onManageSources: () => void;
   onAddTag: () => void;
   activeStage: string | null;
@@ -42,7 +42,15 @@ interface ProjectDetailPageProps {
   requiresApproval: boolean;
   workflowMessage: string;
   onSelectStage: (stepId: string) => void;
-  onApprove: (overrideTargetPhase?: string) => void;
+  onApprove: (
+    overrideTargetPhase?: string,
+    selectedModels?: string[],
+    splitStartDate?: string,
+    splitEndDate?: string,
+    predictionHorizon?: number,
+    predictionFrequency?: string,
+    predictionObjectiveStartDate?: string
+  ) => void;
   onRetry: (stepId: string) => void;
   isPaused?: boolean;
   pausedAtPhase?: string | null;
@@ -72,7 +80,7 @@ export default function ProjectDetailPage({
   onGoBack,
   onDelete,
   onEdit,
-  onViewHistory,
+  // onViewHistory,
   onManageSources,
   onAddTag,
   activeStage,
@@ -111,7 +119,10 @@ export default function ProjectDetailPage({
       if (stepId !== mainId) {
         setSelectedSubstepId(stepId);
       } else if (mainId === "Model Training & Validation") {
-        setSelectedSubstepId("Model Selection");
+        const substeps = ["Model Validation", "Model Training", "Pre Flight", "Training Configuration", "Model Selection"];
+        const inProgress = substeps.find((s) => pipelineStatuses[s] === "In Progress");
+        const withOutput = substeps.find((s) => stageOutputs?.[s] != null || pipelineStatuses[s] === "Completed");
+        setSelectedSubstepId(inProgress || withOutput || "Model Selection");
       } else {
         setSelectedSubstepId(null);
       }
@@ -126,53 +137,37 @@ export default function ProjectDetailPage({
 
   return (
     <>
-      <div className="p-8 w-full flex flex-col min-h-full bg-background animate-fade-in select-none">
-        {/* Breadcrumbs */}
-        <nav className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground mb-2 select-none">
-          <button
-            onClick={onGoBack}
-            className="hover:text-primary cursor-pointer hover:underline transition-colors"
-          >
-            Projects
-          </button>
-          <span className="text-muted-foreground/50">/</span>
-          <span className="text-foreground">{project.name}</span>
-        </nav>
+      <div className="p-4 w-full flex flex-col min-h-full bg-background animate-fade-in select-none">
 
         {/* ── Project Header ── */}
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6 mb-8">
+        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
                 {project.name}
               </h1>
-              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                Active
-              </span>
-            </div>
-
-            {/* Domain & Sub-domain inline pills */}
-            {(project.domain || project.subDomain) && (
-              <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                {project.domain && (
-                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary text-white shadow-sm">
-                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-white">
-                      <circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
-                    </svg>
-                    {project.domain}
-                  </span>
-                )}
-                {project.subDomain && (
-                  <>
-                    <span className="text-muted-foreground/40 text-xs select-none">›</span>
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/90 text-white shadow-sm">
-                      {project.subDomain}
+              {/* Domain & Sub-domain inline pills */}
+              {(project.domain || project.subDomain) && (
+                <div className="flex items-center gap-2 flex-wrap mt-1.5">
+                  {project.domain && (
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary text-white shadow-sm">
+                      <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-white">
+                        <circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
+                      </svg>
+                      {project.domain}
                     </span>
-                  </>
-                )}
-              </div>
-            )}
+                  )}
+                  {project.subDomain && (
+                    <>
+                      <span className="text-muted-foreground/40 text-xs select-none">›</span>
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/90 text-white shadow-sm">
+                        {project.subDomain}
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
           {/* Icon action buttons */}
@@ -180,7 +175,7 @@ export default function ProjectDetailPage({
             <button
               onClick={onEdit}
               title="Edit Project"
-              className="w-10 h-10 rounded-full border border-border bg-surface text-muted-foreground hover:text-primary hover:bg-surface-muted flex items-center justify-center cursor-pointer transition-colors shadow-sm"
+              className="w-8 h-8 rounded-full border border-border bg-surface text-muted-foreground hover:text-primary hover:bg-surface-muted flex items-center justify-center cursor-pointer transition-colors shadow-sm"
             >
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
@@ -190,7 +185,7 @@ export default function ProjectDetailPage({
             <button
               onClick={onDelete}
               title="Delete Project"
-              className="w-10 h-10 rounded-full border border-border bg-surface text-muted-foreground hover:text-red-500 hover:border-red-200 hover:bg-red-50/40 flex items-center justify-center cursor-pointer transition-colors shadow-sm"
+              className="w-8 h-8 rounded-full border border-border bg-surface text-muted-foreground hover:text-red-500 hover:border-red-200 hover:bg-red-50/40 flex items-center justify-center cursor-pointer transition-colors shadow-sm"
             >
               <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <polyline points="3 6 5 6 21 6" />
@@ -206,7 +201,7 @@ export default function ProjectDetailPage({
                 })
               }
               title="More Actions"
-              className="w-10 h-10 rounded-full border border-border bg-surface text-muted-foreground hover:text-foreground hover:bg-surface-muted flex items-center justify-center cursor-pointer transition-colors shadow-sm"
+              className="w-8 h-8 rounded-full border border-border bg-surface text-muted-foreground hover:text-foreground hover:bg-surface-muted flex items-center justify-center cursor-pointer transition-colors shadow-sm"
             >
               <svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <circle cx="12" cy="5" r="1" /><circle cx="12" cy="12" r="1" /><circle cx="12" cy="19" r="1" />
@@ -216,14 +211,12 @@ export default function ProjectDetailPage({
         </div>
 
         {/* ── Main Layout Grid ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-12 items-start gap-3">
 
           {/* Left Column: Data Sources & Use Case — flat, no card wrappers */}
-          <div className="col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-8">
+          {/* <div className="col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-3">
 
-            {/* ── Data Sources Section ── */}
             <div className="border border-border rounded-lg shadow-sm bg-background p-5">
-              {/* Header with divider */}
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
                 <div>
                   <h2 className="text-base font-bold text-foreground leading-tight">
@@ -298,18 +291,16 @@ export default function ProjectDetailPage({
                   onClick={onManageSources}
                   className="w-full py-2 border border-dashed border-border hover:border-primary text-muted-foreground hover:text-primary rounded-xl text-xs font-semibold cursor-pointer transition-colors flex items-center justify-center gap-2"
                 >
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <circle cx="12" cy="12" r="3" />
-                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.62V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                </svg>
-                Manage Data Sources
+                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <circle cx="12" cy="12" r="3" />
+                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.62V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                  </svg>
+                  Manage Data Sources
                 </button>
               </div>
             </div>
 
-            {/* ── Use Case Section ── */}
             <div className="border border-border rounded-lg shadow-sm bg-background p-5">
-              {/* Header with divider */}
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
                 <h2 className="text-base font-bold text-foreground leading-tight">Project Use Case</h2>
                 {!isEditingUseCase && (
@@ -374,7 +365,7 @@ export default function ProjectDetailPage({
                 </p>
               )}
             </div>
-          </div>
+          </div> */}
 
           {/* Right Column: Workflow Pipeline */}
           <WorkflowPipeline
@@ -389,7 +380,7 @@ export default function ProjectDetailPage({
             onRunWorkflow={onRunWorkflow}
             onReRunWorkflow={onReRunWorkflow ? () => onReRunWorkflow() : undefined}
             onStopWorkflow={onStopWorkflow}
-            onViewHistory={onViewHistory}
+            // onViewHistory={onViewHistory}
             onSelectStage={handleSelectStage}
             onApprove={() => onApprove()}
             onRetry={onRetry}
@@ -409,7 +400,6 @@ export default function ProjectDetailPage({
 
         const effectiveInspect = stageOutputs.inspect || stageOutputs.inspectNode || savedOutputs.inspect || savedOutputs.inspectNode;
         const effectiveProfileData = stageOutputs.profileData || savedOutputs.profileData;
-        const effectivePreprocess = stageOutputs.preprocess || savedOutputs.preprocess;
         const effectiveResolveSchema = stageOutputs.resolveSchema || savedOutputs.resolveSchema;
         const effectiveHierarchyMapper = stageOutputs.hierarchyMapper || savedOutputs.hierarchyMapper;
         const effectiveRelationshipBuilder = stageOutputs.relationshipBuilder || savedOutputs.relationshipBuilder;
@@ -428,8 +418,8 @@ export default function ProjectDetailPage({
           "Data Inspection": effectiveInspect ? (
             <IngestionStepOutput inspectOutput={effectiveInspect} />
           ) : null,
-          "Data Profiling": (effectiveProfileData || effectivePreprocess) ? (
-            <ProfilingStepOutput profileData={effectiveProfileData} preprocess={effectivePreprocess} />
+          "Data Profiling": effectiveProfileData ? (
+            <ProfilingStepOutput profileData={effectiveProfileData} />
           ) : null,
           "Schema Resolver": effectiveResolveSchema ? (
             <SchemaResolverStepOutput resolveSchema={effectiveResolveSchema} />
@@ -458,9 +448,9 @@ export default function ProjectDetailPage({
               projectId={project.id}
               activeSubstep="Model Selection"
               activeRunTimestamp={effectiveRunTimestamp}
-              onSelectionConfirmed={(_models) => {
+              onSelectionConfirmed={(models) => {
                 if (onApprove) {
-                  onApprove("Training Configuration");
+                  onApprove("Training Configuration", models);
                 }
               }}
             />
@@ -472,6 +462,12 @@ export default function ProjectDetailPage({
               projectId={project.id}
               activeSubstep="Training Configuration"
               activeRunTimestamp={effectiveRunTimestamp}
+              onApprove={(selectedModels, splitEndDate) => {
+                if (onApprove) {
+                  onApprove("Pre Flight", selectedModels, undefined, splitEndDate);
+                }
+              }}
+              isApproving={isApproving}
             />
           ) : null,
           "Pre Flight": effectivePreFlight ? (
@@ -480,22 +476,50 @@ export default function ProjectDetailPage({
               projectId={project.id}
               activeSubstep="Pre Flight"
               activeRunTimestamp={effectiveRunTimestamp}
+              onApprovePreFlight={() => {
+                if (onApprove) {
+                  onApprove("Model Training");
+                }
+              }}
+              isApproving={isApproving}
             />
           ) : null,
-          "Model Training": effectiveModelTraining ? (
+          "Model Training": (effectiveModelTraining || effectiveModelSelection) ? (
             <ModelTrainingValidationStepOutput
               modelTraining={effectiveModelTraining}
+              trainingConfiguration={effectiveTrainingConfig}
+              modelSelection={effectiveModelSelection}
               projectId={project.id}
               activeSubstep="Model Training"
               activeRunTimestamp={effectiveRunTimestamp}
+              onApproveTraining={(selectedModels, splitStartDate, splitEndDate) => {
+                if (onApprove) {
+                  onApprove("Model Training", selectedModels, splitStartDate, splitEndDate);
+                }
+              }}
+              onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
+                if (onApprove) {
+                  onApprove("Model Validation", selectedModels, undefined, undefined, horizon, frequency, startDate);
+                }
+              }}
+              isApproving={isApproving}
             />
           ) : null,
-          "Model Validation": effectiveModelValidation ? (
+          "Model Validation": (effectiveModelValidation || effectiveModelTraining) ? (
             <ModelTrainingValidationStepOutput
               modelValidation={effectiveModelValidation}
+              modelTraining={effectiveModelTraining}
+              trainingConfiguration={effectiveTrainingConfig}
+              modelSelection={effectiveModelSelection}
               projectId={project.id}
               activeSubstep="Model Validation"
               activeRunTimestamp={effectiveRunTimestamp}
+              onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
+                if (onApprove) {
+                  onApprove("Model Validation", selectedModels, undefined, undefined, horizon, frequency, startDate);
+                }
+              }}
+              isApproving={isApproving}
             />
           ) : null,
           "Feature Engineering": effectiveExogenousScout ? (
@@ -503,43 +527,68 @@ export default function ProjectDetailPage({
           ) : effectiveFeatureArchitect ? (
             <FeatureArchitectStepOutput featureArchitect={effectiveFeatureArchitect} />
           ) : null,
-          "Model Training & Validation": (
-            effectiveModelSelection ||
-            effectiveTrainingConfig ||
-            effectivePreFlight ||
-            effectiveModelTraining ||
-            effectiveModelValidation
-          ) ? (
-            <ModelTrainingValidationStepOutput
-              modelSelection={effectiveModelSelection}
-              trainingConfiguration={effectiveTrainingConfig}
-              preFlight={effectivePreFlight}
-              modelTraining={effectiveModelTraining}
-              modelValidation={effectiveModelValidation}
-              projectId={project.id}
-              activeSubstep={
-                effectiveModelValidation
-                  ? "Model Validation"
-                  : effectiveModelTraining
-                  ? "Model Training"
-                  : effectivePreFlight
-                  ? "Pre Flight"
-                  : effectiveTrainingConfig
-                  ? "Training Configuration"
-                  : "Model Selection"
-              }
-              activeRunTimestamp={effectiveRunTimestamp}
-              onSelectionConfirmed={(_models) => {
-                if (onApprove) {
-                  onApprove("Training Configuration");
-                }
-              }}
-            />
-          ) : null
+          // "Model Training & Validation": (
+          //   effectiveModelSelection ||
+          //   effectiveTrainingConfig ||
+          //   effectivePreFlight ||
+          //   effectiveModelTraining ||
+          //   effectiveModelValidation
+          // ) ? (
+          //   <ModelTrainingValidationStepOutput
+          //     modelSelection={effectiveModelSelection}
+          //     trainingConfiguration={effectiveTrainingConfig}
+          //     preFlight={effectivePreFlight}
+          //     modelTraining={effectiveModelTraining}
+          //     modelValidation={effectiveModelValidation}
+          //     projectId={project.id}
+          //     activeSubstep={
+          //       selectedSubstepId ||
+          //       (effectiveModelValidation
+          //         ? "Model Validation"
+          //         : effectiveModelTraining
+          //           ? "Model Training"
+          //           : effectivePreFlight
+          //             ? "Pre Flight"
+          //             : effectiveTrainingConfig
+          //               ? "Training Configuration"
+          //               : "Model Selection")
+          //     }
+          //     activeRunTimestamp={effectiveRunTimestamp}
+          //     onSelectionConfirmed={(models) => {
+          //       if (onApprove) {
+          //         onApprove("Training Configuration", models);
+          //       }
+          //     }}
+          //     onApproveTraining={(selectedModels, splitStartDate, splitEndDate) => {
+          //       if (onApprove) {
+          //         onApprove("Model Training", selectedModels, splitStartDate, splitEndDate);
+          //       }
+          //     }}
+          //     onApprovePreFlight={() => {
+          //       if (onApprove) {
+          //         onApprove("Model Training");
+          //       }
+          //     }}
+          //     onNavigateToValidation={(models) => {
+          //       setSelectedSubstepId("Model Validation");
+          //     }}
+          //     onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
+          //       if (onApprove) {
+          //         onApprove("Model Validation", selectedModels, undefined, undefined, horizon, frequency, startDate);
+          //       }
+          //     }}
+          //     onApprove={(selectedModels, splitEndDate) => {
+          //       if (onApprove) {
+          //         onApprove("Pre Flight", selectedModels, undefined, splitEndDate);
+          //       }
+          //     }}
+          //     isApproving={isApproving}
+          //   />
+          // ) : null
         };
 
         return (
-          <CardModal 
+          <CardModal
             isOpen={isExecutionModalOpen}
             onClose={() => setIsExecutionModalOpen(false)}
             workflowCard={selectedWorkflow}
@@ -556,6 +605,7 @@ export default function ProjectDetailPage({
             isApproving={isApproving}
             isAwaitingResponse={isAwaitingResponse}
             onApprove={onApprove}
+            onSubstepChange={setSelectedSubstepId}
           />
         );
       })()}
