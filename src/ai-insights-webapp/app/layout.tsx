@@ -3,7 +3,6 @@ import { Noto_Sans } from "next/font/google";
 import "./globals.css";
 import Header from "./components/shared/header/Header";
 import Navbar from "./components/shared/navbar/Navbar";
-import { TabProvider } from "./components/providers/TabProvider";
 import { AppProvider } from "./components/providers/AppContext";
 
 const notoSans = Noto_Sans({
@@ -42,15 +41,11 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
+        {/* <script dangerouslySetInnerHTML={{ __html: themeScript }} /> */}
       </head>
-      <body className={`${notoSans.className} min-h-full flex flex-col`}>
+      <body className={`${notoSans.className} max-h-full flex flex-col`}>
         <AppProvider>
-          <TabProvider>
-            <Header />
-            <Navbar />
-            <main className="flex-1">{children}</main>
-          </TabProvider>
+            {children}
         </AppProvider>
       </body>
     </html>

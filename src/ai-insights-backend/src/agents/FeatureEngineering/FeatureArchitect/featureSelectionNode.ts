@@ -4,8 +4,29 @@ import { getModel, invokeAgentJson, getPromptFromFile, logMilestoneThinking } fr
 import { validateWithRetry } from "../../validator/validatorNode";
 import { FeatureArchitectAnnotation, FeatureSelectionOutput } from "./state";
 import * as path from "path";
-import * as fs from "fs";
-import { getMcpFilesystemTools, getPythonScriptDirectory, makePipelineTemplate } from "../../tools";
+import { getMcpFilesystemTools, getPythonScriptDirectory } from "../../tools";
+import {
+  ARTIFACT_FEATURE_EXTRACTION,
+  ARTIFACT_FEATURE_SELECTION,
+  DEFAULT_PIPELINE_SCRIPT_NAME,
+  PROMPT_FEATURE_SELECTION,
+  REGION_FEATURE_SELECTION,
+  STATUS_FAILED,
+  STATUS_OK,
+  TRACE_FEATURE_SELECTION,
+  WORKER_FEATURE_SELECTION,
+} from "./constants";
+
+const DEFAULT_USER_PROMPT = "None provided";
+const DEFAULT_STAGE_TITLE = "Feature Engineering";
+const DEFAULT_STAGE_THINKING = "Generating feature selection recommendations based on all updated features...";
+const DEFAULT_SELECTION_SUCCESS = "Feature Selection completed successfully";
+const DEFAULT_SELECTION_FAILED = "Feature Selection execution failed/fallback triggered";
+const DEFAULT_NO_MODEL_MSG = "No model available for Feature Selection";
+const DEFAULT_FALLBACK_SUMMARY = "Feature Selection fallback triggered";
+const DEFAULT_SYSTEM_PROMPT_FALLBACK = "You are an expert AI Feature Engineering Agent specialized in feature selection.";
+const DEFAULT_NONE_TARGET = "None";
+const MAX_RECURSION_LIMIT = 100;
 
 export async function featureSelectionNode(
   state: typeof FeatureArchitectAnnotation.State,
@@ -15,8 +36,8 @@ export async function featureSelectionNode(
   const model = getModel();
 
   const fallback: FeatureSelectionOutput = {
-    status: "Failed",
-    summary: "Feature Selection fallback triggered",
+    status: STATUS_FAILED,
+    summary: DEFAULT_FALLBACK_SUMMARY,
     recommendations: [],
   };
 
@@ -25,47 +46,51 @@ export async function featureSelectionNode(
       featureSelection: fallback,
       history: [
         {
-          worker: "featureSelection",
-          summary: "No model available for Feature Selection",
+          worker: WORKER_FEATURE_SELECTION,
+          summary: DEFAULT_NO_MODEL_MSG,
         },
       ],
     };
   }
 
   const systemPrompt = await getPromptFromFile(
-    "FeatureArchitect/featureSelection.md",
-    "You are an expert AI Feature Engineering Agent specialized in feature selection."
+    PROMPT_FEATURE_SELECTION,
+    DEFAULT_SYSTEM_PROMPT_FALLBACK
   );
 
   if (services) {
     await logMilestoneThinking(
       services,
-      "Feature Engineering",
-      "Generating feature selection recommendations based on all updated features..."
+      DEFAULT_STAGE_TITLE,
+      DEFAULT_STAGE_THINKING
     );
   }
 
   const pythonScriptDir = getPythonScriptDirectory(services, state.runTimestamp);
-  const scriptName = state.aggregatedScriptPath || "aggregated_feature_pipeline.py";
+  const scriptName = state.aggregatedScriptPath ?? DEFAULT_PIPELINE_SCRIPT_NAME;
   const scriptPath = path.join(pythonScriptDir, scriptName);
-  if (!fs.existsSync(scriptPath)) {
-    fs.writeFileSync(scriptPath, makePipelineTemplate(scriptName), "utf-8");
-  }
+  const userPromptText = state.userPrompt ?? DEFAULT_USER_PROMPT;
+
+  const targetCandidate = state.prediction_target_column.length > 0
+    ? state.prediction_target_column
+    : (state.orchestrationDecision.targetColumn ?? DEFAULT_NONE_TARGET);
 
   const userMessage = [
     "Design and generate feature selection recommendations based on all updated features and targets.",
-    `User Requirements: ${state.userPrompt || "None provided"}`,
+    `User Requirements: ${userPromptText}`,
     `Tables List: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
     `Orchestrator Decisions: ${JSON.stringify(state.orchestrationDecision)}`,
-    // `Inspector details: ${JSON.stringify(state.inspector)}`,
+    `Prediction Target Column: ${targetCandidate} (CRITICAL: Preserved target column, exclude from removal/filtering)`,
     `Feature Creation Recommendations: ${JSON.stringify(state.featureCreation?.recommendations)}`,
     `Feature Transformation Recommendations: ${JSON.stringify(state.featureTransformation?.recommendations)}`,
     `Feature Extraction Recommendations: ${JSON.stringify(state.featureExtraction?.recommendations)}`,
+    `Input Feature Artifact: ${ARTIFACT_FEATURE_EXTRACTION}`,
     `Target Pipeline File: ${scriptPath}`,
-    `Region to Edit: FEATURE_SELECTION`,
+    `Region to Edit: ${REGION_FEATURE_SELECTION}`,
+    `Output Artifact: ${ARTIFACT_FEATURE_SELECTION}`,
     "Action Required:",
-    `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the exact region markers and line structure.`,
-    `2. Use MCP tool 'edit_file' (or 'write_file') to write/insert your feature selection code into the FEATURE_SELECTION region in '${scriptPath}'.`,
+    `1. Use MCP tool 'read_text_file' on '${scriptPath}' to inspect the exact region markers and line structure (or initialize it using 'write_file' if it does not exist).`,
+    `2. Use MCP tool 'edit_file' (or 'write_file') to write/insert your feature selection code into the ${REGION_FEATURE_SELECTION} region in '${scriptPath}', reading from '--input-path' (${ARTIFACT_FEATURE_EXTRACTION}) and saving filtered features to '--output-path' (${ARTIFACT_FEATURE_SELECTION}).`,
     "3. Return the final JSON summary of recommendations.",
   ].join("\n\n");
 
@@ -73,7 +98,7 @@ export async function featureSelectionNode(
     const fsTools = await getMcpFilesystemTools(services);
 
     const result = await validateWithRetry<FeatureSelectionOutput>(
-      "featureSelection",
+      WORKER_FEATURE_SELECTION,
       async () =>
         await invokeAgentJson<FeatureSelectionOutput>(
           "featureArchitect",
@@ -83,21 +108,23 @@ export async function featureSelectionNode(
           services,
           {
             systemPrompt,
-            traceLabel: "featureArchitect:featureSelection",
+            traceLabel: TRACE_FEATURE_SELECTION,
             tools: [...fsTools],
-            recursionLimit: 100,
+            recursionLimit: MAX_RECURSION_LIMIT,
           }
         ),
       fallback,
       services
     );
 
+    const summaryText = result.summary.length > 0 ? result.summary : DEFAULT_SELECTION_SUCCESS;
+
     return {
       featureSelection: result,
       history: [
         {
-          worker: "featureSelection",
-          summary: result.summary || "Feature Selection completed successfully",
+          worker: WORKER_FEATURE_SELECTION,
+          summary: summaryText,
         },
       ],
     };
@@ -107,8 +134,8 @@ export async function featureSelectionNode(
       featureSelection: fallback,
       history: [
         {
-          worker: "featureSelection",
-          summary: "Feature Selection execution failed/fallback triggered",
+          worker: WORKER_FEATURE_SELECTION,
+          summary: DEFAULT_SELECTION_FAILED,
         },
       ],
     };

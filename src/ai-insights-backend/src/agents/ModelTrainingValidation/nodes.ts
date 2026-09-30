@@ -13,8 +13,11 @@ import { ModelSelectionLLMService } from "../../services/ai/model-selection/mode
 import { ModelSelectionService } from "../../services/ai/model-selection/modelSelection.service";
 import { TrainingConfigurationAgent, TrainingConfigValidator } from "./TrainingConfiguration";
 import { PreFlightAgent } from "./PreFlight";
+import { ModelTrainingAgent } from "./ModelTraining";
+import { ModelValidationAgent } from "./ModelValidation";
+import * as modelValidationSchema from "../../db/modelValidation";
+import { PostgresModelValidationRepository } from "../../repositories/modelValidation.repository";
 import { validateWithRetry } from "../validator/validatorNode";
-
 
 type State = typeof AgentState.State;
 
@@ -40,14 +43,44 @@ function runDirectory(state: State, services: IngestionServices) {
 }
 
 function findDataset(dir: string): string | null {
-  const names = ["validated_features.parquet", "feature_matrix.parquet", "modeling_dataset.parquet", "dataset.parquet", "validated_features.csv", "feature_matrix.csv", "modeling_dataset.csv", "dataset.csv"];
-  return names.find((name) => fs.existsSync(path.join(dir, name))) || null;
+  const names = [
+    "dataset.parquet",
+    "feature_validation.parquet",
+    "feature_selection.parquet",
+    "feature_extraction.parquet",
+    "feature_transformation.parquet",
+    "feature_created.parquet",
+    "dataset.csv",
+  ];
+  return names.find((name) => fs.existsSync(path.join(dir, name))) ?? null;
 }
 
 function readReport(state: State, services: IngestionServices): any {
-  const reportPath = path.join(runDirectory(state, services), "model_training_report.json");
-  if (!fs.existsSync(reportPath)) throw new Error("Model training report was not produced");
-  return JSON.parse(fs.readFileSync(reportPath, "utf-8"));
+  if (state.modelTraining?.report) {
+    return state.modelTraining.report;
+  }
+  const runDir = runDirectory(state, services);
+  const reportPath = path.join(runDir, "model_training_report.json");
+  if (fs.existsSync(reportPath)) {
+    return JSON.parse(fs.readFileSync(reportPath, "utf-8"));
+  }
+
+  // Check subdirectories for <projectName>_model_training/model_training_report.json
+  if (fs.existsSync(runDir)) {
+    try {
+      const entries = fs.readdirSync(runDir, { withFileTypes: true });
+      for (const ent of entries) {
+        if (ent.isDirectory() && ent.name.includes("model_training")) {
+          const subPath = path.join(runDir, ent.name, "model_training_report.json");
+          if (fs.existsSync(subPath)) {
+            return JSON.parse(fs.readFileSync(subPath, "utf-8"));
+          }
+        }
+      }
+    } catch {}
+  }
+
+  throw new Error("Model training report was not produced");
 }
 
 export async function modelSelectionNode(state: State, config?: RunnableConfig) {
@@ -82,10 +115,14 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
   const effectiveRunTimestamp = state.runTimestamp || (services as any)?.runTimestamp;
 
   const candidateNames = (decision.candidates || []).map((c) => c.displayName || c.model_id);
-  const summary = `Model selection completed for ${decision.target_entity?.name || metadata.targetColumn || "target"}. Recommended: ${decision.recommended_model?.model_id || "None"} (${((decision.recommended_model?.suitability_score || 0) * 100).toFixed(0)}%). Candidates: ${candidateNames.join(", ")}`;
+  const summary = `Model selection completed for ${decision.target_entity?.name || metadata.targetColumn || "target"}. Recommended: ${decision.recommended_model?.model_id || "None"} (${((decision.recommended_model?.suitability_score || 0) * 100).toFixed(0)}%). Candidates (${candidateNames.length}): ${candidateNames.join(", ")}`;
 
   return {
     modelSelection: decision,
+    problemType: decision.problem_type || metadata.problemType,
+    targetColumn: decision.target_entity?.name || metadata.targetColumn,
+    primaryMetric: decision.primary_metric,
+    direction: decision.direction,
     runTimestamp: effectiveRunTimestamp,
     status: "running",
     summary,
@@ -93,8 +130,9 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
     stageStatuses: {
       modelSelection: "Completed",
       trainingConfiguration: "Pending",
+      preFlight: "Pending",
+      modelTrainingCode: "Pending",
       modelTraining: "Pending",
-      modelValidation: "Pending",
     },
     steps: [
       {
@@ -114,13 +152,17 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     return { status: state.status || "failed" };
   }
 
+  const meta = featureMetadata(state);
+  const effectiveProblemType = (state as any).problemType || (state.modelSelection as any)?.problem_type || meta.problemType || "";
+  const effectiveTarget = (state as any).targetColumn || (state.modelSelection as any)?.target_entity?.name || meta.targetColumn || "";
+
   const fallbackOutput = {
     status: "Failed",
-    summary: "Training Configuration fallback triggered",
+    summary: "Training Configuration failed to synthesize configuration",
     phase: "Training Configuration",
     dataset: "",
-    targetColumn: "",
-    problemType: "classification",
+    targetColumn: effectiveTarget,
+    problemType: effectiveProblemType,
     features: [],
     contractPath: "",
     configuration: {},
@@ -133,10 +175,53 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     },
     fallbackOutput,
     services,
-    2,
+    20,
     "Ensure all 17 sections of TrainingJobContract are populated, split ratios sum to 1.0, primary metric is specified, and hyperparameter search space covers all candidate models.",
     (result: any) => TrainingConfigValidator.validate(result?.configuration || result)
   );
+
+  // Calculate dataset temporal range and maximum last date of dataset directly in trainingConfigurationNode
+  try {
+    const { extractDatasetDateRange } = await import("../tools/helpers/datasetDateRangeHelper");
+    const wsName = (state as any).workspaceName || services.workspaceName || "DefaultWorkspace";
+    const pName = (state as any).projectName || services.projectName || "Forecasting";
+    const ts = state.runTimestamp || (services as any)?.runTimestamp;
+    const dateRange = await extractDatasetDateRange(wsName, pName, ts, state as any);
+    if (dateRange && dateRange.hasTemporalData) {
+      (output as any).dateRange = dateRange;
+      if (dateRange.maxDate) {
+        (output as any).maxDate = dateRange.maxDate;
+      }
+      if (dateRange.minDate) {
+        (output as any).minDate = dateRange.minDate;
+      }
+      if (output.configuration) {
+        (output.configuration as any).dateRange = dateRange;
+        if (dateRange.maxDate) {
+          (output.configuration as any).maxDate = dateRange.maxDate;
+          if ((output.configuration as any).split) {
+            (output.configuration as any).split.max_date = dateRange.maxDate;
+          }
+        }
+      }
+    }
+  } catch (rangeErr: any) {
+    console.warn("[trainingConfigurationNode] Failed to extract dataset date range:", rangeErr?.message || rangeErr);
+  }
+
+  // Preserve split date explicitly on output and configuration
+  const resolvedSplitDate =
+    state.splitEndDate ||
+    state.splitDate ||
+    (output as any)?.configuration?.split?.split_date ||
+    (output as any)?.configuration?.data_splitting?.cutoff_date ||
+    (output as any)?.configuration?.splitDate;
+  if (resolvedSplitDate) {
+    (output as any).splitDate = resolvedSplitDate;
+    if (output.configuration) {
+      (output.configuration as any).splitDate = resolvedSplitDate;
+    }
+  }
 
   return {
     trainingConfiguration: output,
@@ -145,9 +230,9 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     stageOutputs: { trainingConfiguration: output },
     stageStatuses: {
       trainingConfiguration: "Completed",
-      preFlight: "In Progress",
+      preFlight: "Pending",
+      modelTrainingCode: "Pending",
       modelTraining: "Pending",
-      modelValidation: "Pending",
     },
     steps: [
       {
@@ -160,7 +245,7 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
 }
 
 export async function preFlightNode(state: State, config?: RunnableConfig) {
-  // Phase 2.5: Pre Flight - Validate runtime resources, environment, DataLoader and strategy pre-flight
+  // Phase 2.5: Pre Flight - Runs automatically to validate resources and readiness (no user approval required)
   const services = servicesFrom(config);
   if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
     console.info("[Workflow] preFlightNode skipping execution because workflow is stopped/paused.");
@@ -186,10 +271,7 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
     },
   });
 
-
   const isBlockedOrFailed = report.decision === "BLOCKED" || report.decision === "FAILED";
-  const requiresAttention =
-    report.decision === "REQUIRES_CONFIGURATION_CHANGE" || report.decision === "REQUIRES_USER_CONFIRMATION";
 
   if (isBlockedOrFailed) {
     console.warn(`[Workflow] preFlightNode BLOCKED model training: ${report.summary}`);
@@ -200,8 +282,8 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
       stageOutputs: { preFlight: report },
       stageStatuses: {
         preFlight: "Failed",
+        modelTrainingCode: "Pending",
         modelTraining: "Pending",
-        modelValidation: "Pending",
       },
       steps: [
         {
@@ -213,30 +295,7 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
     };
   }
 
-  if (requiresAttention) {
-    console.info(`[Workflow] preFlightNode pausing for user review: ${report.summary}`);
-    return {
-      preFlight: report,
-      status: "paused",
-      requiresApproval: true,
-      summary: report.summary,
-      stageOutputs: { preFlight: report },
-      stageStatuses: {
-        preFlight: "Requires Attention",
-        modelTraining: "Pending",
-        modelValidation: "Pending",
-      },
-      steps: [
-        {
-          name: "Pre Flight",
-          status: "paused",
-          summary: report.summary,
-        },
-      ],
-    };
-  }
-
-  // APPROVED or APPROVED_WITH_WARNINGS: Proceed to modelTrainingNode
+  // Automatic transition: status "running" cascades immediately into modelTrainingCodeNode
   return {
     preFlight: report,
     status: "running",
@@ -244,8 +303,8 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
     stageOutputs: { preFlight: report },
     stageStatuses: {
       preFlight: "Completed",
-      modelTraining: "In Progress",
-      modelValidation: "Pending",
+      modelTrainingCode: "Pending",
+      modelTraining: "Pending",
     },
     steps: [
       {
@@ -257,139 +316,179 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
   };
 }
 
-
-export async function modelTrainingNode(state: State, config?: RunnableConfig) {
-  // Phase 3: 3.3 Model Training - Train candidate models and record evaluation metrics
+/**
+ * Step 4A: Scaffolds modular Python model training project with train split dates.
+ * Does NOT run Docker container.
+ */
+export async function modelTrainingCodeNode(state: State, config?: RunnableConfig) {
   const services = servicesFrom(config);
-  const metadata = featureMetadata(state);
-  const dataset = findDataset(runDirectory(state, services));
-  if (!dataset) throw new Error("Feature Engineering did not produce a supported model-ready dataset artifact");
-  if (!metadata.targetColumn) throw new Error("Feature Engineering did not provide a target column");
-  const python = `
-import json, os, pickle
-import pandas as pd
-import duckdb
-from sklearn.compose import ColumnTransformer
-from sklearn.impute import SimpleImputer
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder
-from sklearn.model_selection import train_test_split
-from sklearn.ensemble import RandomForestRegressor, RandomForestClassifier
-from sklearn.linear_model import LinearRegression, LogisticRegression
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, accuracy_score, precision_recall_fscore_support
+  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
+    console.info("[Workflow] modelTrainingCodeNode skipping execution because workflow is stopped/paused.");
+    return { status: state.status || "failed" };
+  }
 
-dataset = ${JSON.stringify(dataset)}
-target = ${JSON.stringify(metadata.targetColumn)}
-problem = ${JSON.stringify(String(metadata.problemType || "regression").toLowerCase())}
-path = os.path.join('/workspace', dataset)
-df = duckdb.read_parquet(path).df() if path.endswith('.parquet') else pd.read_csv(path)
-if target not in df.columns: raise ValueError(f"Target column '{target}' is missing")
-df = df.dropna(subset=[target])
-X, y = df.drop(columns=[target]), df[target]
-numeric = X.select_dtypes(include='number').columns.tolist()
-categorical = [c for c in X.columns if c not in numeric]
-transform = ColumnTransformer([('num', SimpleImputer(strategy='median'), numeric), ('cat', Pipeline([('impute', SimpleImputer(strategy='most_frequent')), ('onehot', OneHotEncoder(handle_unknown='ignore'))]), categorical)])
-classification = problem == 'classification' or (problem != 'forecasting' and (str(y.dtype) in ('object','bool','category') or y.nunique() <= 20))
-stratify = y if classification and y.value_counts().min() >= 2 else None
-X_train, X_temp, y_train, y_temp = train_test_split(X, y, test_size=.30, random_state=42, stratify=stratify)
-temp_stratify = y_temp if classification and y_temp.value_counts().min() >= 2 else None
-X_val, X_test, y_val, y_test = train_test_split(X_temp, y_temp, test_size=.50, random_state=42, stratify=temp_stratify)
-models = {'Logistic Regression': LogisticRegression(max_iter=1000), 'Random Forest': RandomForestClassifier(n_estimators=100, random_state=42)} if classification else {'Linear Regression': LinearRegression(), 'Random Forest': RandomForestRegressor(n_estimators=100, random_state=42)}
-runs=[]
-best=None
-for name, estimator in models.items():
-    pipe=Pipeline([('prepare', transform), ('model', estimator)])
-    try:
-        pipe.fit(X_train, y_train); val=pipe.predict(X_val); test=pipe.predict(X_test)
-        if classification:
-            p,r,f,_=precision_recall_fscore_support(y_val,val,average='weighted',zero_division=0); metrics={'accuracy':accuracy_score(y_val,val),'precision':p,'recall':r,'f1':f}; test_metrics={'accuracy':accuracy_score(y_test,test)}; score=metrics['f1']
-        else:
-            metrics={'mae':mean_absolute_error(y_val,val),'rmse':mean_squared_error(y_val,val)**.5,'r2':r2_score(y_val,val)}; test_metrics={'mae':mean_absolute_error(y_test,test),'rmse':mean_squared_error(y_test,test)**.5,'r2':r2_score(y_test,test)}; score=-metrics['rmse']
-        item={'name':name,'status':'Completed','metrics':metrics,'testMetrics':test_metrics,'score':score}; runs.append(item)
-        if best is None or score > best[0]: best=(score,name,pipe,item)
-    except Exception as exc: runs.append({'name':name,'status':'Failed','error':str(exc)})
-if best is None: raise RuntimeError('No candidate model trained successfully')
-artifact='selected_model.pkl'
-with open(os.path.join('/workspace', artifact),'wb') as handle: pickle.dump(best[2],handle)
-report={'problemType':'classification' if classification else problem,'targetColumn':target,'rowCount':len(df),'featureCount':len(X.columns),'splits':{'train':len(X_train),'validation':len(X_val),'test':len(X_test)},'runs':runs,'selectedModel':best[1],'validationMetrics':best[3]['testMetrics'],'artifact':artifact}
-with open('/workspace/model_training_report.json','w') as handle: json.dump(report,handle,indent=2)
-print(json.dumps(report))
-`;
-  const execution = await executePythonScript("train_and_validate_models.py", python, services.projectId || state.projectId, state.runTimestamp, services, state.connectorId);
-  await cleanupRunContainer(services.projectId || state.projectId, state.runTimestamp);
-  if (!execution.success) throw new Error(execution.stderr || "Model training failed");
-  const report = readReport(state, services);
-  const rankedCandidates = report.runs.filter((run: any) => run.status === "Completed").sort((a: any, b: any) => b.score - a.score);
-  const output = {
-    status: "Completed",
-    summary: `${rankedCandidates.length} candidate model(s) trained and evaluated successfully`,
-    dataset,
-    targetColumn: metadata.targetColumn,
-    problemType: metadata.problemType,
-    features: metadata.features,
-    candidates: report.runs,
-    rankedCandidates,
-    splits: report.splits,
-    phase: "Model Training",
-  };
+  const output = await ModelTrainingAgent.generateProjectCode(state, services);
+
+  if (output.status === "Failed") {
+    return {
+      modelTrainingCode: output,
+      modelTraining: output,
+      status: "failed",
+      summary: output.summary,
+      stageOutputs: { modelTrainingCode: output, modelTraining: output },
+      stageStatuses: {
+        modelTrainingCode: "Failed",
+        modelTraining: "Pending",
+      },
+      steps: [
+        {
+          name: "Model Training Code Generation",
+          status: "failed",
+          summary: output.summary,
+        },
+      ],
+    };
+  }
+
   return {
+    modelTrainingCode: output,
     modelTraining: output,
     status: "running",
+    summary: output.summary,
+    stageOutputs: { modelTrainingCode: output, modelTraining: output },
+    stageStatuses: {
+      modelTrainingCode: "Completed",
+      modelTraining: "In Progress",
+    },
+    steps: [
+      {
+        name: "Model Training Code Generation",
+        status: "completed",
+        summary: output.summary,
+      },
+    ],
+  };
+}
+
+/**
+ * Step 4B: Executes Python project in Docker sandbox for user-selected candidate models.
+ */
+export async function modelTrainingExecNode(state: State, config?: RunnableConfig) {
+  const services = servicesFrom(config);
+  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
+    console.info("[Workflow] modelTrainingExecNode skipping execution because workflow is stopped/paused.");
+    return { status: state.status || "failed" };
+  }
+
+  const output = await ModelTrainingAgent.executeContainerTraining(state, services, {maxRetries: 20});
+
+  if (output.status === "Failed") {
+    return {
+      modelTraining: output,
+      status: "failed",
+      summary: output.summary,
+      stageOutputs: { modelTraining: output },
+      stageStatuses: {
+        modelTraining: "Failed",
+      },
+      steps: [
+        {
+          name: "Model Training Execution",
+          status: "failed",
+          summary: output.summary,
+        },
+      ],
+    };
+  }
+
+  return {
+    modelTraining: output,
+    status: "completed",
     summary: output.summary,
     stageOutputs: { modelTraining: output },
     stageStatuses: {
       modelTraining: "Completed",
-      modelValidation: "In Progress",
     },
+    steps: [
+      {
+        name: "Model Training Execution",
+        status: "completed",
+        summary: output.summary,
+      },
+    ],
+  };
+}
+
+/**
+ * Legacy single-node modelTrainingNode maintained for backward compatibility.
+ */
+export async function modelTrainingNode(state: State, config?: RunnableConfig) {
+  const services = servicesFrom(config);
+  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
+    return { status: state.status || "failed" };
+  }
+  const output = await ModelTrainingAgent.execute(state, services);
+  return {
+    modelTraining: output,
+    status: output.status === "Failed" ? "failed" : "completed",
+    summary: output.summary,
+    stageOutputs: { modelTraining: output },
+    stageStatuses: { modelTraining: output.status === "Failed" ? "Failed" : "Completed" },
+    steps: [{ name: "Model Training", status: output.status === "Failed" ? "failed" : "completed", summary: output.summary }],
   };
 }
 
 export async function modelValidationNode(state: State, config?: RunnableConfig) {
-  // Phase 4: 3.4 Model Validation - Validate leading model on holdout test set, persist artifact, complete workflow
+  // Phase 4: 3.4 Model Validation - Validate trained candidate models, calculate deterministic metrics, persist in dedicated validation directory
   const services = servicesFrom(config);
-  const report = readReport(state, services);
-  const metrics = report.validationMetrics || {};
-  const finite = Object.values(metrics).length > 0 && Object.values(metrics).every((value) => typeof value === "number" && Number.isFinite(value));
-  if (!finite) throw new Error("Selected model did not produce valid holdout metrics");
+  const projectId = services.projectId || state.projectId || "default-project";
 
-  const artifactPath = path.join(runDirectory(state, services), report.artifact || "selected_model.pkl");
-  if (!fs.existsSync(artifactPath)) throw new Error("Selected model artifact is missing");
-
-  const output = {
-    status: "Passed",
-    summary: `Model ${report.selectedModel} validated on held-out test data and persisted successfully`,
-    model: report.selectedModel,
-    modelVersion: state.runTimestamp,
-    targetColumn: report.targetColumn,
-    problemType: report.problemType,
-    testMetrics: metrics,
-    artifact: report.artifact,
-    checks: { finiteMetrics: true, heldOutTestSet: true },
-    phase: "Model Validation",
+  const options = {
+    predictionHorizon: (state as any).predictionHorizon,
+    predictionFrequency: (state as any).predictionFrequency,
+    predictionObjectiveStartDate: (state as any).predictionObjectiveStartDate,
+    maxRetries: 20
   };
+
+  const output = await ModelValidationAgent.execute(state, services, options);
+
+  // Persist to Postgres database repository if available
+  try {
+    const db = drizzle(pool, { schema: modelValidationSchema });
+    const repo = new PostgresModelValidationRepository(db);
+    if (output.report) {
+      const runId = output.report.validation_run_id || `val-${state.runTimestamp || Date.now()}`;
+      await repo.saveValidationRun(
+        runId,
+        projectId,
+        output.report,
+        output.validationDirectory,
+        output.predictionsArtifact
+      );
+    }
+  } catch (persistErr: any) {
+    console.warn("[modelValidationNode] Postgres persistence warning:", persistErr?.message || persistErr);
+  }
+
+  const isFailed = output.status === "Failed";
 
   return {
     modelValidation: output,
-    modelSelection: {
-      ...output,
-      status: "Completed",
-    },
-    status: "completed",
-    summary: "Model Training & Validation completed successfully",
+    status: isFailed ? "failed" : "completed",
+    summary: output.summary,
     stageOutputs: {
       modelValidation: output,
-      modelSelection: output,
     },
     stageStatuses: {
       modelSelection: "Completed",
       trainingConfiguration: "Completed",
       modelTraining: "Completed",
-      modelValidation: "Completed",
+      modelValidation: isFailed ? "Failed" : "Completed",
     },
     steps: [
       {
-        name: "Model Training & Validation",
-        status: "completed",
+        name: "Model Validation",
+        status: isFailed ? "failed" : "completed",
         summary: output.summary,
       },
     ],

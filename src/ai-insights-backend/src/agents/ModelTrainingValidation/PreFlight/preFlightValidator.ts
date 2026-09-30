@@ -77,7 +77,7 @@ export class PreFlightValidator {
       config.task_type ||
       config.problem_type ||
       config.task ||
-      "classification"
+      ""
     ).toLowerCase();
     const primaryMetric = (
       rawCfg.primary_metric ||
@@ -87,11 +87,11 @@ export class PreFlightValidator {
       config.primary_metric ||
       config.metric ||
       config.evaluation_metric ||
-      "accuracy"
+      ""
     ).toLowerCase();
 
     const classificationMetrics = ["accuracy", "f1", "f1_score", "precision", "recall", "roc_auc", "auc", "log_loss", "balanced_accuracy"];
-    const regressionMetrics = ["rmse", "mse", "mae", "r2", "r2_score", "mape", "smape", "explained_variance"];
+    const regressionMetrics = ["wape", "rmse", "mse", "mae", "r2", "r2_score", "mape", "smape", "explained_variance", "bias"];
 
     if (taskType.includes("class") || taskType.includes("binary") || taskType.includes("multiclass")) {
       if (regressionMetrics.includes(primaryMetric) && !classificationMetrics.includes(primaryMetric)) {
@@ -398,11 +398,30 @@ export class PreFlightValidator {
     }
 
     // 2. Dataset File Existence & Size
+    const candidateParquetNames = [
+      "dataset.parquet",
+      "feature_validation.parquet",
+      "feature_selection.parquet",
+      "feature_extraction.parquet",
+      "feature_transformation.parquet",
+      "feature_created.parquet",
+    ];
+    let resolvedRunDirDataset: string | null = null;
+    if (context?.runDir) {
+      for (const name of candidateParquetNames) {
+        const testPath = path.join(context.runDir, name);
+        if (fs.existsSync(testPath)) {
+          resolvedRunDirDataset = testPath;
+          break;
+        }
+      }
+    }
+
     const datasetPath =
-      context?.datasetPath ||
-      config.dataset_path ||
-      config.datasetPath ||
-      (context?.runDir ? path.join(context.runDir, "validated_features.parquet") : null);
+      context?.datasetPath ??
+      config.dataset_path ??
+      config.datasetPath ??
+      resolvedRunDirDataset;
 
     if (datasetPath && fs.existsSync(datasetPath)) {
       try {

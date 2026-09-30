@@ -9,34 +9,34 @@ import {
   SnowflakeIcon,
   MongodbIcon,
   RestApiIcon,
-} from "../datasource/Icons";
-import { DataSource, ConnectionConfig, BACKEND_URL } from "../providers/AppContext";
-import ConnectionModal from "../datasource/ConnectionModal";
+} from "../connectors/Icons";
+import { DataSource, ConnectionConfig, BACKEND_URL, Project } from "../providers/AppContext";
+import ConnectionModal from "../connectors/ConnectionModal";
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 function renderDataSourceIcon(type: string) {
   switch (type) {
-    case "postgres":  return <PostgresqlIcon size={16} />;
-    case "mysql":     return <MysqlIcon size={16} />;
+    case "postgres": return <PostgresqlIcon size={16} />;
+    case "mysql": return <MysqlIcon size={16} />;
     case "sqlserver": return <SqlServerIcon size={16} />;
     case "snowflake": return <SnowflakeIcon size={16} />;
-    case "mongodb":   return <MongodbIcon size={16} />;
-    case "excel":     return <Image src="/images/microsoft-excel.jpg" alt="Excel" width={16} height={16} className="object-contain shrink-0" />;
-    case "csv":       return <Image src="/images/csv.png" alt="CSV" width={16} height={16} className="object-contain shrink-0" />;
-    case "tsv":       return <Image src="/images/tsv.png" alt="TSV" width={16} height={16} className="object-contain shrink-0" />;
-    case "restapi":   return <RestApiIcon size={16} />;
-    default:          return null;
+    case "mongodb": return <MongodbIcon size={16} />;
+    case "excel": return <Image src="/images/microsoft-excel.jpg" alt="Excel" width={16} height={16} className="object-contain shrink-0" />;
+    case "csv": return <Image src="/images/csv.png" alt="CSV" width={16} height={16} className="object-contain shrink-0" />;
+    case "tsv": return <Image src="/images/tsv.png" alt="TSV" width={16} height={16} className="object-contain shrink-0" />;
+    case "restapi": return <RestApiIcon size={16} />;
+    default: return null;
   }
 }
 
 function getSubtextCategory(subtext: string): string {
   const s = subtext.toLowerCase();
   if (s.includes("warehouse")) return "Data Warehouse";
-  if (s.includes("database"))  return "Database";
-  if (s.includes("api"))       return "API";
+  if (s.includes("database")) return "Database";
+  if (s.includes("api")) return "API";
   if (s.includes("cloud") || s.includes("storage")) return "Cloud Storage";
-  if (s.includes("file"))      return "File";
+  if (s.includes("file")) return "File";
   return "Database";
 }
 
@@ -95,7 +95,7 @@ function CustomSelect({
         type="button"
         disabled={disabled}
         onClick={() => setOpen((prev) => !prev)}
-        className="w-full h-11 px-4 flex items-center justify-between gap-2 rounded-xl border border-border bg-surface text-base font-normal text-foreground transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed shadow-sm focus:outline-none focus:ring-0 focus:border-border"
+        className="w-full h-11 px-4 flex items-center justify-between gap-2 rounded-xl border border-border bg-surface text-base font-normal text-foreground transition-all cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed shadow-sm focus:outline-none focus:ring-0 focus:border-border"
       >
         <span className={`truncate ${!selectedOpt?.value ? "text-muted-foreground/70" : ""}`}>
           {selectedOpt ? selectedOpt.label : placeholder}
@@ -128,11 +128,10 @@ function CustomSelect({
                   onChange(opt.value);
                   setOpen(false);
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-normal text-left transition-all cursor-pointer ${
-                  isSelected
-                    ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white font-medium"
-                    : "text-foreground hover:bg-surface-muted/80 dark:hover:bg-white/5"
-                }`}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-normal text-left transition-all cursor-pointer ${isSelected
+                  ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white font-medium"
+                  : "text-foreground hover:bg-surface-muted/80 dark:hover:bg-white/5"
+                  }`}
               >
                 <span className="truncate">{opt.label}</span>
                 {isSelected && (
@@ -154,8 +153,14 @@ function CustomSelect({
 interface ProjectCreatePageProps {
   dataSources: DataSource[];
   onCancel: () => void;
-  onSubmit: (name: string, useCase: string, selectedSources: string[], domain?: string, subDomain?: string) => Promise<boolean | void> | void;
+  onSubmit: (name: string, useCase: string, selectedSources: string[], domain?: string, subDomain?: string, splitDate?: string) => Promise<boolean | Project | null | void> | void;
   onAddDataSource: (name: string, type: DataSource["type"], subtext: string, config: ConnectionConfig) => void;
+  project?: Project | null;
+  onUpdate?: (id: string, updates: Partial<Project>) => Promise<void> | void;
+  isWorkflowActiveOrPaused?: boolean;
+  onDelete?: () => void;
+  startInEditMode?: boolean;
+  onEditModeChange?: (isEditing: boolean) => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -165,32 +170,64 @@ export default function ProjectCreatePage({
   onCancel,
   onSubmit,
   onAddDataSource,
+  project,
+  onUpdate,
+  isWorkflowActiveOrPaused = false,
+  onDelete,
+  startInEditMode = false,
+  onEditModeChange,
 }: ProjectCreatePageProps) {
-  const [projectName, setProjectName]         = useState("");
-  const [useCaseInfo, setUseCaseInfo]         = useState("");
-  const [selectedSources, setSelectedSources] = useState<string[]>([]);
-  const [previewMode, setPreviewMode]         = useState(false);
-  const [history, setHistory]                 = useState<string[]>([""]);
-  const [historyIndex, setHistoryIndex]       = useState(0);
-  const [sourceSearch, setSourceSearch]       = useState("");
+  const isSaved = Boolean(project);
+  const [isEditing, setIsEditing] = useState(!project || Boolean(startInEditMode));
+
+  const [projectName, setProjectName] = useState(project?.name || "");
+  const [useCaseInfo, setUseCaseInfo] = useState(project?.useCase || "");
+  const [selectedSources, setSelectedSources] = useState<string[]>(project?.dataSources || []);
+  const [previewMode, setPreviewMode] = useState(false);
+  const [history, setHistory] = useState<string[]>([project?.useCase || ""]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const [sourceSearch, setSourceSearch] = useState("");
   const [sourceTypeFilter, setSourceTypeFilter] = useState("All Types");
-  const [currentPage, setCurrentPage]         = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Form submission state
-  const [submitError, setSubmitError]         = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting]       = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Domain & Sub-domain state
-  const [domainList, setDomainList]           = useState<{ id: string; domain: string; subDomains: string[] }[]>([]);
-  const [selectedDomain, setSelectedDomain]   = useState("");
-  const [selectedSubDomain, setSelectedSubDomain] = useState("");
+  const [domainList, setDomainList] = useState<{ id: string; domain: string; subDomains: string[] }[]>([]);
+  const [selectedDomain, setSelectedDomain] = useState(project?.domain || "");
+  const [selectedSubDomain, setSelectedSubDomain] = useState(project?.subDomain || "");
   const [customSubDomain, setCustomSubDomain] = useState("");
 
   const [showConnectLibrary, setShowConnectLibrary] = useState(false);
-  const [activeConnectType, setActiveConnectType]   = useState<DataSource["type"] | null>(null);
+  const [activeConnectType, setActiveConnectType] = useState<DataSource["type"] | null>(null);
   const wasSubmitClicked = useRef(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Sync state when project changes or startInEditMode changes
+  useEffect(() => {
+    if (project) {
+      setProjectName(project.name || "");
+      setUseCaseInfo(project.useCase || "");
+      setSelectedSources(project.dataSources || []);
+      setSelectedDomain(project.domain || "");
+      setSelectedSubDomain(project.subDomain || "");
+      setIsEditing(Boolean(startInEditMode));
+      setSubmitError(null);
+    } else {
+      setProjectName("");
+      setUseCaseInfo("");
+      setSelectedSources([]);
+      setSelectedDomain("");
+      setSelectedSubDomain("");
+      setCustomSubDomain("");
+      setIsEditing(true);
+      setSubmitError(null);
+    }
+  }, [project, startInEditMode]);
+
 
   useEffect(() => {
     fetch(`${BACKEND_URL}/domains`)
@@ -344,12 +381,47 @@ export default function ProjectCreatePage({
     return matchSearch && (sourceTypeFilter === "All Types" || cat === sourceTypeFilter);
   });
 
-  const totalPages       = Math.ceil(filteredSources.length / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(filteredSources.length / ITEMS_PER_PAGE);
   const paginatedSources = filteredSources.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-  const startIdx         = filteredSources.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
-  const endIdx           = Math.min(currentPage * ITEMS_PER_PAGE, filteredSources.length);
+  const startIdx = filteredSources.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const endIdx = Math.min(currentPage * ITEMS_PER_PAGE, filteredSources.length);
 
-  // ── Submit ────────────────────────────────────────────────────────────────
+  // ── Submit / Update ───────────────────────────────────────────────────────
+
+  const handleUpdateProject = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!project || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting) return;
+
+    setSubmitError(null);
+    setIsSubmitting(true);
+
+    try {
+      let finalSubDomain = selectedSubDomain;
+      if (
+        selectedDomain === "Other" ||
+        selectedSubDomain === "Other (Custom Sub Domain)" ||
+        !selectedSubDomain
+      ) {
+        finalSubDomain = customSubDomain.trim();
+      }
+
+      if (onUpdate) {
+        await onUpdate(project.id, {
+          name: projectName.trim(),
+          useCase: useCaseInfo.trim(),
+          dataSources: selectedSources,
+          domain: selectedDomain,
+          subDomain: finalSubDomain,
+        });
+      }
+      setIsEditing(false);
+      onEditModeChange?.(false);
+    } catch (err: any) {
+      setSubmitError(err.message || "Failed to update project details.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -368,7 +440,7 @@ export default function ProjectCreatePage({
         finalSubDomain = customSubDomain.trim();
       }
 
-      const success = await onSubmit(
+      const res = await onSubmit(
         projectName.trim(),
         useCaseInfo.trim(),
         selectedSources,
@@ -376,7 +448,7 @@ export default function ProjectCreatePage({
         finalSubDomain
       );
 
-      if (success === false) {
+      if (res === false) {
         setSubmitError(`A project named "${projectName.trim()}" with similar configuration already exists. Please update the title to continue.`);
       }
     } catch (err: any) {
@@ -393,31 +465,123 @@ export default function ProjectCreatePage({
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-2xl font-bold tracking-tight text-foreground">Create New Project</h1>
-          <p className="text-sm text-muted-foreground">Define your use case and connect the relevant data sources.</p>
+          <h1 className="text-2xl font-bold tracking-tight text-foreground">
+            {isSaved ? projectName || project?.name || "Project Details" : "Create New Project"}
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            {isSaved
+              ? "View and manage project configuration, use case details, and connected data sources."
+              : "Define your use case and connect the relevant data sources."}
+          </p>
         </div>
         <div className="flex items-center gap-3">
-          <button
-            onClick={onCancel}
-            className="px-6 py-2 border border-border bg-surface text-foreground hover:bg-surface-muted rounded-xl text-sm font-semibold cursor-pointer transition-colors shadow-sm focus:outline-none focus:ring-0 focus:border-border"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSubmit}
-            disabled={!projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
-            title={selectedSources.length === 0 ? "Please connect at least one data source to save" : undefined}
-            className="px-6 py-2 bg-primary text-white hover:bg-primary/95 rounded-xl text-sm font-semibold cursor-pointer transition-all shadow-md hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed focus:outline-none focus:ring-0 flex items-center gap-2"
-          >
-            {isSubmitting ? (
-              <>
-                <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                <span>Saving...</span>
-              </>
+          {isSaved ? (
+            !isEditing ? (
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  disabled={isWorkflowActiveOrPaused}
+                  onClick={() => setIsEditing(true)}
+                  title={
+                    isWorkflowActiveOrPaused
+                      ? "Cannot edit project details while workflow is running or paused"
+                      : "Edit Project Details"
+                  }
+                  className={`px-6 py-2 rounded-xl text-sm font-semibold transition-all shadow-md flex items-center gap-2 ${isWorkflowActiveOrPaused
+                    ? "bg-surface border border-border text-muted-foreground opacity-50 cursor-not-allowed"
+                    : "bg-primary text-white hover:bg-primary/95 cursor-pointer hover:scale-105 active:scale-95"
+                    }`}
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
+                  <span>Edit</span>
+                </button>
+
+                {onDelete && (
+                  <button
+                    type="button"
+                    disabled={isWorkflowActiveOrPaused}
+                    onClick={onDelete}
+                    title={
+                      isWorkflowActiveOrPaused
+                        ? "Cannot delete project while workflow is running or paused"
+                        : "Delete Project"
+                    }
+                    className="px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm flex items-center gap-2 border border-red-500 bg-white text-red-500 hover:bg-red-500 hover:text-white dark:bg-transparent dark:text-red-400 dark:border-red-500 dark:hover:bg-red-500 dark:hover:text-white cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    <span>Delete</span>
+                  </button>
+                )}
+              </div>
             ) : (
-              <span>Save Project</span>
-            )}
-          </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (project) {
+                      setProjectName(project.name || "");
+                      setUseCaseInfo(project.useCase || "");
+                      setSelectedSources(project.dataSources || []);
+                      setSelectedDomain(project.domain || "");
+                      setSelectedSubDomain(project.subDomain || "");
+                    }
+                    setIsEditing(false);
+                    onEditModeChange?.(false);
+                    setSubmitError(null);
+                  }}
+                  className="px-6 py-2 border border-border bg-surface text-foreground hover:bg-surface-muted rounded-xl text-sm font-semibold cursor-pointer transition-colors shadow-sm focus:outline-none focus:ring-0 focus:border-border"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleUpdateProject}
+                  disabled={!projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
+                  className="px-6 py-2 bg-primary text-white hover:bg-primary/95 rounded-xl text-sm font-semibold cursor-pointer transition-all shadow-md hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed focus:outline-none focus:ring-0 flex items-center gap-2"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                      <span>Saving...</span>
+                    </>
+                  ) : (
+                    <span>Save Changes</span>
+                  )}
+                </button>
+              </>
+            )
+          ) : (
+            <>
+              <button
+                type="button"
+                onClick={onCancel}
+                className="px-6 py-2 border border-border bg-surface text-foreground hover:bg-surface-muted rounded-xl text-sm font-semibold cursor-pointer transition-colors shadow-sm focus:outline-none focus:ring-0 focus:border-border"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleSubmit}
+                disabled={!projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
+                title={selectedSources.length === 0 ? "Please connect at least one data source to save" : undefined}
+                className="px-6 py-2 bg-primary text-white hover:bg-primary/95 rounded-xl text-sm font-semibold cursor-pointer transition-all shadow-md hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed focus:outline-none focus:ring-0 flex items-center gap-2"
+              >
+                {isSubmitting ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
+                    <span>Saving...</span>
+                  </>
+                ) : (
+                  <span>Save Project</span>
+                )}
+              </button>
+            </>
+          )}
         </div>
       </div>
 
@@ -425,18 +589,26 @@ export default function ProjectCreatePage({
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
         {/* Left: Project Details */}
         <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft flex flex-col">
-          <h2 className="text-base font-bold text-foreground mb-6">Project Details</h2>
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-base font-bold text-foreground">Project Details</h2>
+            {isSaved && !isEditing && (
+              <span className="px-2.5 py-1 rounded-lg text-xs font-semibold bg-surface-muted text-muted-foreground border border-border flex items-center gap-1.5">
+                <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
+                Read Only
+              </span>
+            )}
+          </div>
           <div className="space-y-6">
 
             {/* Inline Error Message */}
             {submitError && (
               <div className="p-3.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-semibold flex items-center justify-between animate-fade-in shadow-sm">
                 <div className="flex items-center gap-2.5">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-red-500"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-red-500"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                   <span>{submitError}</span>
                 </div>
                 <button onClick={() => setSubmitError(null)} className="p-1 hover:bg-red-500/20 rounded-lg cursor-pointer transition-colors focus:outline-none">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </button>
               </div>
             )}
@@ -448,6 +620,7 @@ export default function ProjectCreatePage({
                   Company Domain
                 </label>
                 <CustomSelect
+                  disabled={!isEditing}
                   options={domainSelectOptions}
                   value={selectedDomain}
                   onChange={(val) => {
@@ -466,14 +639,15 @@ export default function ProjectCreatePage({
                 {selectedDomain === "Other" ? (
                   <input
                     type="text"
+                    disabled={!isEditing}
                     placeholder="Enter company sub domain..."
                     value={customSubDomain}
                     onChange={(e) => setCustomSubDomain(e.target.value)}
-                    className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm"
+                    className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   />
                 ) : (
                   <CustomSelect
-                    disabled={!selectedDomain}
+                    disabled={!isEditing || !selectedDomain}
                     options={subDomainSelectOptions}
                     value={selectedSubDomain}
                     onChange={(val) => {
@@ -496,10 +670,11 @@ export default function ProjectCreatePage({
                 </label>
                 <input
                   type="text"
+                  disabled={!isEditing}
                   placeholder="Enter custom sub domain..."
                   value={customSubDomain}
                   onChange={(e) => setCustomSubDomain(e.target.value)}
-                  className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm"
+                  className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 />
               </div>
             )}
@@ -513,10 +688,11 @@ export default function ProjectCreatePage({
                 type="text"
                 maxLength={150}
                 required
+                disabled={!isEditing}
                 placeholder="e.g., Demand Forecasting, Predictive Maintenance, Customer Churn Analytics..."
                 value={projectName}
                 onChange={(e) => setProjectName(e.target.value)}
-                className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm"
+                className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
               />
               <div className="flex justify-end mt-1 text-[10px] text-muted-foreground font-semibold">
                 {projectName.length}/150
@@ -530,49 +706,50 @@ export default function ProjectCreatePage({
               </label>
               <div className="flex flex-col border border-border rounded-xl bg-surface overflow-hidden transition-all">
                 {/* Toolbar */}
-                <div className="flex items-center justify-between border-b border-border bg-surface-muted/30 px-3 py-1.5 select-none">
-                  <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
-                    {[
-                      { label: "B", title: "Bold",   action: () => insertText("**", "**"), className: "font-bold" },
-                      { label: "I", title: "Italic",  action: () => insertText("*", "*"),  className: "italic"    },
-                      { label: "H", title: "Heading", action: () => insertText("### ", ""), className: "font-semibold" },
-                    ].map(({ label, title, action, className }) => (
-                      <button
-                        key={title}
-                        type="button"
-                        onClick={action}
-                        title={title}
-                        className={`p-1.5 hover:bg-surface hover:text-foreground rounded transition-colors text-xs cursor-pointer focus:outline-none focus:ring-0 ${className}`}
-                      >
-                        {label}
+                {isEditing && (
+                  <div className="flex items-center justify-between border-b border-border bg-surface-muted/30 px-3 py-1.5 select-none">
+                    <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
+                      {[
+                        { label: "B", title: "Bold", action: () => insertText("**", "**"), className: "font-bold" },
+                        { label: "I", title: "Italic", action: () => insertText("*", "*"), className: "italic" },
+                        { label: "H", title: "Heading", action: () => insertText("### ", ""), className: "font-semibold" },
+                      ].map(({ label, title, action, className }) => (
+                        <button
+                          key={title}
+                          type="button"
+                          onClick={action}
+                          title={title}
+                          className={`p-1.5 hover:bg-surface hover:text-foreground rounded transition-colors text-xs cursor-pointer focus:outline-none focus:ring-0 ${className}`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                      <span className="h-4 w-px bg-border mx-1" />
+                      <button type="button" onClick={() => insertText("- ", "")} title="Bullet List" className="p-1.5 hover:bg-surface hover:text-foreground rounded transition-colors cursor-pointer focus:outline-none focus:ring-0">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="9" y1="6" x2="20" y2="6" /><line x1="9" y1="12" x2="20" y2="12" /><line x1="9" y1="18" x2="20" y2="18" /><circle cx="4" cy="6" r="1.5" fill="currentColor" /><circle cx="4" cy="12" r="1.5" fill="currentColor" /><circle cx="4" cy="18" r="1.5" fill="currentColor" /></svg>
                       </button>
-                    ))}
-                    <span className="h-4 w-px bg-border mx-1" />
-                    <button type="button" onClick={() => insertText("- ", "")} title="Bullet List" className="p-1.5 hover:bg-surface hover:text-foreground rounded transition-colors cursor-pointer focus:outline-none focus:ring-0">
-                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="9" y1="6" x2="20" y2="6" /><line x1="9" y1="12" x2="20" y2="12" /><line x1="9" y1="18" x2="20" y2="18" /><circle cx="4" cy="6" r="1.5" fill="currentColor" /><circle cx="4" cy="12" r="1.5" fill="currentColor" /><circle cx="4" cy="18" r="1.5" fill="currentColor" /></svg>
-                    </button>
-                    <span className="h-4 w-px bg-border mx-1" />
-                    <button type="button" onClick={handleUndo} disabled={historyIndex === 0} title="Undo" className="p-1.5 hover:bg-surface hover:text-foreground disabled:opacity-30 rounded transition-colors cursor-pointer focus:outline-none focus:ring-0">
-                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" /></svg>
-                    </button>
-                    <button type="button" onClick={handleRedo} disabled={historyIndex >= history.length - 1} title="Redo" className="p-1.5 hover:bg-surface hover:text-foreground disabled:opacity-30 rounded transition-colors cursor-pointer focus:outline-none focus:ring-0">
-                      <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 3" /></svg>
+                      <span className="h-4 w-px bg-border mx-1" />
+                      <button type="button" onClick={handleUndo} disabled={historyIndex === 0} title="Undo" className="p-1.5 hover:bg-surface hover:text-foreground disabled:opacity-30 rounded transition-colors cursor-pointer focus:outline-none focus:ring-0">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 7v6h6" /><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13" /></svg>
+                      </button>
+                      <button type="button" onClick={handleRedo} disabled={historyIndex >= history.length - 1} title="Redo" className="p-1.5 hover:bg-surface hover:text-foreground disabled:opacity-30 rounded transition-colors cursor-pointer focus:outline-none focus:ring-0">
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 7v6h-6" /><path d="M3 17a9 9 0 0 1 9-9 9 9 0 0 1 6 2.3l3 3" /></svg>
+                      </button>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setPreviewMode(!previewMode)}
+                      className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer focus:outline-none focus:ring-0 ${previewMode ? "bg-primary text-white border-primary" : "border-border text-foreground hover:bg-surface"
+                        }`}
+                    >
+                      Preview
                     </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => setPreviewMode(!previewMode)}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer focus:outline-none focus:ring-0 ${
-                      previewMode ? "bg-primary text-white border-primary" : "border-border text-foreground hover:bg-surface"
-                    }`}
-                  >
-                    Preview
-                  </button>
-                </div>
+                )}
 
                 {/* Editor / Preview */}
                 <div className="relative">
-                  {!previewMode ? (
+                  {!previewMode && isEditing ? (
                     <textarea
                       ref={textareaRef}
                       rows={5}
@@ -584,7 +761,7 @@ export default function ProjectCreatePage({
                   ) : (
                     <div
                       className="w-full p-4 text-base font-normal text-foreground overflow-y-auto min-h-[140px] prose dark:prose-invert max-w-none bg-surface"
-                      dangerouslySetInnerHTML={{ __html: renderMarkdown(useCaseInfo) }}
+                      dangerouslySetInnerHTML={{ __html: renderMarkdown(useCaseInfo || "No use case description provided.") }}
                     />
                   )}
                 </div>
@@ -596,13 +773,13 @@ export default function ProjectCreatePage({
                 </div>
               </div>
             </div>
+
           </div>
         </div>
 
         {/* Right: Connect Data Sources */}
         <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft flex flex-col">
-          <h2 className="text-base font-bold text-foreground mb-1">Connect Data Sources</h2>
-          <p className="text-xs text-muted-foreground mb-5">Select and connect the data sources that will be used in this project.</p>
+          <h2 className="text-base font-bold text-foreground mb-3">Connect Sources</h2>
 
           {/* Search & Filter */}
           <div className="flex items-center gap-3 mb-6">
@@ -636,10 +813,12 @@ export default function ProjectCreatePage({
             {selectedSources.length === 0 ? (
               <div className="border border-dashed border-border/80 rounded-2xl p-6 flex flex-col items-center justify-center text-center bg-gradient-to-br from-surface-muted/20 via-surface to-surface-muted/20 shadow-inner">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
                 </div>
                 <p className="text-sm font-bold text-foreground">No data sources selected</p>
-                <p className="text-xs text-muted-foreground mt-0.5 max-w-xs">Choose data sources from below to connect to this project</p>
+                <p className="text-xs text-muted-foreground mt-0.5 max-w-xs">
+                  {isEditing ? "Choose data sources from below to connect to this project" : "No data sources are attached to this project."}
+                </p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-36 overflow-y-auto border border-border/80 rounded-2xl p-3 bg-surface-muted/30">
@@ -651,9 +830,11 @@ export default function ProjectCreatePage({
                         <span className="shrink-0 text-primary scale-90">{renderDataSourceIcon(ds?.type ?? "postgres")}</span>
                         <span className="text-sm font-bold text-foreground truncate">{ds?.name ?? id}</span>
                       </div>
-                      <button type="button" onClick={() => toggleSource(id)} className="p-1 rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-500 cursor-pointer transition-colors focus:outline-none">
-                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
-                      </button>
+                      {isEditing && (
+                        <button type="button" onClick={() => toggleSource(id)} className="p-1 rounded-lg text-muted-foreground hover:bg-red-500/10 hover:text-red-500 cursor-pointer transition-colors focus:outline-none">
+                          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
+                        </button>
+                      )}
                     </div>
                   );
                 })}
@@ -665,9 +846,11 @@ export default function ProjectCreatePage({
           <div className="flex flex-col flex-1">
             <div className="flex items-center justify-between mb-2.5">
               <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">Available Sources</h3>
-              <button type="button" onClick={() => setShowConnectLibrary(true)} className="text-xs text-primary font-bold hover:underline cursor-pointer flex items-center gap-1 focus:outline-none">
-                <span>+ Connect New</span>
-              </button>
+              {isEditing && (
+                <button type="button" onClick={() => setShowConnectLibrary(true)} className="text-xs text-primary font-bold hover:underline cursor-pointer flex items-center gap-1 focus:outline-none">
+                  <span>+ Connect New</span>
+                </button>
+              )}
             </div>
 
             {paginatedSources.length > 0 ? (
@@ -677,12 +860,14 @@ export default function ProjectCreatePage({
                   return (
                     <div
                       key={ds.id}
-                      onClick={() => toggleSource(ds.id)}
-                      className={`flex items-center justify-between p-3.5 rounded-xl border cursor-pointer transition-all duration-200 ${
-                        isSelected
+                      onClick={() => {
+                        if (isEditing) toggleSource(ds.id);
+                      }}
+                      className={`flex items-center justify-between p-3.5 rounded-xl border transition-all duration-200 ${isEditing ? "cursor-pointer" : "cursor-default opacity-80"
+                        } ${isSelected
                           ? "border-primary/50 bg-primary/5 shadow-sm"
                           : "border-border/80 bg-surface hover:border-primary/30 hover:bg-surface-muted/30"
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-3 overflow-hidden">
                         <div className="w-9 h-9 rounded-xl bg-surface-muted/60 border border-border flex items-center justify-center shrink-0">
@@ -697,9 +882,8 @@ export default function ProjectCreatePage({
                         </div>
                       </div>
 
-                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                        isSelected ? "border-primary bg-primary text-white" : "border-border bg-surface"
-                      }`}>
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${isSelected ? "border-primary bg-primary text-white" : "border-border bg-surface"
+                        }`}>
                         {isSelected && (
                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                             <polyline points="20 6 9 17 4 12" />
@@ -740,6 +924,7 @@ export default function ProjectCreatePage({
           </div>
         </div>
       </div>
+
 
       {/* Connect New Library Modal */}
       {showConnectLibrary && (

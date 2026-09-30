@@ -18,7 +18,6 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
   // Data Ingestion
   "inspect": PIPELINE_PHASES.DATA_INGESTION,
   "profileData": PIPELINE_PHASES.DATA_INGESTION,
-  "preprocess": PIPELINE_PHASES.DATA_INGESTION,
   "resolveSchema": PIPELINE_PHASES.DATA_INGESTION,
   "Data Inspection": PIPELINE_PHASES.DATA_INGESTION,
   "Data Profiling": PIPELINE_PHASES.DATA_INGESTION,
@@ -50,12 +49,15 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
   "Pre Flight": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "preFlight": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "preFlightNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "Model Training Code Generation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "modelTrainingCode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "modelTrainingCodeNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "Model Training Execution": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "modelTrainingExec": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "modelTrainingExecNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "Model Training": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelTraining": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelTrainingNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "Model Evaluation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "modelEvaluation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "modelEvaluationNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "Model Validation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelValidation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelValidationNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
@@ -97,12 +99,15 @@ export const STEP_TO_NODE_MAP: Record<string, string> = {
   "Pre Flight": "preFlightNode",
   "preFlight": "preFlightNode",
   "preFlightNode": "preFlightNode",
-  "Model Training": "modelTrainingNode",
-  "modelTraining": "modelTrainingNode",
-  "modelTrainingNode": "modelTrainingNode",
-  "Model Evaluation": "modelEvaluationNode",
-  "modelEvaluation": "modelEvaluationNode",
-  "modelEvaluationNode": "modelEvaluationNode",
+  "Model Training Code Generation": "modelTrainingCodeNode",
+  "modelTrainingCode": "modelTrainingCodeNode",
+  "modelTrainingCodeNode": "modelTrainingCodeNode",
+  "Model Training Execution": "modelTrainingExecNode",
+  "modelTrainingExec": "modelTrainingExecNode",
+  "modelTrainingExecNode": "modelTrainingExecNode",
+  "Model Training": "modelTrainingCodeNode",
+  "modelTraining": "modelTrainingCodeNode",
+  "modelTrainingNode": "modelTrainingCodeNode",
   "Model Validation": "modelValidationNode",
   "modelValidation": "modelValidationNode",
   "modelValidationNode": "modelValidationNode",
@@ -160,6 +165,25 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
     ) {
       targetPhase = "Pre Flight";
     } else if (
+      nextStepLower === "model training code generation" ||
+      nextStepLower === "modeltrainingcode" ||
+      nextStepLower === "modeltrainingcodenode" ||
+      nextStepLower === "model training" ||
+      nextStepLower === "modeltraining" ||
+      nextStepLower === "modeltrainingnode"
+    ) {
+      targetPhase = "Model Training Code Generation";
+    } else if (
+      nextStepLower === "model training execution" ||
+      nextStepLower === "modeltrainingexec" ||
+      nextStepLower === "modeltrainingexecnode"
+    ) {
+      targetPhase = "Model Training Execution";
+    } else if (
+      nextStepLower.includes("validation")
+    ) {
+      targetPhase = "Model Validation";
+    } else if (
       nextStepLower.includes("model") ||
       nextStepLower.includes("selection")
     ) {
@@ -177,12 +201,18 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
   const outputsToClear: string[] = [];
 
   if (targetPhase === "Feature Engineering") {
-    // Starting Feature Engineering: clear all downstream model phase state
+    // Starting Feature Engineering: earlier phase Data Ingestion is complete
+    statusesToUpdate["Data Ingestion"] = "Completed";
+    statusesToUpdate["Data Inspection"] = "Completed";
+    statusesToUpdate["Data Profiling"] = "Completed";
+    statusesToUpdate["Schema Resolver"] = "Completed";
+
     statusesToUpdate["Feature Engineering"] = "In Progress";
     statusesToUpdate["Hierarchy Mapper"] = "In Progress";
     statusesToUpdate["Feature Architect"] = "Pending";
     statusesToUpdate["Feature Validator"] = "Pending";
     statusesToUpdate["Exogenous Scout"] = "Pending";
+    statusesToUpdate["Model Training & Validation"] = "Pending";
     statusesToUpdate["Model Selection"] = "Pending";
     statusesToUpdate["Training Configuration"] = "Pending";
     statusesToUpdate["Pre Flight"] = "Pending";
@@ -193,24 +223,23 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
       "modelSelection",
       "trainingConfiguration",
       "preFlight",
+      "modelTrainingCode",
       "modelTraining",
       "modelValidation"
     );
-  } else if (targetPhase === "Training Configuration") {
-    // Starting Training Configuration: clear downstream training runs
-    statusesToUpdate["Training Configuration"] = "In Progress";
-    statusesToUpdate["Pre Flight"] = "Pending";
-    statusesToUpdate["Model Training"] = "Pending";
-    statusesToUpdate["Model Validation"] = "Pending";
-
-    outputsToClear.push("preFlight", "modelTraining", "modelValidation");
-  } else if (targetPhase === "Pre Flight") {
-    statusesToUpdate["Pre Flight"] = "In Progress";
-    statusesToUpdate["Model Training"] = "Pending";
-    statusesToUpdate["Model Validation"] = "Pending";
-
-    outputsToClear.push("modelTraining", "modelValidation");
   } else if (targetPhase === "Model Selection") {
+    // Starting Model Phase: Data Ingestion and Feature Engineering are complete
+    statusesToUpdate["Data Ingestion"] = "Completed";
+    statusesToUpdate["Data Inspection"] = "Completed";
+    statusesToUpdate["Data Profiling"] = "Completed";
+    statusesToUpdate["Schema Resolver"] = "Completed";
+    statusesToUpdate["Feature Engineering"] = "Completed";
+    statusesToUpdate["Hierarchy Mapper"] = "Completed";
+    statusesToUpdate["Feature Architect"] = "Completed";
+    statusesToUpdate["Feature Validator"] = "Completed";
+    statusesToUpdate["Exogenous Scout"] = "Completed";
+
+    statusesToUpdate["Model Training & Validation"] = "In Progress";
     statusesToUpdate["Model Selection"] = "In Progress";
     statusesToUpdate["Training Configuration"] = "Pending";
     statusesToUpdate["Pre Flight"] = "Pending";
@@ -221,9 +250,34 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
       "modelSelection",
       "trainingConfiguration",
       "preFlight",
+      "modelTrainingCode",
       "modelTraining",
       "modelValidation"
     );
+  } else if (targetPhase === "Training Configuration") {
+    statusesToUpdate["Training Configuration"] = "In Progress";
+    statusesToUpdate["Pre Flight"] = "Pending";
+    statusesToUpdate["Model Training"] = "Pending";
+    statusesToUpdate["Model Validation"] = "Pending";
+
+    outputsToClear.push("trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation");
+  } else if (targetPhase === "Pre Flight") {
+    statusesToUpdate["Pre Flight"] = "In Progress";
+    statusesToUpdate["Model Training"] = "Pending";
+    statusesToUpdate["Model Validation"] = "Pending";
+
+    outputsToClear.push("preFlight", "modelTrainingCode", "modelTraining", "modelValidation");
+  } else if (targetPhase === "Model Training Code Generation" || targetPhase === "Model Training") {
+    statusesToUpdate["Model Training"] = "In Progress";
+    statusesToUpdate["Model Validation"] = "Pending";
+
+    outputsToClear.push("modelTrainingCode", "modelTraining", "modelValidation");
+  } else if (targetPhase === "Model Training Execution") {
+    statusesToUpdate["Model Training"] = "In Progress";
+    outputsToClear.push("modelTraining", "modelValidation");
+  } else if (targetPhase === "Model Validation") {
+    statusesToUpdate["Model Validation"] = "In Progress";
+    outputsToClear.push("modelValidation");
   }
 
   return {
@@ -233,3 +287,4 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
     outputsToClear,
   };
 }
+

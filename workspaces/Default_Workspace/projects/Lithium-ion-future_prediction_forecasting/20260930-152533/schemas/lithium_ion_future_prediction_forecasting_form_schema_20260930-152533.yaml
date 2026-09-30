@@ -1,0 +1,53 @@
+sourceId: 4eaa9842-ed09-402d-8cb7-7778fa2a9f70
+status: OK
+summary: Generated 2 filter group(s) with 2 total field(s) from Relationship Schema.
+forms:
+  - groupName: Geography
+    priority: secondary
+    fields:
+      - fieldId: entity
+        label: Entity
+        controlType: dropdown
+        parentField: null
+        parentFields: []
+        options:
+          - World
+        name: entity
+        columnName: entity
+        requiredParentParams: []
+  - groupName: Time
+    priority: secondary
+    fields:
+      - fieldId: year
+        label: Year
+        controlType: dropdown
+        parentField: null
+        parentFields: []
+        name: year
+        columnName: year
+        requiredParentParams: []
+filterGroups:
+  - groupName: Geography
+    priority: secondary
+    fields:
+      - fieldId: entity
+        label: Entity
+        controlType: dropdown
+        parentField: null
+        parentFields: []
+        options:
+          - World
+        name: entity
+        columnName: entity
+        requiredParentParams: []
+  - groupName: Time
+    priority: secondary
+    fields:
+      - fieldId: year
+        label: Year
+        controlType: dropdown
+        parentField: null
+        parentFields: []
+        name: year
+        columnName: year
+        requiredParentParams: []

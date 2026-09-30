@@ -1649,12 +1649,14 @@ def main_feature_validation(args_list=None):
     out_dir = args.out_dir or db_path
     os.makedirs(out_dir, exist_ok=True)
 
-    input_path = args.features_path or os.path.join(out_dir, 'selected_features.parquet')
+    input_path = args.features_path or os.path.join(out_dir, 'feature_selection.parquet')
     if not os.path.exists(input_path):
         candidate_inputs = [
-            os.path.join(out_dir, 'selected_features.csv'),
+            os.path.join(out_dir, 'selected_features.parquet'),
+            os.path.join(out_dir, 'feature_extraction.parquet'),
             os.path.join(out_dir, 'extracted_features.parquet'),
             os.path.join(out_dir, 'dataset.parquet'),
+            os.path.join(out_dir, 'feature_transformation.parquet'),
             os.path.join(out_dir, 'transformed_features.parquet'),
             os.path.join(db_path, 'carrier_forecast_dataset.csv')
         ]
@@ -1663,7 +1665,7 @@ def main_feature_validation(args_list=None):
                 input_path = cand
                 break
 
-    output_path = args.output_path or os.path.join(out_dir, 'validated_features.parquet')
+    output_path = args.output_path or os.path.join(out_dir, 'feature_validation.parquet')
     report_path = args.report_path or os.path.join(out_dir, 'feature_validation_report.json')
     metadata_path = args.metadata_path or os.path.join(out_dir, 'feature_validation_metadata.yaml')
 
@@ -2007,39 +2009,43 @@ if __name__ == '__main__':
     args, _ = parser.parse_known_args()
     db_path = args.db_path
     split = args.split
-    out_dir = args.out_dir or db_path
-    output_path = args.output_path or os.path.join(out_dir, 'dataset.parquet')
-    metadata_path = args.metadata_path or os.path.join(out_dir, 'metadata.yaml')
-    features_path = args.features_path or os.path.join(out_dir, 'order_features.parquet')
-    report_path = args.report_path or os.path.join(out_dir, 'feature_validation_report.json')
+    out_dir = args.out_dir if args.out_dir is not None else db_path
+    feature_created_path = os.path.join(out_dir, 'feature_created.parquet')
+    feature_transformation_path = os.path.join(out_dir, 'feature_transformation.parquet')
+    dataset_path = args.output_path if args.output_path is not None else os.path.join(out_dir, 'dataset.parquet')
+    feature_extraction_path = os.path.join(out_dir, 'feature_extraction.parquet')
+    feature_selection_path = os.path.join(out_dir, 'feature_selection.parquet')
+    feature_validation_path = os.path.join(out_dir, 'feature_validation.parquet')
+    report_path = args.report_path if args.report_path is not None else os.path.join(out_dir, 'feature_validation_report.json')
+    metadata_path = args.metadata_path if args.metadata_path is not None else os.path.join(out_dir, 'metadata.yaml')
 
     if 'main_feature_creation' in dir():
         print('=== [1/7] Running Feature Creation ===')
-        main_feature_creation(['--db-path', db_path])
+        main_feature_creation(['--db-path', db_path, '--output-path', feature_created_path, '--out-dir', out_dir])
 
     if 'main_feature_transformation' in dir():
         print('=== [2/7] Running Feature Transformation ===')
-        main_feature_transformation(['--db-path', db_path, '--split', split, '--out-dir', out_dir])
+        main_feature_transformation(['--db-path', db_path, '--input-path', feature_created_path, '--output-path', feature_transformation_path, '--split', split, '--out-dir', out_dir])
 
     if 'main_build_dataset' in dir():
         print('=== [3/7] Running Build Dataset ===')
-        main_build_dataset(['--db-path', db_path, '--output-path', output_path, '--metadata-path', metadata_path])
+        main_build_dataset(['--db-path', db_path, '--features-path', feature_transformation_path, '--output-path', dataset_path, '--metadata-path', metadata_path])
 
     if 'main_data_validation' in dir():
         print('=== [4/7] Running Data Validation ===')
-        main_data_validation(['--db-path', db_path, '--output-path', os.path.join(out_dir, 'validation_report.json')])
+        main_data_validation(['--db-path', db_path, '--dataset-path', dataset_path, '--output-path', os.path.join(out_dir, 'validation_report.json')])
 
     if 'main_feature_extraction' in dir():
         print('=== [5/7] Running Feature Extraction ===')
-        main_feature_extraction(['--db-path', db_path])
+        main_feature_extraction(['--db-path', db_path, '--input-path', dataset_path, '--output-path', feature_extraction_path, '--out-dir', out_dir])
 
     if 'main_feature_selection' in dir():
         print('=== [6/7] Running Feature Selection ===')
-        main_feature_selection(['--db-path', db_path, '--features-path', output_path, '--output-path', os.path.join(out_dir, 'selected_features.parquet')])
+        main_feature_selection(['--db-path', db_path, '--input-path', feature_extraction_path, '--output-path', feature_selection_path, '--out-dir', out_dir])
 
     if 'main_feature_validation' in dir():
         print('=== [7/7] Running Feature Validation ===')
-        main_feature_validation(['--db-path', db_path, '--features-path', os.path.join(out_dir, 'selected_features.parquet'), '--output-path', os.path.join(out_dir, 'validated_features.parquet'), '--report-path', report_path])
+        main_feature_validation(['--db-path', db_path, '--input-path', feature_selection_path, '--output-path', feature_validation_path, '--report-path', report_path, '--out-dir', out_dir])
 
     print('=== Pipeline Execution Complete ===')
 # -- PIPELINE_RUNNER END --
@@ -2058,39 +2064,39 @@ const connectorService = new ConnectorService(connectorRepository, fileService, 
 const projectService = new ProjectService(projectRepository, duckDBService);
 
 const services: IngestionServices = {
-  connectorService,
-  connectionTester,
-  fileService,
-  projectService,
-  duckDBService,
-  traceHelper: new AgentTraceHelper(),
-  projectId,
+    connectorService,
+    connectionTester,
+    fileService,
+    projectService,
+    duckDBService,
+    traceHelper: new AgentTraceHelper(),
+    projectId,
 };
 
 async function main(): Promise<void> {
-  try {
-    const result = await executePythonScript(
-      scriptName,
-      pythonCode,
-      projectId,
-      runTimestamp,
-      services,
-      connectorIdList
-    );
+    try {
+        const result = await executePythonScript(
+            scriptName,
+            pythonCode,
+            projectId,
+            runTimestamp,
+            services,
+            connectorIdList
+        );
 
-    console.log(`Execution success: ${result.success}`);
-    console.log("Stdout:\n", result.stdout);
-    console.error("Stderr:\n", result.stderr);
+        console.log(`Execution success: ${result.success}`);
+        console.log("Stdout:\n", result.stdout);
+        console.error("Stderr:\n", result.stderr);
 
-    if (!result.success) {
-      process.exitCode = 1;
+        if (!result.success) {
+            process.exitCode = 1;
+        }
+    } finally {
+        await cleanupRunContainer(projectId, runTimestamp);
     }
-  } finally {
-    await cleanupRunContainer(projectId, runTimestamp);
-  }
 }
 
 main().catch((error: unknown) => {
-  console.error("Python executor failed:", error);
-  process.exitCode = 1;
+    console.error("Python executor failed:", error);
+    process.exitCode = 1;
 });

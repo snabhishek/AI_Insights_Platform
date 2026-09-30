@@ -6,9 +6,10 @@ import {
   ITrainingConfigService,
   TrainingContractResult,
   SaveTrainingContractResult,
+  DateRangeResult,
 } from "./trainingConfig.service.interface";
 import { ProjectService } from "../../project/project.service";
-import { getProjectSchemasDir } from "../../../config/fileServer.config";
+import { getProjectSchemasDir, getProjectDir } from "../../../config/fileServer.config";
 import {
   getPackagesDir,
   sanitizeName,
@@ -181,4 +182,19 @@ export class TrainingConfigService implements ITrainingConfigService {
       parsedConfig: parsed,
     };
   }
+
+  public async getDateRange(projectId: string, timestamp?: string): Promise<DateRangeResult> {
+    const pWs = await this.projectService.getProjectWithWorkspace(projectId);
+    if (!pWs || !pWs.project) {
+      throw new Error(`Project "${projectId}" not found`);
+    }
+
+    const workspaceName = pWs.workspaceName || "DefaultWorkspace";
+    const projectName = pWs.project.name;
+    const existingAgentState = (pWs.project.agentState as any) || {};
+
+    const { extractDatasetDateRange } = await import("../../../agents/tools/helpers/datasetDateRangeHelper");
+    return await extractDatasetDateRange(workspaceName, projectName, timestamp, existingAgentState);
+  }
 }
+

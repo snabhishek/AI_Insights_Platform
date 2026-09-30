@@ -4,7 +4,7 @@ import * as path from "path";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { AzureChatOpenAI, ChatOpenAI } from "@langchain/openai";
 import { BaseMessage, HumanMessage } from "@langchain/core/messages";
-import { createAgent, summarizationMiddleware } from "langchain";
+import { createAgent, summarizationMiddleware, todoListMiddleware, toolRetryMiddleware, contextEditingMiddleware, ClearToolUsesEdit } from "langchain";
 import { BatchedTableState, IngestionServices } from "../state";
 import { getPipelineForSubstep } from "../pipelineFlowConfig";
 
@@ -404,13 +404,65 @@ export interface AgentInvocationOptions {
   traceLabel?: string;
   recursionLimit?: number;
   maxOutputTokens?: number;
+  useDeepAgent?: boolean;
+  enableTodoList?: boolean;
   middlewareOptions?: {
     summarization?: {
       triggerTokens?: number;
       keepTokens?: number;
     };
+    contextBudget?: {
+      maxTokens?: number;
+      keepTokens?: number;
+    };
+    todoList?: boolean;
+    toolRetry?: boolean | { maxRetries?: number };
   };
   messages?: BaseMessage[];
+}
+
+export function buildAgentMiddlewares(options?: AgentInvocationOptions, model?: any): any[] {
+  const middlewares: any[] = [];
+  if (options?.middlewareOptions?.summarization) {
+    const triggerTokens = options.middlewareOptions.summarization.triggerTokens ?? 200000;
+    const keepTokens = options.middlewareOptions.summarization.keepTokens ?? 25000;
+    middlewares.push(
+      summarizationMiddleware({
+        model: model as any,
+        trigger: { tokens: triggerTokens },
+        keep: { tokens: keepTokens },
+      })
+    );
+  }
+
+  if (options?.middlewareOptions?.contextBudget) {
+    const triggerTokens = options.middlewareOptions.contextBudget.maxTokens ?? 200000;
+    const keepTokens = options.middlewareOptions.contextBudget.keepTokens ?? 25000;
+    middlewares.push(
+      contextEditingMiddleware({
+        edits: [
+          new ClearToolUsesEdit({
+            trigger: { tokens: triggerTokens },
+            keep: { tokens: keepTokens },
+            clearToolInputs: false,
+          }),
+        ],
+      })
+    );
+  }
+
+  if (options?.enableTodoList || options?.useDeepAgent || options?.middlewareOptions?.todoList) {
+    middlewares.push(todoListMiddleware());
+  }
+
+  if (options?.middlewareOptions?.toolRetry) {
+    const maxRetries = typeof options.middlewareOptions.toolRetry === "object" && options.middlewareOptions.toolRetry.maxRetries
+      ? options.middlewareOptions.toolRetry.maxRetries
+      : 2;
+    middlewares.push(toolRetryMiddleware({ maxRetries }));
+  }
+
+  return middlewares;
 }
 
 export async function invokeAgentJson<T extends Record<string, unknown>>(
@@ -425,18 +477,7 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     return fallback;
   }
 
-  const middlewares: any[] = [];
-  if (options?.middlewareOptions?.summarization) {
-    const triggerTokens = options.middlewareOptions.summarization.triggerTokens ?? 100000;
-    const keepTokens = options.middlewareOptions.summarization.keepTokens ?? 25000;
-    middlewares.push(
-      summarizationMiddleware({
-        model: model as any,
-        trigger: { tokens: triggerTokens },
-        keep: { tokens: keepTokens },
-      })
-    );
-  }
+  const middlewares = buildAgentMiddlewares(options, model);
 
   let effectiveModel: any = model;
   if (options?.maxOutputTokens && typeof (model as any)?.bind === "function") {
@@ -461,7 +502,6 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
   const substepMap: Record<string, string> = {
     inspect: "Data Inspection",
     profileData: "Data Profiling",
-    preprocess: "Data Profiling",
     resolveSchema: "Schema Resolver",
     hierarchyMapper: "Hierarchy Mapper",
     hierarchyMapperNode: "Hierarchy Mapper",
@@ -487,9 +527,15 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     finalModelSelectionNode: "Model Selection",
     trainingConfiguration: "Training Configuration",
     trainingConfigurationNode: "Training Configuration",
+    datasetAnalyserAgent: "Training Configuration",
+    datasetAnalyserNode: "Training Configuration",
     preFlight: "Pre Flight",
     preFlightNode: "Pre Flight",
     "Pre Flight": "Pre Flight",
+    modelTrainingCode: "Model Training",
+    modelTrainingCodeNode: "Model Training",
+    modelTrainingExec: "Model Training",
+    modelTrainingExecNode: "Model Training",
     modelTraining: "Model Training",
     modelTrainingNode: "Model Training",
     modelEvaluation: "Model Training",
@@ -543,6 +589,11 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
       await logAgentMessagesAsThinking(services, substep, finalResult);
     }
 
+    if (options?.messages && finalResult?.messages && Array.isArray(finalResult.messages)) {
+      options.messages.length = 0;
+      options.messages.push(...finalResult.messages);
+    }
+
     const latestMessage = getLatestAgentMessage(finalResult);
     const rawText = extractModelText(latestMessage);
     const parsed = parseJsonObject(rawText, { __parseFailed: true } as unknown as T);
@@ -585,18 +636,7 @@ export async function invokeAgentText(
     return fallback;
   }
 
-  const middlewares: any[] = [];
-  if (options?.middlewareOptions?.summarization) {
-    const triggerTokens = options.middlewareOptions.summarization.triggerTokens ?? 100000;
-    const keepTokens = options.middlewareOptions.summarization.keepTokens ?? 25000;
-    middlewares.push(
-      summarizationMiddleware({
-        model: model as any,
-        trigger: { tokens: triggerTokens },
-        keep: { tokens: keepTokens },
-      })
-    );
-  }
+  const middlewares = buildAgentMiddlewares(options, model);
 
   let effectiveModel: any = model;
   if (options?.maxOutputTokens && typeof (model as any)?.bind === "function") {
@@ -711,7 +751,7 @@ export function resolvePromptFilePath(filename: string): string {
             }
           }
         }
-      } catch {}
+      } catch { }
     }
   }
 
@@ -926,6 +966,26 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     if (isRunning(stageStatuses[node])) return node;
   }
 
+  // If paused before model validation, current completed stage is model training
+  if (
+    (nextNodes.includes("modelValidationNode") || nextNodes.includes("modelValidation")) &&
+    (stageStatuses.modelTraining === "Completed" || stageStatuses.modelTrainingExecNode === "Completed") &&
+    stageStatuses.modelValidation !== "Completed" &&
+    stageStatuses.modelValidation !== "In Progress"
+  ) {
+    return "modelTrainingExecNode";
+  }
+
+  // If paused before model training, current completed stage is preFlight
+  if (
+    (nextNodes.includes("modelTrainingCodeNode") || nextNodes.includes("modelTrainingNode") || nextNodes.includes("modelTraining")) &&
+    (stageStatuses.preFlight === "Completed" || stageStatuses.preFlightNode === "Completed") &&
+    stageStatuses.modelTraining !== "Completed" &&
+    stageStatuses.modelTraining !== "In Progress"
+  ) {
+    return "preFlightNode";
+  }
+
   // If paused before training configuration, current completed stage is model selection
   if (
     (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration")) &&
@@ -974,25 +1034,25 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     if (isRunningOrDone(stageStatuses[node]) || nextNodes.includes(node)) return node;
   }
 
-  const isExo = isRunningOrDone(stageStatuses.exogenousScout) || 
-                isRunningOrDone(stageStatuses.exogenous) || 
-                nextNodes.includes("exogenous");
+  const isExo = isRunningOrDone(stageStatuses.exogenousScout) ||
+    isRunningOrDone(stageStatuses.exogenous) ||
+    nextNodes.includes("exogenous");
   if (isExo) return "exogenousScout";
 
   const isFeatureValidator = isRunningOrDone(stageStatuses.featureValidator) ||
-                             nextNodes.includes("featureValidatorNode");
+    nextNodes.includes("featureValidatorNode");
   if (isFeatureValidator) return "featureValidator";
 
   const isFeatureArchitect = isRunningOrDone(stageStatuses.featureArchitect) ||
-                             nextNodes.includes("featureArchitectNode");
+    nextNodes.includes("featureArchitectNode");
   if (isFeatureArchitect) return "featureArchitect";
 
   const isHierarchy = isRunningOrDone(stageStatuses.hierarchyMapper) ||
-                      nextNodes.includes("hierarchyMapperNode");
+    nextNodes.includes("hierarchyMapperNode");
   if (isHierarchy) return "hierarchyMapperNode";
 
   if (isRunningOrDone(stageStatuses.resolveSchema) || nextNodes.includes("resolveSchema")) return "resolveSchema";
-  if (isRunningOrDone(stageStatuses.preprocess) || isRunningOrDone(stageStatuses.profileData)) return "profileData";
+  if (isRunningOrDone(stageStatuses.profileData)) return "profileData";
   return "inspect";
 }
 
@@ -1009,6 +1069,8 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
   if (isRunning(stageStatuses?.modelValidation)) return "Validating the leading model on held-out data...";
   if (isRunning(stageStatuses?.modelEvaluation)) return "Evaluating and ranking candidate models...";
   if (isRunning(stageStatuses?.modelTraining)) return "Training candidate models...";
+  if (isCompleted(stageStatuses?.preFlight)) return "Pre Flight assessment completed. Ready to begin model training.";
+  if (isRunning(stageStatuses?.preFlight)) return "Running pre-flight checks and hardware assessment...";
   if (isRunning(stageStatuses?.trainingConfiguration)) return "Configuring model training parameters...";
   if (isCompleted(stageStatuses?.trainingConfiguration)) return "Training configuration completed. Ready to begin model training.";
   if (isRunning(stageStatuses?.modelSelection)) return "Selecting and ranking candidate models...";
@@ -1048,8 +1110,8 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
   if (isRunning(stageStatuses?.resolveSchema)) {
     return "Resolving schema mappings...";
   }
-  if (isRunning(stageStatuses?.profileData) || isRunning(stageStatuses?.preprocess)) {
-    return "Running data profiling and preprocessing...";
+  if (isRunning(stageStatuses?.profileData)) {
+    return "Running data profiling...";
   }
   if (isRunning(stageStatuses?.inspect)) {
     return "Inspecting data sources...";
@@ -1064,16 +1126,16 @@ export function buildResultFromGraphState(
 ): any {
   const values = graphState?.values ?? {};
   const nextNodes: string[] = Array.isArray(graphState?.next) ? graphState.next : [];
-  const defaultStatuses = { 
-    inspect: "Pending", 
-    profileData: "Pending", 
-    preprocess: "Pending", 
-    resolveSchema: "Pending", 
+  const defaultStatuses = {
+    inspect: "Pending",
+    profileData: "Pending",
+    resolveSchema: "Pending",
     hierarchyMapper: "Pending",
     featureArchitect: "Pending",
     featureValidator: "Pending",
     exogenousScout: "Pending",
     trainingConfiguration: "Pending",
+    preFlight: "Pending",
     modelTraining: "Pending",
     modelEvaluation: "Pending",
     modelValidation: "Pending",
@@ -1083,14 +1145,16 @@ export function buildResultFromGraphState(
     ? values.stageStatuses as Record<string, string>
     : defaultStatuses;
   const status = (typeof values.status === "string" && values.status) ? values.status : "running";
-  
+
   const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
   const isFeatureEngineeringStarted = stageStatuses.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending";
   const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted && isIngestionComplete;
   const ss = stageStatuses as Record<string, string>;
   const isAtModelApproval = (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) && (ss.exogenousScout === "Completed" || ss.exogenous === "Completed");
   const isAtTrainingConfigApproval = (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration")) && (ss.modelSelection === "Completed" || ss.modelSelectionNode === "Completed");
-  const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval || isAtTrainingConfigApproval);
+  const isAtModelTrainingApproval = (nextNodes.includes("modelTrainingCodeNode") || nextNodes.includes("modelTrainingNode") || nextNodes.includes("modelTraining")) && (ss.preFlight === "Completed" || ss.preFlightNode === "Completed");
+  const isAtModelValidationApproval = (nextNodes.includes("modelValidationNode") || nextNodes.includes("modelValidation")) && (ss.modelTraining === "Completed" || ss.modelTrainingExecNode === "Completed");
+  const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval || isAtTrainingConfigApproval || isAtModelTrainingApproval || isAtModelValidationApproval);
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
   return {
@@ -1101,12 +1165,12 @@ export function buildResultFromGraphState(
     inspection: (values.inspection && typeof values.inspection === "object") ? values.inspection : {},
     schemaResolution: (values.schemaResolution && typeof values.schemaResolution === "object") ? values.schemaResolution : {},
     dataProfile: (values.dataProfile && typeof values.dataProfile === "object") ? values.dataProfile : {},
-    preprocessing: (values.preprocessing && typeof values.preprocessing === "object") ? values.preprocessing : {},
     hierarchyMapper: (values.hierarchyMapper && typeof values.hierarchyMapper === "object") ? values.hierarchyMapper : {},
     featureArchitect: (values.featureArchitect && typeof values.featureArchitect === "object") ? values.featureArchitect : {},
     featureValidator: (values.featureValidator && typeof values.featureValidator === "object") ? values.featureValidator : {},
     exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
     trainingConfiguration: (values.trainingConfiguration && typeof values.trainingConfiguration === "object") ? values.trainingConfiguration : {},
+    preFlight: (values.preFlight && typeof values.preFlight === "object") ? values.preFlight : {},
     modelTraining: (values.modelTraining && typeof values.modelTraining === "object") ? values.modelTraining : {},
     modelEvaluation: (values.modelEvaluation && typeof values.modelEvaluation === "object") ? values.modelEvaluation : {},
     modelValidation: (values.modelValidation && typeof values.modelValidation === "object") ? values.modelValidation : {},
@@ -1114,7 +1178,7 @@ export function buildResultFromGraphState(
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
-    nextStep: isAtTrainingConfigApproval ? "Training Configuration" : (isAtModelApproval ? "Model Training & Validation" : (isIngestionComplete && !isFeatureEngineeringStarted ? "Feature Engineering" : (nextNodes[0] || "inspect"))),
+    nextStep: isAtModelTrainingApproval ? "Model Training" : (isAtTrainingConfigApproval ? "Training Configuration" : (isAtModelApproval ? "Model Training & Validation" : (isIngestionComplete && !isFeatureEngineeringStarted ? "Feature Engineering" : (nextNodes[0] || "inspect")))),
     currentNode: currentStage,
     currentStage,
     stageOutputs: (values.stageOutputs && typeof values.stageOutputs === "object") ? values.stageOutputs : {},
@@ -1125,50 +1189,44 @@ export function buildResultFromGraphState(
 }
 
 export function mapRetryStepToInterruptNode(step?: string): string | undefined {
-  const mapping: Record<string, string> = {
-    inspect: "inspect",
-    profileData: "profileData",
-    preprocess: "profileData",
-    resolveSchema: "resolveSchema",
-    hierarchyMapper: "hierarchyMapperNode",
-    hierarchyMapperNode: "hierarchyMapperNode",
-    "Hierarchy Mapper": "hierarchyMapperNode",
-    featureArchitect: "featureArchitectNode",
-    featureArchitectNode: "featureArchitectNode",
-    "Feature Architect": "featureArchitectNode",
-    featureValidator: "featureArchitectNode",
-    featureValidatorNode: "featureArchitectNode",
-    "Feature Validator": "featureArchitectNode",
-    exogenous: "exogenous",
-    exogenousScout: "exogenous",
-    "Exogenous Scout": "exogenous",
-    "Data Ingestion": "inspect",
-    "Data Profiling": "profileData",
-    "Schema Resolver": "resolveSchema",
-    "Feature Engineering": "hierarchyMapperNode",
-    trainingConfiguration: "trainingConfigurationNode",
-    trainingConfigurationNode: "trainingConfigurationNode",
-    "Training Configuration": "trainingConfigurationNode",
-    preFlight: "preFlightNode",
-    preFlightNode: "preFlightNode",
-    "Pre Flight": "preFlightNode",
-    modelTraining: "modelTrainingNode",
-    modelTrainingNode: "modelTrainingNode",
-    "Model Training": "modelTrainingNode",
-    modelEvaluation: "modelEvaluationNode",
-    modelEvaluationNode: "modelEvaluationNode",
-    "Model Evaluation": "modelEvaluationNode",
-    modelValidation: "modelValidationNode",
-    modelValidationNode: "modelValidationNode",
-    "Model Validation": "modelValidationNode",
-    modelSelection: "modelSelectionNode",
-    modelSelectionNode: "modelSelectionNode",
-    finalModelSelection: "finalModelSelectionNode",
-    finalModelSelectionNode: "finalModelSelectionNode",
-    "Model Selection": "modelSelectionNode",
-    "Model Training & Validation": "modelSelectionNode",
-  };
-  return step ? mapping[step] : undefined;
+  if (!step) return "modelSelectionNode";
+  const s = step.toLowerCase().trim();
+
+  // Data Ingestion stage -> always retry entire stage from inspect
+  if (
+    s === "inspect" ||
+    s === "data inspection" ||
+    s === "profiledata" ||
+    s === "data profiling" ||
+    s === "resolveschema" ||
+    s === "schema resolver" ||
+    s === "data ingestion"
+  ) {
+    return "inspect";
+  }
+
+  // Feature Engineering stage -> always retry entire stage from hierarchyMapperNode
+  if (
+    s === "hierarchymapper" ||
+    s === "hierarchymappernode" ||
+    s === "hierarchy mapper" ||
+    s === "featurearchitect" ||
+    s === "featurearchitectnode" ||
+    s === "feature architect" ||
+    s === "featurevalidator" ||
+    s === "featurevalidatornode" ||
+    s === "feature validator" ||
+    s === "exogenous" ||
+    s === "exogenousscout" ||
+    s === "exogenous scout" ||
+    s === "feature engineering"
+  ) {
+    return "hierarchyMapperNode";
+  }
+
+  // Model Training & Validation stage -> always retry entire stage from modelSelectionNode
+  // Covers modelSelection, trainingConfiguration, preFlight, modelTrainingCode, modelTrainingExec, modelValidation, etc.
+  return "modelSelectionNode";
 }
 
 export async function logMilestoneThinking(
@@ -1203,7 +1261,7 @@ export async function logMilestoneThinking(
     if (typeof services?.onThinkingUpdate === "function") {
       try {
         await services.onThinkingUpdate(substep);
-      } catch {}
+      } catch { }
     }
   } catch (err) {
     console.warn("[AgentUtils] Failed to log milestone thinking:", err);
@@ -1234,6 +1292,22 @@ export async function logAgentMessagesAsThinking(
     if (messages.length === 0) return;
 
     const thinkingLogs: Array<{ time: string; text: string; done: boolean }> = [];
+
+    const todos = Array.isArray(agentResult?.todos)
+      ? agentResult.todos
+      : Array.isArray(agentResult?.values?.todos)
+        ? agentResult.values.todos
+        : [];
+    if (todos.length > 0) {
+      const todoItems = todos.map((t: any) => `[${t.status || "pending"}] ${t.content || t.task || t.title}`).join("; ");
+      const now = new Date();
+      const timeStr = now.toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+      thinkingLogs.push({
+        time: timeStr,
+        text: `Task progress: ${todoItems}`,
+        done: true,
+      });
+    }
 
     for (const msg of messages) {
       const now = new Date();
@@ -1289,7 +1363,7 @@ export async function logAgentMessagesAsThinking(
       if (typeof services?.onThinkingUpdate === "function") {
         try {
           await services.onThinkingUpdate(substep);
-        } catch {}
+        } catch { }
       }
     }
   } catch (err) {

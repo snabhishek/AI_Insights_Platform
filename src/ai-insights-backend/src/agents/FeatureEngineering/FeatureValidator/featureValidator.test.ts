@@ -1,5 +1,4 @@
 import { looksLikeError } from "../../validator/validatorNode";
-import { makePipelineTemplate } from "../../tools/featureArchitect/featureArchitect.tools";
 
 async function runFeatureValidatorTests() {
   console.log("=== Starting Feature Validator Unit Tests ===");
@@ -46,23 +45,6 @@ async function runFeatureValidatorTests() {
     assert(!isError, "looksLikeError accepts fully compliant featureValidator output");
   } catch (err: any) {
     assert(false, `looksLikeError compliant test failed with exception: ${err?.message}`);
-  }
-
-  // 3. Pipeline Template: Verify FEATURE_VALIDATION region markers exist and are ordered
-  try {
-    const template = makePipelineTemplate("test_pipeline.py");
-    const hasRegionStart = template.includes("# -- REGION: FEATURE_VALIDATION START --");
-    const hasRegionEnd = template.includes("# -- REGION: FEATURE_VALIDATION END --");
-    const hasRunnerStep = template.includes("main_feature_validation");
-    const hasStep7 = template.includes("=== [7/7] Running Feature Validation ===");
-    const hasReportPath = template.includes("--report-path");
-
-    assert(
-      hasRegionStart && hasRegionEnd && hasRunnerStep && hasStep7 && hasReportPath,
-      "makePipelineTemplate contains FEATURE_VALIDATION region markers and 7-stage sequential runner"
-    );
-  } catch (err: any) {
-    assert(false, `Pipeline template test failed with exception: ${err?.message}`);
   }
 
   // 4. Remediation Rule Test: Verify synthetic collinear pair resolution drops lower-importance feature

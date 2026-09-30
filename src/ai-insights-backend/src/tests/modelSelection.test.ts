@@ -277,6 +277,13 @@ async function runModelSelectionTests() {
 
   const validDecision: ModelSelectionDecision = {
     status: "READY",
+    problem_type: "classification",
+    task_type: "tabular_classification",
+    task_subtype: "binary_classification",
+    prediction_type: "probability",
+    primary_metric: "f1_score",
+    direction: "maximize",
+    secondary_metrics: ["accuracy", "recall", "roc_auc"],
     target_entity: {
       name: "churn_flag",
       datatype: "boolean",
@@ -553,14 +560,84 @@ async function runModelSelectionTests() {
     "Tool received correct arguments from agent loop"
   );
 
-  // Test 5.2: ModelSelectionLLMService createFallbackDecision creates valid decision
-  const llmService = new ModelSelectionLLMService();
-  const fallbackDecision = llmService.createFallbackDecision(normClassContext, registry.getAllModels());
-  const fallbackValidation = ModelSelectionValidator.validate(fallbackDecision, registry);
+  // Test 5.2: ModelSelectionValidator validates required fields and rejects missing fields without fallback
+  const sampleDecision: ModelSelectionDecision = {
+    status: "READY",
+    problem_type: "classification",
+    task_type: "tabular_classification",
+    task_subtype: "binary_classification",
+    prediction_type: "probability",
+    primary_metric: "f1_score",
+    direction: "maximize",
+    secondary_metrics: ["accuracy", "recall", "roc_auc"],
+    target_entity: {
+      name: "churn",
+      datatype: "boolean",
+      description: "Customer churn flag",
+      source: "customers",
+    },
+    derivation: null,
+    positive_class: "1",
+    negative_class: "0",
+    prediction_grain: {
+      entity: "customer",
+      keys: ["customer_id"],
+      frequency: null,
+    },
+    recommended_model: {
+      model_id: "lightgbm_classifier",
+      rank: 1,
+      suitability_score: 0.95,
+      recommendation: "primary",
+      displayName: "LightGBM Classifier",
+    },
+    candidates: [
+      {
+        model_id: "lightgbm_classifier",
+        rank: 1,
+        suitability_score: 0.95,
+        recommendation: "primary",
+        displayName: "LightGBM Classifier",
+        reasoning: {
+          strengths: ["Fast gradient boosting"],
+          weaknesses: [],
+          suitability: ["Strong tabular fit"],
+        },
+      },
+    ],
+    training: {
+      mode: "automl_search",
+      baseline_model: null,
+      ensemble: { enabled: false, strategy: null },
+      random_seed: 42,
+      early_stopping: { enabled: true, patience: 10, metric: "f1_score" },
+    },
+    models: [
+      {
+        model_id: "lightgbm_classifier",
+        framework: "lightgbm",
+        algorithm: "LGBMClassifier",
+        enabled: true,
+        parameters: {},
+      },
+    ],
+    model_selection_strategy: "Ranked by suitability score",
+    max_training_time: null,
+    confidence: { score: 0.95, rationale: "Strong data signals" },
+  };
+
+  const validationRes = ModelSelectionValidator.validate(sampleDecision, registry);
   assert(
-    fallbackValidation.isValid,
-    "createFallbackDecision produces a structurally valid ModelSelectionDecision with source metadata",
-    fallbackValidation.errors.join("; ")
+    validationRes.isValid,
+    "ModelSelectionValidator confirms valid decision with all required problem specifications and metrics",
+    validationRes.errors.join("; ")
+  );
+
+  const missingMetricDecision = { ...sampleDecision, primary_metric: "" as any };
+  const invalidRes = ModelSelectionValidator.validate(missingMetricDecision, registry);
+  assert(
+    !invalidRes.isValid && invalidRes.errors.some((e) => e.includes("primary_metric")),
+    "ModelSelectionValidator strictly rejects decision missing primary_metric without fallbacks"
   );
 
   console.log("\n=================================================");

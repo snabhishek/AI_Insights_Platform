@@ -1,0 +1,139 @@
+{
+  "status": "PASSED",
+  "dataset_path": "/workspace/20260930-152533/python_script/dataset.parquet",
+  "total_rows": 6,
+  "total_columns": 66,
+  "column_list": [
+    "Entity",
+    "Code",
+    "Year",
+    "Price of lithium-ion battery cells",
+    "year_index",
+    "log_year_index",
+    "year_squared",
+    "decade_bin",
+    "price_lag_1",
+    "price_lag_2",
+    "price_diff_lag1",
+    "price_pct_change_lag1",
+    "price_rolling_mean_2",
+    "price_expanding_mean",
+    "entity_World",
+    "code_OWID_WRL",
+    "price_lag_1_is_na",
+    "price_lag_2_is_na",
+    "price_diff_lag1_is_na",
+    "price_pct_change_lag1_is_na",
+    "price_rolling_mean_2_is_na",
+    "price_expanding_mean_is_na",
+    "log_price_lag_1",
+    "sqrt_price_lag_1",
+    "log_price_lag_2",
+    "sqrt_price_lag_2",
+    "log_price_rolling_mean_2",
+    "sqrt_price_rolling_mean_2",
+    "log_price_expanding_mean",
+    "sqrt_price_expanding_mean",
+    "signed_log_price_diff_lag1",
+    "price_pct_change_lag1_clipped",
+    "year_index_standardized",
+    "year_index_minmax",
+    "log_year_index_standardized",
+    "log_year_index_minmax",
+    "year_squared_standardized",
+    "year_squared_minmax",
+    "price_lag_1_standardized",
+    "price_lag_1_minmax",
+    "price_lag_2_standardized",
+    "price_lag_2_minmax",
+    "price_diff_lag1_standardized",
+    "price_diff_lag1_minmax",
+    "price_pct_change_lag1_standardized",
+    "price_pct_change_lag1_minmax",
+    "price_rolling_mean_2_standardized",
+    "price_rolling_mean_2_minmax",
+    "price_expanding_mean_standardized",
+    "price_expanding_mean_minmax",
+    "log_price_lag_1_standardized",
+    "log_price_lag_1_minmax",
+    "log_price_lag_2_standardized",
+    "log_price_lag_2_minmax",
+    "log_price_rolling_mean_2_standardized",
+    "log_price_rolling_mean_2_minmax",
+    "log_price_expanding_mean_standardized",
+    "log_price_expanding_mean_minmax",
+    "sqrt_price_lag_1_standardized",
+    "sqrt_price_lag_1_minmax",
+    "sqrt_price_lag_2_standardized",
+    "sqrt_price_lag_2_minmax",
+    "signed_log_price_diff_lag1_standardized",
+    "signed_log_price_diff_lag1_minmax",
+    "price_pct_change_lag1_clipped_standardized",
+    "price_pct_change_lag1_clipped_minmax"
+  ],
+  "target_column": "Price of lithium-ion battery cells",
+  "target_summary": {
+    "column_name": "Price of lithium-ion battery cells",
+    "count": 6,
+    "min": 5307.834,
+    "max": 9210.23,
+    "mean": 6800.7194,
+    "median": 6508.1665,
+    "std": 1376.9703,
+    "skewness": 1.1449
+  },
+  "null_rates": {
+    "columns_with_nulls_count": 0,
+    "columns_with_nulls": {}
+  },
+  "duplicate_analysis": {
+    "exact_duplicate_rows": 0,
+    "key_duplicates": 0,
+    "key_columns": [
+      "Entity",
+      "Year"
+    ]
+  },
+  "constant_columns": [
+    "Entity",
+    "Code",
+    "decade_bin",
+    "entity_World",
+    "code_OWID_WRL"
+  ],
+  "low_variance_columns": [],
+  "target_leakage": {
+    "leakage_suspects_count": 0,
+    "leakage_suspects": [],
+    "top_correlations": {
+      "log_year_index": -0.9936,
+      "log_year_index_standardized": -0.9936,
+      "log_year_index_minmax": -0.9936,
+      "Year": -0.9489,
+      "year_index": -0.9489,
+      "year_index_standardized": -0.9489,
+      "year_index_minmax": -0.9489,
+      "log_price_lag_1": 0.9064,
+      "log_price_lag_1_standardized": 0.9064,
+      "log_price_lag_1_minmax": 0.9064
+    }
+  },
+  "anomalies": {
+    "inf_value_issues": [],
+    "negative_value_issues": [
+      {
+        "column": "price_pct_change_lag1",
+        "negative_count": 6
+      },
+      {
+        "column": "price_pct_change_lag1_clipped",
+        "negative_count": 6
+      }
+    ],
+    "outlier_columns_count": 3,
+    "temporal_gaps": []
+  },
+  "summary_issues": [
+    "Found negative values in 2 non-negative columns."
+  ]
+}

@@ -1,0 +1,29 @@
+version: '1.0'
+generatedAt: '2026-09-30T10:55:00.000Z'
+resolvedTables:
+  - price_of_lithium_ion_battery_cells
+fields:
+  Identifier:
+    - field: price_of_lithium_ion_battery_cells.Code
+      subtype: GeographicCode
+      priority: Medium
+      priorityRationale: Standardized geographic ISO/OWID entity code used for joins against external macro-economic and commodity datasets.
+      sensitiveSubtype: null
+  Location:
+    - field: price_of_lithium_ion_battery_cells.Entity
+      subtype: Region
+      priority: High
+      priorityRationale: Geographic dimension indicating country or global aggregate level for region-specific battery price modeling.
+      sensitiveSubtype: null
+  Temporal:
+    - field: price_of_lithium_ion_battery_cells.Year
+      subtype: Year
+      priority: Critical
+      priorityRationale: Primary time-series index dimension required for historical trend modeling, sequencing, and multi-horizon price forecasting.
+      sensitiveSubtype: null
+  Financial:
+    - field: price_of_lithium_ion_battery_cells.Price of lithium-ion battery cells
+      subtype: UnitPrice
+      priority: Critical
+      priorityRationale: Primary target variable representing the benchmark lithium-ion battery cell price metric ($/kWh) to forecast.
+      sensitiveSubtype: null

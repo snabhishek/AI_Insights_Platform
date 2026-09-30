@@ -6,6 +6,8 @@ interface PreFlightStepOutputProps {
   preFlight: any;
   projectId?: string;
   activeRunTimestamp?: string;
+  onApprovePreFlight?: () => void;
+  isApproving?: boolean;
 }
 
 // ─── Inline SVG Icons ────────────────────────────────────────────────────────
@@ -129,7 +131,11 @@ function ExecutionStrategyIcon({ strategy, className = "w-4 h-4" }: { strategy?:
   return <CpuIcon className={className} />;
 }
 
-export default function PreFlightStepOutput({ preFlight }: PreFlightStepOutputProps) {
+export default function PreFlightStepOutput({
+  preFlight,
+  onApprovePreFlight,
+  isApproving = false,
+}: PreFlightStepOutputProps) {
   const [filterCategory, setFilterCategory] = useState<string>("ALL");
 
   if (!preFlight) {
@@ -763,6 +769,49 @@ export default function PreFlightStepOutput({ preFlight }: PreFlightStepOutputPr
           )}
         </div>
       </div>
+
+      {/* ─── Handoff / Approval to Model Training ─── */}
+      {onApprovePreFlight && (
+        <div className="rounded-xl border border-border bg-gradient-to-r from-surface to-surface-muted p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 flex items-center justify-center font-bold text-sm shrink-0">
+              ✓
+            </div>
+            <div>
+              <p className="text-xs font-bold text-foreground">
+                Pre-Flight Checks Passed & Environment Verified
+              </p>
+              <p className="text-[11px] text-muted-foreground">
+                Approve to generate containerized training code and execute candidate models.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            disabled={isApproving || preFlight?.decision === "BLOCKED" || preFlight?.decision === "FAILED"}
+            onClick={onApprovePreFlight}
+            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+          >
+            {isApproving ? (
+              <>
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                <span>Starting Model Training...</span>
+              </>
+            ) : (
+              <>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="20 6 9 17 4 12" />
+                </svg>
+                <span>Proceed to Model Training with Selected Configuration</span>
+              </>
+            )}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

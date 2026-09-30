@@ -83,10 +83,10 @@ export default function ProjectCard({
             : "No description provided."}
         </p>
 
-        {/* Linked Data Sources Footer */}
+        {/* Linked Connectors Footer */}
         <div className="mt-auto pt-3 border-t border-border flex items-center justify-between">
           <span className="text-[11px] font-medium text-muted-foreground">
-            Data Sources
+            Connectors
           </span>
           <div className="flex -space-x-1.5 overflow-hidden">
             {project.dataSources.map((dsId) => {

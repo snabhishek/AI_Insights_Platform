@@ -6,45 +6,45 @@ import { PipelineStatus, Workflow } from "./types";
 // ─── Color Maps (Active at all times) ────────────────────────────────────────
 
 const COLOR_MAP: Record<string, { border: string; icon: string; glow: string; shadow: string }> = {
-  green:  { 
-    border: "border-emerald-500/70 dark:border-emerald-400/50",  
-    icon: "text-emerald-500 border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10",  
+  green: {
+    border: "border-emerald-500/70 dark:border-emerald-400/50",
+    icon: "text-emerald-500 border-emerald-500/20 bg-emerald-500/5 dark:bg-emerald-500/10",
     glow: "text-emerald-500",
     shadow: "shadow-[0_0_15px_rgba(16,185,129,0.05)]"
   },
-  blue:   { 
-    border: "border-blue-500/70 dark:border-blue-400/50",   
-    icon: "text-blue-500 border-blue-500/20 bg-blue-500/5 dark:bg-blue-500/10",    
+  blue: {
+    border: "border-blue-500/70 dark:border-blue-400/50",
+    icon: "text-blue-500 border-blue-500/20 bg-blue-500/5 dark:bg-blue-500/10",
     glow: "text-blue-500",
     shadow: "shadow-[0_0_15px_rgba(59,130,246,0.05)]"
   },
-  purple: { 
-    border: "border-purple-500/70 dark:border-purple-400/50", 
-    icon: "text-purple-500 border-purple-500/20 bg-purple-500/5 dark:bg-purple-500/10",  
+  purple: {
+    border: "border-purple-500/70 dark:border-purple-400/50",
+    icon: "text-purple-500 border-purple-500/20 bg-purple-500/5 dark:bg-purple-500/10",
     glow: "text-purple-500",
     shadow: "shadow-[0_0_15px_rgba(168,85,247,0.05)]"
   },
-  yellow: { 
-    border: "border-amber-500/70 dark:border-amber-400/50",   
-    icon: "text-amber-500 border-amber-500/20 bg-amber-500/5 dark:bg-amber-500/10",    
+  yellow: {
+    border: "border-amber-500/70 dark:border-amber-400/50",
+    icon: "text-amber-500 border-amber-500/20 bg-amber-500/5 dark:bg-amber-500/10",
     glow: "text-amber-500",
     shadow: "shadow-[0_0_15px_rgba(245,158,11,0.05)]"
   },
-  red:    { 
-    border: "border-rose-500/70 dark:border-rose-400/50",     
-    icon: "text-rose-500 border-rose-500/20 bg-rose-500/5 dark:bg-rose-500/10",        
+  red: {
+    border: "border-rose-500/70 dark:border-rose-400/50",
+    icon: "text-rose-500 border-rose-500/20 bg-rose-500/5 dark:bg-rose-500/10",
     glow: "text-rose-500",
     shadow: "shadow-[0_0_15px_rgba(244,63,94,0.05)]"
   },
-  pink:   { 
-    border: "border-pink-500/70 dark:border-pink-400/50",     
-    icon: "text-pink-500 border-pink-500/20 bg-pink-500/5 dark:bg-pink-500/10",        
+  pink: {
+    border: "border-pink-500/70 dark:border-pink-400/50",
+    icon: "text-pink-500 border-pink-500/20 bg-pink-500/5 dark:bg-pink-500/10",
     glow: "text-pink-500",
     shadow: "shadow-[0_0_15px_rgba(236,72,153,0.05)]"
   },
-  teal:   { 
-    border: "border-teal-500/70 dark:border-teal-400/50",     
-    icon: "text-teal-500 border-teal-500/20 bg-teal-500/5 dark:bg-teal-500/10",        
+  teal: {
+    border: "border-teal-500/70 dark:border-teal-400/50",
+    icon: "text-teal-500 border-teal-500/20 bg-teal-500/5 dark:bg-teal-500/10",
     glow: "text-teal-500",
     shadow: "shadow-[0_0_15px_rgba(20,184,166,0.05)]"
   },
@@ -79,8 +79,15 @@ function StatusBadge({ status }: { status: PipelineStatus }) {
       </span>
     );
   }
+  if (status === "Stopped") {
+    return (
+      <span className="w-5.5 h-5.5 rounded-full bg-red-500 text-white flex items-center justify-center shadow-md animate-pulse" title="Pending">
+        <span className="w-1.5 h-1.5 rounded-full bg-white" />
+      </span>
+    );
+  }
   return (
-    <span className="w-5.5 h-5.5 rounded-full border border-border/80 dark:border-white/10 bg-surface dark:bg-slate-900 flex items-center justify-center text-muted-foreground/35" title="Not Started">
+    <span className="w-5.5 h-5.5 rounded-full border border-border/80 dark:border-white/10 bg-surface dark:bg-slate-900 flex items-center justify-center text-muted-foreground/35" title="Pending">
       <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/20" />
     </span>
   );
@@ -119,9 +126,8 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
     <div ref={containerRef} className="relative flex w-full min-w-0 justify-center select-none">
       {/* Modern Info Popover Card - Displayed on info icon click */}
       <div
-        className={`absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 min-w-[160px] max-w-[210px] p-3 rounded-xl bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border border-border/80 dark:border-white/15 shadow-xl transition-all duration-200 ease-out z-50 text-left ${
-          showInfo ? "opacity-100 visible translate-y-0 scale-100" : "opacity-0 invisible translate-y-1 scale-95 pointer-events-none"
-        }`}
+        className={`absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 min-w-[160px] max-w-[210px] p-3 rounded-xl bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border border-border/80 dark:border-white/15 shadow-xl transition-all duration-200 ease-out z-50 text-left ${showInfo ? "opacity-100 visible translate-y-0 scale-100" : "opacity-0 invisible translate-y-1 scale-95 pointer-events-none"
+          }`}
       >
         <p className="text-[11px] font-medium leading-normal text-foreground/90 dark:text-slate-200">
           {step.description}
@@ -144,7 +150,7 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
         {/* Top bar with Info icon left & Status circle right */}
         <div className="w-full flex items-center justify-between relative z-10">
           {/* Info icon (ℹ) */}
-          <span 
+          <span
             role="button"
             tabIndex={0}
             onClick={(e) => {
@@ -157,11 +163,10 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
                 setShowInfo((prev) => !prev);
               }
             }}
-            className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors cursor-pointer text-[11px] font-bold border ${
-              showInfo
+            className={`w-5 h-5 rounded-full flex items-center justify-center transition-colors cursor-pointer text-[11px] font-bold border ${showInfo
                 ? "text-primary border-primary/50 bg-primary/10 shadow-sm"
                 : "text-muted-foreground/60 hover:text-primary hover:bg-surface-muted/80 border-border/80 dark:border-white/10"
-            }`}
+              }`}
             title={showInfo ? "Click to hide details" : "Click to view details"}
           >
             i

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from "react";
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from "react";
 import MessageModal from "../shared/ui/MessageModal";
 import ConfirmationModal from "../shared/ui/ConfirmationModal";
 import CreateWorkspaceModal from "../shared/ui/CreateWorkspaceModal";
@@ -20,7 +20,7 @@ export interface ConnectionConfig {
   fileContent?: string;
 }
 
-export interface DataSource {
+export interface Connector {
   id: string;
   name: string;
   subtext: string;
@@ -38,6 +38,8 @@ export interface DataSource {
   connectionConfig?: ConnectionConfig;
 }
 
+export type DataSource = Connector;
+
 export interface Project {
   id: string;
   name: string;
@@ -50,6 +52,7 @@ export interface Project {
   domain?: string;
   subDomain?: string;
   status?: string;
+  splitDate?: string;
   agentState?: Record<string, unknown>;
 }
 
@@ -78,9 +81,17 @@ interface AppContextType {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   refreshProjects: () => Promise<void>;
-  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string) => Promise<boolean>;
+  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string) => Promise<Project | null>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
+  connectors: Connector[];
+  addConnector: (name: string, type: Connector["type"], subtext: string, config: ConnectionConfig) => Promise<void>;
+  deleteConnector: (id: string) => Promise<void>;
+  syncConnector: (id: string) => Promise<void>;
+  syncAllConnectors: () => Promise<void>;
+  disconnectConnector: (id: string) => Promise<void>;
+  reconnectConnector: (id: string) => Promise<void>;
+  updateConnector: (id: string, name: string, config: ConnectionConfig) => Promise<void>;
   dataSources: DataSource[];
   addDataSource: (name: string, type: DataSource["type"], subtext: string, config: ConnectionConfig) => Promise<void>;
   deleteDataSource: (id: string) => Promise<void>;
@@ -141,6 +152,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   // Toast Notification state (top-right modern shared notification)
   const [toasts, setToasts] = useState<ToastItem[]>([]);
+  const lastToastRef = useRef<{ title: string; time: number } | null>(null);
 
   const dismissToast = useCallback((id: string) => {
     setToasts((prev) => prev.filter((t) => t.id !== id));
@@ -153,16 +165,32 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       type?: "success" | "error" | "info" | "warning";
       duration?: number;
     }) => {
-      const id = `${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
       const messageText = config.title || config.message || "";
-      const newToast: ToastItem = {
-        id,
-        title: messageText,
-        message: "",
-        type: config.type || "info",
-        duration: config.duration || 4500,
-      };
-      setToasts((prev) => [...prev.slice(-4), newToast]);
+      if (!messageText) return;
+      const now = Date.now();
+      if (
+        lastToastRef.current &&
+        lastToastRef.current.title === messageText &&
+        now - lastToastRef.current.time < 5000
+      ) {
+        return; // Suppress duplicate notification loops
+      }
+      lastToastRef.current = { title: messageText, time: now };
+
+      setToasts((prev) => {
+        if (prev.some((t) => t.title === messageText)) {
+          return prev;
+        }
+        const id = `${now}-${Math.random().toString(36).substring(2, 7)}`;
+        const newToast: ToastItem = {
+          id,
+          title: messageText,
+          message: "",
+          type: config.type || "info",
+          duration: config.duration || 4500,
+        };
+        return [...prev.slice(-3), newToast];
+      });
     },
     []
   );
@@ -222,6 +250,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setConfirmConfig(config);
     setConfirmOpen(true);
   };
+
 
   const [userProfile, setUserProfile] = useState<UserProfile>({
     name: "SanthoshKumaran",
@@ -349,7 +378,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   };
 
   // ─── Projects ───────────────────────────────────────────────────────────────
-  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string): Promise<boolean> => {
+  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string): Promise<Project | null> => {
     const initials = userProfile.name
       .split(" ")
       .map((n) => n[0])
@@ -362,20 +391,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, role, dataSources: dsSources, initials, useCase, domain, subDomain }),
+        body: JSON.stringify({ name, role, dataSources: dsSources, initials, useCase, domain, subDomain, splitDate }),
       });
       if (res.ok) {
         const newProject = await res.json();
         setProjects((prev) => [newProject, ...prev]);
-        return true;
+        return newProject;
       } else {
         const err = await res.json();
         showAlert({ title: err.message || "A project with this title already exists", type: "error" });
-        return false;
+        return null;
       }
     } catch (err: any) {
       showAlert({ title: err.message || "Failed to create project", type: "error" });
-      return false;
+      return null;
     }
   };
 
@@ -600,6 +629,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addProject,
         updateProject,
         deleteProject,
+        connectors: dataSources,
+        addConnector: addDataSource,
+        deleteConnector: deleteDataSource,
+        syncConnector: syncDataSource,
+        syncAllConnectors: syncAllDataSources,
+        disconnectConnector: disconnectDataSource,
+        reconnectConnector: reconnectDataSource,
+        updateConnector: updateDataSource,
         dataSources,
         addDataSource,
         deleteDataSource,

@@ -1,0 +1,12 @@
+drift_detected_count: 6
+inputs:
+- /workspace/20260930-152533/python_script/feature_selection.parquet
+leakage_found: false
+outputs:
+- /workspace/20260930-152533/python_script/feature_validation.parquet
+- /workspace/20260930-152533/python_script/feature_validation_report.json
+stage: feature_validation
+total_dropped_features: 5
+total_input_features: 10
+total_kept_features: 6
+version: '1.0'

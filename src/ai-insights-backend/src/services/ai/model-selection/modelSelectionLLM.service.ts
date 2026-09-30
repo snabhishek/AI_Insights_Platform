@@ -62,13 +62,6 @@ export class ModelSelectionLLMService implements IModelSelectionLLMService {
     );
   }
 
-  public createFallbackDecision(
-    context: ModelSelectionContext,
-    availableModels: ModelDefinition[]
-  ): ModelSelectionDecision {
-    return this.normalizeLLMDecision({}, context, availableModels);
-  }
-
   public async generateDecision(
     context: ModelSelectionContext,
     registry: ModelCapabilityRegistry,
@@ -130,6 +123,13 @@ export class ModelSelectionLLMService implements IModelSelectionLLMService {
 Ensure you output valid JSON matching this schema:
 {
   "status": "READY | NEEDS_CLARIFICATION | UNSUPPORTED | INVALID_DATA",
+  "problem_type": "The broad category of the machine learning problem identified from the business use case. Example: classification for predicting customer churn.",
+  "task_type": "The specific machine learning task based on the data structure and prediction objective. Example: tabular_classification for predicting customer churn using structured customer data.",
+  "task_subtype": "The detailed subtype of the machine learning task based on the target variable and prediction objective. Example: binary_classification for predicting whether a customer will churn or not.",
+  "prediction_type": "The expected output format of the model based on the business requirement. Example: probability for predicting the likelihood of customer churn.",
+  "primary_metric": "The primary evaluation metric used to measure model performance and guide optimization. Example: WAPE for forecasting, RMSE for regression, or F1-score for classification.",
+  "direction": "Specifies whether the selected primary metric should be maximized or minimized during model optimization. Example: minimize for RMSE or maximize for F1-score.",
+  "secondary_metrics": "Additional evaluation metrics used to assess model performance alongside the primary metric. Example: MAE and RMSE for regression or accuracy and recall for classification.",
   "target_entity": {
     "name": "target_column_name",
     "datatype": "numeric | categorical | boolean",
@@ -145,6 +145,8 @@ Ensure you output valid JSON matching this schema:
   "prediction_horizon": "string or null",
   "recommended_model": {
     "model_id": "model_id",
+    "framework": "lightgbm | xgboost | catboost | sklearn | pytorch | statsmodels | custom (REQUIRED)",
+    "algorithm": "Specific algorithm name (e.g. LGBMRegressor, RandomForestRegressor, XGBRegressor) (REQUIRED)",
     "rank": 1,
     "suitability_score": 0.95,
     "recommendation": "primary",
@@ -161,6 +163,8 @@ Ensure you output valid JSON matching this schema:
   "candidates": [
     {
       "model_id": "model_id",
+      "framework": "lightgbm | xgboost | catboost | sklearn | pytorch | statsmodels | custom (REQUIRED)",
+      "algorithm": "Specific algorithm name (e.g. LGBMRegressor, RandomForestRegressor, XGBRegressor) (REQUIRED)",
       "rank": 1,
       "suitability_score": 0.95,
       "recommendation": "primary | alternative",
@@ -209,7 +213,7 @@ Ensure you output valid JSON matching this schema:
     }". Determine target entity, derivation, prediction grain, select primary recommendation, rank candidates with suitability scores (0-1), determine training strategy, models list, feature requirements, and HPO recommendation.`;
 
     // 5. Invoke LangGraph agent loop with tools (using invokeAgentJson / createAgent as in Feature Engineering)
-    const fallback = this.createFallbackDecision(context, availableModels);
+    const emptyFallback: Record<string, unknown> = {};
 
     let parsed: any;
     if (options?.services) {
@@ -217,7 +221,7 @@ Ensure you output valid JSON matching this schema:
         "modelSelection",
         llm,
         userMessage,
-        fallback,
+        emptyFallback,
         options.services,
         {
           systemPrompt: fullSystemPrompt,
@@ -238,10 +242,10 @@ Ensure you output valid JSON matching this schema:
       );
       const latestMessage = getLatestAgentMessage(agentResult);
       const rawText = extractModelText(latestMessage);
-      parsed = parseJsonObject(rawText, fallback as any);
+      parsed = parseJsonObject(rawText, emptyFallback as any);
     }
 
-    return this.normalizeLLMDecision(parsed, context, availableModels);
+    return this.normalizeLLMDecision(parsed, context, availableModels, registry);
   }
 
   /**
@@ -250,7 +254,8 @@ Ensure you output valid JSON matching this schema:
   private normalizeLLMDecision(
     raw: any,
     context: ModelSelectionContext,
-    availableModels: ModelDefinition[]
+    availableModels: ModelDefinition[],
+    registry?: ModelCapabilityRegistry
   ): ModelSelectionDecision {
     if (!raw || typeof raw !== "object") {
       throw new Error("Parsed LLM output is not a valid object");
@@ -264,43 +269,56 @@ Ensure you output valid JSON matching this schema:
       data = { ...data.decision, status: data.status || data.decision.status };
     }
 
-    // 1. Status normalization
-    let status: ModelSelectionStatus = "READY";
+    // 1. Status validation
     const rawStatus = (typeof data.status === "string" ? data.status : data.status?.code || "").toUpperCase();
-    if (["READY", "NEEDS_CLARIFICATION", "UNSUPPORTED", "INVALID_DATA"].includes(rawStatus)) {
-      status = rawStatus as ModelSelectionStatus;
+    if (!["READY", "NEEDS_CLARIFICATION", "UNSUPPORTED", "INVALID_DATA"].includes(rawStatus)) {
+      throw new Error(`[ModelSelectionLLMService] Invalid or missing status: '${rawStatus}'. Must be READY, NEEDS_CLARIFICATION, UNSUPPORTED, or INVALID_DATA.`);
     }
+    const status = rawStatus as ModelSelectionStatus;
 
-    // 2. Target Entity normalization
-    const rawTarget = data.target_entity || data.targetEntity || data.target || {};
+    // 2. Target Entity validation (STRICT - NO FALLBACKS)
+    const rawTarget = data.target_entity || data.targetEntity || data.target;
+    if (!rawTarget || typeof rawTarget !== "object" || !rawTarget.name || !rawTarget.datatype || !rawTarget.description) {
+      throw new Error("[ModelSelectionLLMService] target_entity with valid 'name', 'datatype', and 'description' is required from Model Selection agent.");
+    }
+    const rawDt = String(rawTarget.datatype).toLowerCase().trim();
+    const datatype: "boolean" | "categorical" | "numeric" = (rawDt === "boolean" || rawDt === "categorical" || rawDt === "numeric")
+      ? rawDt
+      : (rawDt.includes("bool") ? "boolean" : rawDt.includes("cat") || rawDt.includes("str") ? "categorical" : "numeric");
+
     const target_entity: TargetEntitySpec = {
-      name: (typeof rawTarget === "string" ? rawTarget : rawTarget.name || rawTarget.column || rawTarget.field || context.dataContext.targetColumn || (context.dataContext.candidateTargets && context.dataContext.candidateTargets[0]) || "target"),
-      datatype: (typeof rawTarget === "object" && rawTarget.datatype) ? rawTarget.datatype : "numeric",
-      description: (typeof rawTarget === "object" && rawTarget.description) ? rawTarget.description : `Target variable for ${context.businessContext.useCase || "ML pipeline"}`,
-      source: (typeof rawTarget === "object" && rawTarget.source) ? rawTarget.source : null,
+      name: String(rawTarget.name).trim(),
+      datatype,
+      description: String(rawTarget.description).trim(),
+      source: rawTarget.source || null,
     };
 
-    // 3. Prediction Grain normalization
-    const rawGrain = data.prediction_grain || data.predictionGrain || data.grain || {};
-    let prediction_grain: PredictionGrainSpec;
-    if (typeof rawGrain === "string") {
-      prediction_grain = { entity: rawGrain, keys: [], frequency: null };
-    } else {
-      prediction_grain = {
-        entity: rawGrain.entity || "entity",
-        keys: Array.isArray(rawGrain.keys) ? rawGrain.keys : [],
-        frequency: rawGrain.frequency || null,
-      };
+    // 3. Prediction Grain validation (STRICT - NO FALLBACKS)
+    const rawGrain = data.prediction_grain || data.predictionGrain || data.grain;
+    if (!rawGrain || (typeof rawGrain !== "object" && typeof rawGrain !== "string")) {
+      throw new Error("[ModelSelectionLLMService] prediction_grain is required from Model Selection agent.");
+    }
+    const prediction_grain: PredictionGrainSpec = typeof rawGrain === "string"
+      ? { entity: rawGrain, keys: [], frequency: null }
+      : {
+          entity: String(rawGrain.entity || "").trim(),
+          keys: Array.isArray(rawGrain.keys) ? rawGrain.keys : [],
+          frequency: rawGrain.frequency || null,
+        };
+    if (!prediction_grain.entity) {
+      throw new Error("[ModelSelectionLLMService] prediction_grain.entity is required from Model Selection agent.");
     }
 
-    // 4. Candidates normalization
+    // 4. Candidates validation (STRICT - NO FALLBACKS)
     const rawCandidates: any[] = Array.isArray(data.candidates)
       ? data.candidates
-      : Array.isArray(data.rankedCandidateModels)
-      ? data.rankedCandidateModels
       : Array.isArray(data.models)
       ? data.models
       : [];
+
+    if (rawCandidates.length === 0) {
+      throw new Error("[ModelSelectionLLMService] candidates array is required and must contain at least one candidate model.");
+    }
 
     const candidates: ModelSelectionCandidate[] = [];
     const seenIds = new Set<string>();
@@ -311,22 +329,56 @@ Ensure you output valid JSON matching this schema:
       if (!modelId || seenIds.has(modelId)) continue;
       seenIds.add(modelId);
 
-      const suitabilityScore = typeof c.suitability_score === "number"
-        ? Math.min(Math.max(c.suitability_score, 0), 1)
-        : typeof c.suitabilityScore === "number"
-        ? Math.min(Math.max(c.suitabilityScore, 0), 1)
-        : Math.max(0.95 - i * 0.05, 0.5);
+      if (typeof c.suitability_score !== "number" && typeof c.suitabilityScore !== "number") {
+        throw new Error(`[ModelSelectionLLMService] Candidate model '${modelId}' is missing required field 'suitability_score'.`);
+      }
+      const rawScore = typeof c.suitability_score === "number" ? c.suitability_score : c.suitabilityScore;
+      const suitabilityScore = Math.min(Math.max(rawScore, 0), 1);
 
       const rank = typeof c.rank === "number" ? c.rank : i + 1;
-      const recommendation: "primary" | "alternative" = i === 0 ? "primary" : "alternative";
+      const recommendation: "primary" | "alternative" = c.recommendation === "primary" || i === 0 ? "primary" : "alternative";
 
       const reasoning = {
-        strengths: Array.isArray(c.reasoning?.strengths) ? c.reasoning.strengths : Array.isArray(c.strengths) ? c.strengths : ["Strong fit for tabular/time-series structure."],
-        weaknesses: Array.isArray(c.reasoning?.weaknesses) ? c.reasoning.weaknesses : Array.isArray(c.weaknesses) ? c.weaknesses : ["Requires parameter tuning for peak accuracy."],
-        suitability: Array.isArray(c.reasoning?.suitability) ? c.reasoning.suitability : Array.isArray(c.suitability) ? c.suitability : ["Selected based on dataset grain and feature characteristics."],
+        strengths: Array.isArray(c.reasoning?.strengths) && c.reasoning.strengths.length > 0
+          ? c.reasoning.strengths
+          : Array.isArray(c.strengths) && c.strengths.length > 0
+          ? c.strengths
+          : null,
+        weaknesses: Array.isArray(c.reasoning?.weaknesses) && c.reasoning.weaknesses.length > 0
+          ? c.reasoning.weaknesses
+          : Array.isArray(c.weaknesses) && c.weaknesses.length > 0
+          ? c.weaknesses
+          : null,
+        suitability: Array.isArray(c.reasoning?.suitability) && c.reasoning.suitability.length > 0
+          ? c.reasoning.suitability
+          : Array.isArray(c.suitability) && c.suitability.length > 0
+          ? c.suitability
+          : null,
       };
 
-      const matchedModel = availableModels.find((m) => m.modelId.toLowerCase() === modelId.toLowerCase());
+      if (!reasoning.strengths || !reasoning.weaknesses || !reasoning.suitability) {
+        throw new Error(`[ModelSelectionLLMService] Candidate model '${modelId}' is missing required reasoning fields (strengths, weaknesses, suitability).`);
+      }
+
+      let matchedModel = availableModels.find((m) => m.modelId.toLowerCase() === modelId.toLowerCase());
+      if (!matchedModel && registry) {
+        matchedModel = registry.getModel(modelId) || registry.getAllModels().find(
+          (m) => m.modelId.toLowerCase() === modelId.toLowerCase() ||
+                 (modelId.toLowerCase().startsWith("explored_") && m.modelId.toLowerCase().startsWith("explored_") && (
+                   modelId.toLowerCase().startsWith(m.modelId.toLowerCase()) || m.modelId.toLowerCase().startsWith(modelId.toLowerCase())
+                 ))
+        );
+      }
+
+      const framework = c.framework || matchedModel?.framework;
+      if (!framework) {
+        throw new Error(`[ModelSelectionLLMService] Candidate model '${modelId}' is missing required field 'framework'.`);
+      }
+      const algorithm = c.algorithm || matchedModel?.algorithm || c.displayName;
+      if (!algorithm) {
+        throw new Error(`[ModelSelectionLLMService] Candidate model '${modelId}' is missing required field 'algorithm'.`);
+      }
+
       const sourceTypeId = c.source_type_id || (c.source_type === "builtin" ? "builtin" : "external") || matchedModel?.sourceTypeId || "external";
       const source = c.source || matchedModel?.source || "web_search";
       const repositoryUrl = c.repository_url || c.repositoryUrl || matchedModel?.repositoryUrl || null;
@@ -339,10 +391,10 @@ Ensure you output valid JSON matching this schema:
         model_id: modelId,
         rank,
         suitability_score: suitabilityScore,
-        recommendation: recommendation as "primary" | "alternative",
+        recommendation,
         displayName: c.displayName || c.name || matchedModel?.displayName || modelId,
-        framework: c.framework || matchedModel?.framework || "custom",
-        algorithm: c.algorithm || matchedModel?.algorithm || modelId,
+        framework,
+        algorithm,
         reasoning,
         source_type_id: sourceTypeId,
         source_type: sourceTypeId === "builtin" ? "builtin" : "external",
@@ -355,83 +407,75 @@ Ensure you output valid JSON matching this schema:
       });
     }
 
-    // Fallback candidates from availableModels if empty
-    if (candidates.length === 0 && availableModels.length > 0) {
-      availableModels.slice(0, 3).forEach((m, idx) => {
-        candidates.push({
-          model_id: m.modelId,
-          rank: idx + 1,
-          suitability_score: Math.max(0.92 - idx * 0.05, 0.6),
-          recommendation: idx === 0 ? "primary" : "alternative",
-          displayName: m.displayName,
-          framework: m.framework,
-          algorithm: m.algorithm,
-          reasoning: {
-            strengths: m.strengths,
-            weaknesses: m.weaknesses,
-            suitability: ["Candidate from dynamic discovery catalog."],
-          },
-          source_type_id: m.sourceTypeId || "external",
-          source_type: m.sourceType || "external",
-          source: m.source || "web_search",
-          repository_url: m.repositoryUrl || null,
-          repository_id: m.repositoryId || null,
-          version: m.version || null,
-          license: m.license || null,
-          discovered_at: m.discoveredAt || new Date().toISOString(),
-        });
-      });
-    }
-
-    // Ensure sequential unique ranks starting from 1
     candidates.forEach((c, idx) => {
       c.rank = idx + 1;
     });
 
-    // 5. Recommended Model normalization
-    let recommended_model: RecommendedModel;
-    const rawRec = data.recommended_model || data.recommendedModel || candidates[0];
-    if (rawRec && candidates.length > 0) {
-      const primaryCandidate = candidates[0];
-      recommended_model = {
-        model_id: rawRec.model_id || rawRec.modelId || primaryCandidate.model_id,
-        rank: 1,
-        suitability_score: typeof rawRec.suitability_score === "number" ? rawRec.suitability_score : primaryCandidate.suitability_score,
-        recommendation: "primary",
-        displayName: rawRec.displayName || primaryCandidate.displayName,
-        reasoning: primaryCandidate.reasoning,
-        source_type_id: primaryCandidate.source_type_id,
-        source_type: primaryCandidate.source_type,
-        source: primaryCandidate.source,
-        repository_url: primaryCandidate.repository_url,
-        repository_id: primaryCandidate.repository_id,
-        version: primaryCandidate.version,
-        license: primaryCandidate.license,
-        discovered_at: primaryCandidate.discovered_at,
-      };
-    } else {
-      const topModel = availableModels[0];
-      recommended_model = {
-        model_id: topModel?.modelId || "explored_classifier",
-        rank: 1,
-        suitability_score: 0.92,
-        recommendation: "primary",
-        displayName: topModel?.displayName || "Explored Classifier",
-        source_type_id: topModel?.sourceTypeId || "external",
-        source_type: topModel?.sourceType || "external",
-        source: topModel?.source || "web_search",
-        repository_url: topModel?.repositoryUrl || null,
-        repository_id: topModel?.repositoryId || null,
-        version: topModel?.version || null,
-        license: topModel?.license || null,
-      };
+    // 5. Recommended Model validation (STRICT - NO FALLBACKS)
+    const rawRec = data.recommended_model || data.recommendedModel;
+    if (!rawRec || (!rawRec.model_id && !rawRec.modelId)) {
+      throw new Error("[ModelSelectionLLMService] recommended_model is required from Model Selection agent.");
+    }
+    const recModelId = rawRec.model_id || rawRec.modelId;
+    const primaryCandidate = candidates.find((c) => c.model_id.toLowerCase() === recModelId.toLowerCase()) || candidates[0];
+
+    const recommended_model: RecommendedModel = {
+      model_id: primaryCandidate.model_id,
+      rank: 1,
+      suitability_score: typeof rawRec.suitability_score === "number" ? rawRec.suitability_score : primaryCandidate.suitability_score,
+      recommendation: "primary",
+      displayName: rawRec.displayName || primaryCandidate.displayName,
+      reasoning: primaryCandidate.reasoning,
+      source_type_id: primaryCandidate.source_type_id,
+      source_type: primaryCandidate.source_type,
+      source: primaryCandidate.source,
+      repository_url: primaryCandidate.repository_url,
+      repository_id: primaryCandidate.repository_id,
+      version: primaryCandidate.version,
+      license: primaryCandidate.license,
+      discovered_at: primaryCandidate.discovered_at,
+    };
+
+    // 6. Problem Specification & Evaluation Metrics (strictly from agent response - NO FALLBACKS)
+    const problem_type = data.problem_type || data.problemType;
+    const task_type = data.task_type || data.taskType;
+    const task_subtype = data.task_subtype || data.taskSubtype;
+    const prediction_type = data.prediction_type || data.predictionType;
+    const primary_metric = data.primary_metric || data.primaryMetric;
+    const direction = (data.direction || "").toLowerCase() as "maximize" | "minimize";
+    const secondary_metrics = Array.isArray(data.secondary_metrics)
+      ? data.secondary_metrics
+      : data.secondary_metrics
+      ? [data.secondary_metrics]
+      : [];
+
+    const missingFields: string[] = [];
+    if (!problem_type) missingFields.push("problem_type");
+    if (!task_type) missingFields.push("task_type");
+    if (!task_subtype) missingFields.push("task_subtype");
+    if (!prediction_type) missingFields.push("prediction_type");
+    if (!primary_metric) missingFields.push("primary_metric");
+    if (!direction || !["maximize", "minimize"].includes(direction)) missingFields.push("direction ('maximize' | 'minimize')");
+    if (!secondary_metrics || secondary_metrics.length === 0) missingFields.push("secondary_metrics");
+
+    if (missingFields.length > 0) {
+      throw new Error(
+        `[ModelSelectionLLMService] Model Selection Agent failed to produce mandatory fields: ${missingFields.join(", ")}. Fallbacks are disabled; all fields are required.`
+      );
     }
 
-    // 6. Training Strategy normalization
-    const rawTraining = data.training || data.trainingStrategy || {};
+    // 7. Training Strategy validation (STRICT - NO FALLBACKS)
+    const rawTraining = data.training || data.trainingStrategy;
+    if (!rawTraining || typeof rawTraining !== "object" || !rawTraining.mode) {
+      throw new Error("[ModelSelectionLLMService] training specification with 'mode' is required from Model Selection agent.");
+    }
+    const baselineModel = rawTraining.baseline_model || rawTraining.baselineModel || candidates[0]?.model_id;
+    if (!baselineModel) {
+      throw new Error("[ModelSelectionLLMService] training.baseline_model is required from Model Selection agent.");
+    }
     const training: TrainingStrategySpec = {
-      mode: (rawTraining.mode === "single_model" || rawTraining.mode === "ensemble") ? rawTraining.mode : "automl_search",
-      baseline_model: rawTraining.baseline_model || rawTraining.baselineModel || (candidates[1]?.model_id || null),
+      mode: rawTraining.mode,
+      baseline_model: baselineModel,
       ensemble: {
         enabled: Boolean(rawTraining.ensemble?.enabled),
         strategy: rawTraining.ensemble?.strategy || null,
@@ -440,76 +484,82 @@ Ensure you output valid JSON matching this schema:
       early_stopping: {
         enabled: rawTraining.early_stopping?.enabled ?? true,
         patience: typeof rawTraining.early_stopping?.patience === "number" ? rawTraining.early_stopping.patience : 10,
-        metric: rawTraining.early_stopping?.metric || "rmse",
+        metric: rawTraining.early_stopping?.metric || primary_metric,
       },
     };
 
-    // 7. Models config array
+    // 8. Models config array
     const models: ModelConfigItem[] = candidates.map((c) => {
       const matched = availableModels.find((m) => m.modelId === c.model_id);
       return {
         model_id: c.model_id,
-        framework: matched?.framework || "lightgbm",
-        algorithm: matched?.algorithm || c.model_id,
+        framework: c.framework || matched?.framework || "sklearn",
+        algorithm: c.algorithm || matched?.algorithm || c.model_id,
         enabled: true,
         parameters: {},
       };
     });
 
-    // 8. Feature Requirements
-    const rawFeatReq = data.featureRequirements || data.feature_requirements || [];
-    const defaultModelingRequirements = [
-      { feature: "all", requirement: "Standard numerical normalization & scaling", reason: "Accelerates gradient convergence across feature dimensions", priority: "recommended" as const },
-      { feature: "all", requirement: "Categorical high-cardinality target/frequency encoding", reason: "Enables candidate models to capture non-linear category interactions", priority: "recommended" as const },
-      { feature: "temporal", requirement: "Historical lag & rolling aggregation generation", reason: "Captures multi-step autocorrelation and trend inertia", priority: "required" as const },
-      { feature: "calendar", requirement: "Calendar features (day-of-week, seasonality, holidays)", reason: "Accounts for periodic calendar patterns and seasonal cycles", priority: "recommended" as const },
-      { feature: "all", requirement: "Outlier clipping & robust median imputation", reason: "Prevents extreme anomalies from distorting loss optimization", priority: "optional" as const },
-    ];
+    // 9. Feature Requirements validation (STRICT - NO FALLBACKS)
+    const rawFeatReq = data.featureRequirements || data.feature_requirements;
+    if (!Array.isArray(rawFeatReq) || rawFeatReq.length === 0) {
+      throw new Error("[ModelSelectionLLMService] featureRequirements array is required from Model Selection agent. Fallbacks are disabled.");
+    }
 
-    const featureRequirements: FeatureRequirement[] = Array.isArray(rawFeatReq) && rawFeatReq.length > 0
-      ? rawFeatReq.map((fr: any, idx: number) => {
-          if (typeof fr === "string") {
-            return {
-              feature: "all",
-              requirement: fr,
-              reason: "Model performance optimization",
-              priority: "recommended" as const,
-            };
-          }
-          const defaultItem = defaultModelingRequirements[idx % defaultModelingRequirements.length];
-          const reqText = fr.requirement && fr.requirement !== "Standard preprocessing"
-            ? fr.requirement
-            : (fr.desc || fr.description || fr.type || defaultItem.requirement);
-          return {
-            feature: fr.feature || fr.column || fr.name || defaultItem.feature,
-            requirement: reqText,
-            reason: fr.reason || fr.rationale || defaultItem.reason,
-            priority: (fr.priority === "required" || fr.priority === "recommended" || fr.priority === "optional")
-              ? fr.priority
-              : defaultItem.priority,
-          };
-        })
-      : defaultModelingRequirements;
+    const featureRequirements: FeatureRequirement[] = rawFeatReq.map((fr: any, idx: number) => {
+      if (!fr || typeof fr !== "object" || !fr.feature || !fr.requirement || !fr.reason || !fr.priority) {
+        throw new Error(
+          `[ModelSelectionLLMService] featureRequirements item at index ${idx} is missing required fields (feature, requirement, reason, priority).`
+        );
+      }
+      return {
+        feature: String(fr.feature).trim(),
+        requirement: String(fr.requirement).trim(),
+        reason: String(fr.reason).trim(),
+        priority: fr.priority as "required" | "recommended" | "optional",
+      };
+    });
 
-    // 9. Hyperparameter Optimization
-    const rawHpo = data.hyperparameterOptimization || data.hyperparameter_optimization || {};
+    // 10. Hyperparameter Optimization validation (STRICT - NO FALLBACKS)
+    const rawHpo = data.hyperparameterOptimization || data.hyperparameter_optimization;
+    if (!rawHpo || typeof rawHpo !== "object" || !rawHpo.approach || !rawHpo.rationale) {
+      throw new Error("[ModelSelectionLLMService] hyperparameterOptimization object with 'approach' and 'rationale' is required from Model Selection agent.");
+    }
+    const rawApp = String(rawHpo.approach).toLowerCase().trim();
+    const validApproaches = ["grid_search", "random_search", "bayesian_optimization", "hyperband", "none"] as const;
+    const approach: (typeof validApproaches)[number] = validApproaches.find((a) => a === rawApp) || (
+      rawApp.includes("bayes") ? "bayesian_optimization"
+      : rawApp.includes("grid") ? "grid_search"
+      : rawApp.includes("rand") ? "random_search"
+      : rawApp.includes("hyper") ? "hyperband"
+      : "none"
+    );
+
     const hyperparameterOptimization: HPORecommendation = {
-      recommended: rawHpo.recommended ?? true,
-      approach: ["grid_search", "random_search", "bayesian_optimization", "hyperband", "none"].includes(rawHpo.approach)
-        ? rawHpo.approach
-        : "bayesian_optimization",
-      rationale: rawHpo.rationale || "Bayesian optimization recommended to efficiently tune hyperparameters without exhaustive search.",
+      recommended: Boolean(rawHpo.recommended),
+      approach,
+      rationale: String(rawHpo.rationale).trim(),
     };
 
-    // 10. Confidence
-    const rawConf = data.confidence || {};
+    // 11. Confidence validation (STRICT - NO FALLBACKS)
+    const rawConf = data.confidence;
+    if (!rawConf || typeof rawConf !== "object" || typeof rawConf.score !== "number" || !rawConf.rationale) {
+      throw new Error("[ModelSelectionLLMService] confidence object with numeric 'score' and string 'rationale' is required from Model Selection agent.");
+    }
     const confidence = {
-      score: typeof rawConf.score === "number" ? rawConf.score : 0.9,
-      rationale: rawConf.rationale || "High confidence based on clean target entity and validated feature schema.",
+      score: rawConf.score,
+      rationale: String(rawConf.rationale).trim(),
     };
 
     return {
       status,
+      problem_type,
+      task_type,
+      task_subtype,
+      prediction_type,
+      primary_metric,
+      direction,
+      secondary_metrics,
       target_entity,
       derivation: data.derivation || null,
       positive_class: data.positive_class || data.positiveClass || null,

@@ -36,6 +36,10 @@ export interface IngestionServices {
   onThinkingUpdate?: (substep: string) => Promise<void> | void;
   isCancelled?: () => boolean;
   abortSignal?: AbortSignal;
+  predictionHorizon?: number;
+  predictionFrequency?: string;
+  predictionObjectiveStartDate?: string;
+  prediction_target_column?: string;
 }
 
 export const AgentState = Annotation.Root({
@@ -54,10 +58,57 @@ export const AgentState = Annotation.Root({
     reducer: (left, right) => (typeof right === "string" ? right : left),
     default: () => "",
   }),
+  prediction_target_column: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  splitDate: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  splitStartDate: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  splitEndDate: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  selectedModels: Annotation<string[]>({
+    reducer: (left, right) => (Array.isArray(right) ? right : left),
+    default: () => [],
+  }),
+  predictionHorizon: Annotation<number>({
+    reducer: (left, right) => (typeof right === "number" && !isNaN(right) ? right : left),
+    default: () => 12,
+  }),
+  predictionFrequency: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "Weekly",
+  }),
+  predictionObjectiveStartDate: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  direction: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  primaryMetric: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  targetColumn: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
+  problemType: Annotation<string>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    default: () => "",
+  }),
   inspection: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   schemaResolution: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   dataProfile: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  preprocessing: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   hierarchyMapper: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   relationshipBuilder: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
   formBuilder: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
@@ -123,7 +174,6 @@ export const AgentState = Annotation.Root({
         return {
           inspect: "Pending",
           profileData: "Pending",
-          preprocess: "Pending",
           resolveSchema: "Pending",
           hierarchyMapper: "Pending",
           featureArchitect: "Pending",
@@ -141,7 +191,6 @@ export const AgentState = Annotation.Root({
     default: () => ({
       inspect: "Pending",
       profileData: "Pending",
-      preprocess: "Pending",
       resolveSchema: "Pending",
       hierarchyMapper: "Pending",
       featureArchitect: "Pending",

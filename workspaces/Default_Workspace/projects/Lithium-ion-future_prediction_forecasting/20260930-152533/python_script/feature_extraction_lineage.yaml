@@ -1,0 +1,12 @@
+extracted_features:
+- pca_latent_factor_1
+- pca_latent_factor_2
+- pca_latent_factor_3
+input_artifact: /workspace/20260930-152533/python_script/dataset.parquet
+output_artifact: /workspace/20260930-152533/python_script/feature_extraction.parquet
+pca_input_features_count: 17
+row_count: 6
+split: train
+stage: FEATURE_EXTRACTION
+target_excluded: Price of lithium-ion battery cells
+total_columns: 69

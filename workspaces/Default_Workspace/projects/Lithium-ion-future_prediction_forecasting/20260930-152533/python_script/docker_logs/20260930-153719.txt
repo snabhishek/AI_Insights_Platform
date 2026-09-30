@@ -1,0 +1,130 @@
+================================================================================
+DOCKER CONTAINER EXECUTION LOG
+Execution Start Time: 2026-09-30T10:07:19.292Z
+Execution Directory: C:\Users\snabhishek\Music\AI_Insights_Platform\workspaces\Default_Workspace\projects\Lithium-ion-future_prediction_forecasting\20260930-152533\python_script
+Script Relative Path: 20260930-152533/python_script/aggregated_feature_pipeline_20260930-152533.py
+Host Project Root: C:/Users/snabhishek/Music/AI_Insights_Platform/workspaces/Default_Workspace/projects/Lithium-ion-future_prediction_forecasting
+Arguments: --out-dir "/workspace/20260930-152533/python_script" --db-path "/workspace"
+================================================================================
+--------------------------------------------------------------------------------
+STEP 1: DOCKER COMPOSE BUILD
+Command: docker compose -f "docker-compose.yml" build
+Time: 2026-09-30T10:07:19.297Z
+--------------------------------------------------------------------------------
+#1 [internal] load local bake definitions
+#1 reading from stdin 875B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 473B 0.0s done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.12-slim
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 DONE 0.0s
+
+#6 [1/5] FROM docker.io/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+#6 resolve docker.io/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea 0.0s done
+#6 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 107B done
+#5 DONE 0.0s
+
+#7 [2/5] WORKDIR /workspace
+#7 CACHED
+
+#8 [3/5] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential     python3-dev     cmake     libgomp1     && rm -rf /var/lib/apt/lists/*
+#8 CACHED
+
+#9 [4/5] COPY requirements.txt /tmp/requirements.txt
+#9 CACHED
+
+#10 [5/5] RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=120 --retries 3 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r /tmp/requirements.txt
+#10 CACHED
+
+#11 exporting to image
+#11 exporting layers done
+#11 exporting manifest sha256:69eb90f2c685275777afe54ef725da1d4df6d9754e6c191bc8bf54850530b943 done
+#11 exporting config sha256:87929e5aded74c5ecdade3c5ec6599cdc1a4c7e45a11835e4a3ef1408b7dd355 done
+#11 exporting attestation manifest sha256:326826406cab8f1a73a18699157afd37f12ef2a4a1d3dc754fd2a8ec40e03945 0.0s done
+#11 exporting manifest list sha256:cfe3a1261dd60d03a36613b0a7312f7818afb4688f7da91a64adecf7da83674e 0.0s done
+#11 naming to docker.io/library/python_script-feature-engineering:latest
+#11 naming to docker.io/library/python_script-feature-engineering:latest done
+#11 unpacking to docker.io/library/python_script-feature-engineering:latest 0.0s done
+#11 DONE 0.1s
+
+#12 resolving provenance for metadata file
+#12 DONE 0.0s
+ python_script-feature-engineering  Built
+
+--------------------------------------------------------------------------------
+BUILD COMPLETED SUCCESSFULLY (exit code: 0)
+Time: 2026-09-30T10:07:21.746Z
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+STEP 2: DOCKER COMPOSE RUN
+Command: docker compose -f "docker-compose.yml" run --rm feature-engineering python "20260930-152533/python_script/aggregated_feature_pipeline_20260930-152533.py" --out-dir "/workspace/20260930-152533/python_script" --db-path "/workspace"
+Time: 2026-09-30T10:07:21.750Z
+--------------------------------------------------------------------------------
+2026-09-30 10:07:23,665 - INFO - Starting Feature Creation. Source DB path: /workspace, Target: /workspace/20260930-152533/python_script/feature_created.parquet
+2026-09-30 10:07:23,667 - INFO - Loading data from candidate path: /workspace/price_of_lithium_ion_battery_cells.csv
+2026-09-30 10:07:23,683 - INFO - Raw dataset loaded successfully with shape: (6, 4)
+2026-09-30 10:07:23,798 - INFO - Feature creation completed successfully. Exported 6 rows and 22 columns to /workspace/20260930-152533/python_script/feature_created.parquet
+2026-09-30 10:07:23,807 - INFO - Lineage metadata saved to /workspace/20260930-152533/python_script/feature_creation_lineage.yaml
+2026-09-30 10:07:23,808 - INFO - Starting Feature Transformation. Input: /workspace/20260930-152533/python_script/feature_created.parquet, Split: train, Target: /workspace/20260930-152533/python_script/feature_transformation.parquet
+2026-09-30 10:07:23,851 - INFO - Loaded input features with shape: (6, 22)
+2026-09-30 10:07:23,877 - INFO - Fitted and saved scaler parameters for 17 features to /workspace/20260930-152533/python_script/scaler_params.json
+2026-09-30 10:07:24,005 - INFO - Feature transformation completed. Saved 6 rows and 66 columns to /workspace/20260930-152533/python_script/feature_transformation.parquet
+2026-09-30 10:07:24,017 - INFO - Transformation lineage saved to /workspace/20260930-152533/python_script/feature_transformation_lineage.yaml
+2026-09-30 10:07:24,018 - INFO - Starting Build Dataset stage.
+2026-09-30 10:07:24,018 - INFO - Features path: /workspace/20260930-152533/python_script/feature_transformation.parquet, Output path: /workspace/20260930-152533/python_script/dataset.parquet
+2026-09-30 10:07:24,048 - INFO - Loaded transformed features dataframe with shape: (6, 66)
+2026-09-30 10:07:24,074 - INFO - Final assembled dataset shape: (6, 66)
+2026-09-30 10:07:24,188 - INFO - Saved final dataset to /workspace/20260930-152533/python_script/dataset.parquet
+2026-09-30 10:07:24,205 - INFO - Saved dataset metadata lineage to /workspace/20260930-152533/python_script/metadata.yaml
+2026-09-30 10:07:24,206 - INFO - Starting Data Validation. Input dataset: /workspace/20260930-152533/python_script/dataset.parquet, Report target: /workspace/20260930-152533/python_script/validation_report.json
+2026-09-30 10:07:24,233 - INFO - Loaded dataset for validation with shape: (6, 66)
+/usr/local/lib/python3.12/site-packages/numpy/lib/_function_base_impl.py:3036: RuntimeWarning: invalid value encountered in divide
+  c /= stddev[:, None]
+/usr/local/lib/python3.12/site-packages/numpy/lib/_function_base_impl.py:3037: RuntimeWarning: invalid value encountered in divide
+  c /= stddev[None, :]
+2026-09-30 10:07:24,385 - INFO - Validation report saved successfully to /workspace/20260930-152533/python_script/validation_report.json (Status: PASSED)
+2026-09-30 10:07:25,755 - INFO - Starting Feature Extraction. Input: /workspace/20260930-152533/python_script/dataset.parquet, Split: train, Target: /workspace/20260930-152533/python_script/feature_extraction.parquet
+2026-09-30 10:07:25,784 - INFO - Loaded input dataset for feature extraction with shape: (6, 66)
+2026-09-30 10:07:25,786 - INFO - Identified 17 predictor features for dimensionality extraction (Target 'Price of lithium-ion battery cells' excluded).
+2026-09-30 10:07:25,825 - INFO - Fitted PCA transformer (3 components, 99.36% variance explained) saved to /workspace/20260930-152533/python_script/pca_transformer.pkl
+2026-09-30 10:07:25,831 - INFO - Generated 3 PCA latent features: ['pca_latent_factor_1', 'pca_latent_factor_2', 'pca_latent_factor_3']
+2026-09-30 10:07:25,957 - INFO - Feature extraction stage completed. Saved 6 rows and 69 columns to /workspace/20260930-152533/python_script/feature_extraction.parquet
+2026-09-30 10:07:25,970 - INFO - Feature extraction lineage saved to /workspace/20260930-152533/python_script/feature_extraction_lineage.yaml
+2026-09-30 10:07:26,025 - INFO - Starting Feature Selection. Input: /workspace/20260930-152533/python_script/feature_extraction.parquet, Split: train, Target: /workspace/20260930-152533/python_script/feature_selection.parquet
+2026-09-30 10:07:26,060 - INFO - Loaded feature extraction dataset with shape: (6, 69)
+2026-09-30 10:07:26,060 - INFO - Mandatory preserved columns (strictly excluded from candidate removal): {'Code', 'Entity', 'Price of lithium-ion battery cells', 'Year'}
+2026-09-30 10:07:26,063 - INFO - Evaluating 65 candidate features for selection.
+2026-09-30 10:07:26,064 - INFO - Dropping candidate 'decade_bin': near-zero variance (0.000000e+00)
+2026-09-30 10:07:26,065 - INFO - Dropping candidate 'entity_World': near-zero variance (0.000000e+00)
+2026-09-30 10:07:26,065 - INFO - Dropping candidate 'code_OWID_WRL': near-zero variance (0.000000e+00)
+2026-09-30 10:07:26,167 - INFO - Feature selection metadata saved to /workspace/20260930-152533/python_script/feature_selection_metadata.json
+2026-09-30 10:07:26,169 - INFO - Final selected dataset shape: (6, 14) (Features selected: 10, Target preserved: 'Price of lithium-ion battery cells')
+2026-09-30 10:07:26,219 - INFO - Feature selection stage completed. Saved output to /workspace/20260930-152533/python_script/feature_selection.parquet
+2026-09-30 10:07:26,231 - INFO - Feature selection lineage saved to /workspace/20260930-152533/python_script/feature_selection_lineage.yaml
+=== [1/7] Running Feature Creation ===
+=== [2/7] Running Feature Transformation ===
+=== [3/7] Running Build Dataset ===
+=== [4/7] Running Data Validation ===
+=== [5/7] Running Feature Extraction ===
+=== [6/7] Running Feature Selection ===
+=== Pipeline Execution Complete ===
+
+================================================================================
+CONTAINER RUN FINISHED
+Finished At: 2026-09-30T10:07:26.752Z
+Exit Code: 0
+Status: SUCCESS
+================================================================================

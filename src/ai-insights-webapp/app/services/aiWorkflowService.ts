@@ -7,6 +7,13 @@ export interface WorkflowRequestPayload {
   sessionId?: string;
   action?: "approve" | "retry" | "resume";
   step?: string;
+  splitDate?: string;
+  splitStartDate?: string;
+  splitEndDate?: string;
+  selectedModels?: string[];
+  predictionHorizon?: number;
+  predictionFrequency?: string;
+  predictionObjectiveStartDate?: string;
 }
 
 export interface WorkflowResponseData {
