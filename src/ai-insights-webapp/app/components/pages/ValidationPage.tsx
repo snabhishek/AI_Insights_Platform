@@ -146,6 +146,7 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
   const [selectedProjectId, setSelectedProjectId] = useState<string>(propProject?.id || "");
   const [activeSchema, setActiveSchema] = useState<FormSchema | null>(null);
   const [isLoadingSchema, setIsLoadingSchema] = useState<boolean>(false);
+  const [isLoadingSchema, setIsLoadingSchema] = useState<boolean>(false);
 
   // Automatically select the project or sync when projects change
   useEffect(() => {
@@ -164,9 +165,11 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
   const currentProject = propProject || projects.find((p) => p.id === selectedProjectId);
 
   // Update active schema based on selected project with synchronous extraction and asynchronous backend fallback
+  // Update active schema based on selected project with synchronous extraction and asynchronous backend fallback
   useEffect(() => {
     if (!currentProject) {
       setActiveSchema(null);
+      setIsLoadingSchema(false);
       setIsLoadingSchema(false);
       return;
     }
@@ -237,6 +240,8 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
 
   const hasDesignedForm =
     activeSchema && Array.isArray(activeSchema.filterGroups) && activeSchema.filterGroups.length > 0;
+  const hasDesignedForm =
+    activeSchema && Array.isArray(activeSchema.filterGroups) && activeSchema.filterGroups.length > 0;
 
   return (
     <main className="min-h-full bg-background/50 p-6 md:p-8 space-y-6">
@@ -268,8 +273,24 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
             </div>
           </div>
         ) : hasDesignedForm ? (
+        {isLoadingSchema ? (
+          <div className="flex flex-col items-center justify-center min-h-[440px] w-full rounded-3xl border border-border/60 bg-surface/30 backdrop-blur-sm p-12 text-center shadow-sm animate-pulse space-y-4">
+            <div className="w-14 h-14 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-3xl shadow-sm">
+              <span className="animate-spin text-primary">⚙️</span>
+            </div>
+            <div>
+              <h2 className="text-base font-bold text-foreground tracking-tight">
+                Loading Application Forms...
+              </h2>
+              <p className="text-xs text-muted-foreground mt-1 max-w-sm">
+                Resolving AI-generated data hierarchies and interactive filter configurations.
+              </p>
+            </div>
+          </div>
+        ) : hasDesignedForm ? (
           <FilterForm
             schema={activeSchema}
+            apiBaseUrl={BACKEND_URL}
             apiBaseUrl={BACKEND_URL}
           />
         ) : (

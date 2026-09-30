@@ -43,9 +43,9 @@ export default function RootLayout({
       <head>
         {/* <script dangerouslySetInnerHTML={{ __html: themeScript }} /> */}
       </head>
-      <body className={`${notoSans.className} min-h-full flex flex-col`}>
+      <body className={`${notoSans.className} max-h-full flex flex-col`}>
         <AppProvider>
-            <main className="flex-1">{children}</main>
+            {children}
         </AppProvider>
       </body>
     </html>

@@ -181,7 +181,6 @@ export default function ProjectDetailPage({
 
             {/* ── Connectors Section ── */}
             <div className="border border-border rounded-lg shadow-sm bg-background p-5">
-              {/* Header with divider */}
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
                 <div>
                   <h2 className="text-base font-bold text-foreground leading-tight">
@@ -250,9 +249,7 @@ export default function ProjectDetailPage({
               </div>
             </div>
 
-            {/* ── Use Case Section ── */}
             <div className="border border-border rounded-lg shadow-sm bg-background p-5">
-              {/* Header with divider */}
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
                 <h2 className="text-base font-bold text-foreground leading-tight">Project Use Case</h2>
                 {!isEditingUseCase && (

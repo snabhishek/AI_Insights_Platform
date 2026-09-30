@@ -1,0 +1,225 @@
+import { AgentPersona, PromptTemplate, ChatSession } from "./types";
+
+export const AGENT_PERSONAS: Record<string, AgentPersona> = {
+  orchestrator: {
+    id: "orchestrator",
+    name: "Insights Maestro",
+    role: "Full-Cycle AI Workflow Orchestrator",
+    avatar: "🧠",
+    badge: "Master Agent",
+    description: "Oversees end-to-end analytics, pipeline execution, stage handoffs, and overarching business insights.",
+    systemPrompt: "You are the primary AI Workflow Orchestrator for the AI Insights Platform.",
+    capabilities: [
+      "Pipeline orchestration & stage tracking",
+      "Multi-agent synthesis & report aggregation",
+      "Executive summaries & scenario simulations",
+      "Root-cause anomaly drill-downs",
+    ],
+    suggestedQuestions: [
+      "Summarize the overall health and status of my active projects",
+      "Why did the latest workflow run pause for approval?",
+      "What are the top three business drivers identified across datasets?",
+      "Simulate what happens if forecast demand spikes by 25%",
+    ],
+  },
+  "data-engineer": {
+    id: "data-engineer",
+    name: "Schema & Hygiene Specialist",
+    role: "Data Ingestion & Profiling Engineer",
+    avatar: "🛠️",
+    badge: "Ingestion Agent",
+    description: "Inspects raw connectors, identifies null anomalies, resolves primary/foreign schemas, and checks data quality.",
+    systemPrompt: "You are the Data Engineering Agent specialized in data quality, schema resolution, and connector health.",
+    capabilities: [
+      "Schema auto-discovery and relationship mapping",
+      "Missing value and cardinality analysis",
+      "Data profiling metrics (skew, kurtosis, distributions)",
+      "SQL query formulation and transformation pipelines",
+    ],
+    suggestedQuestions: [
+      "Check data profile quality for all connected tables",
+      "Are there any schema mismatches between PostgreSQL and Snowflake?",
+      "Generate an optimized SQL query for temporal aggregation",
+      "Highlight columns with over 20% missing values",
+    ],
+  },
+  "feature-architect": {
+    id: "feature-architect",
+    name: "Feature Architect",
+    role: "Feature Engineering & Exogenous Scout",
+    avatar: "⚡",
+    badge: "Feature Agent",
+    description: "Constructs rolling lags, temporal encodings, seasonal indexes, and scouts external economic/weather signals.",
+    systemPrompt: "You are the Feature Architect Agent specializing in time series feature creation and exogenous data scouting.",
+    capabilities: [
+      "Automated lag, moving average, and window transformations",
+      "Calendar and holiday exogenous feature generation",
+      "Feature correlation & multicollinearity elimination",
+      "Domain-specific feature importance rankings",
+    ],
+    suggestedQuestions: [
+      "What features have the highest mutual information score?",
+      "Recommend exogenous datasets (CPI, Weather, Holidays) for my retail series",
+      "Explain how the rolling 14-day volatility feature was computed",
+      "Check if any lag features introduce lookahead bias",
+    ],
+  },
+  "ml-scientist": {
+    id: "ml-scientist",
+    name: "ML Science Copilot",
+    role: "Model Training & Hyperparameter Architect",
+    avatar: "🔬",
+    badge: "Model Agent",
+    description: "Recommends model architectures (LightGBM, XGBoost, Prophet, NeuralProphet, TFT), tunes hyperparameters, and builds ensembles.",
+    systemPrompt: "You are the ML Scientist Agent specializing in model selection, hyperparameter optimization, and training configurations.",
+    capabilities: [
+      "Model family recommendations based on dataset characteristics",
+      "Hyperparameter grid & Bayesian search configuration",
+      "Training loss convergence diagnostics",
+      "Feature ablation and SHAP value explainability",
+    ],
+    suggestedQuestions: [
+      "Why was LightGBM selected over Prophet for this project?",
+      "Suggest optimal learning rate and depth configurations for tabular time-series",
+      "Explain the top SHAP summary features for the winning model",
+      "How can I reduce overfitting in the validation split?",
+    ],
+  },
+  "validation-analyst": {
+    id: "validation-analyst",
+    name: "Validation & Metrics Auditor",
+    role: "Backtesting & Metric Verification Specialist",
+    avatar: "📊",
+    badge: "Validation Agent",
+    description: "Evaluates WAPE, RMSE, MAPE, out-of-fold backtests, residual distributions, and confidence interval coverage.",
+    systemPrompt: "You are the Validation and Metrics Auditor Agent specializing in rigorous model evaluation and backtesting.",
+    capabilities: [
+      "Rolling window cross-validation (Walk-forward backtests)",
+      "Multi-metric scorecard comparisons (WAPE, RMSE, MAE, R²)",
+      "Residual distribution and error heteroskedasticity testing",
+      "Confidence interval calibration analysis",
+    ],
+    suggestedQuestions: [
+      "Compare model validation metrics against historical baseline benchmarks",
+      "Is the forecast underpredicting during holiday peaks?",
+      "What is the 95% confidence interval range for next month's forecast?",
+      "Generate an error breakdown by product category and region",
+    ],
+  },
+  "hierarchy-expert": {
+    id: "hierarchy-expert",
+    name: "Hierarchy & Form Designer",
+    role: "Dimensional Drill-Down & UI Architect",
+    avatar: "📐",
+    badge: "Hierarchy Agent",
+    description: "Designs interactive business filter forms, categorical hierarchies (Region > Store > SKU), and dashboard layouts.",
+    systemPrompt: "You are the Hierarchy and Form Designer Agent specializing in dimensional relationships and interactive filters.",
+    capabilities: [
+      "Parent-child hierarchical relationship discovery",
+      "Dynamic cascading filter schema generation",
+      "Top-down vs bottom-up reconciliation advice",
+      "Interactive dashboard dimension configuration",
+    ],
+    suggestedQuestions: [
+      "Show the discovered hierarchy structure for Region > State > Store",
+      "Generate an interactive filter form schema for this dataset",
+      "How does bottom-up aggregation impact high-level forecasting accuracy?",
+      "Validate parent-child integrity across dimensions",
+    ],
+  },
+};
+
+export const PROMPT_TEMPLATES: PromptTemplate[] = [
+  {
+    id: "data-quality",
+    category: "SQL & Hygiene",
+    title: "Inspect Data Quality & Null Ratios",
+    prompt: "Perform a comprehensive data quality check on the active project's dataset. Identify missing values, cardinality issues, duplicate records, and recommend data cleaning steps.",
+    recommendedPersona: "data-engineer",
+    icon: "🧹",
+  },
+  {
+    id: "feature-recommendation",
+    category: "Features",
+    title: "Suggest High-Impact Features",
+    prompt: "Analyze the dataset schema and target variable. Suggest the top 5 engineered features (e.g. exponential moving averages, cyclical month encodings, price elasticities) to improve forecast accuracy.",
+    recommendedPersona: "feature-architect",
+    icon: "✨",
+  },
+  {
+    id: "model-comparison",
+    category: "Models",
+    title: "Compare Best Performing Models",
+    prompt: "Compare the performance of candidate models (LightGBM, XGBoost, CatBoost, Prophet). Explain the tradeoffs in latency, memory, interpretability, and validation metrics.",
+    recommendedPersona: "ml-scientist",
+    icon: "🏆",
+  },
+  {
+    id: "validation-deepdive",
+    category: "Validation",
+    title: "Diagnose Validation Error Spikes",
+    prompt: "Review the validation residual plots. Are there specific dates or segments where forecast errors spike? Provide root-cause insights and remediation suggestions.",
+    recommendedPersona: "validation-analyst",
+    icon: "📈",
+  },
+  {
+    id: "pipeline-summary",
+    category: "Discovery",
+    title: "Executive Workflow Executive Summary",
+    prompt: "Provide an executive summary of the entire end-to-end pipeline run: data ingestion status, key features created, chosen model, and predicted business impact.",
+    recommendedPersona: "orchestrator",
+    icon: "📋",
+  },
+  {
+    id: "hierarchy-filters",
+    category: "Discovery",
+    title: "Review Hierarchy & Filter Forms",
+    prompt: "Examine the dimensional hierarchy and generated filter forms. How are parent-child cascading dropdowns mapped, and how can business users filter predictions?",
+    recommendedPersona: "hierarchy-expert",
+    icon: "🗂️",
+  },
+];
+
+export const INITIAL_CHAT_SESSIONS: ChatSession[] = [
+  {
+    id: "session-welcome",
+    title: "Welcome to AI Insights Copilot",
+    createdAt: new Date(Date.now() - 3600000).toISOString(),
+    updatedAt: new Date().toISOString(),
+    agentPersona: "orchestrator",
+    pinned: true,
+    messages: [
+      {
+        id: "msg-welcome-1",
+        role: "assistant",
+        agentId: "orchestrator",
+        agentName: "Insights Maestro",
+        agentBadge: "Master Agent",
+        agentAvatar: "🧠",
+        timestamp: "Just now",
+        content: `👋 **Welcome to the AI Agent Chat Copilot!**
+
+I am your intelligent assistant for the **AI Insights Platform**. You can consult me or switch between specialized agent personas to explore datasets, construct features, tune model hyperparameters, and diagnose validation reports.
+
+### What I can help you with:
+- 📊 **End-to-End Insights**: Synthesize multi-stage pipeline outputs and project health.
+- ⚡ **Feature Engineering**: Formulate rolling lags, seasonal transformations, and scout exogenous regressors.
+- 🔬 **Model Diagnostics**: Compare LightGBM, XGBoost, and Prophet models with SHAP explainability.
+- 🛠️ **Data Engineering**: Inspect schema integrity, cardinality, and SQL query optimizations.
+
+*Select a project above to scope our conversation to your live project data, or try one of the prompt templates below!*`,
+        suggestedActions: [
+          "Summarize the overall health and status of my active projects",
+          "Inspect Data Quality & Null Ratios",
+          "Suggest High-Impact Features for demand forecasting",
+          "Compare candidate ML models and explain selection criteria",
+        ],
+        thinking: [
+          { time: "00:01", text: "Initialized AI Agent Chat session context", done: true },
+          { time: "00:02", text: "Loaded workspace project registries and active connector metadata", done: true },
+          { time: "00:03", text: "Ready to answer contextual analytical inquiries", done: true },
+        ],
+      },
+    ],
+  },
+];
