@@ -9,7 +9,7 @@ import {
   SnowflakeIcon,
   MongodbIcon,
   RestApiIcon,
-} from "../datasource/Icons";
+} from "../connectors/Icons";
 import { useApp, Project, BACKEND_URL } from "../providers/AppContext";
 import { PipelineStatus, PipelineStatuses, RunStatus } from "../projects/types";
 import { INITIAL_PIPELINE_STATUSES } from "../projects/constants";
@@ -39,9 +39,9 @@ interface WorkflowResponse {
   };
 }
 
-// ─── Data-source icon renderer (shared utility) ───────────────────────────────
+// ─── Connector icon renderer (shared utility) ───────────────────────────────
 
-function renderDataSourceIcon(type: string): React.ReactNode {
+function renderConnectorIcon(type: string): React.ReactNode {
   switch (type) {
     case "postgres": return <PostgresqlIcon size={16} />;
     case "mysql": return <MysqlIcon size={16} />;
@@ -1647,7 +1647,7 @@ export default function ProjectsPage() {
         setActiveProjectTab("workflow");
         setView("project");
       }}
-      renderIcon={renderDataSourceIcon}
+      renderIcon={renderConnectorIcon}
     />
   );
 }

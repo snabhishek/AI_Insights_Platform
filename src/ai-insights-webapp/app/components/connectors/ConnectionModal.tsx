@@ -94,7 +94,7 @@ export default function ConnectionModal({
       case "restapi":
         return "REST API";
       default:
-        return "Data Source";
+        return "Connector";
     }
   };
 
@@ -263,7 +263,7 @@ export default function ConnectionModal({
             />
             {isDuplicate && (
               <p className="text-[11px] text-red-500 mt-1.5 font-bold animate-pulse">
-                A data source with this name and type already exists in this workspace.
+                A connector with this name and type already exists in this workspace.
               </p>
             )}
           </div>

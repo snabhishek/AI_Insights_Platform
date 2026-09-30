@@ -101,7 +101,7 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h3 className="text-base font-semibold text-foreground">
-            Connected Sources
+            Connected Connectors
           </h3>
           <p className="text-xs text-muted-foreground mt-0.5">
             Active server connections and catalogs loaded in this workspace.
@@ -110,7 +110,7 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
         <div className="relative w-full sm:w-72">
           <input
             type="text"
-            placeholder="Search connected sources..."
+            placeholder="Search connected connectors..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="w-full h-10 pl-10 pr-4 rounded-lg border border-border bg-surface text-sm text-foreground focus:outline-none focus:border-primary transition-colors"
@@ -149,7 +149,7 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                     : "text-muted-foreground hover:text-foreground hover:bg-surface/30"
                 }`}
               >
-                {filter === "all" ? "All Sources" : filter === "Warning" ? "Issues / Alerts" : filter}
+                {filter === "all" ? "All Connectors" : filter === "Warning" ? "Issues / Alerts" : filter}
               </button>
             );
           })}
@@ -165,7 +165,7 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                 className="pb-3 pt-2 font-semibold cursor-pointer hover:text-primary transition-colors"
                 onClick={() => handleSort("name")}
               >
-                Source Name {sortField === "name" && (sortOrder === "asc" ? "▲" : "▼")}
+                Connector Name {sortField === "name" && (sortOrder === "asc" ? "▲" : "▼")}
               </th>
               <th
                 className="pb-3 pt-2 font-semibold w-[130px] cursor-pointer hover:text-primary transition-colors"
@@ -485,7 +485,7 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
             ) : (
               <tr>
                 <td colSpan={6} className="py-8 text-center text-sm text-muted-foreground">
-                  No connected sources match your filters.
+                  No connected connectors match your filters.
                 </td>
               </tr>
             )}

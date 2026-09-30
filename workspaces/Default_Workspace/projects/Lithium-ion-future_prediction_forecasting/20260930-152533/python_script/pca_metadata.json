@@ -1,0 +1,28 @@
+{
+  "n_components": 3,
+  "input_features": [
+    "year_index_standardized",
+    "log_year_index_standardized",
+    "year_squared_standardized",
+    "price_lag_1_standardized",
+    "price_lag_2_standardized",
+    "price_diff_lag1_standardized",
+    "price_pct_change_lag1_standardized",
+    "price_rolling_mean_2_standardized",
+    "price_expanding_mean_standardized",
+    "log_price_lag_1_standardized",
+    "log_price_lag_2_standardized",
+    "log_price_rolling_mean_2_standardized",
+    "log_price_expanding_mean_standardized",
+    "sqrt_price_lag_1_standardized",
+    "sqrt_price_lag_2_standardized",
+    "signed_log_price_diff_lag1_standardized",
+    "price_pct_change_lag1_clipped_standardized"
+  ],
+  "explained_variance_ratio": [
+    0.946678,
+    0.037092,
+    0.00984
+  ],
+  "total_explained_variance": 0.993611
+}

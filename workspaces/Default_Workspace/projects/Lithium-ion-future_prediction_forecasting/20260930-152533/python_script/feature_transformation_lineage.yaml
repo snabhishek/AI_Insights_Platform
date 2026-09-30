@@ -1,0 +1,16 @@
+input_artifact: /workspace/20260930-152533/python_script/feature_created.parquet
+num_columns: 66
+output_artifact: /workspace/20260930-152533/python_script/feature_transformation.parquet
+row_count: 6
+scaled_features_count: 17
+split: train
+stage: FEATURE_TRANSFORMATION
+transformed_features:
+- log_price_lag_1
+- log_price_lag_2
+- log_price_rolling_mean_2
+- log_price_expanding_mean
+- sqrt_price_lag_1
+- sqrt_price_lag_2
+- signed_log_price_diff_lag1
+- price_pct_change_lag1_clipped

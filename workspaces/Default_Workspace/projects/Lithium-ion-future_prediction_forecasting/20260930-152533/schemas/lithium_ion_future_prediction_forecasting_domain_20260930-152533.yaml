@@ -1,0 +1,10 @@
+version: '1.0'
+generatedAt: '2026-09-30T10:28:46.973Z'
+DomainKnowledge:
+  description: Establishes the industry/domain and business use case the insights platform is built for. Tier1/Tier2 may be suggested by the agent based on the data, but must be confirmed by the user. UseCase and UseCaseDescription are user-provided.
+  Tier1: Energy & Utilities
+  Tier2: User Provided
+  UseCase: Lithium-ion-future prediction forecasting
+  UseCaseDescription: |-
+    Forecast future lithium-ion battery prices using historical pricing data, raw material costs, supply-demand trends, production capacity, technology developments, and market indicators. 
+    The model should identify key price drivers, predict future battery prices across selected time horizons, and provide forecasts to support procurement planning, budgeting, investment decisions, and energy-storage project feasibility.

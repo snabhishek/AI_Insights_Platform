@@ -1,0 +1,86 @@
+================================================================================
+DOCKER CONTAINER EXECUTION LOG
+Execution Start Time: 2026-09-30T10:03:30.798Z
+Execution Directory: C:\Users\snabhishek\Music\AI_Insights_Platform\workspaces\Default_Workspace\projects\Lithium-ion-future_prediction_forecasting\20260930-152533\python_script
+Script Relative Path: 20260930-152533/python_script/aggregated_feature_pipeline_20260930-152533.py
+Host Project Root: C:/Users/snabhishek/Music/AI_Insights_Platform/workspaces/Default_Workspace/projects/Lithium-ion-future_prediction_forecasting
+Arguments: --out-dir "/workspace/20260930-152533/python_script" --db-path "/workspace"
+================================================================================
+--------------------------------------------------------------------------------
+STEP 1: DOCKER COMPOSE BUILD
+Command: docker compose -f "docker-compose.yml" build
+Time: 2026-09-30T10:03:30.804Z
+--------------------------------------------------------------------------------
+#1 [internal] load local bake definitions
+#1 reading from stdin 875B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 473B 0.0s done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.12-slim
+#3 DONE 0.1s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [1/5] FROM docker.io/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+#5 resolve docker.io/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea 0.0s done
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 107B done
+#6 DONE 0.0s
+
+#7 [3/5] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential     python3-dev     cmake     libgomp1     && rm -rf /var/lib/apt/lists/*
+#7 CACHED
+
+#8 [4/5] COPY requirements.txt /tmp/requirements.txt
+#8 CACHED
+
+#9 [2/5] WORKDIR /workspace
+#9 CACHED
+
+#10 [5/5] RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=120 --retries 3 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r /tmp/requirements.txt
+#10 CACHED
+
+#11 exporting to image
+#11 exporting layers done
+#11 exporting manifest sha256:69eb90f2c685275777afe54ef725da1d4df6d9754e6c191bc8bf54850530b943 done
+#11 exporting config sha256:87929e5aded74c5ecdade3c5ec6599cdc1a4c7e45a11835e4a3ef1408b7dd355 done
+#11 exporting attestation manifest sha256:3e873fdfebad58a8cdb66dd3b1ab4d00049a29fc8562707a3b343dd8716f328b 0.0s done
+#11 exporting manifest list sha256:7b18cae277d476b4b0be20ebb835f8c52b129a5a1fd91ab9993dd80fd6c2f031 0.0s done
+#11 naming to docker.io/library/python_script-feature-engineering:latest
+#11 naming to docker.io/library/python_script-feature-engineering:latest done
+#11 unpacking to docker.io/library/python_script-feature-engineering:latest 0.0s done
+#11 DONE 0.1s
+
+#12 resolving provenance for metadata file
+#12 DONE 0.0s
+ python_script-feature-engineering  Built
+
+--------------------------------------------------------------------------------
+BUILD COMPLETED SUCCESSFULLY (exit code: 0)
+Time: 2026-09-30T10:03:33.397Z
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+STEP 2: DOCKER COMPOSE RUN
+Command: docker compose -f "docker-compose.yml" run --rm feature-engineering python "20260930-152533/python_script/aggregated_feature_pipeline_20260930-152533.py" --out-dir "/workspace/20260930-152533/python_script" --db-path "/workspace"
+Time: 2026-09-30T10:03:33.402Z
+--------------------------------------------------------------------------------
+2026-09-30 10:03:35,295 - INFO - Starting Feature Creation. Source DB path: /workspace, Target: /workspace/20260930-152533/python_script/feature_created.parquet
+2026-09-30 10:03:35,297 - INFO - Loading data from candidate path: /workspace/price_of_lithium_ion_battery_cells.csv
+2026-09-30 10:03:35,310 - INFO - Raw dataset loaded successfully with shape: (6, 4)
+2026-09-30 10:03:35,419 - INFO - Feature creation completed successfully. Exported 6 rows and 22 columns to /workspace/20260930-152533/python_script/feature_created.parquet
+2026-09-30 10:03:35,428 - INFO - Lineage metadata saved to /workspace/20260930-152533/python_script/feature_creation_lineage.yaml
+=== [1/7] Running Feature Creation ===
+=== Pipeline Execution Complete ===
+
+================================================================================
+CONTAINER RUN FINISHED
+Finished At: 2026-09-30T10:03:35.703Z
+Exit Code: 0
+Status: SUCCESS
+================================================================================

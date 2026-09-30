@@ -1,0 +1,144 @@
+column_count: 66
+columns:
+- Entity
+- Code
+- Year
+- Price of lithium-ion battery cells
+- year_index
+- log_year_index
+- year_squared
+- decade_bin
+- price_lag_1
+- price_lag_2
+- price_diff_lag1
+- price_pct_change_lag1
+- price_rolling_mean_2
+- price_expanding_mean
+- entity_World
+- code_OWID_WRL
+- price_lag_1_is_na
+- price_lag_2_is_na
+- price_diff_lag1_is_na
+- price_pct_change_lag1_is_na
+- price_rolling_mean_2_is_na
+- price_expanding_mean_is_na
+- log_price_lag_1
+- sqrt_price_lag_1
+- log_price_lag_2
+- sqrt_price_lag_2
+- log_price_rolling_mean_2
+- sqrt_price_rolling_mean_2
+- log_price_expanding_mean
+- sqrt_price_expanding_mean
+- signed_log_price_diff_lag1
+- price_pct_change_lag1_clipped
+- year_index_standardized
+- year_index_minmax
+- log_year_index_standardized
+- log_year_index_minmax
+- year_squared_standardized
+- year_squared_minmax
+- price_lag_1_standardized
+- price_lag_1_minmax
+- price_lag_2_standardized
+- price_lag_2_minmax
+- price_diff_lag1_standardized
+- price_diff_lag1_minmax
+- price_pct_change_lag1_standardized
+- price_pct_change_lag1_minmax
+- price_rolling_mean_2_standardized
+- price_rolling_mean_2_minmax
+- price_expanding_mean_standardized
+- price_expanding_mean_minmax
+- log_price_lag_1_standardized
+- log_price_lag_1_minmax
+- log_price_lag_2_standardized
+- log_price_lag_2_minmax
+- log_price_rolling_mean_2_standardized
+- log_price_rolling_mean_2_minmax
+- log_price_expanding_mean_standardized
+- log_price_expanding_mean_minmax
+- sqrt_price_lag_1_standardized
+- sqrt_price_lag_1_minmax
+- sqrt_price_lag_2_standardized
+- sqrt_price_lag_2_minmax
+- signed_log_price_diff_lag1_standardized
+- signed_log_price_diff_lag1_minmax
+- price_pct_change_lag1_clipped_standardized
+- price_pct_change_lag1_clipped_minmax
+data_types:
+  Code: str
+  Entity: str
+  Price of lithium-ion battery cells: float64
+  Year: int64
+  code_OWID_WRL: int64
+  decade_bin: int64
+  entity_World: int64
+  log_price_expanding_mean: float64
+  log_price_expanding_mean_minmax: float64
+  log_price_expanding_mean_standardized: float64
+  log_price_lag_1: float64
+  log_price_lag_1_minmax: float64
+  log_price_lag_1_standardized: float64
+  log_price_lag_2: float64
+  log_price_lag_2_minmax: float64
+  log_price_lag_2_standardized: float64
+  log_price_rolling_mean_2: float64
+  log_price_rolling_mean_2_minmax: float64
+  log_price_rolling_mean_2_standardized: float64
+  log_year_index: float64
+  log_year_index_minmax: float64
+  log_year_index_standardized: float64
+  price_diff_lag1: float64
+  price_diff_lag1_is_na: int64
+  price_diff_lag1_minmax: float64
+  price_diff_lag1_standardized: float64
+  price_expanding_mean: float64
+  price_expanding_mean_is_na: int64
+  price_expanding_mean_minmax: float64
+  price_expanding_mean_standardized: float64
+  price_lag_1: float64
+  price_lag_1_is_na: int64
+  price_lag_1_minmax: float64
+  price_lag_1_standardized: float64
+  price_lag_2: float64
+  price_lag_2_is_na: int64
+  price_lag_2_minmax: float64
+  price_lag_2_standardized: float64
+  price_pct_change_lag1: float64
+  price_pct_change_lag1_clipped: float64
+  price_pct_change_lag1_clipped_minmax: float64
+  price_pct_change_lag1_clipped_standardized: float64
+  price_pct_change_lag1_is_na: int64
+  price_pct_change_lag1_minmax: float64
+  price_pct_change_lag1_standardized: float64
+  price_rolling_mean_2: float64
+  price_rolling_mean_2_is_na: int64
+  price_rolling_mean_2_minmax: float64
+  price_rolling_mean_2_standardized: float64
+  signed_log_price_diff_lag1: float64
+  signed_log_price_diff_lag1_minmax: float64
+  signed_log_price_diff_lag1_standardized: float64
+  sqrt_price_expanding_mean: float64
+  sqrt_price_lag_1: float64
+  sqrt_price_lag_1_minmax: float64
+  sqrt_price_lag_1_standardized: float64
+  sqrt_price_lag_2: float64
+  sqrt_price_lag_2_minmax: float64
+  sqrt_price_lag_2_standardized: float64
+  sqrt_price_rolling_mean_2: float64
+  year_index: float64
+  year_index_minmax: float64
+  year_index_standardized: float64
+  year_squared: float64
+  year_squared_minmax: float64
+  year_squared_standardized: float64
+input_features_path: /workspace/20260930-152533/python_script/feature_transformation.parquet
+output_dataset_path: /workspace/20260930-152533/python_script/dataset.parquet
+primary_entity: Entity
+row_count: 6
+source_tables_joined:
+- price_of_lithium_ion_battery_cells
+stage: BUILD_DATASET
+target_column: Price of lithium-ion battery cells
+time_column: Year

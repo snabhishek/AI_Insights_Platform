@@ -9,34 +9,34 @@ import {
   SnowflakeIcon,
   MongodbIcon,
   RestApiIcon,
-} from "../datasource/Icons";
+} from "../connectors/Icons";
 import { DataSource, ConnectionConfig, BACKEND_URL, Project } from "../providers/AppContext";
-import ConnectionModal from "../datasource/ConnectionModal";
+import ConnectionModal from "../connectors/ConnectionModal";
 
 // ─── Helper ───────────────────────────────────────────────────────────────────
 
 function renderDataSourceIcon(type: string) {
   switch (type) {
-    case "postgres":  return <PostgresqlIcon size={16} />;
-    case "mysql":     return <MysqlIcon size={16} />;
+    case "postgres": return <PostgresqlIcon size={16} />;
+    case "mysql": return <MysqlIcon size={16} />;
     case "sqlserver": return <SqlServerIcon size={16} />;
     case "snowflake": return <SnowflakeIcon size={16} />;
-    case "mongodb":   return <MongodbIcon size={16} />;
-    case "excel":     return <Image src="/images/microsoft-excel.jpg" alt="Excel" width={16} height={16} className="object-contain shrink-0" />;
-    case "csv":       return <Image src="/images/csv.png" alt="CSV" width={16} height={16} className="object-contain shrink-0" />;
-    case "tsv":       return <Image src="/images/tsv.png" alt="TSV" width={16} height={16} className="object-contain shrink-0" />;
-    case "restapi":   return <RestApiIcon size={16} />;
-    default:          return null;
+    case "mongodb": return <MongodbIcon size={16} />;
+    case "excel": return <Image src="/images/microsoft-excel.jpg" alt="Excel" width={16} height={16} className="object-contain shrink-0" />;
+    case "csv": return <Image src="/images/csv.png" alt="CSV" width={16} height={16} className="object-contain shrink-0" />;
+    case "tsv": return <Image src="/images/tsv.png" alt="TSV" width={16} height={16} className="object-contain shrink-0" />;
+    case "restapi": return <RestApiIcon size={16} />;
+    default: return null;
   }
 }
 
 function getSubtextCategory(subtext: string): string {
   const s = subtext.toLowerCase();
   if (s.includes("warehouse")) return "Data Warehouse";
-  if (s.includes("database"))  return "Database";
-  if (s.includes("api"))       return "API";
+  if (s.includes("database")) return "Database";
+  if (s.includes("api")) return "API";
   if (s.includes("cloud") || s.includes("storage")) return "Cloud Storage";
-  if (s.includes("file"))      return "File";
+  if (s.includes("file")) return "File";
   return "Database";
 }
 
@@ -128,11 +128,10 @@ function CustomSelect({
                   onChange(opt.value);
                   setOpen(false);
                 }}
-                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-normal text-left transition-all cursor-pointer ${
-                  isSelected
-                    ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white font-medium"
-                    : "text-foreground hover:bg-surface-muted/80 dark:hover:bg-white/5"
-                }`}
+                className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-sm font-normal text-left transition-all cursor-pointer ${isSelected
+                  ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white font-medium"
+                  : "text-foreground hover:bg-surface-muted/80 dark:hover:bg-white/5"
+                  }`}
               >
                 <span className="truncate">{opt.label}</span>
                 {isSelected && (
@@ -159,6 +158,9 @@ interface ProjectCreatePageProps {
   project?: Project | null;
   onUpdate?: (id: string, updates: Partial<Project>) => Promise<void> | void;
   isWorkflowActiveOrPaused?: boolean;
+  onDelete?: () => void;
+  startInEditMode?: boolean;
+  onEditModeChange?: (isEditing: boolean) => void;
 }
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -171,36 +173,40 @@ export default function ProjectCreatePage({
   project,
   onUpdate,
   isWorkflowActiveOrPaused = false,
+  onDelete,
+  startInEditMode = false,
+  onEditModeChange,
 }: ProjectCreatePageProps) {
   const isSaved = Boolean(project);
-  const [isEditing, setIsEditing]             = useState(!project);
-  const [projectName, setProjectName]         = useState(project?.name || "");
-  const [useCaseInfo, setUseCaseInfo]         = useState(project?.useCase || "");
+  const [isEditing, setIsEditing] = useState(!project || Boolean(startInEditMode));
+
+  const [projectName, setProjectName] = useState(project?.name || "");
+  const [useCaseInfo, setUseCaseInfo] = useState(project?.useCase || "");
   const [selectedSources, setSelectedSources] = useState<string[]>(project?.dataSources || []);
-  const [previewMode, setPreviewMode]         = useState(false);
-  const [history, setHistory]                 = useState<string[]>([project?.useCase || ""]);
-  const [historyIndex, setHistoryIndex]       = useState(0);
-  const [sourceSearch, setSourceSearch]       = useState("");
+  const [previewMode, setPreviewMode] = useState(false);
+  const [history, setHistory] = useState<string[]>([project?.useCase || ""]);
+  const [historyIndex, setHistoryIndex] = useState(0);
+  const [sourceSearch, setSourceSearch] = useState("");
   const [sourceTypeFilter, setSourceTypeFilter] = useState("All Types");
-  const [currentPage, setCurrentPage]         = useState(1);
+  const [currentPage, setCurrentPage] = useState(1);
 
   // Form submission state
-  const [submitError, setSubmitError]         = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting]       = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Domain & Sub-domain state
-  const [domainList, setDomainList]           = useState<{ id: string; domain: string; subDomains: string[] }[]>([]);
-  const [selectedDomain, setSelectedDomain]   = useState(project?.domain || "");
+  const [domainList, setDomainList] = useState<{ id: string; domain: string; subDomains: string[] }[]>([]);
+  const [selectedDomain, setSelectedDomain] = useState(project?.domain || "");
   const [selectedSubDomain, setSelectedSubDomain] = useState(project?.subDomain || "");
   const [customSubDomain, setCustomSubDomain] = useState("");
 
   const [showConnectLibrary, setShowConnectLibrary] = useState(false);
-  const [activeConnectType, setActiveConnectType]   = useState<DataSource["type"] | null>(null);
+  const [activeConnectType, setActiveConnectType] = useState<DataSource["type"] | null>(null);
   const wasSubmitClicked = useRef(false);
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Sync state when project changes
+  // Sync state when project changes or startInEditMode changes
   useEffect(() => {
     if (project) {
       setProjectName(project.name || "");
@@ -208,7 +214,7 @@ export default function ProjectCreatePage({
       setSelectedSources(project.dataSources || []);
       setSelectedDomain(project.domain || "");
       setSelectedSubDomain(project.subDomain || "");
-      setIsEditing(false);
+      setIsEditing(Boolean(startInEditMode));
       setSubmitError(null);
     } else {
       setProjectName("");
@@ -220,7 +226,7 @@ export default function ProjectCreatePage({
       setIsEditing(true);
       setSubmitError(null);
     }
-  }, [project]);
+  }, [project, startInEditMode]);
 
 
   useEffect(() => {
@@ -375,10 +381,10 @@ export default function ProjectCreatePage({
     return matchSearch && (sourceTypeFilter === "All Types" || cat === sourceTypeFilter);
   });
 
-  const totalPages       = Math.ceil(filteredSources.length / ITEMS_PER_PAGE);
+  const totalPages = Math.ceil(filteredSources.length / ITEMS_PER_PAGE);
   const paginatedSources = filteredSources.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
-  const startIdx         = filteredSources.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
-  const endIdx           = Math.min(currentPage * ITEMS_PER_PAGE, filteredSources.length);
+  const startIdx = filteredSources.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
+  const endIdx = Math.min(currentPage * ITEMS_PER_PAGE, filteredSources.length);
 
   // ── Submit / Update ───────────────────────────────────────────────────────
 
@@ -409,6 +415,7 @@ export default function ProjectCreatePage({
         });
       }
       setIsEditing(false);
+      onEditModeChange?.(false);
     } catch (err: any) {
       setSubmitError(err.message || "Failed to update project details.");
     } finally {
@@ -470,26 +477,47 @@ export default function ProjectCreatePage({
         <div className="flex items-center gap-3">
           {isSaved ? (
             !isEditing ? (
-              <button
-                type="button"
-                disabled={isWorkflowActiveOrPaused}
-                onClick={() => setIsEditing(true)}
-                title={
-                  isWorkflowActiveOrPaused
-                    ? "Cannot edit project details while workflow is running or paused"
-                    : "Edit Project Details"
-                }
-                className={`px-6 py-2 rounded-xl text-sm font-semibold transition-all shadow-md flex items-center gap-2 ${
-                  isWorkflowActiveOrPaused
+              <div className="flex items-center gap-2.5">
+                <button
+                  type="button"
+                  disabled={isWorkflowActiveOrPaused}
+                  onClick={() => setIsEditing(true)}
+                  title={
+                    isWorkflowActiveOrPaused
+                      ? "Cannot edit project details while workflow is running or paused"
+                      : "Edit Project Details"
+                  }
+                  className={`px-6 py-2 rounded-xl text-sm font-semibold transition-all shadow-md flex items-center gap-2 ${isWorkflowActiveOrPaused
                     ? "bg-surface border border-border text-muted-foreground opacity-50 cursor-not-allowed"
                     : "bg-primary text-white hover:bg-primary/95 cursor-pointer hover:scale-105 active:scale-95"
-                }`}
-              >
-                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
-                  <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
-                </svg>
-                <span>Edit</span>
-              </button>
+                    }`}
+                >
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" />
+                  </svg>
+                  <span>Edit</span>
+                </button>
+
+                {onDelete && (
+                  <button
+                    type="button"
+                    disabled={isWorkflowActiveOrPaused}
+                    onClick={onDelete}
+                    title={
+                      isWorkflowActiveOrPaused
+                        ? "Cannot delete project while workflow is running or paused"
+                        : "Delete Project"
+                    }
+                    className="px-4 py-2 rounded-xl text-sm font-semibold transition-all shadow-sm flex items-center gap-2 border border-red-500 bg-white text-red-500 hover:bg-red-500 hover:text-white dark:bg-transparent dark:text-red-400 dark:border-red-500 dark:hover:bg-red-500 dark:hover:text-white cursor-pointer hover:scale-105 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <polyline points="3 6 5 6 21 6" />
+                      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+                    </svg>
+                    <span>Delete</span>
+                  </button>
+                )}
+              </div>
             ) : (
               <>
                 <button
@@ -503,6 +531,7 @@ export default function ProjectCreatePage({
                       setSelectedSubDomain(project.subDomain || "");
                     }
                     setIsEditing(false);
+                    onEditModeChange?.(false);
                     setSubmitError(null);
                   }}
                   className="px-6 py-2 border border-border bg-surface text-foreground hover:bg-surface-muted rounded-xl text-sm font-semibold cursor-pointer transition-colors shadow-sm focus:outline-none focus:ring-0 focus:border-border"
@@ -575,11 +604,11 @@ export default function ProjectCreatePage({
             {submitError && (
               <div className="p-3.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-semibold flex items-center justify-between animate-fade-in shadow-sm">
                 <div className="flex items-center gap-2.5">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-red-500"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-red-500"><circle cx="12" cy="12" r="10" /><line x1="12" y1="8" x2="12" y2="12" /><line x1="12" y1="16" x2="12.01" y2="16" /></svg>
                   <span>{submitError}</span>
                 </div>
                 <button onClick={() => setSubmitError(null)} className="p-1 hover:bg-red-500/20 rounded-lg cursor-pointer transition-colors focus:outline-none">
-                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
                 </button>
               </div>
             )}
@@ -681,8 +710,8 @@ export default function ProjectCreatePage({
                   <div className="flex items-center justify-between border-b border-border bg-surface-muted/30 px-3 py-1.5 select-none">
                     <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
                       {[
-                        { label: "B", title: "Bold",   action: () => insertText("**", "**"), className: "font-bold" },
-                        { label: "I", title: "Italic",  action: () => insertText("*", "*"),  className: "italic"    },
+                        { label: "B", title: "Bold", action: () => insertText("**", "**"), className: "font-bold" },
+                        { label: "I", title: "Italic", action: () => insertText("*", "*"), className: "italic" },
                         { label: "H", title: "Heading", action: () => insertText("### ", ""), className: "font-semibold" },
                       ].map(({ label, title, action, className }) => (
                         <button
@@ -710,9 +739,8 @@ export default function ProjectCreatePage({
                     <button
                       type="button"
                       onClick={() => setPreviewMode(!previewMode)}
-                      className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer focus:outline-none focus:ring-0 ${
-                        previewMode ? "bg-primary text-white border-primary" : "border-border text-foreground hover:bg-surface"
-                      }`}
+                      className={`px-3 py-1 text-xs font-bold rounded-lg border transition-all cursor-pointer focus:outline-none focus:ring-0 ${previewMode ? "bg-primary text-white border-primary" : "border-border text-foreground hover:bg-surface"
+                        }`}
                     >
                       Preview
                     </button>
@@ -751,10 +779,7 @@ export default function ProjectCreatePage({
 
         {/* Right: Connect Data Sources */}
         <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft flex flex-col">
-          <h2 className="text-base font-bold text-foreground mb-1">Connect Data Sources</h2>
-          <p className="text-xs text-muted-foreground mb-5">
-            {isEditing ? "Select and connect the data sources that will be used in this project." : "Data sources currently connected to this project."}
-          </p>
+          <h2 className="text-base font-bold text-foreground mb-3">Connect Sources</h2>
 
           {/* Search & Filter */}
           <div className="flex items-center gap-3 mb-6">
@@ -788,7 +813,7 @@ export default function ProjectCreatePage({
             {selectedSources.length === 0 ? (
               <div className="border border-dashed border-border/80 rounded-2xl p-6 flex flex-col items-center justify-center text-center bg-gradient-to-br from-surface-muted/20 via-surface to-surface-muted/20 shadow-inner">
                 <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center text-primary mb-2">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>
+                  <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3" /><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3" /><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5" /></svg>
                 </div>
                 <p className="text-sm font-bold text-foreground">No data sources selected</p>
                 <p className="text-xs text-muted-foreground mt-0.5 max-w-xs">
@@ -838,13 +863,11 @@ export default function ProjectCreatePage({
                       onClick={() => {
                         if (isEditing) toggleSource(ds.id);
                       }}
-                      className={`flex items-center justify-between p-3.5 rounded-xl border transition-all duration-200 ${
-                        isEditing ? "cursor-pointer" : "cursor-default opacity-80"
-                      } ${
-                        isSelected
+                      className={`flex items-center justify-between p-3.5 rounded-xl border transition-all duration-200 ${isEditing ? "cursor-pointer" : "cursor-default opacity-80"
+                        } ${isSelected
                           ? "border-primary/50 bg-primary/5 shadow-sm"
                           : "border-border/80 bg-surface hover:border-primary/30 hover:bg-surface-muted/30"
-                      }`}
+                        }`}
                     >
                       <div className="flex items-center gap-3 overflow-hidden">
                         <div className="w-9 h-9 rounded-xl bg-surface-muted/60 border border-border flex items-center justify-center shrink-0">
@@ -859,9 +882,8 @@ export default function ProjectCreatePage({
                         </div>
                       </div>
 
-                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
-                        isSelected ? "border-primary bg-primary text-white" : "border-border bg-surface"
-                      }`}>
+                      <div className={`w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${isSelected ? "border-primary bg-primary text-white" : "border-border bg-surface"
+                        }`}>
                         {isSelected && (
                           <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
                             <polyline points="20 6 9 17 4 12" />

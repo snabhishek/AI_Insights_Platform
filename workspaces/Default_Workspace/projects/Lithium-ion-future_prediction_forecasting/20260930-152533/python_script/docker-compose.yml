@@ -1,0 +1,17 @@
+services:
+  feature-engineering:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      network: host
+    network_mode: host
+    volumes:
+      - "${HOST_PROJECT_ROOT:-.}:/workspace"
+    working_dir: /workspace
+    environment:
+      - PYTHONPATH=/workspace
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 4G

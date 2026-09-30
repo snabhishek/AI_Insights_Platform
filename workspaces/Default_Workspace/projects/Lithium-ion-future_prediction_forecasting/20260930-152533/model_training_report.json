@@ -1,0 +1,162 @@
+{
+  "status": "Completed",
+  "project_name": "Lithium-ion-future prediction forecasting",
+  "target_column": "Price of lithium-ion battery cells",
+  "primary_metric": "MAE",
+  "primary_metric_direction": "minimize",
+  "best_model_id": "xgboost_regressor",
+  "best_model": {
+    "model_id": "xgboost_regressor",
+    "score": 154.9961,
+    "model_path": "artifacts/models/selected_model.joblib"
+  },
+  "selected_model": "xgboost_regressor",
+  "selected_model_path": "artifacts/models/selected_model.joblib",
+  "preprocessor_path": "artifacts/models/preprocessor.joblib",
+  "candidate_models_evaluated": [
+    "lightgbm_regressor",
+    "xgboost_regressor"
+  ],
+  "models_evaluated": [
+    {
+      "model_id": "lightgbm_regressor",
+      "displayName": "LightGBM Gradient Boosted Forecaster",
+      "framework": "lightgbm",
+      "status": "Completed",
+      "metrics": {
+        "validation": {
+          "MAE": 561.8263,
+          "RMSE": 561.8263,
+          "WAPE": 9.552,
+          "MAPE": 9.552,
+          "R2": 0.0,
+          "sample_count": 1,
+          "score": 561.8263
+        },
+        "test": {
+          "MAE": 981.9284,
+          "RMSE": 981.9284,
+          "WAPE": 15.5815,
+          "MAPE": 15.5815,
+          "R2": 0.0,
+          "sample_count": 1,
+          "score": 981.9284
+        }
+      },
+      "timing": {
+        "fit_time_seconds": 0.0412,
+        "predict_time_seconds": 0.0025
+      },
+      "artifact_path": "artifacts/models/lightgbm_regressor.joblib",
+      "plots": [
+        "artifacts/plots/lightgbm_regressor_actual_vs_predicted.png",
+        "artifacts/plots/lightgbm_regressor_residuals.png",
+        "artifacts/plots/lightgbm_regressor_feature_importance.png"
+      ]
+    },
+    {
+      "model_id": "xgboost_regressor",
+      "displayName": "XGBoost Regressor",
+      "framework": "xgboost",
+      "status": "Completed",
+      "metrics": {
+        "validation": {
+          "MAE": 575.0982,
+          "RMSE": 575.0982,
+          "WAPE": 9.7776,
+          "MAPE": 9.7776,
+          "R2": 0.0,
+          "sample_count": 1,
+          "score": 575.0982
+        },
+        "test": {
+          "MAE": 154.9961,
+          "RMSE": 154.9961,
+          "WAPE": 2.4595,
+          "MAPE": 2.4595,
+          "R2": 0.0,
+          "sample_count": 1,
+          "score": 154.9961
+        }
+      },
+      "timing": {
+        "fit_time_seconds": 0.212,
+        "predict_time_seconds": 0.0019
+      },
+      "artifact_path": "artifacts/models/xgboost_regressor.joblib",
+      "plots": [
+        "artifacts/plots/xgboost_regressor_actual_vs_predicted.png",
+        "artifacts/plots/xgboost_regressor_residuals.png",
+        "artifacts/plots/xgboost_regressor_feature_importance.png"
+      ]
+    }
+  ],
+  "model_results": {
+    "lightgbm_regressor": {
+      "model_id": "lightgbm_regressor",
+      "displayName": "LightGBM Gradient Boosted Forecaster",
+      "framework": "lightgbm",
+      "status": "Completed",
+      "score": 981.9284,
+      "validation_metrics": {
+        "MAE": 561.8263,
+        "RMSE": 561.8263,
+        "WAPE": 9.552,
+        "MAPE": 9.552,
+        "R2": 0.0,
+        "sample_count": 1,
+        "score": 561.8263
+      },
+      "test_metrics": {
+        "MAE": 981.9284,
+        "RMSE": 981.9284,
+        "WAPE": 15.5815,
+        "MAPE": 15.5815,
+        "R2": 0.0,
+        "sample_count": 1,
+        "score": 981.9284
+      },
+      "duration_seconds": 0.6253,
+      "model_path": "artifacts/models/lightgbm_regressor.joblib",
+      "plots": [
+        "artifacts/plots/lightgbm_regressor_actual_vs_predicted.png",
+        "artifacts/plots/lightgbm_regressor_residuals.png",
+        "artifacts/plots/lightgbm_regressor_feature_importance.png"
+      ]
+    },
+    "xgboost_regressor": {
+      "model_id": "xgboost_regressor",
+      "displayName": "XGBoost Regressor",
+      "framework": "xgboost",
+      "status": "Completed",
+      "score": 154.9961,
+      "validation_metrics": {
+        "MAE": 575.0982,
+        "RMSE": 575.0982,
+        "WAPE": 9.7776,
+        "MAPE": 9.7776,
+        "R2": 0.0,
+        "sample_count": 1,
+        "score": 575.0982
+      },
+      "test_metrics": {
+        "MAE": 154.9961,
+        "RMSE": 154.9961,
+        "WAPE": 2.4595,
+        "MAPE": 2.4595,
+        "R2": 0.0,
+        "sample_count": 1,
+        "score": 154.9961
+      },
+      "duration_seconds": 0.8125,
+      "model_path": "artifacts/models/xgboost_regressor.joblib",
+      "plots": [
+        "artifacts/plots/xgboost_regressor_actual_vs_predicted.png",
+        "artifacts/plots/xgboost_regressor_residuals.png",
+        "artifacts/plots/xgboost_regressor_feature_importance.png"
+      ]
+    }
+  },
+  "comparison_plot": "artifacts/plots/model_comparison.png",
+  "total_execution_time_seconds": 1.9969
+}

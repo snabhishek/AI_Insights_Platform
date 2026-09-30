@@ -1,14 +1,14 @@
 "use client";
 
 import React, { useState } from "react";
-import DataHealthOverview from "../datasource/DataHealthOverview";
-import ConnectorLibrary from "../datasource/ConnectorLibrary";
-import ConnectedSources from "../datasource/ConnectedSources";
-import ConnectionModal from "../datasource/ConnectionModal";
-import SourceDetailModal from "../datasource/SourceDetailModal";
+import DataHealthOverview from "../connectors/DataHealthOverview";
+import ConnectorLibrary from "../connectors/ConnectorLibrary";
+import ConnectedSources from "../connectors/ConnectedSources";
+import ConnectionModal from "../connectors/ConnectionModal";
+import SourceDetailModal from "../connectors/SourceDetailModal";
 import { useApp, DataSource } from "../providers/AppContext";
 
-export default function DataSourcePage() {
+export default function ConnectorsPage() {
   const { addDataSource } = useApp();
   const [activeConnectType, setActiveConnectType] = useState<DataSource["type"] | null>(null);
   const [viewingSource, setViewingSource] = useState<DataSource | null>(null);

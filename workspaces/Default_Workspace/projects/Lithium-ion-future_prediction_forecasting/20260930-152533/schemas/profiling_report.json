@@ -1,0 +1,236 @@
+{
+  "sources": [
+    {
+      "connectorId": "4eaa9842-ed09-402d-8cb7-7778fa2a9f70",
+      "connectorName": "price of lithium ion battery cells",
+      "status": "OK",
+      "tables": [
+        {
+          "tableName": "price_of_lithium_ion_battery_cells",
+          "totalRowCount": 6,
+          "sampling": {
+            "exploratoryMethod": "interval",
+            "exploratorySampleSize": 6,
+            "stratifiedMethod": "random",
+            "stratifyColumn": null,
+            "stratifiedSampleSize": 6
+          },
+          "contentProfile": {
+            "columns": [
+              {
+                "name": "Entity",
+                "inferredType": "string",
+                "distinctCount": 1,
+                "totalValues": 6,
+                "nonEmptyCount": 6,
+                "topValues": [
+                  {
+                    "value": "World",
+                    "count": 6,
+                    "percentage": 100
+                  }
+                ],
+                "patterns": [],
+                "mixedTypePercent": 0,
+                "categoricalOrContinuous": "categorical"
+              },
+              {
+                "name": "Code",
+                "inferredType": "string",
+                "distinctCount": 1,
+                "totalValues": 6,
+                "nonEmptyCount": 6,
+                "topValues": [
+                  {
+                    "value": "OWID_WRL",
+                    "count": 6,
+                    "percentage": 100
+                  }
+                ],
+                "patterns": [],
+                "mixedTypePercent": 0,
+                "categoricalOrContinuous": "categorical"
+              },
+              {
+                "name": "Year",
+                "inferredType": "numeric",
+                "distinctCount": 6,
+                "totalValues": 6,
+                "nonEmptyCount": 6,
+                "topValues": [
+                  {
+                    "value": "1994",
+                    "count": 1,
+                    "percentage": 16.67
+                  },
+                  {
+                    "value": "1996",
+                    "count": 1,
+                    "percentage": 16.67
+                  },
+                  {
+                    "value": "1991",
+                    "count": 1,
+                    "percentage": 16.67
+                  },
+                  {
+                    "value": "1992",
+                    "count": 1,
+                    "percentage": 16.67
+                  },
+                  {
+                    "value": "1993",
+                    "count": 1,
+                    "percentage": 16.67
+                  },
+                  {
+                    "value": "1995",
+                    "count": 1,
+                    "percentage": 16.67
+                  }
+                ],
+                "patterns": [
+                  "numeric_integer"
+                ],
+                "mixedTypePercent": 0,
+                "categoricalOrContinuous": "continuous"
+              },
+              {
+                "name": "Price of lithium-ion battery cells",
+                "inferredType": "numeric",
+                "distinctCount": 6,
+                "totalValues": 6,
+                "nonEmptyCount": 6,
+                "topValues": [
+                  {
+                    "value": "6301.8833",
+                    "count": 1,
+                    "percentage": 16.67
+                  },
+                  {
+                    "value": "5881.7812",
+                    "count": 1,
+                    "percentage": 16.67
+                  },
+                  {
+                    "value": "7388.138",
+                    "count": 1,
+                    "percentage": 16.67
+                  },
+                  {
+                    "value": "6714.4497",
+                    "count": 1,
+                    "percentage": 16.67
+                  },
+                  {
+                    "value": "9210.23",
+                    "count": 1,
+                    "percentage": 16.67
+                  },
+                  {
+                    "value": "5307.834",
+                    "count": 1,
+                    "percentage": 16.67
+                  }
+                ],
+                "patterns": [
+                  "phone",
+                  "numeric_decimal"
+                ],
+                "mixedTypePercent": 0,
+                "categoricalOrContinuous": "continuous"
+              }
+            ]
+          },
+          "completenessProfile": {
+            "columns": []
+          },
+          "statisticalProfile": {
+            "numericColumns": [
+              {
+                "name": "Year",
+                "dataCategory": "numeric",
+                "count": 6,
+                "mean": 1993.5,
+                "median": 1993.5,
+                "mode": 1992,
+                "variance": 3.5,
+                "stddev": 1.8708,
+                "min": 1991,
+                "max": 1996,
+                "iqr": 3,
+                "skewness": 0,
+                "kurtosis": -1.2686,
+                "distributionShape": "light_tailed",
+                "percentiles": {
+                  "p5": 1991,
+                  "p25": 1992,
+                  "p50": 1994,
+                  "p75": 1995,
+                  "p95": 1996
+                },
+                "outliers": {
+                  "count": 0,
+                  "lowerBound": 1987.5,
+                  "upperBound": 1999.5,
+                  "outlierValues": []
+                }
+              },
+              {
+                "name": "Price of lithium-ion battery cells",
+                "dataCategory": "numeric",
+                "count": 6,
+                "mean": 6800.7194,
+                "median": 6508.1665,
+                "mode": 7388.138,
+                "variance": 1896047.2184,
+                "stddev": 1376.9703,
+                "min": 5307.834,
+                "max": 9210.23,
+                "iqr": 1506.3568,
+                "skewness": 0.8361,
+                "kurtosis": -0.3585,
+                "distributionShape": "light_tailed",
+                "percentiles": {
+                  "p5": 5307.834,
+                  "p25": 5881.7812,
+                  "p50": 6714.4497,
+                  "p75": 7388.138,
+                  "p95": 9210.23
+                },
+                "outliers": {
+                  "count": 0,
+                  "lowerBound": 3622.246,
+                  "upperBound": 9647.6732,
+                  "outlierValues": []
+                }
+              }
+            ],
+            "dateColumns": []
+          },
+          "relationships": {
+            "explicit": [],
+            "inferred": [
+              {
+                "targetTable": "geographic_entities",
+                "sourceColumn": "Code",
+                "targetColumn": "iso_code",
+                "confidence": "MEDIUM",
+                "reasoning": "The 'Code' column follows standard ISO/OWID geographic coding conventions suitable for joining against standard country reference tables."
+              }
+            ]
+          },
+          "businessDomain": "Energy & Commodities"
+        }
+      ],
+      "tableOrder": [
+        "price_of_lithium_ion_battery_cells"
+      ],
+      "summary": "Profiled 1 tables",
+      "relationshipMap": {},
+      "warnings": []
+    }
+  ],
+  "generatedAt": "2026-09-30T09:56:07.519Z",
+  "runTimestamp": "20260930-152533"
+}
