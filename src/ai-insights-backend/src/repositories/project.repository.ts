@@ -104,6 +104,7 @@ export class PostgresProjectRepository implements IProjectRepository {
 
   private mapRowToProject(row: any): Project {
     const rawAgentState = row.agent_state ?? row.agentState ?? {};
+    const rawAgentState = row.agent_state ?? row.agentState ?? {};
     return {
       id: row.id,
       name: row.name,
@@ -123,6 +124,7 @@ export class PostgresProjectRepository implements IProjectRepository {
   }
 
   private mapRowToProjectRun(row: any): ProjectRun {
+    const rawAgentState = row.agent_state ?? row.agentState ?? {};
     const rawAgentState = row.agent_state ?? row.agentState ?? {};
     return {
       id: row.id,
