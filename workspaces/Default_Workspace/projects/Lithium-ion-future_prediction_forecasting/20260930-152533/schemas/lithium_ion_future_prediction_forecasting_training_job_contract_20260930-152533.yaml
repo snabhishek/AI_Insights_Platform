@@ -1,0 +1,652 @@
+# =============================================================================
+# TRAINING JOB CONTRACT — AutoML Platform
+# Scope: AGENT TRAINING ONLY.
+#
+# Dataset ingestion, data understanding, profiling, feature engineering,
+# feature selection, and preprocessing are handled by upstream agents.
+# This contract consumes their finalized outputs through upstream_artifacts.
+#
+# The training agent uses this contract to:
+# 1. Understand the ML problem.
+# 2. Select/validate the training strategy.
+# 3. Train candidate models.
+# 4. Optimize hyperparameters.
+# 5. Evaluate and select the best model.
+#
+# Every field should contain either a concrete value or an explicit null when
+# it is not applicable.
+# =============================================================================
+
+
+# -----------------------------------------------------------------------------
+# PRIMARY METRIC
+# -----------------------------------------------------------------------------
+# Single source of truth for the metric used throughout training, optimization,
+# evaluation, and model selection. The same definition must not be duplicated.
+# -----------------------------------------------------------------------------
+
+x-primary-metric-name: MAE
+x-primary-metric-def:
+  value: MAE
+  source: model_selection
+  confidence: 0.95
+  confirmation_threshold: 0.85
+  requires_confirmation: false
+  direction: minimize
+  rationale: Mean Absolute Error directly reflects the average absolute dollar deviation in battery cell cost projections, maintaining robust interpretability without over-penalizing historical turning points.
+  business_interpretation: null
+  evidence:
+    - Task is continuous multivariate time-series forecasting for lithium-ion battery cell unit prices.
+    - Business stakeholders require dollar-denominated accuracy metrics directly comparable across forecasting horizons.
+  secondary_metrics:
+    - RMSE
+    - WAPE
+    - MAPE
+    - R2
+
+
+# -----------------------------------------------------------------------------
+# TRAINING JOB
+# -----------------------------------------------------------------------------
+
+training_job:
+  job_id: Lithium-ion-future_prediction_forecasting_training_20260930-152533
+  experiment_name: Lithium-ion-future prediction forecasting
+  version: 1.0.0
+  created_at: '2026-09-30T10:17:12.063Z'
+  created_by: Training Configuration Agent
+  description: Production training configuration and execution recipe for forecasting lithium-ion battery cell prices using gradient boosted regression models (LightGBM and XGBoost).
+
+
+# -----------------------------------------------------------------------------
+# ML TASK
+# -----------------------------------------------------------------------------
+
+task:
+  task_type: forecasting
+  task_subtype: multivariate_price_forecasting
+  learning_type: supervised
+  prediction_type: value
+
+
+# -----------------------------------------------------------------------------
+# UPSTREAM ARTIFACTS
+# -----------------------------------------------------------------------------
+# References finalized outputs from upstream agents.
+# These are identifiers, not definitions of those artifacts.
+# -----------------------------------------------------------------------------
+
+upstream_artifacts:
+  dataset_id: /workspace/20260930-152533/python_script/dataset.parquet
+  dataset_version: '1.0'
+  validated_features:
+    - Entity
+    - Code
+    - Year
+    - price_lag_1_is_na
+    - log_price_lag_2
+    - log_year_index_standardized
+    - year_squared_standardized
+    - pca_latent_factor_2
+    - pca_latent_factor_3
+    - Price of lithium-ion battery cells
+  profiling_report_id: /workspace/20260930-152533/schemas/profiling_report.json
+  relationship_schema_id: null
+  row_count: 6
+  column_count: 10
+
+
+# -----------------------------------------------------------------------------
+# DATA SPLITTING
+# -----------------------------------------------------------------------------
+
+split:
+  strategy: random
+  train_ratio: 0.7
+  validation_ratio: 0.15
+  test_ratio: 0.15
+  split_date: null
+  random_seed: 42
+  stratify_by: null
+  group_by: null
+  time_column: Year
+  cross_validation:
+    enabled: true
+    strategy: k_fold
+    folds: 3
+    shuffle: true
+    random_seed: 42
+
+
+# -----------------------------------------------------------------------------
+# CLASS IMBALANCE
+# -----------------------------------------------------------------------------
+
+imbalance:
+  detected: false
+  ratio: null
+  strategy: none
+  class_weights: none
+  sampling:
+    method: none
+    sampling_ratio: null
+
+
+# -----------------------------------------------------------------------------
+# HYPERPARAMETER OPTIMIZATION
+# -----------------------------------------------------------------------------
+
+hyperparameter_optimization:
+  enabled: true
+  method: bayesian
+  objective_metric: MAE
+  direction: minimize
+  max_trials: 25
+  timeout: 300
+  search_space: defined
+  pruning:
+    enabled: false
+
+
+# -----------------------------------------------------------------------------
+# SEARCH SPACE
+# -----------------------------------------------------------------------------
+# Generic representation used by the training engine. The actual parameters
+# depend on the selected model family.
+# -----------------------------------------------------------------------------
+
+search_space:
+  n_estimators:
+    type: integer
+    min: 20
+    max: 150
+    values:
+      - 20
+      - 50
+      - 100
+      - 150
+  learning_rate:
+    type: continuous
+    min: 0.01
+    max: 0.25
+    values:
+      - 0.01
+      - 0.05
+      - 0.1
+      - 0.2
+  max_depth:
+    type: integer
+    min: 2
+    max: 6
+    values:
+      - 2
+      - 3
+      - 4
+      - 6
+  subsample:
+    type: continuous
+    min: 0.6
+    max: 1
+    values:
+      - 0.6
+      - 0.8
+      - 1
+
+
+# -----------------------------------------------------------------------------
+# TRAINING OBJECTIVE
+# -----------------------------------------------------------------------------
+
+objective:
+  training_loss: mae
+  optimization_metric: MAE
+  direction: minimize
+  custom_objective:
+    enabled: false
+    definition: null
+
+
+# -----------------------------------------------------------------------------
+# EVALUATION
+# -----------------------------------------------------------------------------
+
+evaluation:
+  primary_metric:
+    value: MAE
+    source: model_selection
+    confidence: 0.95
+    confirmation_threshold: 0.85
+    requires_confirmation: false
+    rationale: Mean Absolute Error quantifies average absolute prediction deviation on price targets in raw unit values.
+    evidence:
+      - 'Continuous price forecasting target: Price of lithium-ion battery cells'
+      - Direct interpretability for procurement, cost estimation, and capacity planning
+  secondary_metrics:
+    - RMSE
+    - WAPE
+    - MAPE
+    - R2
+  thresholds:
+    primary_metric_min: null
+    secondary_metric_constraints:
+      R2: '>= 0.60'
+      MAPE: <= 25.0
+  segment_analysis:
+    - Entity
+  confidence_intervals:
+    enabled: true
+  bootstrap:
+    enabled: true
+    samples: 1000
+  fairness_scope:
+    protected_attributes: []
+    metric: none
+    max_disparity: null
+
+
+# -----------------------------------------------------------------------------
+# THRESHOLD OPTIMIZATION
+# -----------------------------------------------------------------------------
+# Applicable primarily to classification models producing probabilities or
+# scores that must be converted into business decisions.
+# -----------------------------------------------------------------------------
+
+thresholding:
+  enabled: false
+  default_threshold: null
+  optimization:
+    enabled: false
+    metric: null
+    constraints: null
+
+
+# -----------------------------------------------------------------------------
+# VALIDATION GATES
+# -----------------------------------------------------------------------------
+# Hard requirements that a trained model must satisfy before it can be
+# considered a successful training result.
+# -----------------------------------------------------------------------------
+
+validation_gates:
+  minimum_primary_metric: 300
+  maximum_overfitting_gap: 75
+  maximum_latency: 150
+  maximum_model_size: 50MB
+  fairness_requirements: null
+  data_quality_requirements:
+    max_null_rate: 0.05
+    schema_match: strict
+  calibration_requirement:
+    method: none
+    max_calibration_error: null
+  stability_requirement:
+    metric_variance_across_folds_max: 0.25
+  pass_condition: Validation MAE must meet target threshold with bounded fold variance across cross-validation splits.
+
+
+# -----------------------------------------------------------------------------
+# MODEL SELECTION
+# -----------------------------------------------------------------------------
+# Determines which candidate becomes the final model after all candidates
+# have been trained and evaluated.
+# -----------------------------------------------------------------------------
+
+model_selection:
+  target_entity:
+    name: Price of lithium-ion battery cells
+    datatype: float64
+    description: Historical and projected market price of lithium-ion battery cells
+    source: price_of_lithium_ion_battery_cells
+  derivation: Direct continuous target value observed across annual records
+  positive_class: null
+  negative_class: null
+  prediction_grain:
+    entity: Entity
+    keys:
+      - Entity
+      - Year
+    frequency: annual
+  recommended_model:
+    model_id: lightgbm_regressor
+    rank: 1
+    suitability_score: 0.94
+    recommendation: primary
+  candidates:
+    - rank: 1
+      source: github.com/microsoft/LightGBM
+      license: null
+      version: null
+      model_id: lightgbm_regressor
+      algorithm: LGBMRegressor
+      framework: lightgbm
+      reasoning:
+        strengths:
+          - Fast training and high predictive accuracy with engineered trend, lag, and PCA features.
+          - Native support for L1/MAE loss objectives and robust gradient boosting mechanics.
+        weaknesses:
+          - Requires explicit lag and index features to project trends beyond observed ranges.
+        suitability:
+          - Top candidate due to proven empirical performance on cost reduction curves and macroeconomic time-series.
+      displayName: LightGBM Gradient Boosted Forecaster
+      source_type: builtin
+      discovered_at: '2026-09-30T10:14:34.275Z'
+      repository_id: null
+      recommendation: primary
+      repository_url: https://github.com/microsoft/LightGBM
+      source_type_id: builtin
+      suitability_score: 0.94
+      training_steps:
+        package_dependencies:
+          - lightgbm>=4.0.0
+          - scikit-learn>=1.4.0
+          - numpy>=1.24.0
+          - pandas>=2.0.0
+          - joblib>=1.3.0
+        import_statement: from lightgbm import LGBMRegressor
+        class_name: LGBMRegressor
+        initialization: model = LGBMRegressor(objective='regression_l1', n_estimators=100, learning_rate=0.05, max_depth=4, num_leaves=15, random_state=42, verbose=-1)
+        data_format: pandas.DataFrame or numpy.ndarray
+        fit_step: model.fit(X_train, y_train, eval_set=[(X_val, y_val)], callbacks=[])
+        predict_step: predictions = model.predict(X_test)
+        export_step: import joblib; joblib.dump(model, 'model.joblib')
+        execution_notes: Optimized for multi-threaded CPU execution. Supports tree_shap feature attribution.
+    - rank: 2
+      source: github.com/catboost/catboost
+      license: null
+      version: null
+      model_id: catboost_regressor
+      algorithm: CatBoostRegressor
+      framework: catboost
+      reasoning:
+        strengths:
+          - Symmetric tree architecture offers exceptional resistance to overfitting on small-to-medium length historical time series.
+          - Handles categorical identifiers (Entity, Code) with minimal target leakage.
+        weaknesses:
+          - Slightly higher compute overhead during hyperparameter search than LightGBM.
+        suitability:
+          - Strong alternative providing regularized boosting across multi-factor pricing series.
+      displayName: CatBoost Regressor
+      source_type: builtin
+      discovered_at: '2026-09-30T10:14:34.276Z'
+      repository_id: null
+      recommendation: alternative
+      repository_url: https://github.com/catboost/catboost
+      source_type_id: builtin
+      suitability_score: 0.91
+    - rank: 2
+      source: github.com/dmlc/xgboost
+      license: null
+      version: null
+      model_id: xgboost_regressor
+      algorithm: XGBRegressor
+      framework: xgboost
+      reasoning:
+        strengths:
+          - Regularized gradient boosting with strong resistance to overfitting on small tabular time series.
+          - Supports custom MAE and Huber regression loss objectives.
+        weaknesses:
+          - Can be sensitive to hyperparameter tuning on very small row counts.
+        suitability:
+          - Strong alternative candidate providing diverse boosting tree splits and robust validation benchmark.
+      displayName: XGBoost Regressor
+      source_type: builtin
+      discovered_at: '2026-09-30T10:14:34.276Z'
+      repository_id: null
+      recommendation: alternative
+      repository_url: https://github.com/dmlc/xgboost
+      source_type_id: builtin
+      suitability_score: 0.89
+      training_steps:
+        package_dependencies:
+          - xgboost>=2.0.0
+          - scikit-learn>=1.4.0
+          - numpy>=1.24.0
+          - pandas>=2.0.0
+          - joblib>=1.3.0
+        import_statement: from xgboost import XGBRegressor
+        class_name: XGBRegressor
+        initialization: model = XGBRegressor(objective='reg:absoluteerror', n_estimators=100, learning_rate=0.05, max_depth=3, subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=0)
+        data_format: pandas.DataFrame or numpy.ndarray
+        fit_step: model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+        predict_step: predictions = model.predict(X_test)
+        export_step: import joblib; joblib.dump(model, 'model.joblib')
+        execution_notes: Supports exact tree method and multi-threaded CPU training.
+    - rank: 4
+      source: huggingface.co/amazon/chronos-t5-base
+      license: null
+      version: null
+      model_id: chronos_t5_forecaster
+      algorithm: ChronosT5Forecaster
+      framework: pytorch
+      reasoning:
+        strengths:
+          - Zero-shot and few-shot pretrained probabilistic time-series foundation model.
+          - Generates calibrated uncertainty intervals and future trajectories without complex manual lag engineering.
+        weaknesses:
+          - Higher inference and memory footprint compared to tabular gradient boosting.
+          - Cannot directly map non-temporal exogenous tabular features without custom prompting/fine-tuning.
+        suitability:
+          - Excellent for probabilistic trajectory forecasting and benchmark comparison against empirical learning curves.
+      displayName: Chronos Pretrained Time Series Foundation Model
+      source_type: external
+      discovered_at: '2026-09-30T10:14:34.276Z'
+      repository_id: null
+      recommendation: alternative
+      repository_url: https://huggingface.co/amazon/chronos-t5-base
+      source_type_id: external
+      suitability_score: 0.84
+    - rank: 5
+      source: github.com/ourownstory/neural_prophet
+      license: null
+      version: null
+      model_id: neuralprophet_forecaster
+      algorithm: NeuralProphet
+      framework: pytorch
+      reasoning:
+        strengths:
+          - Combines interpretable classical additive components (trend change points, seasonality) with deep AR modules.
+          - Natively accepts future and lagged exogenous regressors such as production capacity and raw material indexes.
+        weaknesses:
+          - Requires sufficient historical epochs and continuous step increments to train stably.
+        suitability:
+          - High business interpretability for procurement leaders requiring explicit decomposition of trend vs price shocks.
+      displayName: NeuralProphet Decomposable Forecaster
+      source_type: external
+      discovered_at: '2026-09-30T10:14:34.276Z'
+      repository_id: null
+      recommendation: alternative
+      repository_url: https://github.com/ourownstory/neural_prophet
+      source_type_id: external
+      suitability_score: 0.82
+    - rank: 6
+      source: github.com/alkaline-ml/pmdarima
+      license: null
+      version: null
+      model_id: auto_arima
+      algorithm: AutoARIMA
+      framework: statsmodels
+      reasoning:
+        strengths:
+          - Statistical rigor for stationary and non-stationary integrated series with automated p, d, q selection.
+          - Includes analytical confidence intervals for procurement budgeting risk assessment.
+        weaknesses:
+          - Linear formulation cannot easily capture non-linear technological learning rates (Wright's Law).
+          - Sensitive to structural breaks in commodity markets.
+        suitability:
+          - Standard statistical benchmark for univariate and low-dimensional exogenous series.
+      displayName: AutoARIMA / ARIMAX Forecaster
+      source_type: builtin
+      discovered_at: '2026-09-30T10:14:34.276Z'
+      repository_id: null
+      recommendation: alternative
+      repository_url: https://github.com/alkaline-ml/pmdarima
+      source_type_id: builtin
+      suitability_score: 0.76
+    - rank: 7
+      source: github.com/scikit-learn/scikit-learn
+      license: null
+      version: null
+      model_id: random_forest_regressor
+      algorithm: RandomForestRegressor
+      framework: sklearn
+      reasoning:
+        strengths:
+          - Non-parametric ensemble that is resilient to noisy data and outlier price fluctuations.
+          - Requires minimal parameter tuning to establish a strong non-linear prediction baseline.
+        weaknesses:
+          - Cannot predict values outside the bounded range of historical training observations.
+        suitability:
+          - Solid ensemble tabular alternative for validating boosting model outputs.
+      displayName: Random Forest Regressor
+      source_type: builtin
+      discovered_at: '2026-09-30T10:14:34.276Z'
+      repository_id: null
+      recommendation: alternative
+      repository_url: https://github.com/scikit-learn/scikit-learn
+      source_type_id: builtin
+      suitability_score: 0.74
+    - rank: 8
+      source: github.com/scikit-learn/scikit-learn
+      license: null
+      version: null
+      model_id: ridge_regression_baseline
+      algorithm: Ridge
+      framework: sklearn
+      reasoning:
+        strengths:
+          - Simple, deterministic linear relationship modeling between logarithmic price, standardized year indices, and PCA components.
+          - Serves as the definitive benchmark to demonstrate the added value of non-linear algorithms.
+        weaknesses:
+          - Underfits complex non-linear inflection points and sudden capacity supply-demand shifts.
+        suitability:
+          - Essential baseline to verify that complex models outperform straightforward linear cost degradation trends.
+      displayName: L2 Regularized Linear Baseline (Ridge)
+      source_type: builtin
+      discovered_at: '2026-09-30T10:14:34.276Z'
+      repository_id: null
+      recommendation: alternative
+      repository_url: https://github.com/scikit-learn/scikit-learn
+      source_type_id: builtin
+      suitability_score: 0.68
+  primary_metric: MAE
+  direction: minimize
+  tie_breakers:
+    - RMSE
+    - training_time
+    - model_complexity
+  constraints: Candidate models must be regression estimators capable of training on continuous tabular price features.
+  selection_strategy: Select candidate model with lowest cross-validated MAE that passes all validation gates.
+  training:
+    mode: parallel_cross_validation
+    baseline_model: ridge_regression_baseline
+    ensemble:
+      enabled: false
+      strategy: weighted_average
+    random_seed: 42
+    early_stopping:
+      enabled: true
+      patience: 15
+      metric: MAE
+  max_training_time: 600
+  model_selection_strategy: Rank models by lowest test MAE; promote best performing candidate model to production artifact.
+  models:
+    - model_id: lightgbm_regressor
+      framework: lightgbm
+      algorithm: LGBMRegressor
+      enabled: true
+      parameters:
+        objective: regression_l1
+        n_estimators: 100
+        learning_rate: 0.05
+        max_depth: 4
+        num_leaves: 15
+        random_state: 42
+        verbose: -1
+      training_steps:
+        package_dependencies:
+          - lightgbm>=4.0.0
+          - scikit-learn>=1.4.0
+          - numpy>=1.24.0
+          - pandas>=2.0.0
+          - joblib>=1.3.0
+        import_statement: from lightgbm import LGBMRegressor
+        class_name: LGBMRegressor
+        initialization: model = LGBMRegressor(objective='regression_l1', n_estimators=100, learning_rate=0.05, max_depth=4, num_leaves=15, random_state=42, verbose=-1)
+        data_format: pandas.DataFrame or numpy.ndarray
+        fit_step: model.fit(X_train, y_train, eval_set=[(X_val, y_val)], callbacks=[])
+        predict_step: predictions = model.predict(X_test)
+        export_step: import joblib; joblib.dump(model, 'model.joblib')
+        execution_notes: Optimized for multi-threaded CPU execution. Supports tree_shap feature attribution.
+    - model_id: xgboost_regressor
+      framework: xgboost
+      algorithm: XGBRegressor
+      enabled: true
+      parameters:
+        objective: reg:absoluteerror
+        n_estimators: 100
+        learning_rate: 0.05
+        max_depth: 3
+        subsample: 0.8
+        colsample_bytree: 0.8
+        random_state: 42
+        verbosity: 0
+      training_steps:
+        package_dependencies:
+          - xgboost>=2.0.0
+          - scikit-learn>=1.4.0
+          - numpy>=1.24.0
+          - pandas>=2.0.0
+          - joblib>=1.3.0
+        import_statement: from xgboost import XGBRegressor
+        class_name: XGBRegressor
+        initialization: model = XGBRegressor(objective='reg:absoluteerror', n_estimators=100, learning_rate=0.05, max_depth=3, subsample=0.8, colsample_bytree=0.8, random_state=42, verbosity=0)
+        data_format: pandas.DataFrame or numpy.ndarray
+        fit_step: model.fit(X_train, y_train, eval_set=[(X_val, y_val)], verbose=False)
+        predict_step: predictions = model.predict(X_test)
+        export_step: import joblib; joblib.dump(model, 'model.joblib')
+        execution_notes: Supports exact tree method and multi-threaded CPU training.
+  userSelection:
+    selectedModelIds:
+      - lightgbm_regressor
+      - xgboost_regressor
+    confirmedAt: '2026-09-30T10:18:04.502Z'
+  selectedModelIds:
+    - lightgbm_regressor
+    - xgboost_regressor
+  feature_requirements:
+    - reason: Captures autocorrelation and exponential price reduction dynamics over consecutive years
+      feature: Price of lithium-ion battery cells
+      priority: required
+      requirement: Multi-step lag feature creation (t-1, t-2) and log-transformed relative price differentials
+    - reason: Allows tree-based models and linear models to capture secular technological progress and Wright's Law learning curve effects
+      feature: Year
+      priority: required
+      requirement: Standardized time-index generation, quadratic time terms, and forward forecast horizon step indicators
+    - reason: Provides orthogonal macroeconomic, raw material cost, and production capacity signals without collinearity
+      feature: pca_latent_factor_2, pca_latent_factor_3
+      priority: recommended
+      requirement: Continuous standard scaling and missing value imputation
+    - reason: Preserves regional and entity-specific pricing distinctions if multi-region data is provided
+      feature: Entity, Code
+      priority: optional
+      requirement: Categorical frequency or target encoding
+  hyperparameter_optimization:
+    approach: bayesian_optimization
+    rationale: Optimizing tree depth, learning rate, L1/L2 regularization, and subsample ratios ensures tree-based forecasters balance long-term decay fitting with robustness against overfitting historical price spikes.
+    recommended: true
+
+
+# -----------------------------------------------------------------------------
+# ARTIFACTS
+# -----------------------------------------------------------------------------
+
+artifacts:
+  output_path: /workspace/20260930-152533/models
+  save:
+    model: true
+    metrics: true
+    predictions: true
+    explainability: true
+    training_config: true
+  serialization_format: joblib
+  explainability_method: tree_shap

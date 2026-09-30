@@ -1,0 +1,16 @@
+created_features:
+- year_index
+- log_year_index
+- year_squared
+- decade_bin
+- price_lag_1
+- price_lag_2
+- price_diff_lag1
+- price_pct_change_lag1
+- price_rolling_mean_2
+- price_expanding_mean
+input_tables:
+- price_of_lithium_ion_battery_cells
+output_artifact: /workspace/20260930-152533/python_script/feature_created.parquet
+row_count: 6
+stage: FEATURE_CREATION

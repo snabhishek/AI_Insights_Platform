@@ -105,13 +105,13 @@ export default function DataHealthOverview() {
 
         {/* Legend / Metrics List */}
         <div className="w-full flex-1 flex flex-col gap-3 justify-center min-w-[150px]">
-          {/* Total Sources */}
+          {/* Total Connectors */}
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-primary/5 text-primary">
                 <TotalSourcesIcon />
               </span>
-              <span>Total Sources</span>
+              <span>Total Connectors</span>
             </div>
             <span className="font-semibold text-foreground text-right w-8">{totalCount}</span>
           </div>

@@ -1,0 +1,82 @@
+dropped_features:
+  code_OWID_WRL: Near-zero variance (0.000000e+00)
+  decade_bin: Near-zero variance (0.000000e+00)
+  entity_World: Near-zero variance (0.000000e+00)
+  log_price_expanding_mean: High multicollinearity (r=0.9809) with 'year_index'
+  log_price_expanding_mean_minmax: High multicollinearity (r=0.9809) with 'year_index_minmax'
+  log_price_expanding_mean_standardized: High multicollinearity (r=0.9809) with 'year_index_minmax'
+  log_price_lag_1: High multicollinearity (r=1.0000) with 'log_price_lag_1_standardized'
+  log_price_lag_1_minmax: High multicollinearity (r=1.0000) with 'log_price_lag_1_standardized'
+  log_price_lag_2_minmax: High multicollinearity (r=1.0000) with 'log_price_lag_2'
+  log_price_lag_2_standardized: High multicollinearity (r=1.0000) with 'log_price_lag_2'
+  log_price_rolling_mean_2: High multicollinearity (r=0.9997) with 'sqrt_price_rolling_mean_2'
+  log_price_rolling_mean_2_minmax: High multicollinearity (r=0.9997) with 'sqrt_price_rolling_mean_2'
+  log_price_rolling_mean_2_standardized: High multicollinearity (r=0.9997) with 'sqrt_price_rolling_mean_2'
+  log_year_index: High multicollinearity (r=1.0000) with 'log_year_index_standardized'
+  log_year_index_minmax: High multicollinearity (r=1.0000) with 'log_year_index_standardized'
+  price_diff_lag1: High multicollinearity (r=0.9891) with 'price_lag_2'
+  price_diff_lag1_is_na: High multicollinearity (r=1.0000) with 'price_lag_2_is_na'
+  price_diff_lag1_minmax: High multicollinearity (r=0.9830) with 'log_price_lag_2'
+  price_diff_lag1_standardized: High multicollinearity (r=0.9830) with 'log_price_lag_2'
+  price_expanding_mean: High multicollinearity (r=0.9940) with 'price_lag_1'
+  price_expanding_mean_is_na: High multicollinearity (r=1.0000) with 'price_lag_1_is_na'
+  price_expanding_mean_minmax: High multicollinearity (r=0.9982) with 'log_price_lag_1'
+  price_expanding_mean_standardized: High multicollinearity (r=0.9982) with 'log_price_lag_1'
+  price_lag_1: High multicollinearity (r=0.9985) with 'log_price_lag_1'
+  price_lag_1_minmax: High multicollinearity (r=0.9985) with 'log_price_lag_1'
+  price_lag_1_standardized: High multicollinearity (r=0.9985) with 'log_price_lag_1'
+  price_lag_2: High multicollinearity (r=0.9993) with 'log_price_lag_2'
+  price_lag_2_minmax: High multicollinearity (r=0.9993) with 'log_price_lag_2'
+  price_lag_2_standardized: High multicollinearity (r=0.9993) with 'log_price_lag_2'
+  price_pct_change_lag1: High multicollinearity (r=0.9884) with 'price_lag_2'
+  price_pct_change_lag1_clipped: High multicollinearity (r=0.9823) with 'log_price_lag_2'
+  price_pct_change_lag1_clipped_minmax: High multicollinearity (r=0.9823) with 'log_price_lag_2'
+  price_pct_change_lag1_clipped_standardized: High multicollinearity (r=0.9823) with
+    'log_price_lag_2'
+  price_pct_change_lag1_is_na: High multicollinearity (r=1.0000) with 'price_lag_2_is_na'
+  price_pct_change_lag1_minmax: High multicollinearity (r=0.9823) with 'log_price_lag_2'
+  price_pct_change_lag1_standardized: High multicollinearity (r=0.9823) with 'log_price_lag_2'
+  price_rolling_mean_2: High multicollinearity (r=0.9821) with 'log_price_lag_1'
+  price_rolling_mean_2_is_na: High multicollinearity (r=1.0000) with 'price_lag_1_is_na'
+  price_rolling_mean_2_minmax: High multicollinearity (r=0.9821) with 'log_price_lag_1'
+  price_rolling_mean_2_standardized: High multicollinearity (r=0.9821) with 'log_price_lag_1'
+  signed_log_price_diff_lag1: High multicollinearity (r=0.9920) with 'log_price_lag_2'
+  signed_log_price_diff_lag1_minmax: High multicollinearity (r=0.9920) with 'log_price_lag_2'
+  signed_log_price_diff_lag1_standardized: High multicollinearity (r=0.9920) with
+    'log_price_lag_2'
+  sqrt_price_expanding_mean: High multicollinearity (r=0.9972) with 'log_price_lag_1'
+  sqrt_price_lag_1: High multicollinearity (r=0.9996) with 'log_price_lag_1'
+  sqrt_price_lag_1_minmax: High multicollinearity (r=0.9996) with 'log_price_lag_1_standardized'
+  sqrt_price_lag_1_standardized: High multicollinearity (r=0.9996) with 'log_price_lag_1_standardized'
+  sqrt_price_lag_2: High multicollinearity (r=0.9998) with 'log_price_lag_2'
+  sqrt_price_lag_2_minmax: High multicollinearity (r=0.9998) with 'log_price_lag_2'
+  sqrt_price_lag_2_standardized: High multicollinearity (r=0.9998) with 'log_price_lag_2'
+  sqrt_price_rolling_mean_2: High multicollinearity (r=0.9920) with 'log_price_expanding_mean_standardized'
+  year_index: High multicollinearity (r=1.0000) with 'year_index_minmax'
+  year_index_standardized: High multicollinearity (r=1.0000) with 'year_index'
+  year_squared: High multicollinearity (r=1.0000) with 'year_squared_standardized'
+  year_squared_minmax: High multicollinearity (r=1.0000) with 'year_squared_standardized'
+dropped_features_count: 55
+input_artifact: /workspace/20260930-152533/python_script/feature_extraction.parquet
+output_artifact: /workspace/20260930-152533/python_script/feature_selection.parquet
+preserved_identifiers:
+- Entity
+- Code
+- Year
+row_count: 6
+selected_features:
+- price_lag_1_is_na
+- price_lag_2_is_na
+- log_price_lag_2
+- year_index_minmax
+- log_year_index_standardized
+- year_squared_standardized
+- log_price_lag_1_standardized
+- pca_latent_factor_1
+- pca_latent_factor_2
+- pca_latent_factor_3
+selected_features_count: 10
+split: train
+stage: FEATURE_SELECTION
+target_column: Price of lithium-ion battery cells
+total_columns: 14

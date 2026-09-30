@@ -1,0 +1,63 @@
+{
+  "version": "1.0",
+  "generatedAt": "2026-09-30T15:25:33.000Z",
+  "datasetId": "price_of_lithium_ion_battery_cells",
+  "sourceInputs": {
+    "fieldClassificationVersion": "1.0",
+    "domainKnowledgeVersion": "1.0"
+  },
+  "nodes": [
+    {
+      "id": "code",
+      "aliasOf": [
+        "Code"
+      ],
+      "role": "identifier",
+      "entityScope": "geography",
+      "cardinality": 1,
+      "sampleValues": []
+    },
+    {
+      "id": "entity",
+      "aliasOf": [
+        "Entity"
+      ],
+      "role": "location",
+      "entityScope": "geography",
+      "cardinality": 1,
+      "sampleValues": [
+        "World"
+      ]
+    },
+    {
+      "id": "year",
+      "aliasOf": [
+        "Year"
+      ],
+      "role": "temporal",
+      "entityScope": "temporal",
+      "cardinality": 30,
+      "sampleValues": []
+    }
+  ],
+  "relationships": [
+    {
+      "parent": "entity",
+      "child": "code",
+      "type": "reference_link",
+      "evidence": {
+        "method": "dependency_stats",
+        "sourceType": "database",
+        "purity": 1,
+        "sampleSize": 30
+      },
+      "confidence": 1,
+      "businessLabel": "Geographic entity mapped to standard geographic code",
+      "priority": "secondary",
+      "status": "confirmed"
+    }
+  ],
+  "conformedGroups": [],
+  "status": "OK",
+  "summary": "Generated Relationship Schema with 3 node(s), 1 relationship(s), and 0 conformed group(s)."
+}

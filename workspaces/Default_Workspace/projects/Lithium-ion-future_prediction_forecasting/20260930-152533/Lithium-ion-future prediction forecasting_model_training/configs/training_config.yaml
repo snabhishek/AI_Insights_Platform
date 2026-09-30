@@ -1,0 +1,115 @@
+project:
+  name: "Lithium-ion-future prediction forecasting"
+  experiment_name: "Lithium-ion-future prediction forecasting"
+  run_timestamp: "20260930-152533"
+  version: "1.0.0"
+
+task:
+  learning_type: "supervised"
+  task_type: "forecasting"
+  task_subtype: "multivariate_price_forecasting"
+  prediction_type: "value"
+
+target:
+  name: "Price of lithium-ion battery cells"
+  target_column: "Price of lithium-ion battery cells"
+  prediction_target_column: "Price of lithium-ion battery cells"
+  datatype: "float64"
+
+features:
+  time_column: "Year"
+  features_list:
+    - "Entity"
+    - "Code"
+    - "Year"
+    - "price_lag_1_is_na"
+    - "log_price_lag_2"
+    - "log_year_index_standardized"
+    - "year_squared_standardized"
+    - "pca_latent_factor_2"
+    - "pca_latent_factor_3"
+  categorical_features:
+    - "Entity"
+    - "Code"
+  numerical_features:
+    - "Year"
+    - "price_lag_1_is_na"
+    - "log_price_lag_2"
+    - "log_year_index_standardized"
+    - "year_squared_standardized"
+    - "pca_latent_factor_2"
+    - "pca_latent_factor_3"
+
+dataset:
+  primary_path: "/workspace/20260930-152533/python_script/dataset.parquet"
+  fallback_paths:
+    - "/workspace/dataset.parquet"
+    - "20260930-152533/python_script/dataset.parquet"
+    - "dataset.parquet"
+    - "20260930-152533/python_script/price_of_lithium_ion_battery_cells.csv"
+
+split:
+  strategy: "temporal"
+  time_column: "Year"
+  split_cutoff_date: "1996-01"
+  split_date: "1996-01"
+  split_end_date: "1996-01"
+  fallback:
+    strategy: "ratio"
+    train_ratio: 0.70
+    validation_ratio: 0.15
+    test_ratio: 0.15
+  random_seed: 42
+
+metrics:
+  primary_metric: "MAE"
+  direction: "minimize"
+  secondary_metrics:
+    - "RMSE"
+    - "WAPE"
+    - "MAPE"
+    - "R2"
+
+artifacts:
+  base_dir: "artifacts"
+  models_dir: "artifacts/models"
+  plots_dir: "artifacts/plots"
+  preprocessor_path: "artifacts/models/preprocessor.joblib"
+  selected_model_path: "artifacts/models/selected_model.joblib"
+  report_path: "model_training_report.json"
+
+models:
+  candidate_model_ids:
+    - "lightgbm_regressor"
+    - "xgboost_regressor"
+  
+  lightgbm_regressor:
+    enabled: true
+    framework: "lightgbm"
+    displayName: "LightGBM Gradient Boosted Forecaster"
+    algorithm: "LGBMRegressor"
+    parameters:
+      objective: "regression_l1"
+      n_estimators: 100
+      learning_rate: 0.05
+      max_depth: 4
+      num_leaves: 15
+      random_state: 42
+      verbose: -1
+      n_jobs: -1
+
+  xgboost_regressor:
+    enabled: true
+    framework: "xgboost"
+    displayName: "XGBoost Regressor"
+    algorithm: "XGBRegressor"
+    parameters:
+      objective: "reg:absoluteerror"
+      n_estimators: 100
+      learning_rate: 0.05
+      max_depth: 3
+      subsample: 0.8
+      colsample_bytree: 0.8
+      random_state: 42
+      verbosity: 0
+      n_jobs: -1

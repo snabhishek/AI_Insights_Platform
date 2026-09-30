@@ -1,11 +1,11 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import { DataSource, Project, UserProfile } from "../providers/AppContext";
 import { PipelineStatuses, RunStatus } from "./types";
 import ProjectCreatePage from "./ProjectCreatePage";
 import ProjectDetailPage from "./ProjectDetailPage";
-import ApplicationPage from "../pages/ApplicationPage";
+import ValidationPage from "../pages/ValidationPage";
 import { createTabContext } from "../providers/TabProvider";
 import { ProjectTabType } from "../shared/constants";
 
@@ -120,8 +120,12 @@ function ProjectWorkspaceContent({
   onRetry,
 }: ProjectWorkspaceProps) {
   const { activeTab, tabswitcher } = useTab("project-detail");
+  const [startInEditMode, setStartInEditMode] = useState(false);
 
   const handleTabChange = (tab: ProjectTabType) => {
+    if (tab !== "project-detail") {
+      setStartInEditMode(false);
+    }
     tabswitcher(tab);
     onTabChange?.(tab);
   };
@@ -135,7 +139,10 @@ function ProjectWorkspaceContent({
           {/* Tab 1: Create Project / Project Detail */}
           <button
             type="button"
-            onClick={() => handleTabChange("project-detail")}
+            onClick={() => {
+              setStartInEditMode(false);
+              handleTabChange("project-detail");
+            }}
             className={`py-2 px-2 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${
               activeTab === "project-detail"
                 ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
@@ -171,25 +178,25 @@ function ProjectWorkspaceContent({
             )}
           </button>
 
-          {/* Tab 3: Application */}
+          {/* Tab 3: Validation */}
           <button
             type="button"
             disabled={!project}
             onClick={() => {
               if (project) {
-                handleTabChange("application");
+                handleTabChange("validation");
               }
             }}
-            title={!project ? "Save the project first to access the Application" : "View Project Application"}
+            title={!project ? "Save the project first to access Validation" : "View Project Validation"}
             className={`py-2 px-2 text-xs font-bold border-b-2 transition-all flex items-center gap-2 ${
               !project
                 ? "border-transparent opacity-40 cursor-not-allowed text-muted-foreground"
-                : activeTab === "application"
+                : activeTab === "validation"
                 ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold cursor-pointer"
                 : "border-transparent text-muted-foreground hover:text-foreground cursor-pointer"
             }`}
           >
-            <span>Application</span>
+            <span>Validation</span>
             {!project && (
               <span className="text-[9px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded bg-surface-muted text-muted-foreground border border-border">
                 Disabled
@@ -218,10 +225,13 @@ function ProjectWorkspaceContent({
             dataSources={dataSources}
             project={project}
             isWorkflowActiveOrPaused={runStatus === "Running" || runStatus === "Paused" || isPaused}
+            startInEditMode={startInEditMode}
+            onEditModeChange={setStartInEditMode}
             onCancel={onGoToList}
             onSubmit={onSaveProject}
             onUpdate={onUpdateProject}
             onAddDataSource={onAddDataSource}
+            onDelete={project ? () => onDeleteProject(project) : undefined}
           />
         ) : activeTab === "workflow" ? (
           <ProjectDetailPage
@@ -238,10 +248,14 @@ function ProjectWorkspaceContent({
             onStopWorkflow={onStopWorkflow}
             onGoBack={onGoToList}
             onDelete={() => onDeleteProject(project)}
-            onEdit={() => handleTabChange("project-detail")}
-            onManageSources={() =>
-              showAlert({ title: "Data source management is being worked separately in the backend", type: "info" })
-            }
+            onEdit={() => {
+              setStartInEditMode(true);
+              handleTabChange("project-detail");
+            }}
+            onManageSources={() => {
+              setStartInEditMode(true);
+              handleTabChange("project-detail");
+            }}
             onAddTag={() =>
               showAlert({ title: "Tag management is being worked separately in the backend", type: "info" })
             }
@@ -263,7 +277,7 @@ function ProjectWorkspaceContent({
             showAlert={showAlert}
           />
         ) : (
-          <ApplicationPage project={project} />
+          <ValidationPage project={project} />
         )}
       </div>
     </div>

@@ -137,11 +137,11 @@ function extractFormSchemaFromState(state: any, project: any): FormSchema | null
   return null;
 }
 
-interface ApplicationPageProps {
+interface ValidationPageProps {
   project?: Project;
 }
 
-export default function ApplicationPage({ project: propProject }: ApplicationPageProps = {}) {
+export default function ValidationPage({ project: propProject }: ValidationPageProps = {}) {
   const { projects } = useApp();
   const [selectedProjectId, setSelectedProjectId] = useState<string>(propProject?.id || "");
   const [activeSchema, setActiveSchema] = useState<FormSchema | null>(null);
@@ -219,7 +219,7 @@ export default function ApplicationPage({ project: propProject }: ApplicationPag
           }
         }
       } catch (err) {
-        console.warn("[ApplicationPage] Failed to fetch project form schema fallback:", err);
+        console.warn("[ValidationPage] Failed to fetch project form schema fallback:", err);
       }
 
       if (isMounted) {
@@ -260,7 +260,7 @@ export default function ApplicationPage({ project: propProject }: ApplicationPag
             </div>
             <div>
               <h2 className="text-base font-bold text-foreground tracking-tight">
-                Loading Application Forms...
+                Loading Validation Forms...
               </h2>
               <p className="text-xs text-muted-foreground mt-1 max-w-sm">
                 Resolving AI-generated data hierarchies and interactive filter configurations.

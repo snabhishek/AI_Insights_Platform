@@ -1,0 +1,124 @@
+================================================================================
+DOCKER CONTAINER EXECUTION LOG
+Execution Start Time: 2026-09-30T10:34:48.723Z
+Execution Directory: C:\Users\snabhishek\Music\AI_Insights_Platform\workspaces\Default_Workspace\projects\Lithium-ion-future_prediction_forecasting\20260930-152533\Lithium-ion-future prediction forecasting_model_training
+Script Relative Path: 20260930-152533/Lithium-ion-future prediction forecasting_model_training/main.py
+Host Project Root: C:/Users/snabhishek/Music/AI_Insights_Platform/workspaces/Default_Workspace/projects/Lithium-ion-future_prediction_forecasting
+Arguments: --out-dir "/workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training" --models "lightgbm_regressor,xgboost_regressor" --split-date "1996-01" --split-end-date "1996-01" --db-path "/workspace"
+================================================================================
+--------------------------------------------------------------------------------
+STEP 1: DOCKER COMPOSE BUILD
+Command: docker compose -f "docker-compose.yml" build
+Time: 2026-09-30T10:34:48.727Z
+--------------------------------------------------------------------------------
+#1 [internal] load local bake definitions
+#1 reading from stdin 1.02kB done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 473B done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.12-slim
+#3 DONE 0.1s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [1/5] FROM docker.io/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+#5 resolve docker.io/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea 0.0s done
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 214B done
+#6 DONE 0.0s
+
+#7 [2/5] WORKDIR /workspace
+#7 CACHED
+
+#8 [3/5] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential     python3-dev     cmake     libgomp1     && rm -rf /var/lib/apt/lists/*
+#8 CACHED
+
+#9 [4/5] COPY requirements.txt /tmp/requirements.txt
+#9 CACHED
+
+#10 [5/5] RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=120 --retries 3 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r /tmp/requirements.txt
+#10 CACHED
+
+#11 exporting to image
+#11 exporting layers done
+#11 exporting manifest sha256:599f9540a5a9ffdf82cdacb45b5a658d4221d975afffc728fe70019ce57abea7 done
+#11 exporting config sha256:cd2226225d597bf4ffc35e87db299db80ee585bd532ef54088d2d48456912738 done
+#11 exporting attestation manifest sha256:deecbac56e7d3c2d1e7458218522f846c223e6b73ee8dd1cd7d7be1ae166107c
+#11 exporting attestation manifest sha256:deecbac56e7d3c2d1e7458218522f846c223e6b73ee8dd1cd7d7be1ae166107c 0.0s done
+#11 exporting manifest list sha256:6d5ef60037a48e84dd417e433eae0ea65ec4cdb2cc5a4de50dbaaf982a7826b6 0.0s done
+#11 naming to docker.io/library/lithium-ion-futurepredictionforecasting_model_training-model-training:latest done
+#11 unpacking to docker.io/library/lithium-ion-futurepredictionforecasting_model_training-model-training:latest 0.0s done
+#11 DONE 0.1s
+
+#12 resolving provenance for metadata file
+#12 DONE 0.0s
+ lithium-ion-futurepredictionforecasting_model_training-model-training  Built
+
+--------------------------------------------------------------------------------
+BUILD COMPLETED SUCCESSFULLY (exit code: 0)
+Time: 2026-09-30T10:34:51.065Z
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+STEP 2: DOCKER COMPOSE RUN
+Command: docker compose -f "docker-compose.yml" run --rm model-training python "20260930-152533/Lithium-ion-future prediction forecasting_model_training/main.py" --out-dir "/workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training" --models "lightgbm_regressor,xgboost_regressor" --split-date "1996-01" --split-end-date "1996-01" --db-path "/workspace"
+Time: 2026-09-30T10:34:51.069Z
+--------------------------------------------------------------------------------
+2026-09-30 10:34:56,543 [INFO] model_training_main - Initializing Lithium-ion Future Prediction Model Training Pipeline
+2026-09-30 10:34:56,543 [INFO] model_training_main - Arguments: db_path=/workspace, out_dir=/workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training, models=lightgbm_regressor,xgboost_regressor
+2026-09-30 10:34:56,546 [INFO] model_training_main - Loading training configuration from /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/configs/training_config.yaml
+2026-09-30 10:34:56,559 [INFO] model_training_main - Overrode split cutoff date with CLI argument: 1996-01
+2026-09-30 10:34:56,559 [INFO] model_training_main - Filtering model execution to CLI specified list: ['lightgbm_regressor', 'xgboost_regressor']
+2026-09-30 10:34:56,571 [INFO] pipeline - Starting Training Pipeline for 'Lithium-ion-future prediction forecasting'
+2026-09-30 10:34:56,574 [INFO] data.data_loader - Found dataset at: /workspace/20260930-152533/python_script/dataset.parquet
+2026-09-30 10:34:56,574 [INFO] data.data_loader - Loading data from /workspace/20260930-152533/python_script/dataset.parquet
+2026-09-30 10:34:56,624 [INFO] data.data_loader - Loaded raw dataset with shape: (6, 66)
+2026-09-30 10:34:56,630 [INFO] data.data_loader - Attempting temporal split on 'Year' with cutoff '1996-01'
+2026-09-30 10:34:56,634 [INFO] data.data_loader - Temporal split pre-check: 6 train records, 0 post-cutoff records
+2026-09-30 10:34:56,634 [WARNING] data.data_loader - Temporal split produced insufficient train/test partition. Falling back to ratio split.
+2026-09-30 10:34:56,634 [INFO] data.data_loader - Executing standard 70/15/15 ratio split fallback.
+2026-09-30 10:34:56,635 [INFO] data.data_loader - Ratio split completed: train=4, val=1, test=1
+2026-09-30 10:34:56,639 [INFO] data.data_loader - Numeric features (5): ['Year', 'price_lag_1_is_na', 'log_price_lag_2', 'log_year_index_standardized', 'year_squared_standardized']
+2026-09-30 10:34:56,639 [INFO] data.data_loader - Categorical features (2): ['Entity', 'Code']
+2026-09-30 10:34:56,681 [INFO] data.data_loader - Saved fitted preprocessor to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/models/preprocessor.joblib
+2026-09-30 10:34:56,706 [INFO] pipeline - Persisted preprocessor artifact to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/models/preprocessor.joblib
+2026-09-30 10:34:56,706 [INFO] pipeline - Candidate models selected for training: ['lightgbm_regressor', 'xgboost_regressor']
+2026-09-30 10:34:56,707 [INFO] pipeline - --- Training candidate model: lightgbm_regressor ---
+2026-09-30 10:34:56,707 [INFO] models.lightgbm_trainer - Initializing and training LightGBM Gradient Boosted Forecaster on 4 samples
+/usr/local/lib/python3.12/site-packages/lightgbm/sklearn.py:1106: LGBMDeprecationWarning: The argument 'eval_set' is deprecated, use 'eval_X' and 'eval_y' instead.
+  eval_set = _validate_eval_set_Xy(eval_set=eval_set, eval_X=eval_X, eval_y=eval_y)
+2026-09-30 10:34:56,748 [INFO] models.lightgbm_trainer - LightGBM Gradient Boosted Forecaster training completed in 0.0412s
+2026-09-30 10:34:56,788 [INFO] pipeline - Saved model artifact for lightgbm_regressor to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/models/lightgbm_regressor.joblib
+2026-09-30 10:34:56,959 [INFO] evaluation.visualizer - Saved actual vs predicted plot to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/plots/lightgbm_regressor_actual_vs_predicted.png
+2026-09-30 10:34:57,200 [INFO] evaluation.visualizer - Saved residuals plot to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/plots/lightgbm_regressor_residuals.png
+2026-09-30 10:34:57,332 [INFO] evaluation.visualizer - Saved feature importance plot to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/plots/lightgbm_regressor_feature_importance.png
+2026-09-30 10:34:57,332 [INFO] pipeline - Candidate lightgbm_regressor finished. Test MAE: 981.9284 (Val MAE: 561.8263)
+2026-09-30 10:34:57,332 [INFO] pipeline - --- Training candidate model: xgboost_regressor ---
+2026-09-30 10:34:57,332 [INFO] models.xgboost_trainer - Initializing and training XGBoost Regressor on 4 samples
+2026-09-30 10:34:57,544 [INFO] models.xgboost_trainer - XGBoost Regressor training completed in 0.2120s
+2026-09-30 10:34:57,576 [INFO] pipeline - Saved model artifact for xgboost_regressor to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/models/xgboost_regressor.joblib
+2026-09-30 10:34:57,753 [INFO] evaluation.visualizer - Saved actual vs predicted plot to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/plots/xgboost_regressor_actual_vs_predicted.png
+2026-09-30 10:34:58,002 [INFO] evaluation.visualizer - Saved residuals plot to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/plots/xgboost_regressor_residuals.png
+2026-09-30 10:34:58,144 [INFO] evaluation.visualizer - Saved feature importance plot to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/plots/xgboost_regressor_feature_importance.png
+2026-09-30 10:34:58,145 [INFO] pipeline - Candidate xgboost_regressor finished. Test MAE: 154.9961 (Val MAE: 575.0982)
+2026-09-30 10:34:58,186 [INFO] pipeline - Promoted xgboost_regressor as selected model at /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/models/selected_model.joblib
+2026-09-30 10:34:58,568 [INFO] evaluation.visualizer - Saved model comparison plot to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/artifacts/plots/model_comparison.png
+2026-09-30 10:34:58,582 [INFO] pipeline - Model training report saved to /workspace/20260930-152533/Lithium-ion-future prediction forecasting_model_training/model_training_report.json
+2026-09-30 10:34:58,612 [INFO] model_training_main - Synchronized report to run directory: /workspace/20260930-152533/model_training_report.json
+2026-09-30 10:34:58,612 [INFO] model_training_main - ============================================================
+2026-09-30 10:34:58,612 [INFO] model_training_main - Training Pipeline Completed Successfully! Champion Model: xgboost_regressor
+2026-09-30 10:34:58,612 [INFO] model_training_main - Champion Test Score (MAE): 154.9961
+2026-09-30 10:34:58,612 [INFO] model_training_main - ============================================================
+
+================================================================================
+CONTAINER RUN FINISHED
+Finished At: 2026-09-30T10:34:59.140Z
+Exit Code: 0
+Status: SUCCESS
+================================================================================

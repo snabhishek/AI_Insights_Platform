@@ -101,7 +101,7 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
       case "restapi":
         return "REST API";
       default:
-        return "Data Source";
+        return "Connector";
     }
   };
 
@@ -189,22 +189,20 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
           <button
             onClick={() => setActiveTab("config")}
             disabled={isEditing}
-            className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
-              activeTab === "config"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${activeTab === "config"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             Configuration
           </button>
           <button
             onClick={() => setActiveTab("data")}
             disabled={isEditing}
-            className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${
-              activeTab === "data"
-                ? "border-primary text-primary"
-                : "border-transparent text-muted-foreground hover:text-foreground"
-            } disabled:opacity-50 disabled:cursor-not-allowed`}
+            className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer ${activeTab === "data"
+              ? "border-primary text-primary"
+              : "border-transparent text-muted-foreground hover:text-foreground"
+              } disabled:opacity-50 disabled:cursor-not-allowed`}
           >
             Data Preview & Schema
           </button>
@@ -222,13 +220,12 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                   </span>
                   <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold">
                     <span
-                      className={`w-2 h-2 rounded-full ${
-                        source.status === "Connected"
-                          ? "bg-green-500 animate-pulse"
-                          : source.status === "Syncing"
+                      className={`w-2 h-2 rounded-full ${source.status === "Connected"
+                        ? "bg-green-500 animate-pulse"
+                        : source.status === "Syncing"
                           ? "bg-blue-500 animate-spin"
                           : "bg-gray-500"
-                      }`}
+                        }`}
                     />
                     <span className="text-foreground">{source.status}</span>
                   </div>
@@ -240,21 +237,20 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                   </span>
                   <div className="mt-1 flex items-center gap-1.5 text-sm font-semibold">
                     <span
-                      className={`w-2 h-2 rounded-full ${
-                        source.health === "Healthy"
-                          ? "bg-green-500"
-                          : source.health === "Warning"
+                      className={`w-2 h-2 rounded-full ${source.health === "Healthy"
+                        ? "bg-green-500"
+                        : source.health === "Warning"
                           ? "bg-amber-500"
                           : "bg-red-500"
-                      }`}
+                        }`}
                     />
                     <span
                       className={
                         source.health === "Healthy"
                           ? "text-green-600 dark:text-green-400"
                           : source.health === "Warning"
-                          ? "text-amber-600 dark:text-amber-400"
-                          : "text-red-600 dark:text-red-400"
+                            ? "text-amber-600 dark:text-amber-400"
+                            : "text-red-600 dark:text-red-400"
                       }
                     >
                       {source.health}

@@ -20,7 +20,7 @@ export interface ConnectionConfig {
   fileContent?: string;
 }
 
-export interface DataSource {
+export interface Connector {
   id: string;
   name: string;
   subtext: string;
@@ -37,6 +37,8 @@ export interface DataSource {
   };
   connectionConfig?: ConnectionConfig;
 }
+
+export type DataSource = Connector;
 
 export interface Project {
   id: string;
@@ -82,6 +84,14 @@ interface AppContextType {
   addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string) => Promise<Project | null>;
   updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
+  connectors: Connector[];
+  addConnector: (name: string, type: Connector["type"], subtext: string, config: ConnectionConfig) => Promise<void>;
+  deleteConnector: (id: string) => Promise<void>;
+  syncConnector: (id: string) => Promise<void>;
+  syncAllConnectors: () => Promise<void>;
+  disconnectConnector: (id: string) => Promise<void>;
+  reconnectConnector: (id: string) => Promise<void>;
+  updateConnector: (id: string, name: string, config: ConnectionConfig) => Promise<void>;
   dataSources: DataSource[];
   addDataSource: (name: string, type: DataSource["type"], subtext: string, config: ConnectionConfig) => Promise<void>;
   deleteDataSource: (id: string) => Promise<void>;
@@ -619,6 +629,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         addProject,
         updateProject,
         deleteProject,
+        connectors: dataSources,
+        addConnector: addDataSource,
+        deleteConnector: deleteDataSource,
+        syncConnector: syncDataSource,
+        syncAllConnectors: syncAllDataSources,
+        disconnectConnector: disconnectDataSource,
+        reconnectConnector: reconnectDataSource,
+        updateConnector: updateDataSource,
         dataSources,
         addDataSource,
         deleteDataSource,

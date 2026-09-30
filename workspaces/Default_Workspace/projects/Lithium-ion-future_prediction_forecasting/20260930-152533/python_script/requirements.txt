@@ -1,0 +1,9 @@
+pandas
+numpy
+scikit-learn
+duckdb
+pyarrow
+pyyaml
+joblib
+lightgbm
+scipy

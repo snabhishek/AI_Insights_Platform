@@ -3,7 +3,7 @@
 import React from "react";
 import { createTabContext } from "./components/providers/TabProvider";
 import ProjectsPage from "./components/pages/ProjectsPage";
-import DataSourcePage from "./components/pages/DataSourcePage";
+import ConnectorsPage from "./components/pages/ConnectorsPage";
 import { PageType } from "./components/shared/constants";
 import Header from "./components/shared/header/Header";
 import Navbar from "./components/shared/navbar/Navbar";
@@ -28,8 +28,8 @@ function TabContent({ useTab }: { useTab: <T>(tab: T) => any }) {
   const { activeTab } = useTab("projects");
 
   switch (activeTab) {
-    case "data-source":
-      return <DataSourcePage />;
+    case "connectors":
+      return <ConnectorsPage />;
     case "switcher":
       return null;
     case "projects":

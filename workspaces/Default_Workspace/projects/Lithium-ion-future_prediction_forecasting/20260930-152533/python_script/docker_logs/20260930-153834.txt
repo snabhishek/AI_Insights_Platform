@@ -1,0 +1,200 @@
+================================================================================
+DOCKER CONTAINER EXECUTION LOG
+Execution Start Time: 2026-09-30T10:08:34.291Z
+Execution Directory: C:\Users\snabhishek\Music\AI_Insights_Platform\workspaces\Default_Workspace\projects\Lithium-ion-future_prediction_forecasting\20260930-152533\python_script
+Script Relative Path: 20260930-152533/python_script/aggregated_feature_pipeline_20260930-152533.py
+Host Project Root: C:/Users/snabhishek/Music/AI_Insights_Platform/workspaces/Default_Workspace/projects/Lithium-ion-future_prediction_forecasting
+Arguments: --out-dir "/workspace/20260930-152533/python_script" --db-path "/workspace"
+================================================================================
+--------------------------------------------------------------------------------
+STEP 1: DOCKER COMPOSE BUILD
+Command: docker compose -f "docker-compose.yml" build
+Time: 2026-09-30T10:08:34.294Z
+--------------------------------------------------------------------------------
+#1 [internal] load local bake definitions
+#1 reading from stdin 875B done
+#1 DONE 0.0s
+
+#2 [internal] load build definition from Dockerfile
+#2 transferring dockerfile: 473B 0.0s done
+#2 DONE 0.0s
+
+#3 [internal] load metadata for docker.io/library/python:3.12-slim
+#3 DONE 0.0s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 2B done
+#4 DONE 0.0s
+
+#5 [internal] load build context
+#5 DONE 0.0s
+
+#6 [1/5] FROM docker.io/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea
+#6 resolve docker.io/library/python:3.12-slim@sha256:78387bc3881b8273120a12ebe6c1ab22b018ccc2c9adf565ae1ac9b536e184ea 0.0s done
+#6 DONE 0.0s
+
+#5 [internal] load build context
+#5 transferring context: 113B done
+#5 DONE 0.0s
+
+#7 [2/5] WORKDIR /workspace
+#7 CACHED
+
+#8 [3/5] RUN apt-get update && apt-get install -y --no-install-recommends     build-essential     python3-dev     cmake     libgomp1     && rm -rf /var/lib/apt/lists/*
+#8 CACHED
+
+#9 [4/5] COPY requirements.txt /tmp/requirements.txt
+#9 DONE 0.0s
+
+#10 [5/5] RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=120 --retries 3 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r /tmp/requirements.txt
+#10 1.676 Collecting pandas (from -r /tmp/requirements.txt (line 1))
+#10 1.868   Downloading pandas-3.0.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl.metadata (79 kB)
+#10 2.127 Collecting numpy (from -r /tmp/requirements.txt (line 2))
+#10 2.157   Downloading numpy-2.5.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (6.6 kB)
+#10 2.241 Collecting scikit-learn (from -r /tmp/requirements.txt (line 3))
+#10 2.274   Downloading scikit_learn-1.9.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (9.3 kB)
+#10 2.591 Collecting duckdb (from -r /tmp/requirements.txt (line 4))
+#10 2.623   Downloading duckdb-1.5.6-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl.metadata (4.2 kB)
+#10 2.713 Collecting pyarrow (from -r /tmp/requirements.txt (line 5))
+#10 2.746   Downloading pyarrow-25.0.1-cp312-cp312-manylinux_2_28_x86_64.whl.metadata (3.0 kB)
+#10 2.783 Collecting pyyaml (from -r /tmp/requirements.txt (line 6))
+#10 2.811   Downloading pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl.metadata (2.4 kB)
+#10 2.842 Collecting joblib (from -r /tmp/requirements.txt (line 7))
+#10 2.885   Downloading joblib-1.6.0-py3-none-any.whl.metadata (6.5 kB)
+#10 2.909 Collecting lightgbm (from -r /tmp/requirements.txt (line 8))
+#10 2.939   Downloading lightgbm-4.7.0-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (18 kB)
+#10 3.091 Collecting scipy (from -r /tmp/requirements.txt (line 9))
+#10 3.189   Downloading scipy-1.18.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl.metadata (62 kB)
+#10 3.239 Collecting python-dateutil>=2.8.2 (from pandas->-r /tmp/requirements.txt (line 1))
+#10 3.276   Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl.metadata (8.4 kB)
+#10 3.389 Collecting narwhals>=2.0.1 (from scikit-learn->-r /tmp/requirements.txt (line 3))
+#10 3.417   Downloading narwhals-2.26.0-py3-none-any.whl.metadata (15 kB)
+#10 3.441 Collecting threadpoolctl>=3.5.0 (from scikit-learn->-r /tmp/requirements.txt (line 3))
+#10 3.477   Downloading threadpoolctl-3.7.0-py3-none-any.whl.metadata (24 kB)
+#10 3.508 Collecting cloudpickle>=3.0 (from joblib->-r /tmp/requirements.txt (line 7))
+#10 3.540   Downloading cloudpickle-3.1.2-py3-none-any.whl.metadata (7.1 kB)
+#10 3.592 Collecting six>=1.5 (from python-dateutil>=2.8.2->pandas->-r /tmp/requirements.txt (line 1))
+#10 3.627   Downloading six-1.17.0-py2.py3-none-any.whl.metadata (1.7 kB)
+#10 3.675 Downloading pandas-3.0.6-cp312-cp312-manylinux_2_24_x86_64.manylinux_2_28_x86_64.whl (10.8 MB)
+#10 4.860    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 10.8/10.8 MB 9.2 MB/s eta 0:00:00
+#10 4.891 Downloading numpy-2.5.3-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (16.7 MB)
+#10 6.291    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 16.7/16.7 MB 12.1 MB/s eta 0:00:00
+#10 6.363 Downloading scikit_learn-1.9.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (9.2 MB)
+#10 7.315    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 9.2/9.2 MB 9.8 MB/s eta 0:00:00
+#10 7.375 Downloading duckdb-1.5.6-cp312-cp312-manylinux_2_26_x86_64.manylinux_2_28_x86_64.whl (21.6 MB)
+#10 8.762    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 21.6/21.6 MB 15.6 MB/s eta 0:00:00
+#10 8.874 Downloading pyarrow-25.0.1-cp312-cp312-manylinux_2_28_x86_64.whl (50.1 MB)
+#10 11.92    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 50.1/50.1 MB 16.4 MB/s eta 0:00:00
+#10 11.96 Downloading pyyaml-6.0.3-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl (807 kB)
+#10 12.01    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 807.9/807.9 kB 18.2 MB/s eta 0:00:00
+#10 12.06 Downloading joblib-1.6.0-py3-none-any.whl (306 kB)
+#10 12.13 Downloading lightgbm-4.7.0-py3-none-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (3.5 MB)
+#10 12.28    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 3.5/3.5 MB 22.9 MB/s eta 0:00:00
+#10 12.34 Downloading scipy-1.18.1-cp312-cp312-manylinux_2_27_x86_64.manylinux_2_28_x86_64.whl (35.3 MB)
+#10 14.31    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 35.3/35.3 MB 17.9 MB/s eta 0:00:00
+#10 14.35 Downloading cloudpickle-3.1.2-py3-none-any.whl (22 kB)
+#10 14.40 Downloading narwhals-2.26.0-py3-none-any.whl (474 kB)
+#10 14.45 Downloading python_dateutil-2.9.0.post0-py2.py3-none-any.whl (229 kB)
+#10 14.53 Downloading threadpoolctl-3.7.0-py3-none-any.whl (26 kB)
+#10 14.57 Downloading six-1.17.0-py2.py3-none-any.whl (11 kB)
+#10 14.84 Installing collected packages: threadpoolctl, six, pyyaml, pyarrow, numpy, narwhals, duckdb, cloudpickle, scipy, python-dateutil, joblib, scikit-learn, pandas, lightgbm
+#10 30.69 Successfully installed cloudpickle-3.1.2 duckdb-1.5.6 joblib-1.6.0 lightgbm-4.7.0 narwhals-2.26.0 numpy-2.5.3 pandas-3.0.6 pyarrow-25.0.1 python-dateutil-2.9.0.post0 pyyaml-6.0.3 scikit-learn-1.9.1 scipy-1.18.1 six-1.17.0 threadpoolctl-3.7.0
+#10 30.69 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#10 DONE 31.2s
+
+#11 exporting to image
+#11 exporting layers
+#11 exporting layers 21.1s done
+#11 exporting manifest sha256:712977d429dc4fee557d876d4116fd5e72d8218ae0be694f6c03243ac5d04d1f 0.0s done
+#11 exporting config sha256:9acda075ef74e19a306d40d2170af0a2facfa7018333e83db273cd63f221e592 0.0s done
+#11 exporting attestation manifest sha256:84e67e256a4b60dfa0a97f56bba95ff7cacc785fe75df1c6e4d610ddb22b95ec 0.0s done
+#11 exporting manifest list sha256:81c28a567f8aedba13af317721f7760e4f5d465122697a5d244592ee56168f9d 0.0s done
+#11 naming to docker.io/library/python_script-feature-engineering:latest
+#11 naming to docker.io/library/python_script-feature-engineering:latest done
+#11 unpacking to docker.io/library/python_script-feature-engineering:latest
+#11 unpacking to docker.io/library/python_script-feature-engineering:latest 5.1s done
+#11 DONE 26.4s
+
+#12 resolving provenance for metadata file
+#12 DONE 0.0s
+ python_script-feature-engineering  Built
+
+--------------------------------------------------------------------------------
+BUILD COMPLETED SUCCESSFULLY (exit code: 0)
+Time: 2026-09-30T10:09:34.310Z
+--------------------------------------------------------------------------------
+--------------------------------------------------------------------------------
+STEP 2: DOCKER COMPOSE RUN
+Command: docker compose -f "docker-compose.yml" run --rm feature-engineering python "20260930-152533/python_script/aggregated_feature_pipeline_20260930-152533.py" --out-dir "/workspace/20260930-152533/python_script" --db-path "/workspace"
+Time: 2026-09-30T10:09:34.314Z
+--------------------------------------------------------------------------------
+2026-09-30 10:09:37,010 - INFO - Starting Feature Creation. Source DB path: /workspace, Target: /workspace/20260930-152533/python_script/feature_created.parquet
+2026-09-30 10:09:37,012 - INFO - Loading data from candidate path: /workspace/price_of_lithium_ion_battery_cells.csv
+2026-09-30 10:09:37,032 - INFO - Raw dataset loaded successfully with shape: (6, 4)
+2026-09-30 10:09:37,169 - INFO - Feature creation completed successfully. Exported 6 rows and 22 columns to /workspace/20260930-152533/python_script/feature_created.parquet
+2026-09-30 10:09:37,181 - INFO - Lineage metadata saved to /workspace/20260930-152533/python_script/feature_creation_lineage.yaml
+2026-09-30 10:09:37,182 - INFO - Starting Feature Transformation. Input: /workspace/20260930-152533/python_script/feature_created.parquet, Split: train, Target: /workspace/20260930-152533/python_script/feature_transformation.parquet
+2026-09-30 10:09:37,231 - INFO - Loaded input features with shape: (6, 22)
+2026-09-30 10:09:37,261 - INFO - Fitted and saved scaler parameters for 17 features to /workspace/20260930-152533/python_script/scaler_params.json
+2026-09-30 10:09:37,420 - INFO - Feature transformation completed. Saved 6 rows and 66 columns to /workspace/20260930-152533/python_script/feature_transformation.parquet
+2026-09-30 10:09:37,432 - INFO - Transformation lineage saved to /workspace/20260930-152533/python_script/feature_transformation_lineage.yaml
+2026-09-30 10:09:37,433 - INFO - Starting Build Dataset stage.
+2026-09-30 10:09:37,433 - INFO - Features path: /workspace/20260930-152533/python_script/feature_transformation.parquet, Output path: /workspace/20260930-152533/python_script/dataset.parquet
+2026-09-30 10:09:37,467 - INFO - Loaded transformed features dataframe with shape: (6, 66)
+2026-09-30 10:09:37,496 - INFO - Final assembled dataset shape: (6, 66)
+2026-09-30 10:09:37,600 - INFO - Saved final dataset to /workspace/20260930-152533/python_script/dataset.parquet
+2026-09-30 10:09:37,619 - INFO - Saved dataset metadata lineage to /workspace/20260930-152533/python_script/metadata.yaml
+2026-09-30 10:09:37,620 - INFO - Starting Data Validation. Input dataset: /workspace/20260930-152533/python_script/dataset.parquet, Report target: /workspace/20260930-152533/python_script/validation_report.json
+2026-09-30 10:09:37,648 - INFO - Loaded dataset for validation with shape: (6, 66)
+/usr/local/lib/python3.12/site-packages/numpy/lib/_function_base_impl.py:3036: RuntimeWarning: invalid value encountered in divide
+  c /= stddev[:, None]
+/usr/local/lib/python3.12/site-packages/numpy/lib/_function_base_impl.py:3037: RuntimeWarning: invalid value encountered in divide
+  c /= stddev[None, :]
+2026-09-30 10:09:37,794 - INFO - Validation report saved successfully to /workspace/20260930-152533/python_script/validation_report.json (Status: PASSED)
+2026-09-30 10:09:39,162 - INFO - Starting Feature Extraction. Input: /workspace/20260930-152533/python_script/dataset.parquet, Split: train, Target: /workspace/20260930-152533/python_script/feature_extraction.parquet
+2026-09-30 10:09:39,190 - INFO - Loaded input dataset for feature extraction with shape: (6, 66)
+2026-09-30 10:09:39,193 - INFO - Identified 17 predictor features for dimensionality extraction (Target 'Price of lithium-ion battery cells' excluded).
+2026-09-30 10:09:39,244 - INFO - Fitted PCA transformer (3 components, 99.36% variance explained) saved to /workspace/20260930-152533/python_script/pca_transformer.pkl
+2026-09-30 10:09:39,250 - INFO - Generated 3 PCA latent features: ['pca_latent_factor_1', 'pca_latent_factor_2', 'pca_latent_factor_3']
+2026-09-30 10:09:39,382 - INFO - Feature extraction stage completed. Saved 6 rows and 69 columns to /workspace/20260930-152533/python_script/feature_extraction.parquet
+2026-09-30 10:09:39,393 - INFO - Feature extraction lineage saved to /workspace/20260930-152533/python_script/feature_extraction_lineage.yaml
+2026-09-30 10:09:39,458 - INFO - Starting Feature Selection. Input: /workspace/20260930-152533/python_script/feature_extraction.parquet, Split: train, Target: /workspace/20260930-152533/python_script/feature_selection.parquet
+2026-09-30 10:09:39,487 - INFO - Loaded feature extraction dataset with shape: (6, 69)
+2026-09-30 10:09:39,487 - INFO - Mandatory preserved columns (strictly excluded from candidate removal): {'Price of lithium-ion battery cells', 'Year', 'Code', 'Entity'}
+2026-09-30 10:09:39,488 - INFO - Evaluating 65 candidate features for selection.
+2026-09-30 10:09:39,489 - INFO - Dropping candidate 'decade_bin': near-zero variance (0.000000e+00)
+2026-09-30 10:09:39,489 - INFO - Dropping candidate 'entity_World': near-zero variance (0.000000e+00)
+2026-09-30 10:09:39,490 - INFO - Dropping candidate 'code_OWID_WRL': near-zero variance (0.000000e+00)
+2026-09-30 10:09:39,601 - INFO - Feature selection metadata saved to /workspace/20260930-152533/python_script/feature_selection_metadata.json
+2026-09-30 10:09:39,605 - INFO - Final selected dataset shape: (6, 14) (Features selected: 10, Target preserved: 'Price of lithium-ion battery cells')
+2026-09-30 10:09:39,659 - INFO - Feature selection stage completed. Saved output to /workspace/20260930-152533/python_script/feature_selection.parquet
+2026-09-30 10:09:39,674 - INFO - Feature selection lineage saved to /workspace/20260930-152533/python_script/feature_selection_lineage.yaml
+2026-09-30 10:09:39,675 - INFO - Starting Feature Validation. Input: /workspace/20260930-152533/python_script/feature_selection.parquet, Output: /workspace/20260930-152533/python_script/feature_validation.parquet, Report: /workspace/20260930-152533/python_script/feature_validation_report.json
+2026-09-30 10:09:39,707 - INFO - Loaded selected feature matrix with shape: (6, 14)
+2026-09-30 10:09:39,709 - INFO - Validating 10 candidate predictor features against target 'Price of lithium-ion battery cells'.
+2026-09-30 10:09:39,830 - INFO - Computed baseline feature importances for 10 features.
+2026-09-30 10:09:39,849 - INFO - Multicollinearity resolved: dropped 'price_lag_2_is_na' (r=0.9697 with 'log_price_lag_1_standardized').
+2026-09-30 10:09:39,849 - INFO - Multicollinearity resolved: dropped 'year_index_minmax' (r=0.9802 with 'log_year_index_standardized').
+2026-09-30 10:09:39,849 - INFO - Multicollinearity resolved: dropped 'year_index_minmax' (r=0.9583 with 'year_squared_standardized').
+2026-09-30 10:09:39,849 - INFO - Multicollinearity resolved: dropped 'log_price_lag_1_standardized' (r=0.9546 with 'year_squared_standardized').
+2026-09-30 10:09:39,849 - INFO - Multicollinearity resolved: dropped 'pca_latent_factor_1' (r=0.9977 with 'year_squared_standardized').
+2026-09-30 10:09:39,852 - INFO - Drift audit completed: 6 features flagged for temporal monitoring.
+2026-09-30 10:09:39,855 - INFO - Final validated feature matrix shape: (6, 10) (Predictors retained: 6)
+2026-09-30 10:09:39,901 - INFO - Saved validated feature matrix to /workspace/20260930-152533/python_script/feature_validation.parquet
+2026-09-30 10:09:39,917 - INFO - Saved validation report JSON to /workspace/20260930-152533/python_script/feature_validation_report.json
+2026-09-30 10:09:39,924 - INFO - Validation lineage saved to /workspace/20260930-152533/python_script/feature_validation_lineage.yaml
+=== [1/7] Running Feature Creation ===
+=== [2/7] Running Feature Transformation ===
+=== [3/7] Running Build Dataset ===
+=== [4/7] Running Data Validation ===
+=== [5/7] Running Feature Extraction ===
+=== [6/7] Running Feature Selection ===
+=== [7/7] Running Feature Validation ===
+=== Pipeline Execution Complete ===
+
+================================================================================
+CONTAINER RUN FINISHED
+Finished At: 2026-09-30T10:09:40.541Z
+Exit Code: 0
+Status: SUCCESS
+================================================================================

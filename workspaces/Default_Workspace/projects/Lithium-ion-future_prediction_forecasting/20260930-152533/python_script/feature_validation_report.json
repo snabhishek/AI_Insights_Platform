@@ -1,0 +1,229 @@
+{
+  "status": "OK",
+  "summary": "Feature validation successfully audited 10 candidates. Retained 6 validated predictors, dropped 5 redundant/collinear features, identified 0 leaky features, and flagged 6 features for temporal drift monitoring.",
+  "leakageReport": {
+    "leakyFeatures": [],
+    "leakageFound": false
+  },
+  "multicollinearityReport": {
+    "highVifFeatures": [
+      {
+        "featureName": "price_lag_1_is_na",
+        "vifScore": 990099.01,
+        "action": "retained_top_importance"
+      },
+      {
+        "featureName": "price_lag_2_is_na",
+        "vifScore": 990099.01,
+        "action": "dropped"
+      },
+      {
+        "featureName": "log_price_lag_2",
+        "vifScore": 990099.01,
+        "action": "retained_top_importance"
+      },
+      {
+        "featureName": "year_index_minmax",
+        "vifScore": 990099.01,
+        "action": "dropped"
+      },
+      {
+        "featureName": "log_year_index_standardized",
+        "vifScore": 990099.01,
+        "action": "retained_top_importance"
+      },
+      {
+        "featureName": "year_squared_standardized",
+        "vifScore": 990099.01,
+        "action": "retained_top_importance"
+      },
+      {
+        "featureName": "log_price_lag_1_standardized",
+        "vifScore": 990099.01,
+        "action": "dropped"
+      },
+      {
+        "featureName": "pca_latent_factor_1",
+        "vifScore": 990099.01,
+        "action": "dropped"
+      },
+      {
+        "featureName": "pca_latent_factor_2",
+        "vifScore": 990099.01,
+        "action": "retained_top_importance"
+      },
+      {
+        "featureName": "pca_latent_factor_3",
+        "vifScore": 990099.01,
+        "action": "retained_top_importance"
+      }
+    ],
+    "highCorrelationPairs": [
+      {
+        "feature1": "price_lag_2_is_na",
+        "feature2": "log_price_lag_1_standardized",
+        "correlation": 0.9697,
+        "droppedFeature": "price_lag_2_is_na",
+        "rationale": "Lower importance score (0.0294 vs 0.0953) compared to 'log_price_lag_1_standardized'"
+      },
+      {
+        "feature1": "year_index_minmax",
+        "feature2": "log_year_index_standardized",
+        "correlation": 0.9802,
+        "droppedFeature": "year_index_minmax",
+        "rationale": "Lower importance score (0.1410 vs 0.1818) compared to 'log_year_index_standardized'"
+      },
+      {
+        "feature1": "year_index_minmax",
+        "feature2": "year_squared_standardized",
+        "correlation": 0.9583,
+        "droppedFeature": "year_index_minmax",
+        "rationale": "Lower importance score (0.1410 vs 0.1496) compared to 'year_squared_standardized'"
+      },
+      {
+        "feature1": "year_squared_standardized",
+        "feature2": "log_price_lag_1_standardized",
+        "correlation": 0.9546,
+        "droppedFeature": "log_price_lag_1_standardized",
+        "rationale": "Lower importance score (0.0953 vs 0.1496) compared to 'year_squared_standardized'"
+      },
+      {
+        "feature1": "year_squared_standardized",
+        "feature2": "pca_latent_factor_1",
+        "correlation": 0.9977,
+        "droppedFeature": "pca_latent_factor_1",
+        "rationale": "Lower importance score (0.1246 vs 0.1496) compared to 'year_squared_standardized'"
+      }
+    ]
+  },
+  "driftReport": {
+    "driftedFeatures": [
+      {
+        "featureName": "price_lag_1_is_na",
+        "psiScore": 2.7768,
+        "pValue": 1.0,
+        "status": "drift_detected_monitoring"
+      },
+      {
+        "featureName": "log_price_lag_2",
+        "psiScore": 9.9784,
+        "pValue": 1.0,
+        "status": "drift_detected_monitoring"
+      },
+      {
+        "featureName": "log_year_index_standardized",
+        "psiScore": 9.1544,
+        "pValue": 1.0,
+        "status": "drift_detected_monitoring"
+      },
+      {
+        "featureName": "year_squared_standardized",
+        "psiScore": 9.1544,
+        "pValue": 1.0,
+        "status": "drift_detected_monitoring"
+      },
+      {
+        "featureName": "pca_latent_factor_2",
+        "psiScore": 5.7563,
+        "pValue": 1.0,
+        "status": "drift_detected_monitoring"
+      },
+      {
+        "featureName": "pca_latent_factor_3",
+        "psiScore": 5.7563,
+        "pValue": 1.0,
+        "status": "drift_detected_monitoring"
+      }
+    ]
+  },
+  "importanceRanking": [
+    {
+      "featureName": "log_year_index_standardized",
+      "importanceScore": 0.181764,
+      "rank": 1
+    },
+    {
+      "featureName": "year_squared_standardized",
+      "importanceScore": 0.149647,
+      "rank": 2
+    },
+    {
+      "featureName": "year_index_minmax",
+      "importanceScore": 0.140951,
+      "rank": 3
+    },
+    {
+      "featureName": "pca_latent_factor_1",
+      "importanceScore": 0.124557,
+      "rank": 4
+    },
+    {
+      "featureName": "pca_latent_factor_2",
+      "importanceScore": 0.116299,
+      "rank": 5
+    },
+    {
+      "featureName": "log_price_lag_1_standardized",
+      "importanceScore": 0.095304,
+      "rank": 6
+    },
+    {
+      "featureName": "pca_latent_factor_3",
+      "importanceScore": 0.083987,
+      "rank": 7
+    },
+    {
+      "featureName": "price_lag_1_is_na",
+      "importanceScore": 0.075177,
+      "rank": 8
+    },
+    {
+      "featureName": "price_lag_2_is_na",
+      "importanceScore": 0.029382,
+      "rank": 9
+    },
+    {
+      "featureName": "log_price_lag_2",
+      "importanceScore": 0.002932,
+      "rank": 10
+    }
+  ],
+  "validatedFeatureSet": {
+    "kept": [
+      "Entity",
+      "Code",
+      "Year",
+      "price_lag_1_is_na",
+      "log_price_lag_2",
+      "log_year_index_standardized",
+      "year_squared_standardized",
+      "pca_latent_factor_2",
+      "pca_latent_factor_3",
+      "Price of lithium-ion battery cells"
+    ],
+    "dropped": [
+      {
+        "featureName": "price_lag_2_is_na",
+        "reason": "multicollinearity: Lower importance score (0.0294 vs 0.0953) compared to 'log_price_lag_1_standardized'"
+      },
+      {
+        "featureName": "year_index_minmax",
+        "reason": "multicollinearity: Lower importance score (0.1410 vs 0.1818) compared to 'log_year_index_standardized'"
+      },
+      {
+        "featureName": "year_index_minmax",
+        "reason": "multicollinearity: Lower importance score (0.1410 vs 0.1496) compared to 'year_squared_standardized'"
+      },
+      {
+        "featureName": "log_price_lag_1_standardized",
+        "reason": "multicollinearity: Lower importance score (0.0953 vs 0.1496) compared to 'year_squared_standardized'"
+      },
+      {
+        "featureName": "pca_latent_factor_1",
+        "reason": "multicollinearity: Lower importance score (0.1246 vs 0.1496) compared to 'year_squared_standardized'"
+      }
+    ],
+    "totalKept": 10,
+    "totalDropped": 5
+  }
+}
