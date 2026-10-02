@@ -1,15 +1,11 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Workflow, WorkflowStep, PipelineStatus } from "../../projects/types";
-import { fetchAgentThinkingApi } from "../../../services/aiWorkflowService";
-import { createTabContext } from "../../providers/TabProvider";
-import { CardModalTabType } from "../constants";
+import SubProcessLogModal from "./SubProcessLogModal";
 
-export type { CardModalTabType };
-
-const { TabProvider, useTab } = createTabContext<CardModalTabType>();
+export type CardModalTabType = "output" | "thinking";
 
 interface CardModalProps {
   isOpen: boolean;
@@ -74,11 +70,7 @@ const CIRCLE_COLOR_MAP: Record<string, { border: string; bg: string; text: strin
 export default function CardModal(props: CardModalProps) {
   if (!props.isOpen) return null;
 
-  return (
-    <TabProvider initialTab="output">
-      <CardModalContent {...props} />
-    </TabProvider>
-  );
+  return <CardModalContent {...props} />;
 }
 
 function CardModalContent({
@@ -103,11 +95,8 @@ function CardModalContent({
 }: CardModalProps) {
   const [mounted, setMounted] = useState(false);
   const [activeStepIndex, setActiveStepIndex] = useState<number>(0);
-  const [thinkingLogs, setThinkingLogs] = useState<Array<{ time: string; text: string; done: boolean }>>([]);
-  const { activeTab, tabswitcher } = useTab("output");
-  const lastStepIdRef = useRef<string>("");
-  const lastStepStatusRef = useRef<string>("");
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [logModalSubstep, setLogModalSubstep] = useState<WorkflowStep | null>(null);
 
   useEffect(() => {
     setMounted(true);
@@ -167,84 +156,13 @@ function CardModalContent({
     setActiveStepIndex(firstUncompletedIdx !== -1 ? firstUncompletedIdx : 0);
   }, [workflowCard?.id, isOpen, selectedSubstepId, approvalNextStep, requiresApproval]);
 
-  // Synchronize and fetch agent thinking logs
-  useEffect(() => {
-    if (!isOpen || !activeStep) return;
-
-    const cardPipeline = workflowCard?.title || workflowCard?.id || "Data Ingestion";
-    const stepIdChanged = lastStepIdRef.current !== activeStep.id;
-
-    const loadThinking = async () => {
-      if (!projectId) return;
-      try {
-        const res = await fetchAgentThinkingApi(projectId, cardPipeline, activeStep.id);
-        if (res.success && res.data?.thinking && res.data.thinking.length > 0) {
-          setThinkingLogs(res.data.thinking);
-          return;
-        }
-        const feRes = await fetchAgentThinkingApi(projectId, "Feature Engineering", activeStep.id);
-        if (feRes.success && feRes.data?.thinking && feRes.data.thinking.length > 0) {
-          setThinkingLogs(feRes.data.thinking);
-          return;
-        }
-        const diRes = await fetchAgentThinkingApi(projectId, "Data Ingestion", activeStep.id);
-        if (diRes.success && diRes.data?.thinking && diRes.data.thinking.length > 0) {
-          setThinkingLogs(diRes.data.thinking);
-          return;
-        }
-      } catch (err) {
-        console.warn("Failed to fetch agent thinking:", err);
-      }
-    };
-
-    const activeId = activeStep.id;
-    const streamed =
-      agentThinking?.[activeId] ||
-      agentState?.agentThinking?.[activeId] ||
-      [];
-    if (streamed.length > 0) {
-      setThinkingLogs(streamed);
-    } else {
-      loadThinking();
+  const handleOpenLogs = (stepToOpen?: WorkflowStep | null) => {
+    const target = stepToOpen || activeStep;
+    if (target) {
+      setLogModalSubstep(target);
+      setIsLogModalOpen(true);
     }
-
-    if (stepIdChanged) {
-      lastStepIdRef.current = activeStep.id;
-    }
-  }, [activeStep?.id, activeStepStatus, isOpen, projectId, agentState?.agentThinking, agentThinking, workflowCard?.id, workflowCard?.title]);
-
-  // Auto-scroll terminal log container when new logs arrive
-  useEffect(() => {
-    if (activeTab === "thinking") {
-      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    }
-  }, [thinkingLogs, activeTab]);
-
-  // Synchronize activeTab based on step status and selection
-  useEffect(() => {
-    if (!activeStep) return;
-    const currentStatus = pipelineStatuses[activeStep.id] ?? "Pending";
-    const statusChanged = lastStepStatusRef.current !== currentStatus;
-    const stepIdChanged = lastStepIdRef.current !== activeStep.id;
-
-    if (stepIdChanged) {
-      if (currentStatus === "In Progress") {
-        Promise.resolve().then(() => tabswitcher("thinking"));
-      } else {
-        Promise.resolve().then(() => tabswitcher("output"));
-      }
-    } else if (statusChanged) {
-      if (currentStatus === "Completed") {
-        Promise.resolve().then(() => tabswitcher("output"));
-      } else if (currentStatus === "In Progress") {
-        Promise.resolve().then(() => tabswitcher("thinking"));
-      }
-    }
-    lastStepStatusRef.current = currentStatus;
-    lastStepIdRef.current = activeStep.id;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeStep?.id, activeStepStatus, pipelineStatuses]);
-
+  };
 
   if (!isOpen || !mounted) return null;
 
@@ -295,72 +213,102 @@ function CardModalContent({
               const isPaused = runStatus === "Paused" && stepStatus === "In Progress";
 
               return (
-                <button
+                <div
                   key={stepItem.id}
-                  title={stepItem.description}
-                  onClick={() => {
-                    setActiveStepIndex(idx);
-                    onSubstepChange?.(stepItem.id);
-                  }}
-                  className={`flex items-center gap-4 text-left w-full relative z-10 py-1.5 focus:outline-none transition-all cursor-pointer group`}
+                  className="relative flex items-center group w-full"
                 >
                   {/* Progress segment line: Stops at the final step circle */}
                   {idx < stepsList.length - 1 && (
                     <div className="absolute left-[17px] top-9 bottom-[-24px] w-[2px] bg-border dark:bg-slate-800 z-0" />
                   )}
 
-                  {/* Circle Indicator */}
-                  <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 
-                    ${isStepCompleted ? "bg-emerald-500 border-emerald-500 text-white shadow-md"
-                      : isStopped ? "bg-rose-100 border-rose-300 text-rose-600 dark:bg-rose-950/40 dark:border-rose-700 dark:text-rose-400"
-                        : isPaused ? "bg-yellow-500 border-yellow-500 text-white shadow-md animate-pulse"
-                          : isStepInProgress
-                            ? "bg-indigo-500 border-indigo-500 text-white shadow-lg animate-pulse"
-                            : isSelected
-                              ? `${stepColors.border} ${stepColors.text} bg-surface`
-                              : "border-border bg-surface text-muted-foreground/60 group-hover:border-muted-foreground/40"
-                    }`}>
-                    {isStepCompleted ? (
-                      <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
-                        <polyline points="20 6 9 17 4 12" />
-                      </svg>
-                    ) : isPaused ? (<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
-                      <polygon points="5 3 19 12 5 21 5 3" />
-                    </svg>) :
-                      isStepInProgress ? (
+                  <button
+                    title={stepItem.description}
+                    onClick={() => {
+                      setActiveStepIndex(idx);
+                      onSubstepChange?.(stepItem.id);
+                    }}
+                    className="flex items-center gap-3.5 text-left w-full relative z-10 py-1.5 focus:outline-none transition-all cursor-pointer"
+                  >
+                    {/* Circle Indicator */}
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 
+                      ${isStepCompleted ? "bg-emerald-500 border-emerald-500 text-white shadow-md"
+                        : isStopped ? "bg-rose-100 border-rose-300 text-rose-600 dark:bg-rose-950/40 dark:border-rose-700 dark:text-rose-400"
+                          : isPaused ? "bg-yellow-500 border-yellow-500 text-white shadow-md animate-pulse"
+                            : isStepInProgress
+                              ? "bg-indigo-500 border-indigo-500 text-white shadow-lg animate-pulse"
+                              : isSelected
+                                ? `${stepColors.border} ${stepColors.text} bg-surface`
+                                : "border-border bg-surface text-muted-foreground/60 group-hover:border-muted-foreground/40"
+                      }`}>
+                      {isStepCompleted ? (
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      ) : isPaused ? (
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
+                          <polygon points="5 3 19 12 5 21 5 3" />
+                        </svg>
+                      ) : isStepInProgress ? (
                         <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
                         </svg>
-                    ) : (
-                      idx + 1
-                    )}
-                  </div>
-
-                  {/* Step Box Details (Transparent Background - requirement checklist) */}
-                  <div className="flex-1 min-w-0 pr-2">
-                    <div className="flex items-center justify-between gap-1">
-                      <span className={`text-xs font-bold truncate transition-colors leading-tight ${isSelected ? "text-foreground font-black" : "text-muted-foreground group-hover:text-foreground"
-                        }`}>
-                        {stepItem.title}
-                      </span>
-
-                      {/* Completed Checkmark / Spinner Badge */}
-                      {isStepCompleted && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                      )}
-                      {isStepInProgress && (
-                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping shrink-0" />
+                      ) : (
+                        idx + 1
                       )}
                     </div>
-                  </div>
-                </button>
+
+                    {/* Step Box Details */}
+                    <div className="flex-1 min-w-0 pr-1">
+                      <div className="flex items-center justify-between gap-1">
+                        <span className={`text-xs font-bold truncate transition-colors leading-tight ${
+                          isSelected ? "text-foreground font-black" : "text-muted-foreground group-hover:text-foreground"
+                        }`}>
+                          {stepItem.title}
+                        </span>
+
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          {isStepCompleted && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          )}
+                          {isStepInProgress && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping shrink-0" />
+                          )}
+
+                          {/* Quick Logs Button on each sidebar sub-process */}
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenLogs(stepItem);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.stopPropagation();
+                                handleOpenLogs(stepItem);
+                              }
+                            }}
+                            className="opacity-0 group-hover:opacity-100 hover:opacity-100 p-1 rounded bg-white hover:bg-slate-50 text-primary border border-primary/50 dark:bg-surface dark:text-primary-foreground dark:border-primary/60 transition-all cursor-pointer shadow-xs"
+                            title={`View logs for ${stepItem.title}`}
+                          >
+                            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2">
+                              <polyline points="4 17 10 11 4 5" />
+                              <line x1="12" y1="19" x2="20" y2="19" />
+                            </svg>
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  </button>
+                </div>
               );
             })}
           </div>
         </div>
 
-        {/* Right Panel: Active Step Logs & Custom Output Area */}
+        {/* Right Panel: Active Step Custom Output Area & Top Logs Button */}
         <div className="flex-1 flex flex-col min-h-0 bg-background/30 relative overflow-hidden">
 
           {/* Header of right panel containing Title, Icon, Status and Close button */}
@@ -403,8 +351,9 @@ function CardModalContent({
                     type="button"
                     onClick={() => onApprove?.(approvalNextStep || undefined)}
                     disabled={isApproving}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ${isApproving ? "opacity-75 cursor-not-allowed" : "animate-pulse"
-                      }`}
+                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ${
+                      isApproving ? "opacity-75 cursor-not-allowed" : "animate-pulse"
+                    }`}
                   >
                     {isApproving ? (
                       <>
@@ -435,135 +384,145 @@ function CardModalContent({
             </div>
           </div>
 
-          {/* Tab Selection Bar */}
+          {/* Sub-process Title Bar with Top-Right Logs Button */}
           {activeStep && (
-            <div className="flex border-b border-border bg-surface-muted/30 px-6 shrink-0 select-none">
-              <button
-                onClick={() => tabswitcher("output")}
-                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${activeTab === "output"
-                  ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
+            <div className="flex items-center justify-between px-6 py-2.5 bg-surface/90 dark:bg-slate-900/60 border-b border-border/70 shrink-0 select-none">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="text-xs font-bold text-foreground truncate">
+                  {activeStep.title}
+                </span>
+                <span
+                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    activeStepStatus === "Completed"
+                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
+                      : activeStepStatus === "In Progress"
+                        ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 animate-pulse"
+                        : activeStepStatus === "Stopped"
+                          ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
+                          : "bg-surface-muted text-muted-foreground border border-border"
                   }`}
-              >
-                <span>📥</span>
-                <span>Step Output</span>
-              </button>
-              <button
-                onClick={() => tabswitcher("thinking")}
-                className={`py-3 px-4 text-xs font-bold border-b-2 transition-all cursor-pointer flex items-center gap-2 ${activeTab === "thinking"
-                  ? "border-primary text-primary dark:border-indigo-400 dark:text-indigo-400 font-bold"
-                  : "border-transparent text-muted-foreground hover:text-foreground"
-                  }`}
-              >
-                <span>🧠</span>
-                <span>Agent Reasoning</span>
-                {activeStepStatus === "In Progress" && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping shrink-0" />
+                >
+                  <span
+                    className={`w-1.5 h-1.5 rounded-full ${
+                      activeStepStatus === "Completed"
+                        ? "bg-emerald-500"
+                        : activeStepStatus === "In Progress"
+                          ? "bg-indigo-500 animate-ping"
+                          : activeStepStatus === "Stopped"
+                            ? "bg-rose-500"
+                            : "bg-muted-foreground/40"
+                    }`}
+                  />
+                  {activeStepStatus === "In Progress" ? "Running" : activeStepStatus}
+                </span>
+                {activeStep.description && (
+                  <span className="text-[11px] text-muted-foreground truncate hidden md:inline border-l border-border/70 pl-2.5">
+                    {activeStep.description}
+                  </span>
                 )}
-              </button>
+              </div>
+
+              {/* Top-Right Logs Button */}
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => handleOpenLogs(activeStep)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white hover:bg-slate-50 text-primary border border-primary dark:bg-surface dark:hover:bg-surface-muted dark:text-primary-foreground dark:border-primary shadow-xs transition-all active:scale-95 cursor-pointer group"
+                  title={`View execution logs for ${activeStep.title}`}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    width="13"
+                    height="13"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2.5"
+                    className="text-primary dark:text-primary-foreground group-hover:scale-110 transition-transform"
+                  >
+                    <polyline points="4 17 10 11 4 5" />
+                    <line x1="12" y1="19" x2="20" y2="19" />
+                  </svg>
+                  <span>Logs</span>
+                  {activeStepStatus === "In Progress" && (
+                    <span className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                    </span>
+                  )}
+                </button>
+              </div>
             </div>
           )}
 
-          <div className="flex-1 flex flex-col min-h-0 select-text">
+          {/* Entire Modal Space Used For Step Output Content (No Tab Header) */}
+          <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden">
             {activeStep ? (
-              activeTab === "output" ? (
-                /* Tab Content: Output Area */
-                <div className="flex-1 flex flex-col min-h-0">
-                  {hasOutput ? (
-                    <div className="flex-1 overflow-y-auto p-6 select-text">
-                      {stepOutputContent}
-                    </div>
-                  ) : (
-                    <div className="flex-1 flex flex-col justify-center items-center p-8 text-center text-sm text-muted-foreground bg-surface-muted/10 select-none">
-                      {requiresApproval ? (
-                        <div className="flex flex-col items-center max-w-md p-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-foreground animate-fadeIn">
-                          <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500 mb-3">
-                            <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                              <circle cx="12" cy="12" r="10" />
-                              <line x1="12" y1="8" x2="12" y2="12" />
-                              <line x1="12" y1="16" x2="12.01" y2="16" />
-                            </svg>
-                          </div>
-                          <strong className="text-base font-bold text-foreground">
-                            Awaiting Approval
-                          </strong>
-                          <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed text-center">
-                            {workflowMessage || `This pipeline stage is paused awaiting your approval to proceed to ${approvalNextStep || activeStep?.title || "the next phase"}.`}
-                          </p>
-                          <button
-                            type="button"
-                            onClick={() => onApprove?.(approvalNextStep || undefined)}
-                            disabled={isApproving}
-                            className={`mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer ${isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105"
-                              }`}
-                          >
-                            {isApproving ? (
-                              <>
-                                <svg className="animate-spin" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3">
-                                  <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
-                                </svg>
-                                <span>Advancing Workflow...</span>
-                              </>
-                            ) : (
-                              <>
-                                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3">
-                                  <polyline points="20 6 9 17 4 12" />
-                                </svg>
-                                <span>Proceed to Next Phase</span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      ) : (
-                        <>
-                          <span className="text-3xl mb-2">📥</span>
-                          <strong className="text-foreground">Output is not received yet.</strong>
-                          <span className="text-xs max-w-sm mt-1 leading-normal">
-                            The execution results will be displayed here as soon as this pipeline step completes and provides output.
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  )}
+              hasOutput ? (
+                <div className="flex-1 overflow-y-auto p-6 select-text">
+                  {stepOutputContent}
                 </div>
               ) : (
-                /* Tab Content: Agent Reasoning Logs */
-                <div className="flex-1 flex flex-col min-h-0 p-6 select-text">
-                  <div className="flex items-center justify-between mb-4 pb-2 border-b border-border shrink-0 select-none">
-                    <div className="flex items-center gap-2">
-                      <span className="w-6 h-6 rounded-lg bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500 dark:text-indigo-400 flex items-center justify-center shrink-0">
-                        🧠
-                      </span>
-                      <div>
-                        <h3 className="text-sm font-bold text-foreground">Agent Reasoning Logs</h3>
-                        <p className="text-[10px] text-muted-foreground">Detailed logic trace executed by the agent</p>
+                <div className="flex-1 flex flex-col justify-center items-center p-8 text-center text-sm text-muted-foreground bg-surface-muted/10 select-none">
+                  {requiresApproval ? (
+                    <div className="flex flex-col items-center max-w-md p-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-foreground animate-fadeIn">
+                      <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500 mb-3">
+                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <circle cx="12" cy="12" r="10" />
+                          <line x1="12" y1="8" x2="12" y2="12" />
+                          <line x1="12" y1="16" x2="12.01" y2="16" />
+                        </svg>
                       </div>
+                      <strong className="text-base font-bold text-foreground">
+                        Awaiting Approval
+                      </strong>
+                      <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed text-center">
+                        {workflowMessage || `This pipeline stage is paused awaiting your approval to proceed to ${approvalNextStep || activeStep?.title || "the next phase"}.`}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => onApprove?.(approvalNextStep || undefined)}
+                        disabled={isApproving}
+                        className={`mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer ${
+                          isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105"
+                        }`}
+                      >
+                        {isApproving ? (
+                          <>
+                            <svg className="animate-spin" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3">
+                              <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                            </svg>
+                            <span>Advancing Workflow...</span>
+                          </>
+                        ) : (
+                          <>
+                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                            <span>Proceed to Next Phase</span>
+                          </>
+                        )}
+                      </button>
                     </div>
-                    {activeStepStatus === "In Progress" && runStatus === 'Running' && (
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 animate-pulse bg-indigo-50 dark:bg-indigo-950/50 px-2 py-0.5 rounded-md">
-                        Processing...
+                  ) : (
+                    <>
+                      <span className="text-3xl mb-2">📥</span>
+                      <strong className="text-foreground">Output is not received yet.</strong>
+                      <span className="text-xs max-w-sm mt-1 leading-normal">
+                        The execution results will be displayed here as soon as this pipeline step completes and provides output.
                       </span>
-                    )}
-                  </div>
-
-                  <div className="flex-1 overflow-y-auto font-mono text-xs text-foreground/85 dark:text-slate-300 space-y-2 bg-surface-muted/30 dark:bg-slate-900/30 p-5 rounded-xl border border-border/40 select-text">
-                    {thinkingLogs.length > 0 ? (
-                      thinkingLogs.map((log, lIdx) => (
-                        <div key={lIdx} className="flex gap-3 items-start hover:bg-surface-muted/20 py-0.5">
-                          <span className="text-muted-foreground select-none shrink-0">{log.time}</span>
-                          <span className="text-muted-foreground select-none shrink-0">›</span>
-                          <span className={log.done ? "text-foreground" : "text-muted-foreground animate-pulse"}>
-                            {log.text}
-                          </span>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="text-muted-foreground py-8 text-center select-none font-sans italic text-xs">
-                        No agent thinking logs available for this step.
-                      </div>
-                    )}
-                    <div ref={logsEndRef} />
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenLogs(activeStep)}
+                        className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-primary border border-primary dark:bg-surface dark:text-primary-foreground dark:border-primary transition-colors cursor-pointer shadow-xs"
+                      >
+                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary dark:text-primary-foreground">
+                          <polyline points="4 17 10 11 4 5" />
+                          <line x1="12" y1="19" x2="20" y2="19" />
+                        </svg>
+                        <span>View Step Logs</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               )
             ) : (
@@ -576,6 +535,28 @@ function CardModalContent({
         </div>
 
       </div>
+
+      {/* Sub-process Log Streaming Modal */}
+      <SubProcessLogModal
+        isOpen={isLogModalOpen}
+        onClose={() => setIsLogModalOpen(false)}
+        substep={logModalSubstep || activeStep}
+        pipelineTitle={workflowCard.title || "Workflow Pipeline"}
+        projectId={projectId}
+        pipelineStatuses={pipelineStatuses}
+        stepsList={stepsList}
+        agentThinking={agentThinking}
+        agentState={agentState}
+        runStatus={runStatus}
+        onSelectSubstep={(st) => {
+          const targetIdx = stepsList.findIndex((s) => s.id === st.id);
+          if (targetIdx !== -1) {
+            setActiveStepIndex(targetIdx);
+            onSubstepChange?.(st.id);
+          }
+          setLogModalSubstep(st);
+        }}
+      />
     </div>,
     document.body
   );
