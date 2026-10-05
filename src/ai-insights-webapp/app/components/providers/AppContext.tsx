@@ -82,7 +82,7 @@ interface AppContextType {
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   refreshProjects: () => Promise<void>;
   addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string) => Promise<Project | null>;
-  updateProject: (id: string, updates: Partial<Project>) => Promise<void>;
+  updateProject: (id: string, updates: Partial<Project> & { replaceAgentState?: boolean }) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   connectors: Connector[];
   addConnector: (name: string, type: Connector["type"], subtext: string, config: ConnectionConfig) => Promise<void>;
@@ -408,7 +408,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const updateProject = async (id: string, updates: Partial<Project>) => {
+  const updateProject = async (id: string, updates: Partial<Project> & { replaceAgentState?: boolean }) => {
     const wsId = activeWorkspaceId || "default";
     try {
       const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${id}`, {

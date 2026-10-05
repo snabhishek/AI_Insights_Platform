@@ -26,4 +26,5 @@ export interface UpdateProjectDto {
   dataSources?: string[];
   status?: string;
   agentState?: Record<string, unknown>;
+  replaceAgentState?: boolean;
 }

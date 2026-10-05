@@ -18,7 +18,9 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
   // Data Ingestion
   "inspect": PIPELINE_PHASES.DATA_INGESTION,
   "profileData": PIPELINE_PHASES.DATA_INGESTION,
+  "dataProfile": PIPELINE_PHASES.DATA_INGESTION,
   "resolveSchema": PIPELINE_PHASES.DATA_INGESTION,
+  "schemaResolution": PIPELINE_PHASES.DATA_INGESTION,
   "Data Inspection": PIPELINE_PHASES.DATA_INGESTION,
   "Data Profiling": PIPELINE_PHASES.DATA_INGESTION,
   "Schema Resolver": PIPELINE_PHASES.DATA_INGESTION,
@@ -28,6 +30,8 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
   "Hierarchy Mapper": PIPELINE_PHASES.FEATURE_ENGINEERING,
   "hierarchyMapper": PIPELINE_PHASES.FEATURE_ENGINEERING,
   "hierarchyMapperNode": PIPELINE_PHASES.FEATURE_ENGINEERING,
+  "relationshipBuilder": PIPELINE_PHASES.FEATURE_ENGINEERING,
+  "formBuilder": PIPELINE_PHASES.FEATURE_ENGINEERING,
   "Feature Architect": PIPELINE_PHASES.FEATURE_ENGINEERING,
   "featureArchitect": PIPELINE_PHASES.FEATURE_ENGINEERING,
   "featureArchitectNode": PIPELINE_PHASES.FEATURE_ENGINEERING,
@@ -58,6 +62,11 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
   "Model Training": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelTraining": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelTrainingNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "modelEvaluation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "modelEvaluationNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "Model Validation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "modelValidation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
+  "modelValidationNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "Model Training & Validation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
 };
 
@@ -65,7 +74,9 @@ export const STEP_TO_NODE_MAP: Record<string, string> = {
   // Data Ingestion
   "Data Inspection": "inspect",
   "Data Profiling": "profileData",
+  "dataProfile": "profileData",
   "Schema Resolver": "resolveSchema",
+  "schemaResolution": "resolveSchema",
   "inspect": "inspect",
   "profileData": "profileData",
   "resolveSchema": "resolveSchema",
@@ -74,6 +85,8 @@ export const STEP_TO_NODE_MAP: Record<string, string> = {
   "Hierarchy Mapper": "hierarchyMapperNode",
   "hierarchyMapper": "hierarchyMapperNode",
   "hierarchyMapperNode": "hierarchyMapperNode",
+  "relationshipBuilder": "hierarchyMapperNode",
+  "formBuilder": "hierarchyMapperNode",
   "Feature Architect": "featureArchitectNode",
   "featureArchitect": "featureArchitectNode",
   "featureArchitectNode": "featureArchitectNode",
@@ -105,6 +118,11 @@ export const STEP_TO_NODE_MAP: Record<string, string> = {
   "Model Training": "modelTrainingCodeNode",
   "modelTraining": "modelTrainingCodeNode",
   "modelTrainingNode": "modelTrainingCodeNode",
+  "modelEvaluation": "modelTrainingExecNode",
+  "modelEvaluationNode": "modelTrainingExecNode",
+  "Model Validation": "modelValidationNode",
+  "modelValidation": "modelValidationNode",
+  "modelValidationNode": "modelValidationNode",
 };
 
 export function getPipelineForSubstep(substepOrNode: string | null | undefined): PipelinePhase {

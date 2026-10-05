@@ -216,7 +216,8 @@ export class WorkspaceService {
       updatedProject = await this.projectRepository.updateAgentState(
         pid,
         stateToSave,
-        updatedUseCase
+        updatedUseCase,
+        updateData.replaceAgentState
       );
     } else {
       updatedProject = await this.projectRepository.getById(pid);

@@ -63,6 +63,12 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
     pipelineStatuses["Feature Engineering"] === "In Progress" ||
     pipelineStatuses["Hierarchy Mapper"] === "Completed" ||
     pipelineStatuses["Hierarchy Mapper"] === "In Progress" ||
+    pipelineStatuses["Feature Architect"] === "Completed" ||
+    pipelineStatuses["Feature Architect"] === "In Progress" ||
+    pipelineStatuses["Feature Validator"] === "Completed" ||
+    pipelineStatuses["Feature Validator"] === "In Progress" ||
+    pipelineStatuses["Exogenous Scout"] === "Completed" ||
+    pipelineStatuses["Exogenous Scout"] === "In Progress" ||
     pipelineStatuses["Model Selection"] === "Completed" ||
     pipelineStatuses["Model Selection"] === "In Progress" ||
     pipelineStatuses["Training Configuration"] === "Completed" ||

@@ -283,7 +283,10 @@ export class ModelSelectionService implements IModelSelectionService {
         cleanStageStatuses.modelSelectionNode = "Completed";
         cleanStageStatuses.trainingConfiguration = "In Progress";
         cleanStageStatuses.preFlight = "Pending";
+        cleanStageStatuses.modelTrainingCode = "Pending";
+        cleanStageStatuses.modelTrainingExec = "Pending";
         cleanStageStatuses.modelTraining = "Pending";
+        cleanStageStatuses.modelEvaluation = "Pending";
         cleanStageStatuses.modelValidation = "Pending";
 
         const updatedModelSelection = {
@@ -399,7 +402,10 @@ export class ModelSelectionService implements IModelSelectionService {
     cleanStageStatuses.modelSelectionNode = "Completed";
     cleanStageStatuses.trainingConfiguration = "In Progress";
     cleanStageStatuses.preFlight = "Pending";
+    cleanStageStatuses.modelTrainingCode = "Pending";
+    cleanStageStatuses.modelTrainingExec = "Pending";
     cleanStageStatuses.modelTraining = "Pending";
+    cleanStageStatuses.modelEvaluation = "Pending";
     cleanStageStatuses.modelValidation = "Pending";
 
     const updatedState = {

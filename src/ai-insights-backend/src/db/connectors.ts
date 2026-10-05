@@ -1,6 +1,7 @@
 import { pgTable, varchar, timestamp, jsonb, boolean, text, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 import { ConnectionConfig } from "../models/connector.types";
+import { AgentStateType } from "../agents/state";
 
 export const workspaces = pgTable("workspaces", {
   id: varchar("id", { length: 50 }).primaryKey(),
@@ -61,7 +62,7 @@ export const projectRuns = pgTable("project_runs", {
     .references(() => projects.id, { onDelete: "cascade" }),
   useCase: text("use_case"),
   status: varchar("status", { length: 50 }).default("idle"),
-  agentState: jsonb("agent_state").$type<Record<string, unknown>>().notNull(),
+  agentState: jsonb("agent_state").$type<AgentStateType>().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => {
   return {

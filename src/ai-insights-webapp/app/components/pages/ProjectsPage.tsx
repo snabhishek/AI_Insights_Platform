@@ -60,6 +60,40 @@ function renderConnectorIcon(type: string): React.ReactNode {
 
 type View = "list" | "project";
 
+const INITIAL_AGENT_STAGE_STATUSES: Record<string, string> = {
+  inspect: "Pending",
+  profileData: "Pending",
+  resolveSchema: "Pending",
+  hierarchyMapper: "Pending",
+  featureArchitect: "Pending",
+  featureValidator: "Pending",
+  exogenousScout: "Pending",
+  modelSelection: "Pending",
+  trainingConfiguration: "Pending",
+  preFlight: "Pending",
+  modelTrainingCode: "Pending",
+  modelTrainingExec: "Pending",
+  modelTraining: "Pending",
+  modelEvaluation: "Pending",
+  modelValidation: "Pending",
+  dataProfile: "Pending",
+  schemaResolution: "Pending",
+  relationshipBuilder: "Pending",
+  formBuilder: "Pending",
+  exogenous: "Pending",
+  modelSelectionNode: "Pending",
+  preFlightNode: "Pending",
+  modelTrainingNode: "Pending",
+  modelTrainingExecNode: "Pending",
+  modelTrainingCodeNode: "Pending",
+  modelEvaluationNode: "Pending",
+  modelValidationNode: "Pending",
+  trainingConfigurationNode: "Pending",
+  hierarchyMapperNode: "Pending",
+  featureArchitectNode: "Pending",
+  featureValidatorNode: "Pending",
+};
+
 // ─── Root Page Component ──────────────────────────────────────────────────────
 
 export default function ProjectsPage() {
@@ -165,65 +199,48 @@ export default function ProjectsPage() {
 
     const isCompleted = (v?: string) => v === "Completed" || v === "completed" || v === "Success" || v === "success" || v === "ok" || v === "done";
     const isRunning = (v?: string) => v === "In Progress" || v === "in_progress" || v === "in-progress" || v === "Running" || v === "running" || v === "Retrying" || v === "retrying";
+    const isStopped = (v?: string) => v === "Stopped" || v === "stopped";
 
-    // Single-node stages
-    const mapSingle = (node: string, label: string) => {
-      const v = stageStatuses[node];
-      if (!v) return;
-      if (isCompleted(v)) next[label] = "Completed";
-      else if (isRunning(v)) next[label] = "In Progress";
-      else if (v === "Failed" || v === "failed") next[label] = "Pending";
-      else if ((v === "Pending" || v === "pending") && next[label] !== "Completed") next[label] = "Pending";
+    const getStageStatus = (nodes: string[]): string | undefined => {
+      const values = nodes.map((node) => stageStatuses[node]).filter((value): value is string => Boolean(value));
+      if (values.some(isStopped)) return "Stopped";
+      if (values.some(isRunning)) return "In Progress";
+      if (values.some(isCompleted)) return "Completed";
+      if (values.some((value) => value === "Failed" || value === "failed" || value === "Pending" || value === "pending")) {
+        return "Pending";
+      }
+      return undefined;
     };
 
-    mapSingle("inspect", "Data Inspection");
-    mapSingle("resolveSchema", "Schema Resolver");
-    mapSingle("hierarchyMapper", "Hierarchy Mapper");
-    mapSingle("hierarchyMapperNode", "Hierarchy Mapper");
-    mapSingle("relationshipBuilder", "Hierarchy Mapper");
-    mapSingle("formBuilder", "Hierarchy Mapper");
-    mapSingle("featureArchitect", "Feature Architect");
-    mapSingle("featureArchitectNode", "Feature Architect");
-    mapSingle("featureValidator", "Feature Validator");
-    mapSingle("featureValidatorNode", "Feature Validator");
-    mapSingle("exogenousScout", "Exogenous Scout");
-    mapSingle("exogenous", "Exogenous Scout");
-    mapSingle("modelSelection", "Model Selection");
-    mapSingle("modelSelectionNode", "Model Selection");
-    mapSingle("trainingConfiguration", "Training Configuration");
-    mapSingle("trainingConfigurationNode", "Training Configuration");
-    mapSingle("datasetAnalyserAgent", "Training Configuration");
-    mapSingle("datasetAnalyserNode", "Training Configuration");
-    mapSingle("preFlight", "Pre Flight");
-    mapSingle("preFlightNode", "Pre Flight");
-    mapSingle("modelTrainingCode", "Model Training");
-    mapSingle("modelTrainingCodeNode", "Model Training");
-    mapSingle("modelTrainingExec", "Model Training");
-    mapSingle("modelTrainingExecNode", "Model Training");
-    mapSingle("modelTraining", "Model Training");
-    mapSingle("modelTrainingNode", "Model Training");
-    mapSingle("modelValidation", "Model Validation");
-    mapSingle("modelValidationNode", "Model Validation");
+    const mapStage = (nodes: string[], label: string) => {
+      const status = getStageStatus(nodes);
+      if (status) next[label] = status as PipelineStatus;
+    };
 
-    // Data Profiling
-    const profileVal = stageStatuses.profileData;
-    if (profileVal) {
-      if (isRunning(profileVal)) {
-        next["Data Profiling"] = "In Progress";
-      } else if (isCompleted(profileVal)) {
-        next["Data Profiling"] = "Completed";
-      } else if (profileVal === "Failed" || profileVal === "failed") {
-        next["Data Profiling"] = "Pending";
-      } else if ((profileVal === "Pending" || profileVal === "pending") && next["Data Profiling"] !== "Completed") {
-        next["Data Profiling"] = "Pending";
-      }
-    }
+    mapStage(["inspect"], "Data Inspection");
+    mapStage(["profileData", "dataProfile"], "Data Profiling");
+    mapStage(["resolveSchema", "schemaResolution"], "Schema Resolver");
+    mapStage(["hierarchyMapper", "hierarchyMapperNode", "relationshipBuilder", "formBuilder"], "Hierarchy Mapper");
+    mapStage(["featureArchitect", "featureArchitectNode"], "Feature Architect");
+    mapStage(["featureValidator", "featureValidatorNode"], "Feature Validator");
+    mapStage(["exogenousScout", "exogenous"], "Exogenous Scout");
+    mapStage(["modelSelection", "modelSelectionNode"], "Model Selection");
+    mapStage(["trainingConfiguration", "trainingConfigurationNode", "datasetAnalyserAgent", "datasetAnalyserNode"], "Training Configuration");
+    mapStage(["preFlight", "preFlightNode"], "Pre Flight");
+    mapStage([
+      "modelTrainingCode", "modelTrainingCodeNode", "modelTrainingExec", "modelTrainingExecNode",
+      "modelTraining", "modelTrainingNode", "modelEvaluation", "modelEvaluationNode",
+    ], "Model Training");
+    mapStage(["modelValidation", "modelValidationNode"], "Model Validation");
 
     // Ingestion completion: if resolveSchema is completed or both inspect & profileData completed without active running
-    const isDIRunning = isRunning(stageStatuses.inspect) || isRunning(stageStatuses.profileData) || isRunning(stageStatuses.resolveSchema);
+    const inspectStatus = getStageStatus(["inspect"]);
+    const profileStatus = getStageStatus(["profileData", "dataProfile"]);
+    const schemaStatus = getStageStatus(["resolveSchema", "schemaResolution"]);
+    const isDIRunning = isRunning(inspectStatus) || isRunning(profileStatus) || isRunning(schemaStatus);
     const isDIDone = !isDIRunning && (
-      isCompleted(stageStatuses.resolveSchema) ||
-      (isCompleted(stageStatuses.inspect) && isCompleted(stageStatuses.profileData))
+      isCompleted(schemaStatus) ||
+      (isCompleted(inspectStatus) && isCompleted(profileStatus))
     );
 
     if (isDIDone) {
@@ -234,10 +251,10 @@ export default function ProjectsPage() {
     }
 
     // Feature Engineering composite status
-    const hmVal = stageStatuses.hierarchyMapper || stageStatuses.hierarchyMapperNode || stageStatuses.relationshipBuilder;
-    const faVal = stageStatuses.featureArchitect || stageStatuses.featureArchitectNode;
-    const fvVal = stageStatuses.featureValidator || stageStatuses.featureValidatorNode;
-    const exoVal = stageStatuses.exogenousScout || stageStatuses.exogenous;
+    const hmVal = getStageStatus(["hierarchyMapper", "hierarchyMapperNode", "relationshipBuilder", "formBuilder"]);
+    const faVal = getStageStatus(["featureArchitect", "featureArchitectNode"]);
+    const fvVal = getStageStatus(["featureValidator", "featureValidatorNode"]);
+    const exoVal = getStageStatus(["exogenousScout", "exogenous"]);
 
     const isFERunning = isRunning(hmVal) || isRunning(faVal) || isRunning(fvVal) || isRunning(exoVal);
     const isFEDone = isCompleted(hmVal) && isCompleted(faVal) && (isCompleted(exoVal) || isCompleted(fvVal));
@@ -269,10 +286,22 @@ export default function ProjectsPage() {
         isRunning(stageStatuses.preFlight) ||
         isCompleted(stageStatuses.preFlightNode) ||
         isRunning(stageStatuses.preFlightNode) ||
+        isCompleted(stageStatuses.modelTrainingCode) ||
+        isRunning(stageStatuses.modelTrainingCode) ||
+        isCompleted(stageStatuses.modelTrainingCodeNode) ||
+        isRunning(stageStatuses.modelTrainingCodeNode) ||
+        isCompleted(stageStatuses.modelTrainingExec) ||
+        isRunning(stageStatuses.modelTrainingExec) ||
+        isCompleted(stageStatuses.modelTrainingExecNode) ||
+        isRunning(stageStatuses.modelTrainingExecNode) ||
         isCompleted(stageStatuses.modelTraining) ||
         isRunning(stageStatuses.modelTraining) ||
         isCompleted(stageStatuses.modelTrainingNode) ||
         isRunning(stageStatuses.modelTrainingNode) ||
+        isCompleted(stageStatuses.modelEvaluation) ||
+        isRunning(stageStatuses.modelEvaluation) ||
+        isCompleted(stageStatuses.modelEvaluationNode) ||
+        isRunning(stageStatuses.modelEvaluationNode) ||
         isCompleted(stageStatuses.modelValidation) ||
         isRunning(stageStatuses.modelValidation) ||
         isCompleted(stageStatuses.modelValidationNode) ||
@@ -291,6 +320,13 @@ export default function ProjectsPage() {
       next["Feature Validator"] = "Completed";
       next["Exogenous Scout"] = "Completed";
       next["Feature Engineering"] = "Completed";
+    }
+
+    const hasStoppedStage = Object.values(stageStatuses).some(isStopped);
+    if (hasStoppedStage) {
+      for (const [stage, status] of Object.entries(next)) {
+        if (status === "In Progress") next[stage] = "Stopped";
+      }
     }
 
     // Some workflow updates identify the active node separately from stageStatuses.
@@ -324,7 +360,7 @@ export default function ProjectsPage() {
       modelValidationNode: "Model Validation",
     };
     const activeStep = currentNodeOrStage ? activeStepByNode[currentNodeOrStage] : undefined;
-    if (activeStep && next[activeStep] !== "Completed") {
+    if (activeStep && next[activeStep] !== "Completed" && !hasStoppedStage) {
       next[activeStep] = "In Progress";
     }
 
@@ -408,6 +444,8 @@ export default function ProjectsPage() {
     if (
       stageStatuses?.modelValidation === "In Progress" ||
       stageStatuses?.modelValidation === "Completed" ||
+      stageStatuses?.modelValidationNode === "In Progress" ||
+      stageStatuses?.modelValidationNode === "Completed" ||
       stageOutputs?.modelValidation
     ) {
       return "Model Validation";
@@ -415,7 +453,20 @@ export default function ProjectsPage() {
     if (
       stageStatuses?.modelTraining === "In Progress" ||
       stageStatuses?.modelTraining === "Completed" ||
+      stageStatuses?.modelTrainingNode === "In Progress" ||
+      stageStatuses?.modelTrainingNode === "Completed" ||
+      stageStatuses?.modelTrainingExec === "In Progress" ||
+      stageStatuses?.modelTrainingExec === "Completed" ||
+      stageStatuses?.modelTrainingExecNode === "In Progress" ||
+      stageStatuses?.modelTrainingExecNode === "Completed" ||
+      stageStatuses?.modelEvaluation === "In Progress" ||
+      stageStatuses?.modelEvaluation === "Completed" ||
+      stageStatuses?.modelEvaluationNode === "In Progress" ||
+      stageStatuses?.modelEvaluationNode === "Completed" ||
+      stageStatuses?.modelTrainingCode === "In Progress" ||
       stageStatuses?.modelTrainingCode === "Completed" ||
+      stageStatuses?.modelTrainingCodeNode === "In Progress" ||
+      stageStatuses?.modelTrainingCodeNode === "Completed" ||
       stageOutputs?.modelTraining ||
       stageOutputs?.modelTrainingCode
     ) {
@@ -424,6 +475,8 @@ export default function ProjectsPage() {
     if (
       stageStatuses?.preFlight === "In Progress" ||
       stageStatuses?.preFlight === "Completed" ||
+      stageStatuses?.preFlightNode === "In Progress" ||
+      stageStatuses?.preFlightNode === "Completed" ||
       stageOutputs?.preFlight
     ) {
       return "Pre Flight";
@@ -431,6 +484,8 @@ export default function ProjectsPage() {
     if (
       stageStatuses?.trainingConfiguration === "In Progress" ||
       stageStatuses?.trainingConfiguration === "Completed" ||
+      stageStatuses?.trainingConfigurationNode === "In Progress" ||
+      stageStatuses?.trainingConfigurationNode === "Completed" ||
       stageOutputs?.trainingConfiguration
     ) {
       return "Training Configuration";
@@ -438,26 +493,68 @@ export default function ProjectsPage() {
     if (
       stageStatuses?.modelSelection === "In Progress" ||
       stageStatuses?.modelSelection === "Completed" ||
+      stageStatuses?.modelSelectionNode === "In Progress" ||
+      stageStatuses?.modelSelectionNode === "Completed" ||
       stageOutputs?.modelSelection
     ) {
       return "Model Selection";
     }
-    if (stageStatuses?.exogenousScout === "Completed" || stageOutputs?.exogenousScout) {
+    if (
+      stageStatuses?.exogenousScout === "Completed" ||
+      stageStatuses?.exogenousScout === "In Progress" ||
+      stageStatuses?.exogenous === "Completed" ||
+      stageStatuses?.exogenous === "In Progress" ||
+      stageOutputs?.exogenousScout
+    ) {
       return "Exogenous Scout";
     }
-    if (stageStatuses?.featureValidator === "Completed" || stageOutputs?.featureValidator) {
+    if (
+      stageStatuses?.featureValidator === "Completed" ||
+      stageStatuses?.featureValidator === "In Progress" ||
+      stageStatuses?.featureValidatorNode === "Completed" ||
+      stageStatuses?.featureValidatorNode === "In Progress" ||
+      stageOutputs?.featureValidator
+    ) {
       return "Feature Validator";
     }
-    if (stageStatuses?.featureArchitect === "Completed" || stageOutputs?.featureArchitect) {
+    if (
+      stageStatuses?.featureArchitect === "Completed" ||
+      stageStatuses?.featureArchitect === "In Progress" ||
+      stageStatuses?.featureArchitectNode === "Completed" ||
+      stageStatuses?.featureArchitectNode === "In Progress" ||
+      stageOutputs?.featureArchitect
+    ) {
       return "Feature Architect";
     }
-    if (stageStatuses?.hierarchyMapper === "Completed" || stageOutputs?.hierarchyMapper) {
+    if (
+      stageStatuses?.hierarchyMapper === "Completed" ||
+      stageStatuses?.hierarchyMapper === "In Progress" ||
+      stageStatuses?.hierarchyMapperNode === "Completed" ||
+      stageStatuses?.hierarchyMapperNode === "In Progress" ||
+      stageStatuses?.relationshipBuilder === "Completed" ||
+      stageStatuses?.relationshipBuilder === "In Progress" ||
+      stageStatuses?.formBuilder === "Completed" ||
+      stageStatuses?.formBuilder === "In Progress" ||
+      stageOutputs?.hierarchyMapper
+    ) {
       return "Hierarchy Mapper";
     }
-    if (stageStatuses?.resolveSchema === "Completed" || stageOutputs?.schemaResolution) {
+    if (
+      stageStatuses?.resolveSchema === "Completed" ||
+      stageStatuses?.resolveSchema === "In Progress" ||
+      stageStatuses?.schemaResolution === "Completed" ||
+      stageStatuses?.schemaResolution === "In Progress" ||
+      stageOutputs?.schemaResolution
+    ) {
       return "Schema Resolver";
     }
-    if (stageStatuses?.profileData === "Completed" || stageOutputs?.dataProfile) {
+    if (
+      stageStatuses?.profileData === "Completed" ||
+      stageStatuses?.profileData === "In Progress" ||
+      stageStatuses?.dataProfile === "Completed" ||
+      stageStatuses?.dataProfile === "In Progress" ||
+      stageOutputs?.dataProfile
+    ) {
       return "Data Profiling";
     }
 
@@ -934,22 +1031,20 @@ export default function ProjectsPage() {
 
     const targetProjectId = activeRunningProjectIdRef.current || selectedProject?.id;
     if (targetProjectId) {
-      const existingProject = projects.find((p) => p.id === targetProjectId);
-      const existingAgentState = (existingProject?.agentState as any) || {};
-      const agentStateToSave = {
-        ...existingAgentState,
-        ...payload,
-        runTimestamp: payload.runTimestamp || existingAgentState.runTimestamp,
-      };
-
       // Always keep local projects state in sync so re-entering the project has the latest data immediately
-      setProjects((prev) =>
-        prev.map((p) =>
-          p.id === targetProjectId
-            ? { ...p, status: payload.status || "running", agentState: agentStateToSave }
-            : p
-        )
-      );
+      setProjects((prev) => prev.map((project) => {
+        if (project.id !== targetProjectId) return project;
+        const existingAgentState = (project.agentState as Record<string, unknown>) || {};
+        return {
+          ...project,
+          status: payload.status || "running",
+          agentState: {
+            ...existingAgentState,
+            ...payload,
+            runTimestamp: payload.runTimestamp || existingAgentState.runTimestamp,
+          },
+        };
+      }));
 
       // Local state is updated above; backend persists state directly to the database during workflow execution
     }
@@ -1014,7 +1109,15 @@ export default function ProjectsPage() {
             : p
         )
       );
-      void updateProject(selectedProject.id, { status: "running" });
+      if (action === "resume") {
+        await updateProject(selectedProject.id, {
+          status: "running",
+          agentState: {
+            ...((selectedProject.agentState as Record<string, unknown>) || {}),
+            status: "running",
+          },
+        });
+      }
     }
     if (action === "resume") {
       const resumeStep = step || pausedAtPhase || "inspect";
@@ -1213,26 +1316,54 @@ export default function ProjectsPage() {
 
     setRunStatus("Stopped");
     setWorkflowMessage("Workflow stopped by user");
+    const stoppedAt = new Date().toISOString();
+    const targetProject = projects.find((project) => project.id === currentProjectId);
+    const existingAgentState = (targetProject?.agentState as Record<string, any>) || {};
+    const stoppedStageStatuses = { ...(existingAgentState.stageStatuses || {}) };
+    for (const [stage, status] of Object.entries(stoppedStageStatuses)) {
+      if (status === "In Progress" || status === "Running" || status === "Retrying" || status === "running") {
+        stoppedStageStatuses[stage] = "Stopped";
+      }
+    }
 
     const stoppedState = {
-      status: "Idle",
+      ...existingAgentState,
+      status: "stopped",
       summary: "Workflow stopped by user",
       message: "Workflow stopped by user",
-      sessionId: currentSession || undefined,
+      sessionId: currentSession || existingAgentState.sessionId,
       requiresApproval: false,
-      lastRunTime: new Date().toISOString(),
+      nextStep: undefined,
+      stageStatuses: stoppedStageStatuses,
+      lastRunTime: stoppedAt,
     };
 
+    setPipelineStatuses((prev) => Object.fromEntries(
+      Object.entries(prev).map(([stage, status]) => [stage, status === "In Progress" ? "Stopped" : status])
+    ) as PipelineStatuses);
+    setLastRunTime(new Date(stoppedAt).toLocaleString("en-US", {
+      month: "short",
+      day: "2-digit",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: true,
+    }));
+
     if (currentProjectId) {
-      void updateProject(currentProjectId, {
-        status: "stopped",
-        agentState: stoppedState,
-      });
+      setProjects((prev) => prev.map((project) => project.id === currentProjectId
+        ? { ...project, status: "stopped", agentState: stoppedState }
+        : project));
     }
 
-    if (currentSession || currentProjectId) {
-      void stopWorkflowApi(currentSession || undefined, currentProjectId);
-    }
+    void (async () => {
+      if (currentSession || currentProjectId) {
+        await stopWorkflowApi(currentSession || undefined, currentProjectId);
+      }
+      if (currentProjectId) {
+        await updateProject(currentProjectId, { status: "stopped", agentState: stoppedState });
+      }
+    })();
 
     showAlert({
       title: "Workflow Stopped",
@@ -1302,7 +1433,7 @@ export default function ProjectsPage() {
     );
   };
 
-  const handleRetry = (step?: string) => {
+  const handleRetry = async (step?: string) => {
     const rawStep = step || activeStage || "inspect";
     const phase = SUBSTEP_TO_PIPELINE_MAP[rawStep] || PIPELINE_PHASES.MODEL_TRAINING_VALIDATION;
 
@@ -1328,9 +1459,14 @@ export default function ProjectsPage() {
       statusesToUpdate["Model Training"] = "Pending";
       statusesToUpdate["Model Validation"] = "Pending";
       outputsToClear.push(
-        "inspect", "profileData", "resolveSchema", "schemaResolution", "dataProfile",
-        "hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout",
-        "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation", "modelSelectionNode", "trainingConfigurationNode", "preFlightNode", "modelTrainingNode", "modelValidationNode"
+        "inspect", "profileData", "resolveSchema", "schemaResolution", "dataProfile", "inspection",
+        "hierarchyMapper", "hierarchyMapperNode", "relationshipBuilder", "formBuilder",
+        "featureArchitect", "featureArchitectNode", "featureValidator", "featureValidatorNode",
+        "exogenousScout", "exogenous", "modelSelection", "modelSelectionNode",
+        "trainingConfiguration", "trainingConfigurationNode", "preFlight", "preFlightNode",
+        "modelTrainingCode", "modelTrainingCodeNode", "modelTrainingExec", "modelTrainingExecNode",
+        "modelTraining", "modelTrainingNode", "modelEvaluation", "modelEvaluationNode",
+        "modelValidation", "modelValidationNode"
       );
     } else if (phase === PIPELINE_PHASES.FEATURE_ENGINEERING) {
       rootNode = "hierarchyMapperNode";
@@ -1350,8 +1486,13 @@ export default function ProjectsPage() {
       statusesToUpdate["Model Training"] = "Pending";
       statusesToUpdate["Model Validation"] = "Pending";
       outputsToClear.push(
-        "hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout", "exogenous",
-        "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation", "modelSelectionNode", "trainingConfigurationNode", "preFlightNode", "modelTrainingNode", "modelValidationNode"
+        "hierarchyMapper", "hierarchyMapperNode", "relationshipBuilder", "formBuilder",
+        "featureArchitect", "featureArchitectNode", "featureValidator", "featureValidatorNode",
+        "exogenousScout", "exogenous", "modelSelection", "modelSelectionNode",
+        "trainingConfiguration", "trainingConfigurationNode", "preFlight", "preFlightNode",
+        "modelTrainingCode", "modelTrainingCodeNode", "modelTrainingExec", "modelTrainingExecNode",
+        "modelTraining", "modelTrainingNode", "modelEvaluation", "modelEvaluationNode",
+        "modelValidation", "modelValidationNode"
       );
     } else {
       // Model Training & Validation stage -> full stage retry from root node modelSelectionNode!
@@ -1372,7 +1513,10 @@ export default function ProjectsPage() {
       statusesToUpdate["Model Training"] = "Pending";
       statusesToUpdate["Model Validation"] = "Pending";
       outputsToClear.push(
-        "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation", "modelSelectionNode", "trainingConfigurationNode", "preFlightNode", "modelTrainingNode", "modelValidationNode"
+        "modelSelection", "modelSelectionNode", "trainingConfiguration", "trainingConfigurationNode",
+        "preFlight", "preFlightNode", "modelTrainingCode", "modelTrainingCodeNode",
+        "modelTrainingExec", "modelTrainingExecNode", "modelTraining", "modelTrainingNode",
+        "modelEvaluation", "modelEvaluationNode", "modelValidation", "modelValidationNode"
       );
     }
 
@@ -1389,11 +1533,45 @@ export default function ProjectsPage() {
       return next;
     });
 
+    const agentState = { ...((selectedProject?.agentState as Record<string, any>) || {}) };
+    const agentStageOutputs = { ...((agentState.stageOutputs as Record<string, unknown>) || {}) };
+    const stageStatuses = { ...((agentState.stageStatuses as Record<string, string>) || {}) };
+    for (const key of outputsToClear) {
+      delete agentState[key];
+      delete agentStageOutputs[key];
+      if (key in INITIAL_AGENT_STAGE_STATUSES) stageStatuses[key] = "Pending";
+    }
+    if (rootNode === "inspect") {
+      stageStatuses.inspect = "In Progress";
+    } else if (rootNode === "hierarchyMapperNode") {
+      stageStatuses.hierarchyMapper = "In Progress";
+      stageStatuses.hierarchyMapperNode = "In Progress";
+    } else {
+      stageStatuses.modelSelection = "In Progress";
+      stageStatuses.modelSelectionNode = "In Progress";
+    }
+    const resetAgentState = {
+      ...agentState,
+      status: "running",
+      stageOutputs: agentStageOutputs,
+      stageStatuses,
+    };
+    setProjects((prev) => prev.map((project) => project.id === selectedProject?.id
+      ? { ...project, status: "running", agentState: resetAgentState }
+      : project));
+
     setRequiresApproval(false);
     setIsAwaitingResponse(false);
     setApprovalNextStep(null);
     setRunStatus("Running");
 
+    if (selectedProject) {
+      await updateProject(selectedProject.id, {
+        status: "running",
+        agentState: resetAgentState,
+        replaceAgentState: true,
+      });
+    }
     void runWorkflow("retry", rootNode);
   };
 
@@ -1529,8 +1707,9 @@ export default function ProjectsPage() {
       agentState: {
         status: "idle",
         stageOutputs: {},
-        stageStatuses: INITIAL_PIPELINE_STATUSES,
+        stageStatuses: INITIAL_AGENT_STAGE_STATUSES,
       },
+      replaceAgentState: true,
     });
 
     void runWorkflow(undefined, undefined, validUseCase ?? selectedProject.useCase);

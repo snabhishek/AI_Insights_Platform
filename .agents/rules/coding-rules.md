@@ -30,6 +30,15 @@ This repository is the backend for the AI Insights Platform. It is a TypeScript/
 - Keep validation, schema discovery, preview generation, and health checks in the connection/testing service layer so controllers stay simple.
 - For AI insights pipelines, favor small composable services that perform one responsibility each (ingestion, validation, metadata extraction, orchestration) and wire them together from the top level.
 
+## LangGraph and agent-first development
+- Keep agentic workflows in the existing LangGraph graphs, nodes, tools, and state annotations. Let the graph route work and let agents interpret context, choose among valid actions, and produce domain recommendations; do not replace this flow with hard-coded keyword, object-name, or response-shape branching when the decision belongs to the agent.
+- Define structured agent and tool inputs/outputs with the schema approach already used in the backend (Zod with LangChain/LangGraph). Prefer the supported structured-output interface for the model or agent, and pass the schema through shared agent helpers when practical; do not rely on prompt-only JSON instructions or raw JSON parsing and type casts as the output contract.
+- Make the runtime schema the source of truth for the output shape and infer the TypeScript type from it (for example, `z.infer<typeof OutputSchema>`). Avoid maintaining a parallel interface/type and handwritten checks for each property when the schema can express the same contract.
+- Model field presence deliberately: use required fields for invariants, `.optional()` for omitted fields, `.nullable()` only when `null` is a meaningful value, and defaults only when omission has a defined interpretation. Use schema/type composition such as `.pick()`, `.omit()`, `.partial()`, and TypeScript `Pick`, `Omit`, and `Partial` for derived contracts instead of duplicating object shapes. Keep LangGraph state defaults and reducers consistent with these presence semantics.
+- Validate model output once at the agent boundary with the declared schema. On invalid output, use the established retry, repair, or fallback path and return a typed result; do not scatter manual `typeof`, property-name, `Object.keys`, or shape checks through nodes and services as substitutes for a contract.
+- Keep deterministic code for security and authorization, external input validation, resource limits, domain invariants, side effects, and persistence. Agent reasoning does not replace those controls. Put semantic decision-making in the agent and enforce the resulting decision against explicit domain constraints before executing side effects.
+- Make schema adoption incremental: reuse and improve existing agent/state/output abstractions, preserve established workflow behavior, and avoid broad rewrites or adding a second orchestration framework.
+
 ## Database and migrations
 - Schema changes belong in [src/db/schema.ts](src/db/schema.ts).
 - Run migrations with Drizzle after schema changes.

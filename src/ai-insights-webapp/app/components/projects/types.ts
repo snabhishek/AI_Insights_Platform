@@ -24,6 +24,50 @@ export type IngestionAgentStepResult = {
   summary: string;
 }
 
+export type StageStatusKey =
+  | "inspect"
+  | "profileData"
+  | "resolveSchema"
+  | "hierarchyMapper"
+  | "featureArchitect"
+  | "featureValidator"
+  | "exogenousScout"
+  | "modelSelection"
+  | "trainingConfiguration"
+  | "preFlight"
+  | "modelTrainingCode"
+  | "modelTrainingExec"
+  | "modelTraining"
+  | "modelEvaluation"
+  | "modelValidation"
+  | "dataProfile"
+  | "schemaResolution"
+  | "relationshipBuilder"
+  | "formBuilder"
+  | "exogenous"
+  | "modelSelectionNode"
+  | "preFlightNode"
+  | "modelTrainingNode"
+  | "modelTrainingExecNode"
+  | "modelTrainingCodeNode"
+  | "modelEvaluationNode"
+  | "modelValidationNode"
+  | "trainingConfigurationNode"
+  | "hierarchyMapperNode"
+  | "featureArchitectNode"
+  | "featureValidatorNode";
+
+export type StageStatusValue =
+  | "Pending"
+  | "In Progress"
+  | "Running"
+  | "Completed"
+  | "Success"
+  | "Failed"
+  | "Retrying"
+  | "Paused"
+  | "Skipped";
+
 export type IngestionAgentRunResult = {
   connectorId: string[];
   status: string;
@@ -39,6 +83,6 @@ export type IngestionAgentRunResult = {
   currentNode?: string;
   currentStage?: string;
   stageOutputs?: Record<string, unknown>;
-  stageStatuses?: Record<string, string>;
+  stageStatuses?: Partial<Record<StageStatusKey, StageStatusValue>> | Record<string, string>;
   message?: string;
 }
