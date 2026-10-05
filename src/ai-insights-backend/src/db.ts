@@ -670,6 +670,63 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS dynamic_model_registry_source_provider_idx ON dynamic_model_registry(source_provider_id);
     `);
 
+    // Chat Suggestions Lookup Table
+    await query(`
+      CREATE TABLE IF NOT EXISTS chat_suggestions (
+        id VARCHAR(50) PRIMARY KEY,
+        suggestion VARCHAR(500) NOT NULL UNIQUE,
+        category VARCHAR(100) NOT NULL DEFAULT 'General',
+        display_order INTEGER NOT NULL DEFAULT 0,
+        is_active BOOLEAN NOT NULL DEFAULT true,
+        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
+        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS chat_suggestions_display_order_idx ON chat_suggestions(display_order);
+      CREATE INDEX IF NOT EXISTS chat_suggestions_is_active_idx ON chat_suggestions(is_active);
+    `);
+
+    // Post-deployment script during backend initialization to seed lookup suggestions
+    const seedChatSuggestions = [
+      {
+        id: "sugg-1",
+        suggestion: "Summarize the overall health and status of my active projects",
+        category: "General",
+        display_order: 1,
+      },
+      {
+        id: "sugg-2",
+        suggestion: "Inspect Data Quality & Null Ratios",
+        category: "Data Quality",
+        display_order: 2,
+      },
+      {
+        id: "sugg-3",
+        suggestion: "Suggest High-Impact Features for demand forecasting",
+        category: "Feature Engineering",
+        display_order: 3,
+      },
+      {
+        id: "sugg-4",
+        suggestion: "Compare candidate ML models and explain selection criteria",
+        category: "Model Diagnostics",
+        display_order: 4,
+      },
+    ];
+
+    for (const item of seedChatSuggestions) {
+      await query(
+        `INSERT INTO chat_suggestions (id, suggestion, category, display_order, is_active, created_at, updated_at)
+         VALUES ($1, $2, $3, $4, true, NOW(), NOW())
+         ON CONFLICT (id) DO UPDATE SET
+           suggestion = EXCLUDED.suggestion,
+           category = EXCLUDED.category,
+           display_order = EXCLUDED.display_order,
+           updated_at = NOW()`,
+        [item.id, item.suggestion, item.category, item.display_order]
+      );
+    }
+    console.log("[DB] Post-deployment seeding of chat suggestions completed.");
+
     console.log("[DB] Database tables initialization and migrations completed successfully.");
   } catch (err: any) {
     console.error("[DB] Failed to initialize database schemas:", err.message || err);

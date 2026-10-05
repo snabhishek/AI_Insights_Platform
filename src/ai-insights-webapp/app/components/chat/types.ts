@@ -97,3 +97,10 @@ export interface PromptTemplate {
   recommendedPersona: AgentPersonaId;
   icon: string;
 }
+
+export interface TrainedModelOption {
+  id: string;
+  displayName: string;
+  framework?: string;
+  isChampion?: boolean;
+}

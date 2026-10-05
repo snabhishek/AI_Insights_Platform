@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { ChatSession, AgentPersonaId } from "./types";
 import { AGENT_PERSONAS } from "./constants";
+import { Project } from "../providers/AppContext";
 
 interface ChatSidebarProps {
   sessions: ChatSession[];
@@ -13,6 +14,9 @@ interface ChatSidebarProps {
   onTogglePinSession: (id: string) => void;
   selectedPersonaId: AgentPersonaId;
   onSelectPersona: (personaId: AgentPersonaId) => void;
+  projects?: Project[];
+  selectedProjectId?: string;
+  onSelectProject?: (projectId: string) => void;
 }
 
 export default function ChatSidebar({
@@ -24,6 +28,9 @@ export default function ChatSidebar({
   onTogglePinSession,
   selectedPersonaId,
   onSelectPersona,
+  projects = [],
+  selectedProjectId = "",
+  onSelectProject,
 }: ChatSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
@@ -36,12 +43,54 @@ export default function ChatSidebar({
 
   return (
     <div className="w-full sm:w-[270px] lg:w-[300px] border-r border-border bg-surface flex flex-col h-full shrink-0 select-none">
-      {/* Top Action: New Chat Button */}
+      {/* Top Action: Project Selector & New Chat Button */}
       <div className="p-4 border-b border-border/80 space-y-3 shrink-0">
+        {/* Project Selector Dropdown above New Conversation button */}
+        <div className="space-y-1.5">
+          <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
+            Project Scope <span className="text-destructive">*</span>
+          </label>
+          <div className="relative">
+            <select
+              value={selectedProjectId}
+              onChange={(e) => onSelectProject?.(e.target.value)}
+              className={`w-full h-9 pl-3 pr-8 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40 transition cursor-pointer appearance-none ${
+                selectedProjectId
+                  ? "border-border bg-surface-muted/60 text-foreground"
+                  : "border-amber-500/60 bg-amber-500/5 text-foreground"
+              }`}
+            >
+              <option value="">-- Choose a project --</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  📊 {p.name}
+                </option>
+              ))}
+            </select>
+            <div className="absolute right-2.5 top-2.5 pointer-events-none text-muted-foreground">
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+              </svg>
+            </div>
+          </div>
+          {!selectedProjectId && (
+            <p className="text-[10px] text-amber-500 font-medium">
+              Choose a project to enable chat & load models.
+            </p>
+          )}
+        </div>
+
+        {/* New Conversation Button */}
         <button
           type="button"
           onClick={onNewSession}
-          className="w-full py-2.5 px-4 rounded-xl bg-primary hover:bg-primary/90 text-primary-foreground text-xs font-bold transition-all shadow-md active:scale-98 flex items-center justify-center gap-2 cursor-pointer"
+          disabled={!selectedProjectId}
+          className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all shadow-md flex items-center justify-center gap-2 ${
+            selectedProjectId
+              ? "bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer active:scale-98 shadow-primary/20"
+              : "bg-surface-muted text-muted-foreground/60 border border-border cursor-not-allowed shadow-none"
+          }`}
+          title={!selectedProjectId ? "Please choose a project first" : "Start a new conversation"}
         >
           <span className="text-base font-extrabold">+</span>
           <span>New AI Conversation</span>
