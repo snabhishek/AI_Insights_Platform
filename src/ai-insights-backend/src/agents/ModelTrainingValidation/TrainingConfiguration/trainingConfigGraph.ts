@@ -278,8 +278,12 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
 
   const finalConfig = rawConfig;
 
-  if (state.parentState?.splitDate && finalConfig.split) {
-    finalConfig.split.split_date = state.parentState.splitDate;
+  const effectiveParentSplit = state.parentState?.splitEndDate || state.parentState?.splitDate;
+  if (effectiveParentSplit && finalConfig.split) {
+    finalConfig.split.split_date = effectiveParentSplit;
+    if (finalConfig.split.temporal) {
+      finalConfig.split.temporal.train_end = effectiveParentSplit;
+    }
   }
 
   // Strictly validate the synthesized contract against TrainingJobContract rules (NO SYNTHETIC FALLBACKS)

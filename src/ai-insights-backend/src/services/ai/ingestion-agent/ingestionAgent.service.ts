@@ -16,7 +16,7 @@ import { WorkflowSessionMeta, INITIAL_STAGE_STATUSES } from "../../../agents/sta
 import { IAgentThinkingService } from "../agent-thinking/agentThinking.service.interface";
 import { QueueService } from "../../queue/queue.service";
 import { agentJobEvents } from "../../queue/queueEvents";
-import { generateDateTimeStamp, ensureProjectRunFolder, getLatestProjectRunTimestamp, createProjectSchemaFile } from "../../../agents/tools/helpers";
+import { generateDateTimeStamp, ensureProjectRunFolder, getLatestProjectRunTimestamp, createProjectSchemaFile, syncTrainingConfigSplitDate } from "../../../agents/tools/helpers";
 import { registerProjectMetadata } from "../../../agents/tools/filesystem/mcpFilesystemClient";
 import { getPipelineForSubstep, resolveSafePredecessorNode, getApprovalGateForNode, getStageRuleByNode } from "../../../agents/pipelineFlowConfig";
 
@@ -290,7 +290,6 @@ export class IngestionAgentService implements IIngestionAgentService {
       step?: string;
       projectId?: string;
       splitDate?: string;
-      splitStartDate?: string;
       splitEndDate?: string;
       selectedModels?: string[];
       predictionHorizon?: number;
@@ -620,7 +619,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         options.step === "modelTrainingNode" ||
         (Boolean(options.step?.toLowerCase().includes("training")) &&
           !options.step?.toLowerCase().includes("configuration") &&
-          Boolean(options?.splitStartDate || options?.splitEndDate || options?.splitDate))
+          Boolean(options?.splitEndDate || options?.splitDate))
       );
 
       const isApprovingPreFlight = options?.action === "approve" && !isApprovingModelValidation && !isApprovingModelTrainingExec && !isApprovingModelTrainingCode && (
@@ -812,7 +811,8 @@ export class IngestionAgentService implements IIngestionAgentService {
       }
 
       if (options?.action === "approve" && options?.projectId) {
-        const approvedAgentState = {
+        const resolvedSplit = options?.splitEndDate || options?.splitDate;
+        const approvedAgentState: any = {
           ...(savedAgentState || {}),
           status: "running",
           requiresApproval: false,
@@ -832,11 +832,27 @@ export class IngestionAgentService implements IIngestionAgentService {
                     ? "Advancing workflow to Training Configuration stage"
                     : (isApprovingModel ? "Advancing workflow to Model Selection stage" : `Advancing workflow to ${options?.step || "Feature Engineering"} stage`),
           message: approveMessage,
-          ...(options?.splitDate ? { splitDate: options.splitDate } : {}),
-          ...(options?.splitStartDate ? { splitStartDate: options.splitStartDate } : {}),
-          ...(options?.splitEndDate ? { splitEndDate: options.splitEndDate } : {}),
+          ...(resolvedSplit ? { splitDate: resolvedSplit, splitEndDate: resolvedSplit } : {}),
           ...(options?.selectedModels && options.selectedModels.length > 0 ? { selectedModels: options.selectedModels } : {}),
         };
+
+        if (resolvedSplit) {
+          try {
+            const pWs = await this.projectService.getProjectWithWorkspace(options.projectId);
+            if (pWs && pWs.project) {
+              await syncTrainingConfigSplitDate(
+                pWs.workspaceName || "DefaultWorkspace",
+                pWs.project.name,
+                resolvedSplit,
+                approvedAgentState,
+                activeRunTimestamp
+              );
+            }
+          } catch (syncErr) {
+            console.warn("[Workflow] Error syncing training config split date on approve:", syncErr);
+          }
+        }
+
         try {
           await this.projectService.updateAgentState(options.projectId, approvedAgentState);
           console.info(`[Workflow] Updated project ${options.projectId} database agentState to running on approve.`);
@@ -1025,7 +1041,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                 userPrompt: userPrompt ?? "",
                 runTimestamp: activeRunTimestamp,
                 splitDate: options?.splitDate || options?.splitEndDate || "",
-                splitStartDate: options?.splitStartDate || "",
                 splitEndDate: options?.splitEndDate || options?.splitDate || "",
                 selectedModels: options?.selectedModels || [],
                 predictionHorizon: options?.predictionHorizon ?? 12,
@@ -1571,14 +1586,31 @@ export class IngestionAgentService implements IIngestionAgentService {
                     if (effectiveProblemType) {
                       stateUpdates.problemType = effectiveProblemType;
                     }
-                    if (options?.splitDate || savedAgentState.splitDate) {
-                      stateUpdates.splitDate = options?.splitDate || savedAgentState.splitDate;
-                    }
-                    if (options?.splitStartDate || savedAgentState.splitStartDate) {
-                      stateUpdates.splitStartDate = options?.splitStartDate || savedAgentState.splitStartDate;
-                    }
-                    if (options?.splitEndDate || savedAgentState.splitEndDate) {
-                      stateUpdates.splitEndDate = options?.splitEndDate || savedAgentState.splitEndDate;
+                    const effSplit = options?.splitEndDate || options?.splitDate || savedAgentState.splitEndDate || savedAgentState.splitDate;
+                    if (effSplit) {
+                      stateUpdates.splitDate = effSplit;
+                      stateUpdates.splitEndDate = effSplit;
+                      const existingTC = savedAgentState.trainingConfiguration || savedAgentState.stageOutputs?.trainingConfiguration;
+                      if (existingTC) {
+                        const updatedTC = {
+                          ...existingTC,
+                          splitDate: effSplit,
+                          splitEndDate: effSplit,
+                          configuration: {
+                            ...(existingTC.configuration || {}),
+                            splitDate: effSplit,
+                            splitEndDate: effSplit,
+                            split: {
+                              ...(existingTC.configuration?.split || {}),
+                              split_date: effSplit,
+                            },
+                          },
+                        };
+                        stateUpdates.trainingConfiguration = updatedTC;
+                        if (stateUpdates.stageOutputs) {
+                          stateUpdates.stageOutputs.trainingConfiguration = updatedTC;
+                        }
+                      }
                     }
                     if (options?.selectedModels && options.selectedModels.length > 0) {
                       stateUpdates.selectedModels = options.selectedModels;
@@ -1603,6 +1635,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                     console.info(`[Workflow] Restoring graph checkpointer state from project database for thread ${threadId}`);
 
                     const predecessorNode = resolveSafePredecessorNode(options.step, savedAgentState);
+                    const effSplit = options?.splitEndDate || options?.splitDate || savedAgentState.splitEndDate || savedAgentState.splitDate || "";
                     const restoredState = {
                       ...savedAgentState,
                       connectorId,
@@ -1613,9 +1646,45 @@ export class IngestionAgentService implements IIngestionAgentService {
                       requiresApproval: false,
                       nextStep: undefined,
                       summary: `Advancing to ${options.step || "Feature Engineering"}`,
-                      splitDate: options?.splitDate || savedAgentState.splitDate || "",
-                      splitStartDate: options?.splitStartDate || savedAgentState.splitStartDate || "",
-                      splitEndDate: options?.splitEndDate || savedAgentState.splitEndDate || "",
+                      splitDate: effSplit,
+                      splitEndDate: effSplit,
+                      ...(effSplit && (savedAgentState.trainingConfiguration || savedAgentState.stageOutputs?.trainingConfiguration) ? {
+                        trainingConfiguration: {
+                          ...(savedAgentState.trainingConfiguration || savedAgentState.stageOutputs?.trainingConfiguration || {}),
+                          splitDate: effSplit,
+                          splitEndDate: effSplit,
+                          configuration: {
+                            ...((savedAgentState.trainingConfiguration || savedAgentState.stageOutputs?.trainingConfiguration || {}).configuration || {}),
+                            splitDate: effSplit,
+                            splitEndDate: effSplit,
+                            split: {
+                              ...((savedAgentState.trainingConfiguration || savedAgentState.stageOutputs?.trainingConfiguration || {}).configuration?.split || {}),
+                              split_date: effSplit,
+                            },
+                          },
+                        },
+                      } : {}),
+                      ...(savedAgentState.stageOutputs ? {
+                        stageOutputs: {
+                          ...savedAgentState.stageOutputs,
+                          ...(effSplit && savedAgentState.stageOutputs.trainingConfiguration ? {
+                            trainingConfiguration: {
+                              ...savedAgentState.stageOutputs.trainingConfiguration,
+                              splitDate: effSplit,
+                              splitEndDate: effSplit,
+                              configuration: {
+                                ...(savedAgentState.stageOutputs.trainingConfiguration.configuration || {}),
+                                splitDate: effSplit,
+                                splitEndDate: effSplit,
+                                split: {
+                                  ...(savedAgentState.stageOutputs.trainingConfiguration.configuration?.split || {}),
+                                  split_date: effSplit,
+                                },
+                              },
+                            },
+                          } : {}),
+                        },
+                      } : {}),
                       selectedModels: options?.selectedModels || savedAgentState.selectedModels || [],
                       predictionHorizon: options?.predictionHorizon ?? savedAgentState.predictionHorizon ?? 12,
                       predictionFrequency: options?.predictionFrequency || savedAgentState.predictionFrequency || "Weekly",
@@ -1784,9 +1853,8 @@ export class IngestionAgentService implements IIngestionAgentService {
                       runTimestamp: savedAgentState.runTimestamp || activeRunTimestamp,
                       status: "running",
                       summary: `Resuming from ${targetStep} phase`,
-                      splitDate: options?.splitDate || savedAgentState.splitDate || "",
-                      splitStartDate: options?.splitStartDate || savedAgentState.splitStartDate || "",
-                      splitEndDate: options?.splitEndDate || savedAgentState.splitEndDate || "",
+                      splitDate: options?.splitEndDate || options?.splitDate || savedAgentState.splitEndDate || savedAgentState.splitDate || "",
+                      splitEndDate: options?.splitEndDate || options?.splitDate || savedAgentState.splitEndDate || savedAgentState.splitDate || "",
                       selectedModels: options?.selectedModels || savedAgentState.selectedModels || [],
                       direction: savedAgentState.direction || savedAgentState.modelSelection?.direction || savedAgentState.stageOutputs?.modelSelection?.direction || "",
                       primaryMetric: savedAgentState.primaryMetric || savedAgentState.modelSelection?.primary_metric || savedAgentState.stageOutputs?.modelSelection?.primary_metric || "",
@@ -1899,8 +1967,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 projectId: options?.projectId ?? "",
                 userPrompt: userPrompt ?? "",
                 runTimestamp: activeRunTimestamp,
-                splitDate: options?.splitDate || options?.splitEndDate || "",
-                splitStartDate: options?.splitStartDate || "",
+                splitDate: options?.splitEndDate || options?.splitDate || "",
                 splitEndDate: options?.splitEndDate || options?.splitDate || "",
                 selectedModels: options?.selectedModels || [],
                 status: "queued",

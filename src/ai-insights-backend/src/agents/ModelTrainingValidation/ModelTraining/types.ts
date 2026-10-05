@@ -43,6 +43,5 @@ export interface ModelTrainingAgentOutput {
   executionLogs?: string;
   hasDateColumn?: boolean;
   dateColumnName?: string;
-  splitStartDate?: string;
   splitEndDate?: string;
 }

@@ -22,7 +22,6 @@ export class PostgresProjectRepository implements IProjectRepository {
   //       prediction_target_column: agentState.prediction_target_column ?? "",
   //       runTimestamp: agentState.runTimestamp,
   //       splitDate: agentState.splitDate,
-  //       splitStartDate: agentState.splitStartDate,
   //       splitEndDate: agentState.splitEndDate,
   //       selectedModels: agentState.selectedModels,
   //       predictionHorizon: agentState.predictionHorizon,
@@ -138,7 +137,7 @@ export class PostgresProjectRepository implements IProjectRepository {
 
     const latestRuns = await this.db.select()
       .from(schema.projectRuns)
-      .where(and(eq(schema.projectRuns.projectId, id), ne(schema.projectRuns.status, "completed"), ne(schema.projectRuns.status, "stopped")))
+      .where(eq(schema.projectRuns.projectId, id))
       .orderBy(desc(schema.projectRuns.createdAt))
       .limit(1);
 
@@ -196,6 +195,12 @@ export class PostgresProjectRepository implements IProjectRepository {
 
   async updateAgentState(id: string, agentState: Record<string, unknown>, useCase?: string, replaceState = false): Promise<Project | undefined> {
     const currentProj = await this.getById(id);
+    if (currentProj?.agentState?.status === "completed" || currentProj?.agentState?.status === "stopped") {
+      currentProj.agentState = undefined;
+      
+      return currentProj;
+    }
+    
     const effectiveUseCase = useCase ?? currentProj?.useCase;
     const effectiveStatus = (agentState?.status as string) || currentProj?.status || "idle";
 

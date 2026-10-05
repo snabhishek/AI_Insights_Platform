@@ -8,7 +8,6 @@ export interface WorkflowRequestPayload {
   action?: "approve" | "retry" | "resume";
   step?: string;
   splitDate?: string;
-  splitStartDate?: string;
   splitEndDate?: string;
   selectedModels?: string[];
   predictionHorizon?: number;

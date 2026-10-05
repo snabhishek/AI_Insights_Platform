@@ -215,11 +215,18 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     state.splitDate ||
     (output as any)?.configuration?.split?.split_date ||
     (output as any)?.configuration?.data_splitting?.cutoff_date ||
-    (output as any)?.configuration?.splitDate;
+    (output as any)?.configuration?.splitDate ||
+    (output as any)?.configuration?.splitEndDate;
   if (resolvedSplitDate) {
     (output as any).splitDate = resolvedSplitDate;
+    (output as any).splitEndDate = resolvedSplitDate;
     if (output.configuration) {
       (output.configuration as any).splitDate = resolvedSplitDate;
+      (output.configuration as any).splitEndDate = resolvedSplitDate;
+      if (!output.configuration.split) {
+        output.configuration.split = {};
+      }
+      output.configuration.split.split_date = resolvedSplitDate;
     }
   }
 

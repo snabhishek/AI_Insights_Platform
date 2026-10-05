@@ -156,10 +156,6 @@ export const AgentState = Annotation.Root({
     reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
     default: () => "",
   }),
-  splitStartDate: Annotation<string>({
-    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
-    default: () => "",
-  }),
   splitEndDate: Annotation<string>({
     reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
     default: () => "",

@@ -17,7 +17,7 @@ interface ModelTrainingValidationOutputProps {
   activeSubstep?: string;
   activeRunTimestamp?: string;
   onSelectionConfirmed?: (selectedModels: string[]) => void;
-  onApproveTraining?: (selectedModels: string[], splitStartDate?: string, splitEndDate?: string) => void;
+  onApproveTraining?: (selectedModels: string[], splitEndDate?: string) => void;
   onApprove?: (selectedModels?: string[], splitEndDate?: string) => void;
   onApproveValidation?: (horizon: number, frequency: string, startDate?: string, selectedModels?: string[]) => void;
   onApprovePreFlight?: () => void;

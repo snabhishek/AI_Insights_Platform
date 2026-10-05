@@ -25,7 +25,7 @@ export interface ModelTrainingStepOutputProps {
   modelSelection?: any;
   projectId?: string;
   activeRunTimestamp?: string;
-  onApproveTraining?: (selectedModels: string[], splitStartDate?: string, splitEndDate?: string) => void;
+  onApproveTraining?: (selectedModels: string[], splitEndDate?: string) => void;
   onApproveValidation?: (selectedModels: string[]) => void;
   onNavigateToValidation?: (selectedModels: string[]) => void;
   isApproving?: boolean;
@@ -556,7 +556,7 @@ export default function ModelTrainingStepOutput({
             ) : (
               <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/20">
                 <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
-                Awaiting Train Split Date (Month / Year)
+                Preparing Script to train models
               </span>
             )}
 

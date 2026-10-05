@@ -45,7 +45,6 @@ interface ProjectDetailPageProps {
   onApprove: (
     overrideTargetPhase?: string,
     selectedModels?: string[],
-    splitStartDate?: string,
     splitEndDate?: string,
     predictionHorizon?: number,
     predictionFrequency?: string,
@@ -413,7 +412,7 @@ export default function ProjectDetailPage({
               activeRunTimestamp={effectiveRunTimestamp}
               onApprove={(selectedModels, splitEndDate) => {
                 if (onApprove) {
-                  onApprove("Pre Flight", selectedModels, undefined, splitEndDate);
+                  onApprove("Pre Flight", selectedModels, splitEndDate);
                 }
               }}
               isApproving={isApproving}
@@ -441,14 +440,14 @@ export default function ProjectDetailPage({
               projectId={project.id}
               activeSubstep="Model Training"
               activeRunTimestamp={effectiveRunTimestamp}
-              onApproveTraining={(selectedModels, splitStartDate, splitEndDate) => {
+              onApproveTraining={(selectedModels, splitEndDate) => {
                 if (onApprove) {
-                  onApprove("Model Training", selectedModels, splitStartDate, splitEndDate);
+                  onApprove("Model Training", selectedModels, splitEndDate);
                 }
               }}
               onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
                 if (onApprove) {
-                  onApprove("Model Validation", selectedModels, undefined, undefined, horizon, frequency, startDate);
+                  onApprove("Model Validation", selectedModels, undefined, horizon, frequency, startDate);
                 }
               }}
               isApproving={isApproving}
@@ -465,7 +464,7 @@ export default function ProjectDetailPage({
               activeRunTimestamp={effectiveRunTimestamp}
               onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
                 if (onApprove) {
-                  onApprove("Model Validation", selectedModels, undefined, undefined, horizon, frequency, startDate);
+                  onApprove("Model Validation", selectedModels, undefined, horizon, frequency, startDate);
                 }
               }}
               isApproving={isApproving}
@@ -508,9 +507,9 @@ export default function ProjectDetailPage({
           //         onApprove("Training Configuration", models);
           //       }
           //     }}
-          //     onApproveTraining={(selectedModels, splitStartDate, splitEndDate) => {
+          //     onApproveTraining={(selectedModels, splitEndDate) => {
           //       if (onApprove) {
-          //         onApprove("Model Training", selectedModels, splitStartDate, splitEndDate);
+          //         onApprove("Model Training", selectedModels, splitEndDate);
           //       }
           //     }}
           //     onApprovePreFlight={() => {

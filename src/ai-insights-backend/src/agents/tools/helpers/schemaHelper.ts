@@ -5,6 +5,7 @@ import * as yaml from 'js-yaml';
 import {
   getProjectDir,
   getProjectSchemasDir,
+  getProjectRunDir,
   getProjectPythonScriptDir,
   getLatestProjectTimestamp,
   getWorkspacesBasePath,
@@ -1167,6 +1168,24 @@ export async function saveModularTrainingJobContract(
     },
   };
 
+  const incomingSplitDate =
+    rawData.split_date ||
+    rawData.splitDate ||
+    rawData.splitEndDate ||
+    rawData.split?.split_date ||
+    rawData.configuration?.split?.split_date ||
+    rawData.configuration?.splitDate ||
+    rawData.configuration?.splitEndDate ||
+    payload?.splitDate ||
+    payload?.splitEndDate;
+
+  if (incomingSplitDate && typeof incomingSplitDate === "string" && incomingSplitDate.trim()) {
+    splitData.split_date = incomingSplitDate.trim();
+    if (splitData.temporal) {
+      splitData.temporal.train_end = incomingSplitDate.trim();
+    }
+  }
+
   const imbalanceData = rawData.imbalance || existingObj.imbalance || {
     detected: false,
     ratio: null,
@@ -1300,6 +1319,186 @@ export async function saveModularTrainingJobContract(
 }
 
 export const saveModularTrainingConfigContract = saveModularTrainingJobContract;
+
+/**
+ * Synchronizes a chosen split date (splitDate or splitEndDate) across:
+ * 1. Agent state top-level splitDate and splitEndDate
+ * 2. targetState.trainingConfiguration (splitDate, splitEndDate, configuration.split.split_date, etc.)
+ * 3. targetState.stageOutputs.trainingConfiguration
+ * 4. The training configuration YAML contract file on disk
+ * 5. Any python training_config.yaml file in the run directory if present
+ */
+export async function syncTrainingConfigSplitDate(
+  workspaceName: string,
+  projectName: string,
+  splitDate: string,
+  targetState: any,
+  runTimestamp?: string
+): Promise<{ updatedState: any; contractPath?: string }> {
+  if (!splitDate || typeof splitDate !== "string" || !splitDate.trim()) {
+    return { updatedState: targetState };
+  }
+
+  const splitVal = splitDate.trim();
+  const effectiveTs = resolveProjectRunTimestamp(
+    workspaceName,
+    projectName,
+    runTimestamp || targetState?.runTimestamp
+  );
+
+  // 1. Synchronize top-level agent state
+  targetState.splitDate = splitVal;
+  targetState.splitEndDate = splitVal;
+
+  // 2. Synchronize targetState.trainingConfiguration
+  const existingTC = targetState.trainingConfiguration || targetState.stageOutputs?.trainingConfiguration || {};
+  const updatedTC = {
+    ...existingTC,
+    splitDate: splitVal,
+    splitEndDate: splitVal,
+    updatedAt: new Date().toISOString(),
+    configuration: {
+      ...(existingTC.configuration || {}),
+      splitDate: splitVal,
+      splitEndDate: splitVal,
+      split: {
+        ...(existingTC.configuration?.split || {}),
+        split_date: splitVal,
+        ...(existingTC.configuration?.split?.temporal
+          ? {
+              temporal: {
+                ...existingTC.configuration.split.temporal,
+                train_end: splitVal,
+              },
+            }
+          : {}),
+      },
+    },
+  };
+  targetState.trainingConfiguration = updatedTC;
+
+  // 3. Synchronize targetState.stageOutputs.trainingConfiguration
+  if (!targetState.stageOutputs) {
+    targetState.stageOutputs = {};
+  }
+  targetState.stageOutputs.trainingConfiguration = {
+    ...(targetState.stageOutputs.trainingConfiguration || {}),
+    ...updatedTC,
+    splitDate: splitVal,
+    splitEndDate: splitVal,
+    configuration: {
+      ...(targetState.stageOutputs.trainingConfiguration?.configuration || {}),
+      ...updatedTC.configuration,
+      splitDate: splitVal,
+      splitEndDate: splitVal,
+      split: {
+        ...(targetState.stageOutputs.trainingConfiguration?.configuration?.split || {}),
+        ...updatedTC.configuration.split,
+        split_date: splitVal,
+      },
+    },
+  };
+
+  // 4. Update the training configuration YAML contract file on disk
+  let savedContractPath: string | undefined;
+  try {
+    const targetDir = getProjectSchemasDir(workspaceName, projectName, effectiveTs);
+    await fs.mkdir(targetDir, { recursive: true });
+
+    const cleanProjectTitle = sanitizeName(projectName);
+    const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
+    const contractFileName = `${useCaseSlug}_training_job_contract_${effectiveTs}.yaml`;
+    let contractPath = updatedTC.contractPath || path.resolve(targetDir, contractFileName);
+
+    let contractData: any = null;
+    let fileToRead = contractPath;
+    if (!fsSync.existsSync(fileToRead)) {
+      const defaultPath = path.resolve(targetDir, contractFileName);
+      if (fsSync.existsSync(defaultPath)) {
+        fileToRead = defaultPath;
+      } else {
+        try {
+          if (fsSync.existsSync(targetDir)) {
+            const files = await fs.readdir(targetDir);
+            const match = files.find((f) => f.includes("_training_job_contract_") && (f.endsWith(".yaml") || f.endsWith(".yml")));
+            if (match) {
+              fileToRead = path.resolve(targetDir, match);
+            }
+          }
+        } catch {}
+      }
+    }
+
+    if (fsSync.existsSync(fileToRead)) {
+      try {
+        const rawContent = await fs.readFile(fileToRead, "utf-8");
+        contractData = (yaml.load(rawContent) as Record<string, any>) || {};
+      } catch (e) {
+        console.warn(`[syncTrainingConfigSplitDate] Could not read existing contract at ${fileToRead}:`, e);
+      }
+    }
+
+    if (!contractData) {
+      contractData = updatedTC.configuration || {};
+    }
+
+    if (!contractData.split) {
+      contractData.split = {};
+    }
+    contractData.split.split_date = splitVal;
+    if (contractData.split.temporal) {
+      contractData.split.temporal.train_end = splitVal;
+    }
+    contractData.splitDate = splitVal;
+    contractData.splitEndDate = splitVal;
+
+    const saveRes = await saveModularTrainingJobContract(
+      workspaceName,
+      projectName,
+      contractData,
+      effectiveTs
+    );
+    savedContractPath = saveRes.contractPath;
+
+    targetState.trainingConfiguration.contractPath = savedContractPath;
+    targetState.trainingConfiguration.contractFileName = path.basename(savedContractPath);
+    targetState.stageOutputs.trainingConfiguration.contractPath = savedContractPath;
+    targetState.stageOutputs.trainingConfiguration.contractFileName = path.basename(savedContractPath);
+    console.info(`[syncTrainingConfigSplitDate] Synchronized split_date ("${splitVal}") in contract file: ${savedContractPath}`);
+  } catch (contractErr: any) {
+    console.warn(`[syncTrainingConfigSplitDate] Warning saving contract YAML with split date:`, contractErr?.message || contractErr);
+  }
+
+  // 5. Update python model training config if it already exists
+  try {
+    const runDir = getProjectRunDir(workspaceName, projectName, effectiveTs);
+    if (fsSync.existsSync(runDir)) {
+      const entries = await fs.readdir(runDir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory() && entry.name.includes("_model_training")) {
+          const pyConfigPath = path.join(runDir, entry.name, "configs", "training_config.yaml");
+          if (fsSync.existsSync(pyConfigPath)) {
+            const pyContent = await fs.readFile(pyConfigPath, "utf-8");
+            const pyParsed = (yaml.load(pyContent) as Record<string, any>) || {};
+            if (pyParsed && typeof pyParsed === "object") {
+              if (!pyParsed.split) pyParsed.split = {};
+              pyParsed.split.split_date = splitVal;
+              if (pyParsed.split.temporal) {
+                pyParsed.split.temporal.train_end = splitVal;
+              }
+              await fs.writeFile(pyConfigPath, yaml.dump(pyParsed, { noRefs: true }), "utf-8");
+              console.info(`[syncTrainingConfigSplitDate] Synchronized split_date in python config: ${pyConfigPath}`);
+            }
+          }
+        }
+      }
+    }
+  } catch (pyErr) {
+    console.warn(`[syncTrainingConfigSplitDate] Warning updating python training config:`, pyErr);
+  }
+
+  return { updatedState: targetState, contractPath: savedContractPath };
+}
 
 
 /**

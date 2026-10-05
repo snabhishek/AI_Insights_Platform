@@ -35,7 +35,6 @@ export interface IIngestionAgentService {
       step?: string;
       projectId?: string;
       splitDate?: string;
-      splitStartDate?: string;
       splitEndDate?: string;
       selectedModels?: string[];
       predictionHorizon?: number;
