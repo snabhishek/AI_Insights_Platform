@@ -206,26 +206,8 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     ),
     downstreamOutputsToClearOnRetry: [
       "modelTraining",
-      "modelValidation",
     ],
     aliases: ["modelTrainingExec", "modelTrainingNode"],
-  },
-  {
-    id: "modelValidationNode",
-    displayName: "Model Validation",
-    pipeline: "Model Training & Validation",
-    predecessorNode: "modelTrainingExecNode",
-    interruptBefore: true,
-    requiresApproval: true,
-    approvalPrompt: "Model Training completed successfully. Select the candidate models to validate and proceed to Model Validation.",
-    nextStepOnApproval: "Model Validation",
-    requiredInputsOnApproval: ["selectedModels"],
-    prerequisites: (state) => Boolean(
-      state?.modelTraining ||
-      state?.stageOutputs?.modelTraining ||
-      state?.stageStatuses?.modelTraining === "Completed"
-    ),
-    aliases: ["modelValidation"],
   },
 ] as const;
 
