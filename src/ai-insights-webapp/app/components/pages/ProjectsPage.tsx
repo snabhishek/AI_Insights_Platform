@@ -191,10 +191,11 @@ export default function ProjectsPage() {
   const mapStageToPipelineStatus = (
     stageStatuses?: Record<string, string>,
     currentStatuses?: PipelineStatuses,
-    currentNodeOrStage?: string
+    currentNodeOrStage?: string,
+    stageOutputsParam?: Record<string, any>
   ): PipelineStatuses => {
     const next = { ...(currentStatuses || INITIAL_PIPELINE_STATUSES) } as PipelineStatuses;
-    if (!stageStatuses && !currentNodeOrStage) return next;
+    if (!stageStatuses && !currentNodeOrStage && !stageOutputsParam) return next;
     stageStatuses = stageStatuses || {};
 
     const isCompleted = (v?: string) => v === "Completed" || v === "completed" || v === "Success" || v === "success" || v === "ok" || v === "done";
@@ -233,10 +234,25 @@ export default function ProjectsPage() {
     ], "Model Training");
     mapStage(["modelValidation", "modelValidationNode"], "Model Validation");
 
+    // Output presence confirmation
+    if (stageOutputsParam) {
+      if (stageOutputsParam.inspection) next["Data Inspection"] = "Completed";
+      if (stageOutputsParam.dataProfile) next["Data Profiling"] = "Completed";
+      if (stageOutputsParam.schemaResolution) next["Schema Resolver"] = "Completed";
+      if (stageOutputsParam.hierarchyMapper) next["Hierarchy Mapper"] = "Completed";
+      if (stageOutputsParam.featureArchitect) next["Feature Architect"] = "Completed";
+      if (stageOutputsParam.featureValidator) next["Feature Validator"] = "Completed";
+      if (stageOutputsParam.exogenousScout || stageOutputsParam.exogenous) next["Exogenous Scout"] = "Completed";
+      if (stageOutputsParam.modelSelection) next["Model Selection"] = "Completed";
+      if (stageOutputsParam.trainingConfiguration?.contractPath) next["Training Configuration"] = "Completed";
+      if (stageOutputsParam.preFlight) next["Pre Flight"] = "Completed";
+      if (stageOutputsParam.modelTraining) next["Model Training"] = "Completed";
+    }
+
     // Ingestion completion: if resolveSchema is completed or both inspect & profileData completed without active running
-    const inspectStatus = getStageStatus(["inspect"]);
-    const profileStatus = getStageStatus(["profileData", "dataProfile"]);
-    const schemaStatus = getStageStatus(["resolveSchema", "schemaResolution"]);
+    const inspectStatus = getStageStatus(["inspect"]) || (stageOutputsParam?.inspection ? "Completed" : undefined);
+    const profileStatus = getStageStatus(["profileData", "dataProfile"]) || (stageOutputsParam?.dataProfile ? "Completed" : undefined);
+    const schemaStatus = getStageStatus(["resolveSchema", "schemaResolution"]) || (stageOutputsParam?.schemaResolution ? "Completed" : undefined);
     const isDIRunning = isRunning(inspectStatus) || isRunning(profileStatus) || isRunning(schemaStatus);
     const isDIDone = !isDIRunning && (
       isCompleted(schemaStatus) ||
@@ -251,10 +267,10 @@ export default function ProjectsPage() {
     }
 
     // Feature Engineering composite status
-    const hmVal = getStageStatus(["hierarchyMapper", "hierarchyMapperNode", "relationshipBuilder", "formBuilder"]);
-    const faVal = getStageStatus(["featureArchitect", "featureArchitectNode"]);
-    const fvVal = getStageStatus(["featureValidator", "featureValidatorNode"]);
-    const exoVal = getStageStatus(["exogenousScout", "exogenous"]);
+    const hmVal = getStageStatus(["hierarchyMapper", "hierarchyMapperNode", "relationshipBuilder", "formBuilder"]) || (stageOutputsParam?.hierarchyMapper ? "Completed" : undefined);
+    const faVal = getStageStatus(["featureArchitect", "featureArchitectNode"]) || (stageOutputsParam?.featureArchitect ? "Completed" : undefined);
+    const fvVal = getStageStatus(["featureValidator", "featureValidatorNode"]) || (stageOutputsParam?.featureValidator ? "Completed" : undefined);
+    const exoVal = getStageStatus(["exogenousScout", "exogenous"]) || (stageOutputsParam?.exogenousScout || stageOutputsParam?.exogenous ? "Completed" : undefined);
 
     const isFERunning = isRunning(hmVal) || isRunning(faVal) || isRunning(fvVal) || isRunning(exoVal);
     const isFEDone = isCompleted(hmVal) && isCompleted(faVal) && (isCompleted(exoVal) || isCompleted(fvVal));
@@ -305,7 +321,11 @@ export default function ProjectsPage() {
         isCompleted(stageStatuses.modelValidation) ||
         isRunning(stageStatuses.modelValidation) ||
         isCompleted(stageStatuses.modelValidationNode) ||
-        isRunning(stageStatuses.modelValidationNode));
+        isRunning(stageStatuses.modelValidationNode) ||
+        Boolean(stageOutputsParam?.modelSelection) ||
+        Boolean(stageOutputsParam?.trainingConfiguration) ||
+        Boolean(stageOutputsParam?.preFlight) ||
+        Boolean(stageOutputsParam?.modelTraining));
 
     if (isFEActiveOrDone || isModelPhaseActiveOrDone) {
       next["Data Inspection"] = "Completed";
@@ -320,6 +340,44 @@ export default function ProjectsPage() {
       next["Feature Validator"] = "Completed";
       next["Exogenous Scout"] = "Completed";
       next["Feature Engineering"] = "Completed";
+    }
+
+    // Model sub-step cascaded completion:
+    if (
+      isCompleted(stageStatuses.trainingConfiguration) ||
+      isRunning(stageStatuses.trainingConfiguration) ||
+      isCompleted(stageStatuses.trainingConfigurationNode) ||
+      isRunning(stageStatuses.trainingConfigurationNode) ||
+      Boolean(stageOutputsParam?.trainingConfiguration?.contractPath)
+    ) {
+      next["Model Selection"] = "Completed";
+    }
+
+    if (
+      isCompleted(stageStatuses.preFlight) ||
+      isRunning(stageStatuses.preFlight) ||
+      isCompleted(stageStatuses.preFlightNode) ||
+      isRunning(stageStatuses.preFlightNode) ||
+      Boolean(stageOutputsParam?.preFlight)
+    ) {
+      next["Model Selection"] = "Completed";
+      next["Training Configuration"] = "Completed";
+    }
+
+    if (
+      isCompleted(stageStatuses.modelTraining) ||
+      isRunning(stageStatuses.modelTraining) ||
+      isCompleted(stageStatuses.modelTrainingNode) ||
+      isRunning(stageStatuses.modelTrainingNode) ||
+      isCompleted(stageStatuses.modelTrainingExec) ||
+      isRunning(stageStatuses.modelTrainingExec) ||
+      isCompleted(stageStatuses.modelTrainingCode) ||
+      isRunning(stageStatuses.modelTrainingCode) ||
+      Boolean(stageOutputsParam?.modelTraining)
+    ) {
+      next["Model Selection"] = "Completed";
+      next["Training Configuration"] = "Completed";
+      next["Pre Flight"] = "Completed";
     }
 
     const hasStoppedStage = Object.values(stageStatuses).some(isStopped);
@@ -360,7 +418,15 @@ export default function ProjectsPage() {
       modelValidationNode: "Model Validation",
     };
     const activeStep = currentNodeOrStage ? activeStepByNode[currentNodeOrStage] : undefined;
-    if (activeStep && next[activeStep] !== "Completed" && !hasStoppedStage) {
+    if (
+      activeStep &&
+      next[activeStep] !== "Completed" &&
+      !hasStoppedStage &&
+      !(activeStep === "Data Inspection" && isDIDone) &&
+      !(activeStep === "Data Inspection" && (isFEActiveOrDone || isModelPhaseActiveOrDone)) &&
+      !(activeStep === "Hierarchy Mapper" && isModelPhaseActiveOrDone) &&
+      !(activeStep === "Model Selection" && (isCompleted(stageStatuses.trainingConfiguration) || Boolean(stageOutputsParam?.trainingConfiguration?.contractPath)))
+    ) {
       next[activeStep] = "In Progress";
     }
 
@@ -579,7 +645,8 @@ export default function ProjectsPage() {
       const nextStatuses = mapStageToPipelineStatus(
         state.stageStatuses,
         pipelineStatuses,
-        state.currentNode || state.currentStage
+        state.currentNode || state.currentStage,
+        state.stageOutputs
       );
       setPipelineStatuses(nextStatuses);
 
@@ -773,7 +840,8 @@ export default function ProjectsPage() {
                 mapStageToPipelineStatus(
                   freshState.stageStatuses,
                   prev,
-                  freshState.currentNode || freshState.currentStage
+                  freshState.currentNode || freshState.currentStage,
+                  freshState.stageOutputs
                 )
               );
             }
@@ -840,7 +908,8 @@ export default function ProjectsPage() {
           mapStageToPipelineStatus(
             freshState.stageStatuses,
             prev,
-            freshState.currentNode || freshState.currentStage
+            freshState.currentNode || freshState.currentStage,
+            freshState.stageOutputs
           )
         );
         if (freshState.stageOutputs) setStageOutputs(freshState.stageOutputs);
@@ -907,7 +976,7 @@ export default function ProjectsPage() {
             setIsPaused(false);
             setRequiresApproval(true);
             setApprovalNextStep("Training Configuration");
-          } else if (freshState.requiresApproval && !isAtOrPastModel) {
+          } else if (freshState.requiresApproval) {
             setIsAwaitingResponse(false);
             setRunStatus("Paused");
             setIsPaused(false);
@@ -944,7 +1013,8 @@ export default function ProjectsPage() {
       const nextStatuses = mapStageToPipelineStatus(
         payload.stageStatuses,
         prev,
-        payload.currentNode || payload.currentStage
+        payload.currentNode || payload.currentStage,
+        payload.stageOutputs
       );
       return nextStatuses;
     });

@@ -259,21 +259,70 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
       "modelTraining"
     );
   } else if (targetPhase === "Training Configuration") {
+    statusesToUpdate["Data Ingestion"] = "Completed";
+    statusesToUpdate["Data Inspection"] = "Completed";
+    statusesToUpdate["Data Profiling"] = "Completed";
+    statusesToUpdate["Schema Resolver"] = "Completed";
+    statusesToUpdate["Feature Engineering"] = "Completed";
+    statusesToUpdate["Hierarchy Mapper"] = "Completed";
+    statusesToUpdate["Feature Architect"] = "Completed";
+    statusesToUpdate["Feature Validator"] = "Completed";
+    statusesToUpdate["Exogenous Scout"] = "Completed";
+    statusesToUpdate["Model Training & Validation"] = "In Progress";
+    statusesToUpdate["Model Selection"] = "Completed";
     statusesToUpdate["Training Configuration"] = "In Progress";
     statusesToUpdate["Pre Flight"] = "Pending";
     statusesToUpdate["Model Training"] = "Pending";
 
     outputsToClear.push("trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining");
   } else if (targetPhase === "Pre Flight") {
+    statusesToUpdate["Data Ingestion"] = "Completed";
+    statusesToUpdate["Data Inspection"] = "Completed";
+    statusesToUpdate["Data Profiling"] = "Completed";
+    statusesToUpdate["Schema Resolver"] = "Completed";
+    statusesToUpdate["Feature Engineering"] = "Completed";
+    statusesToUpdate["Hierarchy Mapper"] = "Completed";
+    statusesToUpdate["Feature Architect"] = "Completed";
+    statusesToUpdate["Feature Validator"] = "Completed";
+    statusesToUpdate["Exogenous Scout"] = "Completed";
+    statusesToUpdate["Model Training & Validation"] = "In Progress";
+    statusesToUpdate["Model Selection"] = "Completed";
+    statusesToUpdate["Training Configuration"] = "Completed";
     statusesToUpdate["Pre Flight"] = "In Progress";
     statusesToUpdate["Model Training"] = "Pending";
 
     outputsToClear.push("preFlight", "modelTrainingCode", "modelTraining");
   } else if (targetPhase === "Model Training Code Generation" || targetPhase === "Model Training") {
+    statusesToUpdate["Data Ingestion"] = "Completed";
+    statusesToUpdate["Data Inspection"] = "Completed";
+    statusesToUpdate["Data Profiling"] = "Completed";
+    statusesToUpdate["Schema Resolver"] = "Completed";
+    statusesToUpdate["Feature Engineering"] = "Completed";
+    statusesToUpdate["Hierarchy Mapper"] = "Completed";
+    statusesToUpdate["Feature Architect"] = "Completed";
+    statusesToUpdate["Feature Validator"] = "Completed";
+    statusesToUpdate["Exogenous Scout"] = "Completed";
+    statusesToUpdate["Model Training & Validation"] = "In Progress";
+    statusesToUpdate["Model Selection"] = "Completed";
+    statusesToUpdate["Training Configuration"] = "Completed";
+    statusesToUpdate["Pre Flight"] = "Completed";
     statusesToUpdate["Model Training"] = "In Progress";
 
     outputsToClear.push("modelTrainingCode", "modelTraining");
   } else if (targetPhase === "Model Training Execution") {
+    statusesToUpdate["Data Ingestion"] = "Completed";
+    statusesToUpdate["Data Inspection"] = "Completed";
+    statusesToUpdate["Data Profiling"] = "Completed";
+    statusesToUpdate["Schema Resolver"] = "Completed";
+    statusesToUpdate["Feature Engineering"] = "Completed";
+    statusesToUpdate["Hierarchy Mapper"] = "Completed";
+    statusesToUpdate["Feature Architect"] = "Completed";
+    statusesToUpdate["Feature Validator"] = "Completed";
+    statusesToUpdate["Exogenous Scout"] = "Completed";
+    statusesToUpdate["Model Training & Validation"] = "In Progress";
+    statusesToUpdate["Model Selection"] = "Completed";
+    statusesToUpdate["Training Configuration"] = "Completed";
+    statusesToUpdate["Pre Flight"] = "Completed";
     statusesToUpdate["Model Training"] = "In Progress";
     outputsToClear.push("modelTraining");
   }
