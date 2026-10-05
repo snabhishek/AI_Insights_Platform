@@ -277,14 +277,138 @@ export default function WorkflowPipeline({
   };
 
   const getWorkflowStageStatus = (stage: string): PipelineStatus => {
-    if (mainStatusMap[stage] === "Pending" && runStatus ==="Idle") {
-      return "None"
+    // 1. Check if all substeps in this stage are completed and awaiting approval (Rule 1 & Rule 3)
+    if (stage === "Data Ingestion") {
+      const isIngestionDone =
+        calculateDataIngestionStatus(pipelineStatuses) === "Completed" ||
+        (pipelineStatuses["Data Inspection"] === "Completed" &&
+          pipelineStatuses["Data Profiling"] === "Completed" &&
+          pipelineStatuses["Schema Resolver"] === "Completed");
+
+      const isWaitingAfterIngestion =
+        isIngestionDone &&
+        (requiresApproval || runStatus === "Paused") &&
+        (approvalNextStep === "Feature Engineering" ||
+          approvalNextStep === "hierarchyMapperNode" ||
+          pausedAtPhase === "Data Ingestion" ||
+          (pipelineStatuses["Feature Engineering"] !== "In Progress" &&
+            pipelineStatuses["Feature Engineering"] !== "Completed" &&
+            pipelineStatuses["Hierarchy Mapper"] !== "In Progress" &&
+            pipelineStatuses["Hierarchy Mapper"] !== "Completed"));
+
+      if (isWaitingAfterIngestion) {
+        return "Awaiting Approval";
+      }
+    }
+
+    if (stage === "Feature Engineering") {
+      const isFEDone =
+        calculateFeatureEngineeringStatus(pipelineStatuses) === "Completed" ||
+        (pipelineStatuses["Hierarchy Mapper"] === "Completed" &&
+          pipelineStatuses["Feature Architect"] === "Completed" &&
+          (pipelineStatuses["Feature Validator"] === "Completed" ||
+            pipelineStatuses["Exogenous Scout"] === "Completed"));
+
+      const isWaitingAfterFE =
+        isFEDone &&
+        (requiresApproval || runStatus === "Paused") &&
+        (approvalNextStep === "Model Training & Validation" ||
+          approvalNextStep === "Model Selection" ||
+          approvalNextStep === "modelSelectionNode" ||
+          pausedAtPhase === "Feature Engineering" ||
+          (pipelineStatuses["Model Training & Validation"] !== "In Progress" &&
+            pipelineStatuses["Model Training & Validation"] !== "Completed" &&
+            pipelineStatuses["Model Selection"] !== "In Progress" &&
+            pipelineStatuses["Model Selection"] !== "Completed"));
+
+      if (isWaitingAfterFE) {
+        return "Awaiting Approval";
+      }
+    }
+
+    // 2. Check if this stage has any substep waiting for approval / user input (Rule 2 & Rule 3)
+    if (stage === "Model Training & Validation") {
+      const hasModelSelection = Boolean(
+        stageOutputs?.modelSelection ||
+        pipelineStatuses["Model Selection"] === "Completed"
+      );
+      const trainConfig = stageOutputs?.trainingConfiguration as Record<string, any> | undefined;
+      const hasTrainingContract = Boolean(
+        trainConfig?.contractPath
+      );
+      const hasPreFlight = Boolean(
+        stageOutputs?.preFlight ||
+        pipelineStatuses["Pre Flight"] === "Completed"
+      );
+      const hasModelTraining = Boolean(
+        stageOutputs?.modelTraining ||
+        pipelineStatuses["Model Training"] === "Completed"
+      );
+
+      const isWaitingForModelConfirmation =
+        hasModelSelection &&
+        !hasTrainingContract &&
+        pipelineStatuses["Training Configuration"] !== "Completed" &&
+        (isAwaitingResponse ||
+          approvalNextStep === "Training Configuration" ||
+          approvalNextStep === "trainingConfigurationNode" ||
+          approvalNextStep === "Model Selection" ||
+          approvalNextStep === "modelSelectionNode" ||
+          (runStatus === "Paused" && (requiresApproval || isAwaitingResponse)));
+
+      const isWaitingForPreFlightApproval =
+        hasTrainingContract &&
+        !hasPreFlight &&
+        pipelineStatuses["Pre Flight"] !== "Completed" &&
+        (approvalNextStep === "Pre Flight" ||
+          approvalNextStep === "preFlightNode" ||
+          pausedAtPhase === "Pre Flight" ||
+          (runStatus === "Paused" && requiresApproval && !isWaitingForModelConfirmation));
+
+      const isWaitingForTrainingApproval =
+        hasPreFlight &&
+        !hasModelTraining &&
+        pipelineStatuses["Model Training"] !== "Completed" &&
+        (approvalNextStep === "Model Training" ||
+          approvalNextStep === "modelTrainingNode" ||
+          approvalNextStep === "modelTrainingCodeNode" ||
+          pausedAtPhase === "Model Training" ||
+          (runStatus === "Paused" && requiresApproval && !isWaitingForModelConfirmation && !isWaitingForPreFlightApproval));
+
+      const isSubprocessApproval =
+        isWaitingForModelConfirmation ||
+        isWaitingForPreFlightApproval ||
+        isWaitingForTrainingApproval ||
+        isAwaitingResponse ||
+        (requiresApproval &&
+          (approvalNextStep === "Training Configuration" ||
+            approvalNextStep === "trainingConfigurationNode" ||
+            approvalNextStep === "Pre Flight" ||
+            approvalNextStep === "preFlightNode" ||
+            approvalNextStep === "Model Training" ||
+            approvalNextStep === "modelTrainingNode" ||
+            approvalNextStep === "modelTrainingCodeNode" ||
+            approvalNextStep === "Model Selection" ||
+            approvalNextStep === "modelSelectionNode" ||
+            pausedAtPhase === "Model Training & Validation" ||
+            pausedAtPhase === "Model Selection" ||
+            pausedAtPhase === "Training Configuration" ||
+            pausedAtPhase === "Pre Flight" ||
+            pausedAtPhase === "Model Training"));
+
+      if (isSubprocessApproval) {
+        return "Awaiting Approval";
+      }
+    }
+
+    if (mainStatusMap[stage] === "Pending" && runStatus === "Idle") {
+      return "None";
     }
     if (mainStatusMap[stage] !== "Completed" && runStatus === "Stopped") {
       return "Stopped";
     }
     return mainStatusMap[stage];
-  }
+  };
 
   return (
     <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-background border border-border rounded-lg p-6 shadow-soft">
@@ -460,7 +584,8 @@ export default function WorkflowPipeline({
 
       <div className="flex w-full min-w-0 items-center px-2 py-5 sm:px-4 select-none">
         {PIPELINE_STEPS.map((step, idx) => {
-          const connectorComplete = mainStatuses[idx] === "Completed";
+          const stageStatus = getWorkflowStageStatus(step.id);
+          const connectorComplete = stageStatus === "Completed" || stageStatus === "Awaiting Approval" || mainStatuses[idx] === "Completed";
 
           return (
             <React.Fragment key={step.id}>

@@ -23,7 +23,7 @@ Groups containing at least one "primary" relationship should be listed
 before groups that are entirely "secondary."
 
 Step 3: Decide each field's control type & maintain exact column name.
-- CRITICAL: "fieldId" and "name" MUST match the exact physical column name from the Relationship Schema (e.g. "carrier_name", "state", "order_date"). Do NOT prefix with entityScope or alter casing.
+- CRITICAL: "fieldId" MUST match the exact physical column name from the Relationship Schema (e.g. "carrier_name", "state", "order_date"). Do NOT prefix with entityScope or alter casing.
 - If cardinality is 50 or fewer: controlType = "dropdown"
 - If cardinality is more than 50: controlType = "searchable_dropdown"
 - If the field is a calendar Year/Quarter/Month/Week/DayOfWeek node: controlType = "dropdown"

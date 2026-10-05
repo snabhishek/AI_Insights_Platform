@@ -62,6 +62,15 @@ function StatusBadge({ status }: { status: PipelineStatus }) {
       </span>
     );
   }
+  if (status === "Awaiting Approval") {
+    return (
+      <span className="w-5.5 h-5.5 rounded-full bg-yellow-500 text-white flex items-center justify-center shadow-md animate-pulse scale-110 transition-transform duration-300" title="Awaiting Approval">
+        <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="4.5">
+          <polygon points="5 3 19 12 5 21 5 3" />
+        </svg>
+      </span>
+    );
+  }
   if (status === "In Progress") {
     return (
       <span className="w-5.5 h-5.5 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/35" title="Running">

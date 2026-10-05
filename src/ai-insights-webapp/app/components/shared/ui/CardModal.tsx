@@ -106,6 +106,107 @@ function CardModalContent({
   const activeStep = stepsList[activeStepIndex] || null;
   const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Pending") : "Pending";
 
+  const cardId = workflowCard?.id || "";
+  const isDataIngestionCard = cardId === "Data Ingestion" || workflowCard?.title === "Data Ingestion";
+  const isFeatureEngineeringCard = cardId === "Feature Engineering" || workflowCard?.title === "Feature Engineering";
+  const isModelTrainingCard = cardId === "Model Training & Validation" || workflowCard?.title === "Model Training & Validation";
+
+  // Helper to determine if step has concrete output produced
+  const hasStepOutput = (stepId: string): boolean => {
+    if (stepOutputs[stepId] != null) return true;
+    const stageOuts = agentState?.stageOutputs;
+    if (!stageOuts) return false;
+    if (stepId === "Data Inspection") return Boolean(stageOuts.inspection || agentState?.inspection);
+    if (stepId === "Data Profiling") return Boolean(stageOuts.dataProfile || agentState?.dataProfile);
+    if (stepId === "Schema Resolver") return Boolean(stageOuts.schemaResolution || agentState?.schemaResolution);
+    if (stepId === "Hierarchy Mapper") return Boolean(stageOuts.hierarchyMapper || agentState?.hierarchyMapper);
+    if (stepId === "Feature Architect") return Boolean(stageOuts.featureArchitect || agentState?.featureArchitect);
+    if (stepId === "Feature Validator") return Boolean(stageOuts.featureValidator || agentState?.featureValidator);
+    if (stepId === "Exogenous Scout") return Boolean(stageOuts.exogenousScout || stageOuts.exogenous || agentState?.exogenousScout);
+    if (stepId === "Model Selection") return Boolean(stageOuts.modelSelection || agentState?.modelSelection);
+    if (stepId === "Training Configuration") return Boolean(stageOuts.trainingConfiguration?.contractPath || agentState?.trainingConfiguration?.contractPath);
+    if (stepId === "Pre Flight") return Boolean(stageOuts.preFlight || agentState?.preFlight);
+    if (stepId === "Model Training") return Boolean(stageOuts.modelTraining || agentState?.modelTraining);
+    return Boolean(stageOuts[stepId]);
+  };
+
+  // Downstream stage checks
+  const isDownstreamFromDIStartedOrDone =
+    pipelineStatuses["Feature Engineering"] === "Completed" ||
+    pipelineStatuses["Feature Engineering"] === "In Progress" ||
+    pipelineStatuses["Hierarchy Mapper"] === "Completed" ||
+    pipelineStatuses["Hierarchy Mapper"] === "In Progress" ||
+    pipelineStatuses["Model Training & Validation"] === "Completed" ||
+    pipelineStatuses["Model Training & Validation"] === "In Progress" ||
+    pipelineStatuses["Model Selection"] === "Completed" ||
+    pipelineStatuses["Model Selection"] === "In Progress";
+
+  const isDownstreamFromFEStartedOrDone =
+    pipelineStatuses["Model Training & Validation"] === "Completed" ||
+    pipelineStatuses["Model Training & Validation"] === "In Progress" ||
+    pipelineStatuses["Model Selection"] === "Completed" ||
+    pipelineStatuses["Model Selection"] === "In Progress" ||
+    pipelineStatuses["Training Configuration"] === "Completed" ||
+    pipelineStatuses["Training Configuration"] === "In Progress";
+
+  // Check if all substeps in this stage are completed
+  const allSubstepsCompletedInStage = stepsList.length > 0 && stepsList.every((s) => {
+    return pipelineStatuses[s.id] === "Completed" || hasStepOutput(s.id);
+  });
+
+  // Specific Model Training & Validation sub-process states
+  const hasModelSelectionOutput = hasStepOutput("Model Selection") || pipelineStatuses["Model Selection"] === "Completed";
+  const hasTrainingConfigContract = Boolean(
+    agentState?.stageOutputs?.trainingConfiguration?.contractPath ||
+    agentState?.trainingConfiguration?.contractPath ||
+    (stepOutputs["Training Configuration"] && typeof stepOutputs["Training Configuration"] === "object")
+  );
+  const hasPreFlightOutput = hasStepOutput("Pre Flight") || pipelineStatuses["Pre Flight"] === "Completed";
+  const hasModelTrainingOutput = hasStepOutput("Model Training") || pipelineStatuses["Model Training"] === "Completed";
+
+  const isWaitingForModelConfirmation =
+    isModelTrainingCard &&
+    hasModelSelectionOutput &&
+    !hasTrainingConfigContract &&
+    pipelineStatuses["Training Configuration"] !== "Completed" &&
+    (isAwaitingResponse ||
+      approvalNextStep === "Training Configuration" ||
+      approvalNextStep === "trainingConfigurationNode" ||
+      approvalNextStep === "Model Selection" ||
+      approvalNextStep === "modelSelectionNode" ||
+      (runStatus === "Paused" && (requiresApproval || isAwaitingResponse)));
+
+  const isWaitingForPreFlightApproval =
+    isModelTrainingCard &&
+    hasTrainingConfigContract &&
+    !hasPreFlightOutput &&
+    pipelineStatuses["Pre Flight"] !== "Completed" &&
+    (approvalNextStep === "Pre Flight" ||
+      approvalNextStep === "preFlightNode" ||
+      (runStatus === "Paused" && requiresApproval && !isWaitingForModelConfirmation));
+
+  const isWaitingForTrainingApproval =
+    isModelTrainingCard &&
+    hasPreFlightOutput &&
+    !hasModelTrainingOutput &&
+    pipelineStatuses["Model Training"] !== "Completed" &&
+    (approvalNextStep === "Model Training" ||
+      approvalNextStep === "modelTrainingNode" ||
+      approvalNextStep === "modelTrainingCodeNode" ||
+      (runStatus === "Paused" && requiresApproval && !isWaitingForModelConfirmation && !isWaitingForPreFlightApproval));
+
+  // Stage-level awaiting approval checks (Rule 1)
+  const isStageAwaitingApprovalToAdvance =
+    (runStatus === "Paused" || requiresApproval) && (
+      (isDataIngestionCard && (approvalNextStep === "Feature Engineering" || approvalNextStep === "hierarchyMapperNode" || (!isDownstreamFromDIStartedOrDone && allSubstepsCompletedInStage))) ||
+      (isFeatureEngineeringCard && (approvalNextStep === "Model Training & Validation" || approvalNextStep === "Model Selection" || approvalNextStep === "modelSelectionNode" || (!isDownstreamFromFEStartedOrDone && allSubstepsCompletedInStage)))
+    );
+
+  const isCardAwaitingApproval =
+    (isDataIngestionCard && isStageAwaitingApprovalToAdvance) ||
+    (isFeatureEngineeringCard && isStageAwaitingApprovalToAdvance) ||
+    (isModelTrainingCard && (isWaitingForModelConfirmation || isWaitingForPreFlightApproval || isWaitingForTrainingApproval || isAwaitingResponse || (requiresApproval && runStatus === "Paused")));
+
   // Auto-select active (In Progress) step, or requested substep, or latest completed step
   useEffect(() => {
     if (!isOpen || !workflowCard) return;
@@ -122,26 +223,44 @@ function CardModalContent({
     }
 
     // 2. If a step is actively "In Progress", prioritize it
-    const inProgressIdx = steps.findIndex((s) => pipelineStatuses[s.id] === "In Progress");
+    const inProgressIdx = steps.findIndex((s) => pipelineStatuses[s.id] === "In Progress" && runStatus === "Running");
     if (inProgressIdx !== -1) {
       setActiveStepIndex(inProgressIdx);
       return;
     }
 
-    // 3. If specifically awaiting model confirmation / approval before Training Configuration, select Model Selection
-    if (approvalNextStep === "Training Configuration" && (!selectedSubstepId || selectedSubstepId === "Model Selection")) {
+    // 3. Substep awaiting user confirmation / approval
+    if (isWaitingForModelConfirmation) {
       const modelSelIdx = steps.findIndex((s) => s.id === "Model Selection");
       if (modelSelIdx !== -1) {
         setActiveStepIndex(modelSelIdx);
         return;
       }
     }
+    if (isWaitingForPreFlightApproval) {
+      const trainCfgIdx = steps.findIndex((s) => s.id === "Training Configuration");
+      if (trainCfgIdx !== -1) {
+        setActiveStepIndex(trainCfgIdx);
+        return;
+      }
+    }
+    if (isWaitingForTrainingApproval) {
+      const preFlightIdx = steps.findIndex((s) => s.id === "Pre Flight");
+      if (preFlightIdx !== -1) {
+        setActiveStepIndex(preFlightIdx);
+        return;
+      }
+    }
+    if (isStageAwaitingApprovalToAdvance) {
+      setActiveStepIndex(steps.length - 1);
+      return;
+    }
 
     // 4. Prefer latest step that has completed output or has non-null stepOutputs
     let latestWithOutputIdx = -1;
     for (let i = steps.length - 1; i >= 0; i--) {
       const s = steps[i];
-      if (stepOutputs[s.id] != null || pipelineStatuses[s.id] === "Completed") {
+      if (hasStepOutput(s.id) || pipelineStatuses[s.id] === "Completed") {
         latestWithOutputIdx = i;
         break;
       }
@@ -154,7 +273,17 @@ function CardModalContent({
     // 5. Fallback to first uncompleted step or 0
     const firstUncompletedIdx = steps.findIndex((s) => pipelineStatuses[s.id] !== "Completed");
     setActiveStepIndex(firstUncompletedIdx !== -1 ? firstUncompletedIdx : 0);
-  }, [workflowCard?.id, isOpen, selectedSubstepId, approvalNextStep, requiresApproval]);
+  }, [
+    workflowCard?.id,
+    isOpen,
+    selectedSubstepId,
+    approvalNextStep,
+    requiresApproval,
+    isWaitingForModelConfirmation,
+    isWaitingForPreFlightApproval,
+    isWaitingForTrainingApproval,
+    isStageAwaitingApprovalToAdvance,
+  ]);
 
   const handleOpenLogs = (stepToOpen?: WorkflowStep | null) => {
     const target = stepToOpen || activeStep;
@@ -206,11 +335,55 @@ function CardModalContent({
             {stepsList.map((stepItem, idx) => {
               const isSelected = activeStepIndex === idx;
               const stepStatus = pipelineStatuses[stepItem.id] ?? "Pending";
-              const isStepCompleted = stepStatus === "Completed";
-              const isStepInProgress = stepStatus === "In Progress" && runStatus !== "Stopped";
-              const isStopped = runStatus === "Stopped" && stepStatus === "In Progress";
+
+              // Is this specific substep awaiting approval?
+              let isStepAwaitingApproval = false;
+
+              if (isModelTrainingCard) {
+                if (stepItem.id === "Model Selection" && isWaitingForModelConfirmation) {
+                  isStepAwaitingApproval = true;
+                } else if (stepItem.id === "Training Configuration" && isWaitingForPreFlightApproval) {
+                  isStepAwaitingApproval = true;
+                } else if (stepItem.id === "Pre Flight" && isWaitingForTrainingApproval) {
+                  isStepAwaitingApproval = true;
+                }
+              } else if (isStageAwaitingApprovalToAdvance) {
+                // Rule 1: If all substeps in a stage completed and awaiting approval from user to proceed to next stage,
+                // the last substep of this stage shows the awaiting approval UI (yellow + play button)
+                if (idx === stepsList.length - 1) {
+                  isStepAwaitingApproval = true;
+                }
+              }
+
+              // Any subsequent step started or completed?
+              const isSubsequentStepStartedOrDone = stepsList.slice(idx + 1).some((s) => {
+                return pipelineStatuses[s.id] === "Completed" || pipelineStatuses[s.id] === "In Progress" || hasStepOutput(s.id);
+              });
+
+              // Downstream stage check
+              const isDownstreamDone =
+                (isDataIngestionCard && isDownstreamFromDIStartedOrDone) ||
+                (isFeatureEngineeringCard && isDownstreamFromFEStartedOrDone);
+
+              // Is this step completed?
+              // Crucial: A completed step must show completed UI (green and tick) unless it is THE specific step awaiting approval!
+              // And if a subsequent step in the stage has started or done, this step is 100% COMPLETED and NEVER awaiting approval!
+              const isStepCompleted = !isStepAwaitingApproval && (
+                stepStatus === "Completed" ||
+                hasStepOutput(stepItem.id) ||
+                isSubsequentStepStartedOrDone ||
+                isDownstreamDone ||
+                (isStageAwaitingApprovalToAdvance && idx < stepsList.length - 1)
+              );
+
+              const isStepInProgress =
+                !isStepAwaitingApproval &&
+                !isStepCompleted &&
+                stepStatus === "In Progress" &&
+                runStatus === "Running";
+
+              const isStopped = runStatus === "Stopped" && !isStepCompleted && stepStatus === "In Progress";
               const stepColors = CIRCLE_COLOR_MAP[stepItem.color] || CIRCLE_COLOR_MAP.green;
-              const isPaused = runStatus === "Paused" && stepStatus === "In Progress";
 
               return (
                 <div
@@ -234,7 +407,7 @@ function CardModalContent({
                     <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 
                       ${isStepCompleted ? "bg-emerald-500 border-emerald-500 text-white shadow-md"
                         : isStopped ? "bg-rose-100 border-rose-300 text-rose-600 dark:bg-rose-950/40 dark:border-rose-700 dark:text-rose-400"
-                          : isPaused ? "bg-yellow-500 border-yellow-500 text-white shadow-md animate-pulse"
+                          : isStepAwaitingApproval ? "bg-yellow-500 border-yellow-500 text-white shadow-md animate-pulse"
                             : isStepInProgress
                               ? "bg-indigo-500 border-indigo-500 text-white shadow-lg animate-pulse"
                               : isSelected
@@ -245,7 +418,7 @@ function CardModalContent({
                         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
-                      ) : isPaused ? (
+                      ) : isStepAwaitingApproval ? (
                         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
                           <polygon points="5 3 19 12 5 21 5 3" />
                         </svg>
@@ -271,6 +444,9 @@ function CardModalContent({
                         <div className="flex items-center gap-1.5 shrink-0">
                           {isStepCompleted && (
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                          )}
+                          {isStepAwaitingApproval && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shrink-0" />
                           )}
                           {isStepInProgress && (
                             <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping shrink-0" />
@@ -322,12 +498,14 @@ function CardModalContent({
                   {workflowCard.title} Node
                 </h2>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`w-2 h-2 rounded-full ${cardStatus === "Completed" ? "bg-emerald-500" :
+                  <span className={`w-2 h-2 rounded-full ${
+                    isCardAwaitingApproval ? "bg-yellow-500 animate-pulse" :
+                    cardStatus === "Completed" ? "bg-emerald-500" :
                     cardStatus === "In Progress" ? "bg-indigo-500 animate-ping" :
-                      cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
-                    }`} />
+                    cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
+                  }`} />
                   <span className="text-[11px] font-semibold text-muted-foreground">
-                    {cardStatus === "In Progress" ? "Running" : cardStatus}
+                    {isCardAwaitingApproval ? "Awaiting Approval" : (cardStatus === "In Progress" ? "Running" : cardStatus)}
                   </span>
                 </div>
               </div>
