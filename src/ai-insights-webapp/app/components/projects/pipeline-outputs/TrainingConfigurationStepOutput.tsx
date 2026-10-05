@@ -79,12 +79,40 @@ export default function TrainingConfigurationStepOutput({
   const [applySuccessMsg, setApplySuccessMsg] = useState<string | null>(null);
   const [expandedModelId, setExpandedModelId] = useState<string | null>(null);
 
+  const extractSplitDateParts = useCallback((data: any, fallbackConfig?: any) => {
+    const raw =
+      data?.split?.split_date ||
+      data?.splitDate ||
+      data?.splitEndDate ||
+      fallbackConfig?.configuration?.split?.split_date ||
+      fallbackConfig?.configuration?.splitDate ||
+      fallbackConfig?.configuration?.splitEndDate ||
+      fallbackConfig?.splitEndDate ||
+      fallbackConfig?.splitDate;
+    if (raw && typeof raw === "string") {
+      const parts = raw.split("-");
+      if (parts.length >= 2) {
+        const y = parseInt(parts[0], 10);
+        const m = parseInt(parts[1], 10);
+        if (!isNaN(y) && !isNaN(m) && y > 1900 && m >= 1 && m <= 12) {
+          return { year: y, month: m };
+        }
+      }
+    }
+    return null;
+  }, []);
+
   // Fetch contract from backend
   const fetchContract = useCallback(async () => {
     if (!projectId) {
       // Fallback from prop
       const config = trainingConfiguration?.configuration || trainingConfiguration || {};
       setParsedData(config);
+      const existing = extractSplitDateParts(config, trainingConfiguration);
+      if (existing) {
+        setSelectedYear(existing.year);
+        setSelectedMonth(existing.month);
+      }
       setIsLoading(false);
       return;
     }
@@ -102,9 +130,15 @@ export default function TrainingConfigurationStepOutput({
       if (json.success && json.data) {
         setYamlContent(json.data.yamlContent || "");
         setOriginalYaml(json.data.yamlContent || "");
-        setParsedData(json.data.parsedConfig || {});
+        const parsed = json.data.parsedConfig || {};
+        setParsedData(parsed);
         if (json.data.filename) {
           setFileName(json.data.filename);
+        }
+        const existing = extractSplitDateParts(parsed, trainingConfiguration);
+        if (existing) {
+          setSelectedYear(existing.year);
+          setSelectedMonth(existing.month);
         }
       }
     } catch (err: any) {
@@ -112,11 +146,16 @@ export default function TrainingConfigurationStepOutput({
       // Fallback to trainingConfiguration prop
       const config = trainingConfiguration?.configuration || trainingConfiguration || {};
       setParsedData(config);
+      const existing = extractSplitDateParts(config, trainingConfiguration);
+      if (existing) {
+        setSelectedYear(existing.year);
+        setSelectedMonth(existing.month);
+      }
       setErrorMsg("Could not fetch remote YAML. Showing loaded memory configuration.");
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, activeRunTimestamp, trainingConfiguration]);
+  }, [projectId, activeRunTimestamp, trainingConfiguration, extractSplitDateParts]);
 
   useEffect(() => {
     fetchContract();
@@ -135,7 +174,11 @@ export default function TrainingConfigurationStepOutput({
         const json = await res.json();
         if (json.success && json.data) {
           setDateRangeInfo(json.data);
-          if (json.data.availableYears && json.data.availableYears.length > 0) {
+          const existing = extractSplitDateParts(parsedData, trainingConfiguration);
+          if (existing) {
+            setSelectedYear(existing.year);
+            setSelectedMonth(existing.month);
+          } else if (json.data.availableYears && json.data.availableYears.length > 0) {
             const defYear = json.data.maxYear || json.data.availableYears[json.data.availableYears.length - 1];
             setSelectedYear(defYear);
             setSelectedMonth(json.data.maxMonth || 12);
@@ -147,7 +190,7 @@ export default function TrainingConfigurationStepOutput({
     } finally {
       setIsLoadingDates(false);
     }
-  }, [projectId, activeRunTimestamp]);
+  }, [projectId, activeRunTimestamp, parsedData, trainingConfiguration, extractSplitDateParts]);
 
   useEffect(() => {
     fetchDateRange();

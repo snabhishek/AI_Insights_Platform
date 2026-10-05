@@ -65,7 +65,6 @@ interface ProjectWorkspaceProps {
   onApprove: (
     override?: string,
     selectedModels?: string[],
-    splitStartDate?: string,
     splitEndDate?: string,
     predictionHorizon?: number,
     predictionFrequency?: string,

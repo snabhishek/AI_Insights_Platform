@@ -1055,7 +1055,6 @@ export default function ProjectsPage() {
     step?: string,
     overrideUserPrompt?: string,
     selectedModels?: string[],
-    splitStartDate?: string,
     splitEndDate?: string,
     predictionHorizon?: number,
     predictionFrequency?: string,
@@ -1171,7 +1170,6 @@ export default function ProjectsPage() {
     let lastData: any = null;
     try {
       const effectiveSplitDate = splitEndDate || selectedProject?.splitDate || (selectedProject?.agentState as any)?.splitDate;
-      const effectiveSplitStartDate = splitStartDate || (selectedProject?.agentState as any)?.splitStartDate;
       const effectiveSplitEndDate = splitEndDate || selectedProject?.splitDate || (selectedProject?.agentState as any)?.splitEndDate;
 
       const payload: WorkflowRequestPayload = {
@@ -1179,7 +1177,6 @@ export default function ProjectsPage() {
         userPrompt: overrideUserPrompt !== undefined ? overrideUserPrompt : (selectedProject?.useCase || ""),
         projectId: selectedProject?.id,
         ...(effectiveSplitDate ? { splitDate: effectiveSplitDate } : {}),
-        ...(effectiveSplitStartDate ? { splitStartDate: effectiveSplitStartDate } : {}),
         ...(effectiveSplitEndDate ? { splitEndDate: effectiveSplitEndDate } : {}),
         ...(selectedModels && selectedModels.length > 0 ? { selectedModels } : {}),
         ...(predictionHorizon !== undefined ? { predictionHorizon } : {}),
@@ -1379,7 +1376,6 @@ export default function ProjectsPage() {
   const handleApprove = (
     overrideTargetPhase?: unknown,
     selectedModels?: string[],
-    splitStartDate?: string,
     splitEndDate?: string,
     predictionHorizon?: number,
     predictionFrequency?: string,
@@ -1425,7 +1421,6 @@ export default function ProjectsPage() {
       targetPhase,
       undefined,
       selectedModels,
-      splitStartDate,
       splitEndDate,
       predictionHorizon,
       predictionFrequency,
@@ -1796,11 +1791,10 @@ export default function ProjectsPage() {
         onPauseWorkflow={handlePauseWorkflow}
         onResumeWorkflow={handleResumeWorkflow}
         onStageSelect={handleStageSelect}
-        onApprove={(override, selectedModels, splitStartDate, splitEndDate, predictionHorizon, predictionFrequency, predictionObjectiveStartDate) =>
+        onApprove={(override, selectedModels, splitEndDate, predictionHorizon, predictionFrequency, predictionObjectiveStartDate) =>
           handleApprove(
             typeof override === "string" ? override : undefined,
             selectedModels,
-            splitStartDate,
             splitEndDate,
             predictionHorizon,
             predictionFrequency,

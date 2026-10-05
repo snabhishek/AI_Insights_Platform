@@ -153,21 +153,29 @@ export class TrainingConfigService implements ITrainingConfigService {
 
     // Update project agentState so frontend and runtime stay synchronized
     try {
-      const trainingConfigPayload = {
+      const splitFromParsed =
+        parsed.split?.split_date ||
+        parsed.splitDate ||
+        parsed.splitEndDate ||
+        parsed.split?.temporal?.train_end;
+
+      const trainingConfigPayload: any = {
         ...(existingAgentState.trainingConfiguration || {}),
         configuration: parsed,
         contractPath: filePath,
         contractFileName: filename,
         updatedAt: new Date().toISOString(),
+        ...(splitFromParsed ? { splitDate: splitFromParsed, splitEndDate: splitFromParsed } : {}),
       };
 
-      const updatedState = {
+      const updatedState: any = {
         ...existingAgentState,
         trainingConfiguration: trainingConfigPayload,
         stageOutputs: {
           ...(existingAgentState.stageOutputs || {}),
           trainingConfiguration: trainingConfigPayload,
         },
+        ...(splitFromParsed ? { splitDate: splitFromParsed, splitEndDate: splitFromParsed } : {}),
       };
 
       await this.projectService.updateAgentState(projectId, updatedState);
