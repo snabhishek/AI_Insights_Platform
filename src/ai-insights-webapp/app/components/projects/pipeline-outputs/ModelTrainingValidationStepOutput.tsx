@@ -42,7 +42,7 @@ export default function ModelTrainingValidationStepOutput({
   onNavigateToValidation,
   isApproving,
 }: ModelTrainingValidationOutputProps) {
-  // 1. Model Selection Substep
+
   if (
     activeSubstep === "Model Selection" ||
     (!activeSubstep && modelSelection && !trainingConfiguration && !preFlight && !modelTraining && !modelValidation)
@@ -66,7 +66,6 @@ export default function ModelTrainingValidationStepOutput({
     );
   }
 
-  // 2. Training Configuration Substep
   if (
     activeSubstep === "Training Configuration" ||
     (!activeSubstep && Boolean(trainingConfiguration?.contractPath || trainingConfiguration?.status === "Completed") &&
@@ -96,7 +95,6 @@ export default function ModelTrainingValidationStepOutput({
     );
   }
 
-  // 3. Pre Flight Substep
   if (
     activeSubstep === "Pre Flight" ||
     (!activeSubstep && Boolean(preFlight) && !modelTraining && !modelValidation)
@@ -122,7 +120,6 @@ export default function ModelTrainingValidationStepOutput({
     );
   }
 
-  // 4. Model Training Substep
   if (
     activeSubstep === "Model Training" ||
     (!activeSubstep && Boolean(modelTraining) && !modelValidation)
@@ -146,7 +143,6 @@ export default function ModelTrainingValidationStepOutput({
     );
   }
 
-  // 5. Model Validation Substep
   if (
     activeSubstep === "Model Validation" ||
     (!activeSubstep && Boolean(modelValidation))

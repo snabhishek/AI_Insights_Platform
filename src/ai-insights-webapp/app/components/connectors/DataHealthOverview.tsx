@@ -13,12 +13,10 @@ export default function DataHealthOverview() {
   const { dataSources, syncAllDataSources, isSyncingAll } = useApp();
   const [currentPercent, setCurrentPercent] = useState(0);
 
-  // Radial Progress parameters:
   const radius = 45;
-  const strokeWidth = 5; 
+  const strokeWidth = 5;
   const circumference = 2 * Math.PI * radius;
 
-  // Calculate dynamic stats
   const totalCount = dataSources.length;
   const connectedCount = dataSources.filter((ds) => ds.status === "Connected").length;
   const syncingCount = dataSources.filter((ds) => ds.status === "Syncing").length;
@@ -35,7 +33,7 @@ export default function DataHealthOverview() {
       : 100;
 
   useEffect(() => {
-    const duration = 1000; // 1 second animation
+    const duration = 1000;
     const startTime = performance.now();
     const startPercent = currentPercent;
     const deltaPercent = targetPercent - startPercent;
@@ -45,9 +43,9 @@ export default function DataHealthOverview() {
     const animate = (now: number) => {
       const elapsed = now - startTime;
       const progressRatio = Math.min(elapsed / duration, 1);
-      
+
       const ease = progressRatio * (2 - progressRatio);
-      
+
       const val = Math.round(startPercent + ease * deltaPercent);
       setCurrentPercent(val);
 
@@ -69,10 +67,10 @@ export default function DataHealthOverview() {
       </h3>
 
       <div className="flex flex-col sm:flex-row lg:flex-col xl:flex-row items-center justify-between gap-6 xl:gap-8 flex-1">
-        {/* Radial gauge chart */}
+
         <div className="relative w-36 h-36 flex items-center justify-center shrink-0">
           <svg className="w-full h-full" viewBox="0 0 120 120">
-            {/* Background track circle */}
+
             <circle
               cx="60"
               cy="60"
@@ -82,7 +80,7 @@ export default function DataHealthOverview() {
               fill="transparent"
               transform="rotate(-90 60 60)"
             />
-            {/* Active progress circle */}
+
             <circle
               cx="60"
               cy="60"
@@ -96,16 +94,15 @@ export default function DataHealthOverview() {
               transform="rotate(-90 60 60)"
             />
           </svg>
-          {/* Centered label */}
+
           <div className="absolute inset-0 flex flex-col items-center justify-center leading-none">
             <span className="text-3xl font-bold text-foreground">{currentPercent}%</span>
             <span className="text-xs font-semibold text-green-500 mt-1">Healthy</span>
           </div>
         </div>
 
-        {/* Legend / Metrics List */}
         <div className="w-full flex-1 flex flex-col gap-3 justify-center min-w-[150px]">
-          {/* Total Connectors */}
+
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-primary/5 text-primary">
@@ -116,7 +113,6 @@ export default function DataHealthOverview() {
             <span className="font-semibold text-foreground text-right w-8">{totalCount}</span>
           </div>
 
-          {/* Connected */}
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-green-500/5 text-green-500">
@@ -127,7 +123,6 @@ export default function DataHealthOverview() {
             <span className="font-semibold text-foreground text-right w-8">{connectedCount}</span>
           </div>
 
-          {/* Syncing */}
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <span className={`inline-flex items-center justify-center w-6 h-6 rounded-md bg-blue-500/5 text-blue-500 ${syncingCount > 0 ? "animate-spin" : ""}`}>
@@ -138,7 +133,6 @@ export default function DataHealthOverview() {
             <span className="font-semibold text-foreground text-right w-8">{syncingCount}</span>
           </div>
 
-          {/* Issues */}
           <div className="flex items-center justify-between text-sm">
             <div className="flex items-center gap-2 text-muted-foreground">
               <span className="inline-flex items-center justify-center w-6 h-6 rounded-md bg-red-500/5 text-red-500">
@@ -151,7 +145,6 @@ export default function DataHealthOverview() {
         </div>
       </div>
 
-      {/* Sync Footer */}
       <div className="mt-6 pt-4 border-t border-border flex items-center justify-between text-xs w-full">
         <span className="text-muted-foreground">Catalog state sync</span>
         <button

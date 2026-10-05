@@ -5,9 +5,6 @@ import { Project, DataSource } from "../components/providers/AppContext";
 const CHAT_STORAGE_KEY = "ai_insights_chat_sessions_v1";
 const ACTIVE_SESSION_ID_KEY = "ai_insights_active_session_id_v1";
 
-/**
- * Loads chat sessions from local storage or returns defaults.
- */
 export function loadSavedChatSessions(): ChatSession[] {
   if (typeof window === "undefined") return INITIAL_CHAT_SESSIONS;
   try {
@@ -24,9 +21,6 @@ export function loadSavedChatSessions(): ChatSession[] {
   return INITIAL_CHAT_SESSIONS;
 }
 
-/**
- * Persists chat sessions to local storage.
- */
 export function saveChatSessions(sessions: ChatSession[]): void {
   if (typeof window === "undefined") return;
   try {
@@ -36,25 +30,16 @@ export function saveChatSessions(sessions: ChatSession[]): void {
   }
 }
 
-/**
- * Loads the active session ID.
- */
 export function loadActiveSessionId(): string | null {
   if (typeof window === "undefined") return null;
   return localStorage.getItem(ACTIVE_SESSION_ID_KEY);
 }
 
-/**
- * Persists the active session ID.
- */
 export function saveActiveSessionId(id: string): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(ACTIVE_SESSION_ID_KEY, id);
 }
 
-/**
- * Synthesizes an intelligent, project-aware response based on the query, selected persona, and live workspace context.
- */
 export async function generateAgentChatResponse(
   userQuery: string,
   personaId: AgentPersonaId,
@@ -67,7 +52,6 @@ export async function generateAgentChatResponse(
   const qLower = userQuery.toLowerCase();
   const projectName = selectedProject?.name || "Global Workspace Scope";
 
-  // Build simulated thinking steps
   const steps: ThinkingStep[] = [
     { time: "00:01", text: `Analyzing query intent and activating ${persona.name}...`, done: false },
   ];
@@ -102,7 +86,6 @@ export async function generateAgentChatResponse(
   });
   onThinkingUpdate?.([...steps]);
 
-  // Extract agent state info from selected project if available
   const agentState = selectedProject?.agentState as Record<string, any> | undefined;
   const stageOutputs = agentState?.stageOutputs as Record<string, any> | undefined;
   const stageStatuses = agentState?.stageStatuses as Record<string, any> | undefined;
@@ -114,7 +97,6 @@ export async function generateAgentChatResponse(
   let codeSnippet: { language: string; code: string; filename?: string } | undefined;
   let suggestedActions: string[] = [];
 
-  // Query routing & intelligent responses based on persona and keywords
   if (
     qLower.includes("data quality") ||
     qLower.includes("null") ||
@@ -156,7 +138,7 @@ The dataset was profiled across **${totalSources} connected data sources**. Sche
       language: "sql",
       filename: "data_quality_audit.sql",
       code: `-- Data Ingestion & Quality Audit Query
-SELECT 
+SELECT
     COUNT(*) AS total_records,
     COUNT(DISTINCT date_timestamp) AS distinct_dates,
     COUNT(*) - COUNT(sales_quantity) AS null_target_count,
@@ -220,21 +202,21 @@ import pandas as pd
 
 def build_temporal_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.sort_values(["store_id", "product_sku", "date_timestamp"]).copy()
-    
+
     # Target Autoregressive Lags
     df["sales_lag_7d"] = df.groupby(["store_id", "product_sku"])["sales_quantity"].shift(7)
     df["sales_lag_14d"] = df.groupby(["store_id", "product_sku"])["sales_quantity"].shift(14)
-    
+
     # Rolling Statistics
     df["rolling_mean_14d"] = df.groupby(["store_id", "product_sku"])["sales_lag_7d"].transform(
         lambda x: x.rolling(14, min_periods=1).mean()
     )
-    
+
     # Cyclical Calendar Features
     df["dayofweek"] = df["date_timestamp"].dt.dayofweek
     df["dayofweek_sin"] = np.sin(2 * np.pi * df["dayofweek"] / 7.0)
     df["dayofweek_cos"] = np.cos(2 * np.pi * df["dayofweek"] / 7.0)
-    
+
     return df`,
     };
 
@@ -334,7 +316,7 @@ The model was subjected to a **5-fold expanding window backtest** evaluating 30-
       "Approve workflow to proceed to deployment",
     ];
   } else {
-    // General / Orchestrator overview response
+
     const statusText = String(selectedProject?.agentState?.status || "Ready");
     content = `### 🧠 AI Insights Platform Synthesis: **${projectName}**
 

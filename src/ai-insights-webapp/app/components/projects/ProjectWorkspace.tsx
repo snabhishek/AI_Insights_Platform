@@ -131,11 +131,11 @@ function ProjectWorkspaceContent({
 
   return (
     <div className="w-full flex flex-col min-h-full bg-background animate-fade-in">
-      {/* Combined Project Page Top Navigation Bar with Underline Tabs */}
+
       <div className="w-full bg-surface border-b border-border px-4 flex items-center justify-between gap-4 shrink-0 select-none">
-        {/* Tabs */}
+
         <div className="flex items-center gap-1 -mb-[1px]">
-          {/* Tab 1: Create Project / Project Detail */}
+
           <button
             type="button"
             onClick={() => {
@@ -151,7 +151,6 @@ function ProjectWorkspaceContent({
             <span>{project ? "Project Detail" : "Create Project"}</span>
           </button>
 
-          {/* Tab 2: Workflow */}
           <button
             type="button"
             disabled={!project}
@@ -177,7 +176,6 @@ function ProjectWorkspaceContent({
             )}
           </button>
 
-          {/* Tab 3: Validation */}
           <button
             type="button"
             disabled={!project}
@@ -204,20 +202,8 @@ function ProjectWorkspaceContent({
           </button>
         </div>
 
-        {/* Right Action: Back to Projects list
-        <button
-          type="button"
-          onClick={onGoToList}
-          className="text-xs font-medium text-muted-foreground hover:text-foreground hover:underline transition-colors flex items-center gap-1.5 cursor-pointer py-2"
-        >
-          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5">
-            <polyline points="15 18 9 12 15 6" />
-          </svg>
-          <span>All Projects</span>
-        </button> */}
       </div>
 
-      {/* Tab Content */}
       <div className="flex-1 w-full">
         {!project || activeTab === "project-detail" ? (
           <ProjectCreatePage
@@ -282,4 +268,3 @@ function ProjectWorkspaceContent({
     </div>
   );
 }
-

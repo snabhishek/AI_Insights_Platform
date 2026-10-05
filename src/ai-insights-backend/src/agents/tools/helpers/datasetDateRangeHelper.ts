@@ -21,11 +21,6 @@ export interface DatasetDateRangeResult {
   datasetPath?: string | null;
 }
 
-/**
- * Extracts the dynamic date/temporal range from dataset.parquet
- * by checking the timecolumn defined in the Training Configuration YAML
- * or discovering date/time columns from the Parquet schema.
- */
 export async function extractDatasetDateRange(
   workspaceName: string,
   projectName: string,
@@ -41,7 +36,6 @@ export async function extractDatasetDateRange(
   const projectDir = getProjectDir(workspaceName, projectName);
   const runDir = path.join(projectDir, effectiveTs);
 
-  // 1. Locate and parse Training Job Contract YAML to discover timecolumn
   let candidateTimeCol: string | null = null;
   const schemasDir = getProjectSchemasDir(workspaceName, projectName, effectiveTs);
 
@@ -89,7 +83,6 @@ export async function extractDatasetDateRange(
     } catch {}
   }
 
-  // Fallback to agentState if not found in YAML files
   if (!candidateTimeCol && agentState) {
     const config = agentState.trainingConfiguration?.configuration || {};
     candidateTimeCol =
@@ -105,7 +98,6 @@ export async function extractDatasetDateRange(
       null;
   }
 
-  // 2. Locate dataset.parquet in <project_name>/<latest_timestamp>/python_scripts/ or python_script/
   const candidateDatasetPaths = [
     path.join(runDir, "python_scripts", "dataset.parquet"),
     path.join(runDir, "python_script", "dataset.parquet"),
@@ -141,7 +133,6 @@ export async function extractDatasetDateRange(
     }
   }
 
-  // Also scan all timestamp subdirectories in projectDir
   if (!datasetPath && fsSync.existsSync(projectDir)) {
     try {
       const subEntries = fsSync.readdirSync(projectDir, { withFileTypes: true });
@@ -164,17 +155,15 @@ export async function extractDatasetDateRange(
   let minDateStr: string | null = null;
   let maxDateStr: string | null = null;
 
-  // 3. Query DuckDB directly on dataset.parquet
   if (datasetPath) {
     try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
+
       const duckdbModule = require("duckdb");
       const db = new duckdbModule.Database(":memory:");
       const isParquet = datasetPath.endsWith(".parquet");
       const safePath = datasetPath.replace(/\\/g, "/");
       const readSql = isParquet ? `read_parquet('${safePath}')` : `read_csv_auto('${safePath}')`;
 
-      // Get columns and types from parquet
       const colRows: any[] = await new Promise((resolve) => {
         db.all(`DESCRIBE SELECT * FROM ${readSql} LIMIT 0`, (err: any, rows: any[]) => {
           if (err || !rows) resolve([]);
@@ -187,7 +176,6 @@ export async function extractDatasetDateRange(
         type: String(r.column_type || r.Type || "").toLowerCase(),
       }));
 
-      // Check if candidateTimeCol matches an existing column (case-insensitive)
       if (candidateTimeCol) {
         const matched = parquetCols.find(
           (c) => c.name.toLowerCase() === candidateTimeCol?.toLowerCase()
@@ -197,9 +185,8 @@ export async function extractDatasetDateRange(
         }
       }
 
-      // If not matched or not provided, discover best date column
       if (!actualTimeColumn) {
-        // Priority 1: Columns with 'order_date', 'transaction_date', 'event_date', 'date' in name
+
         const priorityNameCol = parquetCols.find((c) => {
           const lower = c.name.toLowerCase();
           return lower === "order_date" || lower === "date" || lower === "timestamp" || lower === "datetime" || lower === "orderdate" || lower === "transaction_date";
@@ -210,7 +197,7 @@ export async function extractDatasetDateRange(
       }
 
       if (!actualTimeColumn) {
-        // Priority 2: Columns with explicit TIMESTAMP/DATE type AND 'date' in name
+
         const dateTypeAndName = parquetCols.find(
           (c) => (c.type.includes("date") || c.type.includes("timestamp") || c.type.includes("time")) &&
                  c.name.toLowerCase().includes("date")
@@ -221,7 +208,7 @@ export async function extractDatasetDateRange(
       }
 
       if (!actualTimeColumn) {
-        // Priority 3: Any TIMESTAMP/DATE type
+
         const dateTypeCol = parquetCols.find(
           (c) => c.type.includes("date") || c.type.includes("timestamp")
         );
@@ -231,7 +218,7 @@ export async function extractDatasetDateRange(
       }
 
       if (!actualTimeColumn) {
-        // Priority 4: Any column with date/time in its name
+
         const nameCol = parquetCols.find(
           (c) => c.name.toLowerCase().includes("date") ||
                  c.name.toLowerCase().includes("time") ||
@@ -246,11 +233,11 @@ export async function extractDatasetDateRange(
         const sanitizedCol = actualTimeColumn.replace(/"/g, '""');
         const rangeRows: any[] = await new Promise((resolve) => {
           db.all(
-            `SELECT 
+            `SELECT
               MIN(CAST("${sanitizedCol}" AS VARCHAR)) as min_raw,
               MAX(CAST("${sanitizedCol}" AS VARCHAR)) as max_raw,
-              MIN(TRY_CAST("${sanitizedCol}" AS DATE)) as min_d, 
-              MAX(TRY_CAST("${sanitizedCol}" AS DATE)) as max_d 
+              MIN(TRY_CAST("${sanitizedCol}" AS DATE)) as min_d,
+              MAX(TRY_CAST("${sanitizedCol}" AS DATE)) as max_d
             FROM ${readSql}
             WHERE "${sanitizedCol}" IS NOT NULL`,
             (err: any, rows: any[]) => {
@@ -270,7 +257,6 @@ export async function extractDatasetDateRange(
     }
   }
 
-  // 4. Fallback to statistical profiles in dataProfile state if DuckDB query returned nothing
   if ((!minDateStr || !maxDateStr) && agentState?.dataProfile?.tables) {
     const tables = Array.isArray(agentState.dataProfile.tables)
       ? agentState.dataProfile.tables
@@ -298,16 +284,15 @@ export async function extractDatasetDateRange(
     };
   }
 
-  // 5. Parse date strings into year and month numbers
   const parseDateValues = (str: string) => {
     const cleaned = str.split("T")[0].split(" ")[0].trim();
     const parts = cleaned.split(/[-/]/);
     if (parts.length === 3) {
       if (parts[0].length === 4) {
-        // YYYY-MM-DD
+
         return { year: parseInt(parts[0], 10), month: parseInt(parts[1], 10), day: parseInt(parts[2], 10) };
       } else if (parts[2].length === 4) {
-        // DD-MM-YYYY or MM-DD-YYYY
+
         return { year: parseInt(parts[2], 10), month: parseInt(parts[1], 10), day: parseInt(parts[0], 10) };
       }
     }

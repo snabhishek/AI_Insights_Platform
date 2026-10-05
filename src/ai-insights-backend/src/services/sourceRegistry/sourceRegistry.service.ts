@@ -44,10 +44,6 @@ export class SourceRegistryService implements ISourceRegistryService {
     return identifier.trim();
   }
 
-  /**
-   * Helper to retrieve row value matching a requested column name flexibly
-   * (case-insensitive, space/underscore-normalized, and stripping redundant entity prefixes).
-   */
   private getRowValue(row: Record<string, any>, colName: string): any {
     if (!row || typeof row !== "object") return undefined;
     if (row[colName] !== undefined) return row[colName];
@@ -55,14 +51,12 @@ export class SourceRegistryService implements ISourceRegistryService {
     const targetLower = colName.toLowerCase().trim();
     const targetNorm = targetLower.replace(/[^a-z0-9]/g, "_");
 
-    // 1. Direct case-insensitive / normalized match
     for (const [k, v] of Object.entries(row)) {
       const kLower = k.toLowerCase().trim();
       if (kLower === targetLower) return v;
       if (kLower.replace(/[^a-z0-9]/g, "_") === targetNorm) return v;
     }
 
-    // 2. Suffix match (e.g. "carrier_carrier_name" -> "carrier_name" or "carrier name")
     for (const [k, v] of Object.entries(row)) {
       const kNorm = k.toLowerCase().replace(/[^a-z0-9]/g, "_");
       if (targetNorm.endsWith(`_${kNorm}`) || kNorm.endsWith(`_${targetNorm}`)) {
@@ -111,7 +105,6 @@ export class SourceRegistryService implements ISourceRegistryService {
         return entry;
       }
 
-      // If not found directly in connector repo, construct fallback entry
       const fallbackEntry: SourceRegistryEntry = {
         sourceId: cleanId,
         name: cleanId,
@@ -149,9 +142,6 @@ export class SourceRegistryService implements ISourceRegistryService {
     return updated;
   }
 
-  /**
-   * Resolves the target Project record from project repository using projectId, projectName, or sourceId.
-   */
   private async resolveProject(projectId?: string, projectName?: string, sourceId?: string): Promise<Project | undefined> {
     if (!this.projectRepository) return undefined;
 
@@ -191,7 +181,6 @@ export class SourceRegistryService implements ISourceRegistryService {
   async fetchFilterOptions(query: FilterOptionsQuery): Promise<FilterOptionsResult> {
     const { sourceId, fieldId, tableName, projectId, projectName, parentParams, parentFields = [], search, controlType, limit = 50 } = query;
 
-    // Security check identifiers against allowlist regex
     const cleanFieldId = this.validateIdentifier(fieldId, "fieldId");
     const targetTable = tableName
       ? this.validateIdentifier(tableName, "tableName")
@@ -202,7 +191,6 @@ export class SourceRegistryService implements ISourceRegistryService {
     const resolvedTable = targetTable || source?.connectionConfig?.fileName || cleanFieldId;
     const cleanTable = this.validateIdentifier(resolvedTable, "resolvedTable");
 
-    // Check parent parameter values
     let isIndependentFallback = false;
     const activeParentFilters: Array<{ col: string; val: unknown }> = [];
 
@@ -228,13 +216,12 @@ export class SourceRegistryService implements ISourceRegistryService {
     }
 
     try {
-      // 1. Direct DuckDB Query Pushdown for High-Performance File Sources
+
       if (this.duckDBService && (!source || ["csv", "tsv", "excel"].includes(source.type))) {
         let dbPath = "";
         try {
           const rawFile = targetTable || source?.connectionConfig?.fileName || cleanTable;
 
-          // 1.1 Attempt to find exact or fuzzy column location across DuckDB databases
           const colLocation = await this.duckDBService.findColumnLocation(
             cleanFieldId,
             targetTable || source?.connectionConfig?.fileName
@@ -242,7 +229,6 @@ export class SourceRegistryService implements ISourceRegistryService {
 
           dbPath = colLocation ? colLocation.dbPath : this.duckDBService.getDuckDbPath(rawFile);
 
-          // Discover actual table name in DuckDB
           let actualTable = colLocation
             ? colLocation.tableName
             : path.basename(rawFile, path.extname(rawFile)).replace(/[^a-zA-Z0-9_-]/g, "_");
@@ -267,7 +253,6 @@ export class SourceRegistryService implements ISourceRegistryService {
               }
             } catch {}
 
-            // Inspect actual columns
             try {
               const cols = await this.duckDBService.runQuery(dbPath, `DESCRIBE "${actualTable.replace(/"/g, '""')}"`);
               colNames = (cols || []).map((c: any) => c.column_name);
@@ -312,11 +297,10 @@ export class SourceRegistryService implements ISourceRegistryService {
             }
           }
 
-          // Handle date_range controlType
           if (controlType === "date_range") {
             const minMaxSql = `
-              SELECT 
-                MIN(CAST(${valExpr} AS VARCHAR)) AS min_val, 
+              SELECT
+                MIN(CAST(${valExpr} AS VARCHAR)) AS min_val,
                 MAX(CAST(${valExpr} AS VARCHAR)) AS max_val,
                 COUNT(DISTINCT ${valExpr}) AS total_cnt
               FROM "${actualTable.replace(/"/g, '""')}"
@@ -336,11 +320,9 @@ export class SourceRegistryService implements ISourceRegistryService {
             }
           }
 
-          // Handle dropdown / searchable_dropdown
           let filterSql = `WHERE ${valExpr} IS NOT NULL AND TRIM(CAST(${valExpr} AS VARCHAR)) != ''`;
           const params: any[] = [];
 
-          // Apply parent parameter filters if present on this table
           if (activeParentFilters.length > 0) {
             for (const pf of activeParentFilters) {
               const matchedPCol = findBestColumn(pf.col);
@@ -385,7 +367,6 @@ export class SourceRegistryService implements ISourceRegistryService {
       console.warn(`[SourceRegistryService] Direct query pushdown failed for "${cleanFieldId}":`, err?.message || err);
     }
 
-    // ─── 2. Source-Specific Fallback via ConnectionTester ────
     if (source && source.connectionConfig?.fileName) {
       try {
         const sample = await this.connectionTesterService.getSampleWithOffset(
@@ -398,7 +379,6 @@ export class SourceRegistryService implements ISourceRegistryService {
 
         let rows = sample.rows || [];
 
-        // Apply parent filtering if present
         if (activeParentFilters.length > 0) {
           rows = rows.filter((row) =>
             activeParentFilters.every((pf) => {
@@ -429,7 +409,6 @@ export class SourceRegistryService implements ISourceRegistryService {
           };
         }
 
-        // Apply case-insensitive search term matching if present
         if (search && typeof search === "string" && search.trim().length > 0) {
           const searchLower = search.trim().toLowerCase();
           rows = rows.filter((row) => {

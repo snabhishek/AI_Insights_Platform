@@ -35,9 +35,6 @@ export class ModelSelectionService implements IModelSelectionService {
     return this.registry;
   }
 
-  /**
-   * Hydrates dynamic models previously saved to PostgreSQL into the in-memory registry.
-   */
   private async hydrateDynamicModels(): Promise<void> {
     try {
       const dynamicModels = await this.repository.getDynamicModels();
@@ -60,16 +57,13 @@ export class ModelSelectionService implements IModelSelectionService {
 
     console.info(`[ModelSelectionService] Starting Model Selection analysis for project ${effectiveProjectId}`);
 
-    // 1. Hydrate previously discovered dynamic models from DB
     await this.hydrateDynamicModels();
 
-    // 2. Normalize input context (leakage context excluded per specification)
     const normalizedContext = ModelSelectionContextNormalizer.normalize({
       ...inputContext,
       projectId: effectiveProjectId,
     });
 
-    // 3. Mandatory Dynamic Model Discovery via Web Search & External Repositories
     try {
       await this.discoveryService.discoverAndRegisterModels(
         normalizedContext,
@@ -80,12 +74,10 @@ export class ModelSelectionService implements IModelSelectionService {
       console.warn("[ModelSelectionService] Dynamic model discovery encountered error, continuing with available registry:", discErr?.message || discErr);
     }
 
-    // 4. Invoke LLM Service with prompt from prompts/ModelSelection/modelSelection.md and search tools
     const decision = await this.llmService.generateDecision(normalizedContext, this.registry, {
       services: effectiveServices,
     });
 
-    // 5. Ensure any candidate in decision is registered with proper source metadata
     if (Array.isArray(decision.candidates)) {
       for (const c of decision.candidates) {
         const existingModel = this.registry.getModel(c.model_id);
@@ -144,7 +136,6 @@ export class ModelSelectionService implements IModelSelectionService {
       rec.license = matched?.license || null;
     }
 
-    // 5. Deterministic Validation
     const validation = ModelSelectionValidator.validate(decision, this.registry);
     if (!validation.isValid) {
       console.error("[ModelSelectionService] Decision validation failed:", validation.errors);
@@ -154,7 +145,6 @@ export class ModelSelectionService implements IModelSelectionService {
     const durationMs = Date.now() - startTime;
     const decisionId = `msd-${uuidv4()}`;
 
-    // 6. Build persistent decision record
     const record: ModelSelectionDecisionRecord = {
       id: decisionId,
       projectId: effectiveProjectId,
@@ -177,11 +167,9 @@ export class ModelSelectionService implements IModelSelectionService {
       updatedAt: new Date().toISOString(),
     };
 
-    // 7. Persist decision to database
     await this.repository.saveDecision(record);
     console.info(`[ModelSelectionService] Persisted Model Selection Decision ${decisionId} in ${durationMs}ms`);
 
-    // 8. Update project agent state if projectId provided
     if (effectiveProjectId) {
       try {
         const project = await this.projectService.getById(effectiveProjectId);
@@ -230,7 +218,6 @@ export class ModelSelectionService implements IModelSelectionService {
       throw new Error("Must select at least one candidate model for training");
     }
 
-    // Validate that all user-selected model IDs exist in the agent's candidates list
     const candidateIds = new Set((record.decision.candidates || []).map((c) => c.model_id.toLowerCase().trim()));
     for (const sel of selectedModelIds) {
       if (!candidateIds.has(sel.toLowerCase().trim())) {
@@ -243,10 +230,8 @@ export class ModelSelectionService implements IModelSelectionService {
       confirmedAt: new Date().toISOString(),
     };
 
-    // Update the decision record without mutating original recommendation
     const updatedRecord = await this.repository.updateUserSelection(decisionId, userSelection);
 
-    // Perform handoff to Training Configuration in the project's agentState
     if (record.projectId) {
       try {
         const project = await this.projectService.getById(record.projectId);
@@ -311,7 +296,6 @@ export class ModelSelectionService implements IModelSelectionService {
         await this.projectService.updateAgentState(record.projectId, updatedState);
         console.info(`[ModelSelectionService] Successfully handed off ${selectedModelIds.length} user-selected models to Training Configuration for project ${record.projectId}`);
 
-        // Update Training Job Contract schema with user-selected models
         const pWs = await this.projectService.getProjectWithWorkspace(record.projectId);
         if (pWs && pWs.project) {
           const updatedDecision = {
@@ -347,7 +331,6 @@ export class ModelSelectionService implements IModelSelectionService {
       return this.recordUserSelection(record.id, selectedModelIds);
     }
 
-    // Fallback if decision record not directly in repository but project exists in DB
     const project = await this.projectService.getById(projectId);
     if (!project) {
       throw new Error(`Project "${projectId}" not found`);

@@ -10,9 +10,6 @@ import { featureSelectionNode } from "./featureSelectionNode";
 import { featureValidatorNode } from "../FeatureValidator/featureValidatorNode";
 import { programRectificationNode } from "./programRectificationNode";
 
-/**
- * Router function that maps the supervisor's choice to the corresponding node
- */
 function routeSupervisor(state: typeof FeatureArchitectAnnotation.State) {
   const choice = state.nextWorker;
   if (choice === "featureCreation") {
@@ -42,10 +39,6 @@ function routeSupervisor(state: typeof FeatureArchitectAnnotation.State) {
   return "finish";
 }
 
-/**
- * Builds and compiles the LangGraph StateGraph for Feature Architect Agent
- * using a Supervisor-Worker pattern.
- */
 export function createFeatureArchitectGraph() {
   return new StateGraph(FeatureArchitectAnnotation)
     .addNode("supervisorNode", supervisorNode)
@@ -58,10 +51,8 @@ export function createFeatureArchitectGraph() {
     .addNode("featureValidatorNode", featureValidatorNode)
     .addNode("programRectificationNode", programRectificationNode)
 
-    // Start at the supervisor
     .addEdge("__start__", "supervisorNode")
 
-    // Supervisor routing based on nextWorker decision
     .addConditionalEdges("supervisorNode", routeSupervisor, {
       featureCreation: "featureCreationNode",
       featureTransformation: "featureTransformationNode",
@@ -74,7 +65,6 @@ export function createFeatureArchitectGraph() {
       finish: "__end__",
     })
 
-    // Worker nodes loop back to supervisor
     .addEdge("featureCreationNode", "supervisorNode")
     .addEdge("featureTransformationNode", "supervisorNode")
     .addEdge("buildDatasetNode", "supervisorNode")

@@ -194,7 +194,6 @@ export class PostgresModelSelectionRepository implements IModelSelectionReposito
     const sourceTypeId = model.sourceTypeId || "external";
     let sourceProviderId = model.sourceProviderId;
 
-    // Dynamically register provider in lookup table if provided and not yet registered
     if (model.source && !sourceProviderId) {
       sourceProviderId = model.source.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "_");
       await this.ensureSourceProvider({
@@ -290,4 +289,3 @@ export class PostgresModelSelectionRepository implements IModelSelectionReposito
     await this.db.delete(schema.dynamicModelRegistry);
   }
 }
-

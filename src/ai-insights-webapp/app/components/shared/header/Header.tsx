@@ -35,14 +35,14 @@ export default function Header() {
   } = useApp();
 
   const handleLogout = () => {
-    // TODO: wire up actual auth/session sign-out
+
   };
 
   const metaString = `${userProfile.role} • ${userProfile.daysRemaining} days • ${userProfile.tasksCount} tasks • ${userProfile.tokensLeft} tokens left`;
 
   return (
     <header className="flex h-[68px] w-full items-center justify-between border-b border-border bg-surface px-4">
-      {/* Left: logo, divider, workspace switcher */}
+
       <div className="flex items-center gap-4">
         <div className="flex items-center rounded-lg bg-primary px-3 py-2 shadow-soft">
           <Image
@@ -65,7 +65,6 @@ export default function Header() {
         />
       </div>
 
-      {/* Right: user profile, theme toggle, logout */}
       <div className="flex items-center gap-5">
         <UserProfile
           name={userProfile.name}

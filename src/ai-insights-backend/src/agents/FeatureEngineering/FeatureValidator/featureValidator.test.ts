@@ -15,12 +15,11 @@ async function runFeatureValidatorTests() {
     }
   }
 
-  // 1. Validator Node: Verify looksLikeError rejects featureValidator output missing mandatory keys
   try {
     const invalidObj = {
       status: "ok",
       summary: "Some summary",
-      // missing leakageReport, multicollinearityReport, driftReport, importanceRanking, validatedFeatureSet, pythonCode, yamlLineage
+
     };
     const isError = looksLikeError("featureValidator", invalidObj);
     assert(isError, "looksLikeError correctly flags incomplete featureValidator output as error");
@@ -28,7 +27,6 @@ async function runFeatureValidatorTests() {
     assert(false, `looksLikeError test failed with exception: ${err?.message}`);
   }
 
-  // 2. Validator Node: Verify looksLikeError accepts valid featureValidator output
   try {
     const validObj = {
       status: "ok",
@@ -47,7 +45,6 @@ async function runFeatureValidatorTests() {
     assert(false, `looksLikeError compliant test failed with exception: ${err?.message}`);
   }
 
-  // 4. Remediation Rule Test: Verify synthetic collinear pair resolution drops lower-importance feature
   try {
     const importanceMap: Record<string, number> = {
       feature_a: 0.85,
@@ -55,7 +52,6 @@ async function runFeatureValidatorTests() {
     };
     const collinearPair = { feature1: "feature_a", feature2: "feature_b", correlation: 0.98 };
 
-    // Resolution rule: drop feature with lower importance
     const dropped =
       importanceMap[collinearPair.feature1] > importanceMap[collinearPair.feature2]
         ? collinearPair.feature2
@@ -69,7 +65,6 @@ async function runFeatureValidatorTests() {
     assert(false, `Collinearity tie-breaker test failed with exception: ${err?.message}`);
   }
 
-  // 5. Leakage Auto-Drop Rule Test: Hard target leaks are dropped, not just flagged
   try {
     const candidateFeatures = [
       { name: "normal_lag_1", isTargetLeak: false },

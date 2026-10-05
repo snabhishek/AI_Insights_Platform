@@ -87,7 +87,7 @@ export class AIController {
       predictionFrequency?: string;
       predictionObjectiveStartDate?: string;
     };
-    // Disable socket timeouts for long-running AI workflow SSE streaming
+
     req.setTimeout(0);
     res.setTimeout(0);
 
@@ -110,11 +110,10 @@ export class AIController {
       return;
     }
 
-    // Set Server-Sent Events headers
     res.setHeader("Content-Type", "text/event-stream");
     res.setHeader("Cache-Control", "no-cache");
     res.setHeader("Connection", "keep-alive");
-    res.setHeader("X-Accel-Buffering", "no"); // Prevents Nginx buffering streams
+    res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
     let clientDisconnected = false;
@@ -124,7 +123,6 @@ export class AIController {
       }
     });
 
-    // Heartbeat interval to keep SSE connection alive during long model processing
     const heartbeat = setInterval(() => {
       if (!res.writableEnded && !clientDisconnected && !res.closed) {
         try {
@@ -205,4 +203,3 @@ export class AIController {
     }
   };
 }
-

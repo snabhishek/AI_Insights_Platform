@@ -28,7 +28,6 @@ interface CardModalProps {
   onSubstepChange?: (substepId: string) => void;
 }
 
-// Map color strings to active Tailwind text/border/bg classes for step circles
 const CIRCLE_COLOR_MAP: Record<string, { border: string; bg: string; text: string }> = {
   green: {
     border: "border-emerald-500 dark:border-emerald-400",
@@ -111,7 +110,6 @@ function CardModalContent({
   const isFeatureEngineeringCard = cardId === "Feature Engineering" || workflowCard?.title === "Feature Engineering";
   const isModelTrainingCard = cardId === "Model Training & Validation" || workflowCard?.title === "Model Training & Validation";
 
-  // Helper to determine if step has concrete output produced
   const hasStepOutput = (stepId: string): boolean => {
     if (stepOutputs[stepId] != null) return true;
     const stageOuts = agentState?.stageOutputs;
@@ -130,7 +128,6 @@ function CardModalContent({
     return Boolean(stageOuts[stepId]);
   };
 
-  // Downstream stage checks
   const isDownstreamFromDIStartedOrDone =
     pipelineStatuses["Feature Engineering"] === "Completed" ||
     pipelineStatuses["Feature Engineering"] === "In Progress" ||
@@ -149,12 +146,10 @@ function CardModalContent({
     pipelineStatuses["Training Configuration"] === "Completed" ||
     pipelineStatuses["Training Configuration"] === "In Progress";
 
-  // Check if all substeps in this stage are completed
   const allSubstepsCompletedInStage = stepsList.length > 0 && stepsList.every((s) => {
     return pipelineStatuses[s.id] === "Completed" || hasStepOutput(s.id);
   });
 
-  // Specific Model Training & Validation sub-process states
   const hasModelSelectionOutput = hasStepOutput("Model Selection") || pipelineStatuses["Model Selection"] === "Completed";
   const hasTrainingConfigContract = Boolean(
     agentState?.stageOutputs?.trainingConfiguration?.contractPath ||
@@ -195,7 +190,6 @@ function CardModalContent({
       approvalNextStep === "modelTrainingCodeNode" ||
       (runStatus === "Paused" && requiresApproval && !isWaitingForModelConfirmation && !isWaitingForPreFlightApproval));
 
-  // Stage-level awaiting approval checks (Rule 1)
   const isStageAwaitingApprovalToAdvance =
     (runStatus === "Paused" || requiresApproval) && (
       (isDataIngestionCard && (approvalNextStep === "Feature Engineering" || approvalNextStep === "hierarchyMapperNode" || (!isDownstreamFromDIStartedOrDone && allSubstepsCompletedInStage))) ||
@@ -207,13 +201,11 @@ function CardModalContent({
     (isFeatureEngineeringCard && isStageAwaitingApprovalToAdvance) ||
     (isModelTrainingCard && (isWaitingForModelConfirmation || isWaitingForPreFlightApproval || isWaitingForTrainingApproval || isAwaitingResponse || (requiresApproval && runStatus === "Paused")));
 
-  // Auto-select active (In Progress) step, or requested substep, or latest completed step
   useEffect(() => {
     if (!isOpen || !workflowCard) return;
     const steps = workflowCard.step || [];
     if (steps.length === 0) return;
 
-    // 1. If explicit selectedSubstepId provided and exists in steps:
     if (selectedSubstepId) {
       const targetIdx = steps.findIndex((s) => s.id === selectedSubstepId || s.title === selectedSubstepId);
       if (targetIdx !== -1) {
@@ -222,14 +214,12 @@ function CardModalContent({
       }
     }
 
-    // 2. If a step is actively "In Progress", prioritize it
     const inProgressIdx = steps.findIndex((s) => pipelineStatuses[s.id] === "In Progress" && runStatus === "Running");
     if (inProgressIdx !== -1) {
       setActiveStepIndex(inProgressIdx);
       return;
     }
 
-    // 3. Substep awaiting user confirmation / approval
     if (isWaitingForModelConfirmation) {
       const modelSelIdx = steps.findIndex((s) => s.id === "Model Selection");
       if (modelSelIdx !== -1) {
@@ -256,7 +246,6 @@ function CardModalContent({
       return;
     }
 
-    // 4. Prefer latest step that has completed output or has non-null stepOutputs
     let latestWithOutputIdx = -1;
     for (let i = steps.length - 1; i >= 0; i--) {
       const s = steps[i];
@@ -270,7 +259,6 @@ function CardModalContent({
       return;
     }
 
-    // 5. Fallback to first uncompleted step or 0
     const firstUncompletedIdx = steps.findIndex((s) => pipelineStatuses[s.id] !== "Completed");
     setActiveStepIndex(firstUncompletedIdx !== -1 ? firstUncompletedIdx : 0);
   }, [
@@ -295,7 +283,6 @@ function CardModalContent({
 
   if (!isOpen || !mounted) return null;
 
-  // Fallback to standard render if workflowCard details are not provided
   if (!workflowCard) {
     return createPortal(
       <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm transition-all scale-100 flex flex-col max-h-[85vh] p-6 text-foreground select-none">
@@ -311,19 +298,16 @@ function CardModalContent({
     );
   }
 
-  // Check if output is received for the active step (provided as prop by parent)
   const stepOutputContent = activeStep ? stepOutputs[activeStep.id] : null;
   const hasOutput = stepOutputContent !== undefined && stepOutputContent !== null;
 
-  // Helper to check overall workflow status
   const cardStatus = pipelineStatuses[workflowCard.id] ?? "Pending";
 
   return createPortal(
     <div className="fixed inset-0 z-[200] p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in select-none">
-      {/* Extended width to full screen with minimum gap, reduced border radius to rounded-xl */}
+
       <div className="relative w-[97vw] h-[95vh] overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col sm:flex-row animate-scale-up">
 
-        {/* Left Panel: Steps Sidebar */}
         <div className="w-full sm:w-[250px] border-b sm:border-b-0 sm:border-r border-border p-5 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
 
           <div className="mb-4 shrink-0">
@@ -336,7 +320,6 @@ function CardModalContent({
               const isSelected = activeStepIndex === idx;
               const stepStatus = pipelineStatuses[stepItem.id] ?? "Pending";
 
-              // Is this specific substep awaiting approval?
               let isStepAwaitingApproval = false;
 
               if (isModelTrainingCard) {
@@ -348,26 +331,20 @@ function CardModalContent({
                   isStepAwaitingApproval = true;
                 }
               } else if (isStageAwaitingApprovalToAdvance) {
-                // Rule 1: If all substeps in a stage completed and awaiting approval from user to proceed to next stage,
-                // the last substep of this stage shows the awaiting approval UI (yellow + play button)
+
                 if (idx === stepsList.length - 1) {
                   isStepAwaitingApproval = true;
                 }
               }
 
-              // Any subsequent step started or completed?
               const isSubsequentStepStartedOrDone = stepsList.slice(idx + 1).some((s) => {
                 return pipelineStatuses[s.id] === "Completed" || pipelineStatuses[s.id] === "In Progress" || hasStepOutput(s.id);
               });
 
-              // Downstream stage check
               const isDownstreamDone =
                 (isDataIngestionCard && isDownstreamFromDIStartedOrDone) ||
                 (isFeatureEngineeringCard && isDownstreamFromFEStartedOrDone);
 
-              // Is this step completed?
-              // Crucial: A completed step must show completed UI (green and tick) unless it is THE specific step awaiting approval!
-              // And if a subsequent step in the stage has started or done, this step is 100% COMPLETED and NEVER awaiting approval!
               const isStepCompleted = !isStepAwaitingApproval && (
                 stepStatus === "Completed" ||
                 hasStepOutput(stepItem.id) ||
@@ -390,7 +367,7 @@ function CardModalContent({
                   key={stepItem.id}
                   className="relative flex items-center group w-full"
                 >
-                  {/* Progress segment line: Stops at the final step circle */}
+
                   {idx < stepsList.length - 1 && (
                     <div className="absolute left-[17px] top-9 bottom-[-24px] w-[2px] bg-border dark:bg-slate-800 z-0" />
                   )}
@@ -403,8 +380,8 @@ function CardModalContent({
                     }}
                     className="flex items-center gap-3.5 text-left w-full relative z-10 py-1.5 focus:outline-none transition-all cursor-pointer"
                   >
-                    {/* Circle Indicator */}
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 
+
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10
                       ${isStepCompleted ? "bg-emerald-500 border-emerald-500 text-white shadow-md"
                         : isStopped ? "bg-rose-100 border-rose-300 text-rose-600 dark:bg-rose-950/40 dark:border-rose-700 dark:text-rose-400"
                           : isStepAwaitingApproval ? "bg-yellow-500 border-yellow-500 text-white shadow-md animate-pulse"
@@ -432,7 +409,6 @@ function CardModalContent({
                       )}
                     </div>
 
-                    {/* Step Box Details */}
                     <div className="flex-1 min-w-0 pr-1">
                       <div className="flex items-center justify-between gap-1">
                         <span className={`text-xs font-bold truncate transition-colors leading-tight ${
@@ -452,7 +428,6 @@ function CardModalContent({
                             <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping shrink-0" />
                           )}
 
-                          {/* Quick Logs Button on each sidebar sub-process */}
                           <span
                             role="button"
                             tabIndex={0}
@@ -484,10 +459,8 @@ function CardModalContent({
           </div>
         </div>
 
-        {/* Right Panel: Active Step Custom Output Area & Top Logs Button */}
         <div className="flex-1 flex flex-col min-h-0 bg-background/30 relative overflow-hidden">
 
-          {/* Header of right panel containing Title, Icon, Status and Close button */}
           <div className="flex items-center justify-between px-5 py-3 border-b border-border/80 bg-surface-muted/60 shrink-0 select-none">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 flex items-center justify-center border border-indigo-500/20 text-indigo-500 bg-indigo-500/5 rounded-lg shadow-inner">
@@ -562,7 +535,6 @@ function CardModalContent({
             </div>
           </div>
 
-          {/* Sub-process Title Bar with Top-Right Logs Button */}
           {activeStep && (
             <div className="flex items-center justify-between px-6 py-2.5 bg-surface/90 dark:bg-slate-900/60 border-b border-border/70 shrink-0 select-none">
               <div className="flex items-center gap-2.5 min-w-0">
@@ -600,7 +572,6 @@ function CardModalContent({
                 )}
               </div>
 
-              {/* Top-Right Logs Button */}
               <div className="flex items-center gap-2 shrink-0">
                 <button
                   type="button"
@@ -632,7 +603,6 @@ function CardModalContent({
             </div>
           )}
 
-          {/* Entire Modal Space Used For Step Output Content (No Tab Header) */}
           <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden">
             {activeStep ? (
               hasOutput ? (
@@ -714,7 +684,6 @@ function CardModalContent({
 
       </div>
 
-      {/* Sub-process Log Streaming Modal */}
       <SubProcessLogModal
         isOpen={isLogModalOpen}
         onClose={() => setIsLogModalOpen(false)}

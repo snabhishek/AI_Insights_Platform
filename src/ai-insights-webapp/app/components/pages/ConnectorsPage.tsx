@@ -15,7 +15,7 @@ export default function ConnectorsPage() {
 
   return (
     <div className="px-6 py-8 flex flex-col gap-8">
-      {/* Top section: Health and Connectors */}
+
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
         <div className="lg:col-span-3">
           <DataHealthOverview />
@@ -25,12 +25,10 @@ export default function ConnectorsPage() {
         </div>
       </div>
 
-      {/* Connected Sources */}
       <div className="w-full">
         <ConnectedSources onViewDetails={setViewingSource} />
       </div>
 
-      {/* Connection Modal Overlay */}
       {activeConnectType && (
         <ConnectionModal
           type={activeConnectType}
@@ -39,7 +37,6 @@ export default function ConnectorsPage() {
         />
       )}
 
-      {/* Detail Modal Overlay */}
       {viewingSource && (
         <SourceDetailModal
           source={viewingSource}

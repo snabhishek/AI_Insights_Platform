@@ -25,13 +25,9 @@ export const EXOGENOUS_BATCH_USER_PROMPT_TEMPLATE = PromptTemplate.fromTemplate(
 3. Evaluate how the extracted exogenous factors directly affect the columns (target metrics, timestamps, geographic keys, feature columns) of each table.
 4. Return valid JSON only adhering to the specified schema, detailing 'tableName', 'domain', 'summary', 'exogenousSources' (including 'sourceName', 'category', 'providerOrUrl', 'sourceUrl', 'description', 'exogenousFactor', 'affectedColumns', 'impactMechanism', 'extractedContentSummary', 'joinStrategy', 'featuresToExtract', 'expectedImpact', 'feasibility'), 'featureOpportunities', and 'searchQueriesExecuted'.`);
 
-/**
- * Extracts all relevant table column summaries and metadata from state
- */
 export function extractTableMetadataMap(state: typeof AgentState.State): Map<string, TableMetaEntry> {
   const metadataMap = new Map<string, TableMetaEntry>();
 
-  // 1. From schemaResolution
   const schemaSources = Array.isArray((state.schemaResolution as any)?.sources)
     ? (state.schemaResolution as any).sources
     : [state.schemaResolution];
@@ -53,7 +49,6 @@ export function extractTableMetadataMap(state: typeof AgentState.State): Map<str
     }
   }
 
-  // 2. From dataProfile
   const profileSources = Array.isArray((state.dataProfile as any)?.sources)
     ? (state.dataProfile as any).sources
     : [state.dataProfile];
@@ -75,7 +70,6 @@ export function extractTableMetadataMap(state: typeof AgentState.State): Map<str
     }
   }
 
-  // 3. From inspection
   const inspectionSources = Array.isArray((state.inspection as any)?.sources)
     ? (state.inspection as any).sources
     : [state.inspection];
@@ -101,9 +95,6 @@ export function extractTableMetadataMap(state: typeof AgentState.State): Map<str
   return metadataMap;
 }
 
-/**
- * Creates default fallback recommendations for a list of table names
- */
 export function createFallbackBatchResult(batchTableNames: string[], tableMetaMap: Map<string, TableMetaEntry>): ExogenousScoutBatchResult {
   return {
     status: "OK",

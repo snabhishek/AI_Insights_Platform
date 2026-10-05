@@ -3,8 +3,6 @@
 import React from "react";
 import { PipelineStatus, Workflow } from "./types";
 
-// ─── Color Maps (Active at all times) ────────────────────────────────────────
-
 const COLOR_MAP: Record<string, { border: string; icon: string; glow: string; shadow: string }> = {
   green: {
     border: "border-emerald-500/70 dark:border-emerald-400/50",
@@ -49,8 +47,6 @@ const COLOR_MAP: Record<string, { border: string; icon: string; glow: string; sh
     shadow: "shadow-[0_0_15px_rgba(20,184,166,0.05)]"
   },
 };
-
-// ─── Status Badge ────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: PipelineStatus }) {
   if (status === "Completed") {
@@ -102,8 +98,6 @@ function StatusBadge({ status }: { status: PipelineStatus }) {
   );
 }
 
-// ─── WorkflowCard ────────────────────────────────────────────────────────────
-
 interface WorkflowCardProps {
   step: Workflow;
   status: PipelineStatus;
@@ -133,7 +127,7 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
 
   return (
     <div ref={containerRef} className="relative flex w-full min-w-0 justify-center select-none">
-      {/* Modern Info Popover Card - Displayed on info icon click */}
+
       <div
         className={`absolute bottom-[calc(100%+10px)] left-1/2 -translate-x-1/2 min-w-[160px] max-w-[210px] p-3 rounded-xl bg-surface/95 dark:bg-slate-900/95 backdrop-blur-md border border-border/80 dark:border-white/15 shadow-xl transition-all duration-200 ease-out z-50 text-left ${showInfo ? "opacity-100 visible translate-y-0 scale-100" : "opacity-0 invisible translate-y-1 scale-95 pointer-events-none"
           }`}
@@ -141,24 +135,22 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
         <p className="text-[11px] font-medium leading-normal text-foreground/90 dark:text-slate-200">
           {step.description}
         </p>
-        {/* Subtle arrow indicator */}
+
         <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-surface/95 dark:bg-slate-900/95 border-r border-b border-border/80 dark:border-white/15 rotate-45" />
       </div>
 
-      {/* Card body scales with its phase column so the pipeline stays inside its container. */}
       <button
         type="button"
         onClick={() => onSelect?.(step.id)}
         className={`relative flex aspect-[31/46] w-full max-w-[155px] flex-col items-center justify-between rounded-lg border-2 bg-[#F5F5F5] p-2 text-left outline-none transition-all duration-300 hover:-translate-y-1 sm:p-4.5 dark:bg-surface cursor-pointer ${colors.border} ${colors.shadow} ${isActive ? "ring-2 ring-primary/60 shadow-lg" : ""}`}
       >
-        {/* Monospaced card index in background — opacity-[0.08] applied statically so Tailwind JIT picks it up */}
+
         <div className={`absolute right-5 bottom-4 text-7xl font-black font-mono pointer-events-none select-none leading-none opacity-[0.08] ${colors.glow}`}>
           0{index + 1}
         </div>
 
-        {/* Top bar with Info icon left & Status circle right */}
         <div className="w-full flex items-center justify-between relative z-10">
-          {/* Info icon (ℹ) */}
+
           <span
             role="button"
             tabIndex={0}
@@ -181,16 +173,13 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
             i
           </span>
 
-          {/* Status Badge */}
           <StatusBadge status={status} />
         </div>
 
-        {/* Card Icon Container */}
         <div className={`w-14 h-14 rounded-lg flex items-center justify-center border shrink-0 transition-all duration-300 mt-2 relative z-10 ${colors.icon}`}>
           {step.icon}
         </div>
 
-        {/* Step Title only */}
         <div className="text-center w-full mt-4 mb-2 z-10 relative">
           <span className="text-xs font-extrabold text-foreground tracking-tight line-clamp-2 leading-tight">
             {step.title}

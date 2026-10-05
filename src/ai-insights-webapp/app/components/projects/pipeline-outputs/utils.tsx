@@ -2,7 +2,6 @@
 
 import React from "react";
 
-// ─── Custom Badge ────────────────────────────────────────────────────────────
 interface BadgeProps {
   children: React.ReactNode;
   variant?: "success" | "warning" | "error" | "info" | "primary" | "secondary" | "neutral" | "purple" | "teal";
@@ -11,7 +10,7 @@ interface BadgeProps {
 
 export function Badge({ children, variant = "neutral", className = "" }: BadgeProps) {
   const baseClasses = "inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold border transition-all select-none";
-  
+
   const variantClasses: Record<string, string> = {
     success: "bg-emerald-50 dark:bg-emerald-950/20 text-emerald-700 dark:text-emerald-400 border-emerald-100 dark:border-emerald-900/60 shadow-sm",
     warning: "bg-amber-50 dark:bg-amber-950/20 text-amber-700 dark:text-amber-400 border-amber-100 dark:border-amber-900/60 shadow-sm",
@@ -31,7 +30,6 @@ export function Badge({ children, variant = "neutral", className = "" }: BadgePr
   );
 }
 
-// ─── Data Type Icon ───────────────────────────────────────────────────────────
 interface DataTypeIconProps {
   type?: string;
   className?: string;
@@ -39,7 +37,7 @@ interface DataTypeIconProps {
 
 export function DataTypeIcon({ type = "string", className = "w-3.5 h-3.5" }: DataTypeIconProps) {
   const normType = type.toLowerCase();
-  
+
   if (normType.includes("int") || normType.includes("num") || normType.includes("float") || normType.includes("double") || normType.includes("decimal")) {
     return (
       <svg viewBox="0 0 24 24" className={`${className} text-blue-500`} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -69,7 +67,6 @@ export function DataTypeIcon({ type = "string", className = "w-3.5 h-3.5" }: Dat
     );
   }
 
-  // Fallback as String / Categorical Text
   return (
     <svg viewBox="0 0 24 24" className={`${className} text-indigo-500`} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
       <path d="M4 7V4h16v3M9 20h6M12 4v16" />
@@ -77,7 +74,6 @@ export function DataTypeIcon({ type = "string", className = "w-3.5 h-3.5" }: Dat
   );
 }
 
-// ─── Value Distribution Bar Chart ─────────────────────────────────────────────
 interface MiniBarChartProps {
   percentage: number;
   value: string;
@@ -97,7 +93,7 @@ export function MiniBarChart({ percentage, value, count, barColorClass = "bg-ind
         </span>
       </div>
       <div className="w-full h-2 rounded-full bg-surface-muted border border-border/40 overflow-hidden select-none">
-        <div 
+        <div
           className={`h-full rounded-full ${barColorClass} transition-all duration-500`}
           style={{ width: `${Math.min(100, Math.max(0, percentage))}%` }}
         />
@@ -106,7 +102,6 @@ export function MiniBarChart({ percentage, value, count, barColorClass = "bg-ind
   );
 }
 
-// ─── Stat Card Component ──────────────────────────────────────────────────────
 interface StatCardProps {
   label: string;
   value: string | number;
@@ -148,7 +143,6 @@ export function StatCard({ label, value, subtext, icon, variant = "slate" }: Sta
   );
 }
 
-// ─── Section Header ───────────────────────────────────────────────────────────
 interface SectionHeaderProps {
   title: string;
   subtitle?: string;
@@ -171,7 +165,6 @@ export function SectionHeader({ title, subtitle, badgeText }: SectionHeaderProps
   );
 }
 
-// ─── Dynamic JSON Table Renderer ──────────────────────────────────────────────
 export function DynamicTable({ data, className = "" }: { data: any[]; className?: string }) {
   if (!Array.isArray(data) || data.length === 0) {
     return (
@@ -181,7 +174,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
     );
   }
 
-  // Get all unique keys across all JSON objects in the array
   const keys = Array.from(new Set(data.flatMap(item => Object.keys(item || {}))));
 
   const formatHeader = (key: string): string => {
@@ -195,7 +187,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
   const renderCell = (key: string, val: any) => {
     if (val === null || val === undefined) return <span className="text-muted-foreground/60">—</span>;
 
-    // Custom Formatter 1: Data Type or Inferred Type
     if ((key === "dataType" || key === "inferredType") && typeof val === "string") {
       return (
         <span className="inline-flex items-center gap-1 font-mono font-bold text-foreground">
@@ -205,7 +196,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 2: Technical Name / Column / Field Names
     if ((key === "technicalName" || key === "name" || key === "datasetField" || key === "columnName") && typeof val === "string") {
       return <span className="font-mono font-bold text-foreground select-all">{val}</span>;
     }
@@ -214,7 +204,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       return <span className="font-mono font-bold text-foreground select-all">{resolvedName}</span>;
     }
 
-    // Custom Formatter 3: Nullable
     if (key === "nullable") {
       const isNullable = val === true || val === "YES" || val === "YES/NO/POSSIBLE" || String(val).toLowerCase() === "yes";
       return (
@@ -224,7 +213,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 4: Confidence or Business Importance
     if ((key === "confidence" || key === "businessImportance" || key === "importance" || key === "priority") && typeof val === "string") {
       const normVal = val.toUpperCase();
       return (
@@ -234,7 +222,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 5: Candidate Business Key
     if (key === "candidateBusinessKey" && typeof val === "string") {
       const isKey = val === "YES" || val === "POSSIBLE";
       if (!isKey) return <span className="text-muted-foreground/60">—</span>;
@@ -245,7 +232,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 6: Target Analytical Topic
     if (key === "targetTopic" && typeof val === "string") {
       const getTopicBadgeVariant = (topic: string) => {
         const norm = topic.toLowerCase();
@@ -262,7 +248,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 7: Top Values Distribution list or Sample Values list
     if (key === "topValues" && Array.isArray(val)) {
       if (val.length === 0) return <span className="text-muted-foreground/60 italic text-[10px]">No values</span>;
       return (
@@ -272,10 +257,10 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
             const count = typeof tv === "object" && tv !== null ? (tv.count ?? 0) : 0;
             const pct = typeof tv === "object" && tv !== null ? (tv.percentage ?? 0) : 0;
             return (
-              <MiniBarChart 
-                key={tvIdx} 
-                percentage={pct} 
-                value={valStr} 
+              <MiniBarChart
+                key={tvIdx}
+                percentage={pct}
+                value={valStr}
                 count={count}
               />
             );
@@ -307,7 +292,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 8: Percentiles & Outliers in Statistics
     if (key === "percentiles" && typeof val === "object" && val !== null) {
       const p = val as Record<string, any>;
       return (
@@ -327,7 +311,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 9: Constraints Array
     if (key === "constraints" && Array.isArray(val)) {
       if (val.length === 0) return <span className="text-muted-foreground/60">—</span>;
       return (
@@ -341,7 +324,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Custom Formatter 10: Patterns Array
     if (key === "patterns" && Array.isArray(val)) {
       if (val.length === 0) return <span className="text-muted-foreground/60">—</span>;
       return (
@@ -355,7 +337,6 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
       );
     }
 
-    // Default renderer
     if (typeof val === "object") {
       if (Array.isArray(val)) {
         if (val.length === 0) return <span className="text-muted-foreground/60 italic text-[10px]">—</span>;
@@ -395,4 +376,3 @@ export function DynamicTable({ data, className = "" }: { data: any[]; className?
     </div>
   );
 }
-

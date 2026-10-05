@@ -35,9 +35,9 @@ export default function ProjectsListPage({
 
   return (
     <div className="p-8 w-full flex flex-col min-h-full">
-      {/* Cards Grid */}
+
       <div className="flex flex-wrap gap-5">
-        {/* Create New card */}
+
         <div
           onClick={onCreateProject}
           style={{ width: 248, minHeight: 200 }}
@@ -59,7 +59,6 @@ export default function ProjectsListPage({
           </div>
         </div>
 
-        {/* Project cards */}
         {filtered.map((project) => (
           <ProjectCard
             key={project.id}

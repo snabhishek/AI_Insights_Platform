@@ -45,7 +45,6 @@ export default function ChatInputArea({
   const modelDropdownRef = useRef<HTMLDivElement>(null);
   const recognitionRef = useRef<any>(null);
 
-  // Auto-resize textarea height with spacious minimum
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -56,7 +55,6 @@ export default function ChatInputArea({
     }
   }, [inputText]);
 
-  // Close dropdown on outside click
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
       if (
@@ -70,7 +68,6 @@ export default function ChatInputArea({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Cleanup speech recognition on unmount
   useEffect(() => {
     return () => {
       if (recognitionRef.current) {
@@ -81,7 +78,6 @@ export default function ChatInputArea({
     };
   }, []);
 
-  // Reset selected model if project changes
   useEffect(() => {
     setSelectedModelId("any");
   }, [selectedProject?.id]);
@@ -108,7 +104,6 @@ export default function ChatInputArea({
     }
   };
 
-  // Voice capturing handler
   const handleToggleVoice = () => {
     if (!isChatEnabled) return;
 
@@ -167,7 +162,6 @@ export default function ChatInputArea({
     }
   };
 
-  // File selection handler
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const newFiles = Array.from(e.target.files);
@@ -182,7 +176,6 @@ export default function ChatInputArea({
     setAttachedFiles((prev) => prev.filter((_, i) => i !== index));
   };
 
-  // Handle clicking suggestion pill
   const handleSuggestionClick = (suggestion: string) => {
     if (onSelectSuggestion) {
       onSelectSuggestion(suggestion);
@@ -194,7 +187,6 @@ export default function ChatInputArea({
     }
   };
 
-  // Resolve currently selected model details
   const selectedModelOption =
     trainedModels.find((m) => m.id === selectedModelId) || {
       id: "any",
@@ -205,7 +197,7 @@ export default function ChatInputArea({
 
   return (
     <div className="w-full bg-surface border-t border-border/40 px-4 sm:px-6 pt-2 pb-4 space-y-2.5 shrink-0 select-none">
-      {/* ─── Suggestion Chats (Just above the chat box) ─── */}
+
       {suggestions.length > 0 && (
         <div className="w-full flex items-center gap-2 overflow-x-auto py-1 scrollbar-none no-scrollbar">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0 pl-0.5">
@@ -232,7 +224,6 @@ export default function ChatInputArea({
         </div>
       )}
 
-      {/* ─── Main Spacious Chat Box Container ─── */}
       <div
         className={`relative rounded-3xl border transition-all p-3 sm:p-4 space-y-2.5 shadow-sm ${
           isChatEnabled
@@ -240,7 +231,7 @@ export default function ChatInputArea({
             : "border-border/40 bg-surface-muted/30 opacity-70 cursor-not-allowed"
         }`}
       >
-        {/* Attached Files Preview Chips */}
+
         {attachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2 pb-1">
             {attachedFiles.map((file, idx) => (
@@ -266,7 +257,6 @@ export default function ChatInputArea({
           </div>
         )}
 
-        {/* Spacious Multiline Textarea */}
         <textarea
           ref={textareaRef}
           value={inputText}
@@ -287,11 +277,10 @@ export default function ChatInputArea({
           }`}
         />
 
-        {/* Bottom Toolbar Controls Row */}
         <div className="flex items-center justify-between gap-2 pt-1">
-          {/* Left Actions: Attach (+) and Model Selection Dropdown */}
+
           <div className="flex items-center gap-2">
-            {/* Hidden File Input */}
+
             <input
               type="file"
               ref={fileInputRef}
@@ -300,7 +289,6 @@ export default function ChatInputArea({
               className="hidden"
             />
 
-            {/* Document Attachment Button (+) */}
             <button
               type="button"
               onClick={() => fileInputRef.current?.click()}
@@ -321,7 +309,6 @@ export default function ChatInputArea({
               </svg>
             </button>
 
-            {/* Model Selection Dropdown for Inference */}
             <div className="relative" ref={modelDropdownRef}>
               <button
                 type="button"
@@ -358,14 +345,12 @@ export default function ChatInputArea({
                 </svg>
               </button>
 
-              {/* Model Dropdown Menu (Opens Upwards) */}
               {isModelDropdownOpen && isChatEnabled && (
                 <div className="absolute left-0 bottom-full mb-2 w-72 max-h-64 overflow-y-auto rounded-2xl border border-border/80 bg-surface shadow-2xl p-1.5 space-y-1 z-[150] animate-scale-up">
                   <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/60">
                     Inference Model Selection
                   </div>
 
-                  {/* Any (Auto) - Default */}
                   <div
                     onClick={() => {
                       setSelectedModelId("any");
@@ -391,7 +376,6 @@ export default function ChatInputArea({
                     )}
                   </div>
 
-                  {/* Trained Project Models */}
                   {trainedModels
                     .filter((m) => m.id !== "any")
                     .map((m) => {
@@ -439,9 +423,8 @@ export default function ChatInputArea({
             </div>
           </div>
 
-          {/* Right Actions: Voice Mic & Send Button */}
           <div className="flex items-center gap-2">
-            {/* Microphone Button */}
+
             <button
               type="button"
               onClick={handleToggleVoice}
@@ -476,7 +459,6 @@ export default function ChatInputArea({
               </svg>
             </button>
 
-            {/* Circular Send Button (with arrow ->) */}
             {isGenerating ? (
               <button
                 type="button"

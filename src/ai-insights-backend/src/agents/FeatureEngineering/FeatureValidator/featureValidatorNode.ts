@@ -5,11 +5,11 @@ import { validateWithRetry } from "../../validator/validatorNode";
 import { FeatureArchitectAnnotation, FeatureValidatorOutput } from "../FeatureArchitect/state";
 import * as path from "path";
 import * as fs from "fs";
-import { 
-  createGetTableColumnsAndProfileTool, 
-  createGetSplitBoundariesTool, 
-  getMcpFilesystemTools, 
-  getPythonScriptDirectory 
+import {
+  createGetTableColumnsAndProfileTool,
+  createGetSplitBoundariesTool,
+  getMcpFilesystemTools,
+  getPythonScriptDirectory
 } from "../../tools";
 import {
   ARTIFACT_FEATURE_SELECTION,
@@ -212,7 +212,6 @@ export async function featureValidatorNode(
       MAX_VALIDATE_RETRY_COUNT
     );
 
-    // Fetch and enrich the result from feature_validation_report.json if present
     const finalResult = loadFeatureValidationReport(reportPath, agentResult);
     const summaryText = finalResult.summary.length > 0 ? finalResult.summary : DEFAULT_VALIDATION_SUCCESS;
 

@@ -47,4 +47,3 @@ export interface IIngestionAgentService {
   isProjectActive?(projectId?: string): boolean;
   getActiveWorkflow(): { active: boolean; projectId: string | null; sessionId: string | null; status: string };
 }
-

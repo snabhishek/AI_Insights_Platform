@@ -41,7 +41,7 @@ export default function RootLayout({
       suppressHydrationWarning
     >
       <head>
-        {/* <script dangerouslySetInnerHTML={{ __html: themeScript }} /> */}
+
       </head>
       <body className={`${notoSans.className} max-h-full flex flex-col`}>
         <AppProvider>

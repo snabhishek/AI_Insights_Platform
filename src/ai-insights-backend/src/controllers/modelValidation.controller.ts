@@ -6,7 +6,7 @@ export class ModelValidationController {
   constructor(private readonly modelValidationService: IModelValidationService) {}
 
   public validateModels = async (req: Request, res: Response): Promise<void> => {
-    // Disable socket timeouts for execution of containerized validation pipeline
+
     req.setTimeout(0);
     res.setTimeout(0);
 

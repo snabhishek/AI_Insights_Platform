@@ -1,6 +1,5 @@
 import React from "react";
 
-// ─── Connector icons from @dev.icons/react ───────────────────────────────────
 export {
   Postgresql as PostgresqlIcon,
   MysqlIcon,
@@ -11,7 +10,6 @@ export {
   Mongodb as MongodbIcon,
 } from "@dev.icons/react";
 
-// Excel: Custom file icon in green
 export const ExcelIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     viewBox="0 0 128 128"
@@ -35,7 +33,7 @@ export const ExcelIcon = (props: React.SVGProps<SVGSVGElement>) => (
       strokeLinecap="round"
       strokeLinejoin="round"
     />
-    {/* Grid icon representing Excel sheets */}
+
     <path
       d="M38 60h40M38 76h40M38 92h40M54 60v32"
       stroke="#107C41"
@@ -45,7 +43,6 @@ export const ExcelIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-// CSV: Custom file icon in blue
 export const CsvIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     viewBox="0 0 128 128"
@@ -69,7 +66,7 @@ export const CsvIcon = (props: React.SVGProps<SVGSVGElement>) => (
       strokeLinecap="round"
       strokeLinejoin="round"
     />
-    {/* CSV letters */}
+
     <path
       d="M40 70c-2-2-5-2-7 0s-2 5 0 7 5 2 7 0M48 68c2 0 4 2 2 4s-4 2-2 4M56 70l6 14M68 70l-6 14"
       stroke="#007ACC"
@@ -80,7 +77,6 @@ export const CsvIcon = (props: React.SVGProps<SVGSVGElement>) => (
   </svg>
 );
 
-// TSV: Custom file icon in orange
 export const TsvIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
     viewBox="0 0 128 128"
@@ -104,7 +100,7 @@ export const TsvIcon = (props: React.SVGProps<SVGSVGElement>) => (
       strokeLinecap="round"
       strokeLinejoin="round"
     />
-    {/* TSV letters */}
+
     <path
       d="M38 70h12M44 70v14M54 70c2 0 4 2 2 4s-4 2-2 4M62 70l6 14M74 70l-6 14"
       stroke="#D35400"
@@ -114,8 +110,6 @@ export const TsvIcon = (props: React.SVGProps<SVGSVGElement>) => (
     />
   </svg>
 );
-
-// ─── Asset icons (table, view, pipeline) ──────────────────────────────────────
 
 export const TableIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg
@@ -169,8 +163,6 @@ export const PipelineIcon = (props: React.SVGProps<SVGSVGElement>) => (
     <circle cx="18" cy="6" r="3" />
   </svg>
 );
-
-// ─── Health overview sidebar icons ────────────────────────────────────────────
 
 export const TotalSourcesIcon = (props: React.SVGProps<SVGSVGElement>) => (
   <svg

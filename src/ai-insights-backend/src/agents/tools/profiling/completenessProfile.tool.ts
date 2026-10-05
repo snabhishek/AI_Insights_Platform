@@ -27,7 +27,6 @@ const inferMissingPatternPl = (
 
   const missingRate = nullCount / totalRows;
 
-  // Check for MAR: is missingness correlated with other columns?
   const candidateOtherCols = allColumns.filter((c) => c !== columnName).slice(0, 5);
   for (const otherCol of candidateOtherCols) {
     const otherS = df.getColumn(otherCol).cast(pl.Utf8).str.strip().str.toLowerCase();
@@ -44,10 +43,8 @@ const inferMissingPatternPl = (
     }
   }
 
-  // Check for MNAR: are the non-missing values clustered in a specific range?
   const nonMissingS = s.filter(s.isNotNull());
-  
-  // Try to parse as float for range check
+
   try {
     const nonMissingNumeric = nonMissingS.cast(pl.Float64).filter(nonMissingS.isNotNull());
     const nNumeric = nonMissingNumeric.length;
@@ -64,7 +61,7 @@ const inferMissingPatternPl = (
       }
     }
   } catch {
-    // Ignore casting error if string values
+
   }
 
   return missingRate < 0.3 ? "MCAR" : "unknown";
@@ -135,8 +132,7 @@ export const createCompletenessProfileTool = (
 
       const totalRows = df.shape.height;
       const placeholderList = Array.from(customPatterns);
-      
-      // We can construct a mask using Polars Expressions
+
       let maskExpr = pl.lit(true);
       for (const colName of targetColumns) {
         const isMissing = pl.col(colName).isNull()
@@ -144,7 +140,7 @@ export const createCompletenessProfileTool = (
           .or(pl.col(colName).cast(pl.Utf8).str.strip().str.toLowerCase().isIn(placeholderList));
         maskExpr = maskExpr.and(isMissing.not());
       }
-      
+
       const fullyPopulatedRows = df.select(maskExpr.sum().alias("sum")).toRecords()[0]["sum"] as number ?? 0;
 
       const columnProfiles = targetColumns.map((colName) => {
@@ -152,12 +148,10 @@ export const createCompletenessProfileTool = (
         const strS = s.cast(pl.Utf8);
 
         const nullCount = s.isNull().cast(pl.Int32).sum() as number;
-        
-        // Non-null series for checking blanks
+
         const nonNullStrS = s.filter(s.isNotNull()).cast(pl.Utf8);
         const blankCount = nonNullStrS.str.strip().eq("").cast(pl.Int32).sum() as number;
 
-        // Non-null and non-blank series for checking placeholders
         const nonNullBlankStrS = nonNullStrS.filter(nonNullStrS.str.strip().neq(""));
         const placeholderCount = nonNullBlankStrS.str.strip().str.toLowerCase().isIn(placeholderList).cast(pl.Int32).sum() as number;
 
@@ -201,7 +195,7 @@ export const createCompletenessProfileTool = (
           : 100,
         columnsProfiled: columnProfiles.length,
         columns: columnProfiles,
-        // rows: sampleRows, // Retain fetched rows so the agent can extract PKs to sync child tables
+
       };
     },
     {

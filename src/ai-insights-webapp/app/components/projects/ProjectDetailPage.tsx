@@ -17,8 +17,6 @@ import ModelTrainingValidationStepOutput from "./pipeline-outputs/ModelTrainingV
 
 type AlertType = "error" | "success" | "info";
 
-// ─── Props ────────────────────────────────────────────────────────────────────
-
 interface ProjectDetailPageProps {
   project: Project;
   allDataSources: DataSource[];
@@ -34,7 +32,7 @@ interface ProjectDetailPageProps {
   onGoBack: () => void;
   onDelete: () => void;
   onEdit: () => void;
-  // onViewHistory: () => void;
+
   onManageSources: () => void;
   onAddTag: () => void;
   activeStage: string | null;
@@ -62,8 +60,6 @@ interface ProjectDetailPageProps {
   showAlert: (opts: { title: string; message?: string; type: AlertType; logs?: string }) => void;
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
-
 export default function ProjectDetailPage({
   project,
   allDataSources,
@@ -79,7 +75,7 @@ export default function ProjectDetailPage({
   onGoBack,
   onDelete,
   onEdit,
-  // onViewHistory,
+
   onManageSources,
   onAddTag,
   activeStage,
@@ -138,14 +134,13 @@ export default function ProjectDetailPage({
     <>
       <div className="p-4 w-full flex flex-col min-h-full bg-background animate-fade-in select-none">
 
-        {/* ── Project Header ── */}
         <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
                 {project.name}
               </h1>
-              {/* Domain & Sub-domain inline pills */}
+
               {(project.domain || project.subDomain) && (
                 <div className="flex items-center gap-2 flex-wrap mt-1.5">
                   {project.domain && (
@@ -169,16 +164,12 @@ export default function ProjectDetailPage({
             </div>
           </div>
 
-
         </div>
 
-        {/* ── Main Layout Grid ── */}
         <div className="grid grid-cols-1 lg:grid-cols-12 items-start gap-3">
 
-          {/* Left Column: Connectors & Use Case — flat, no card wrappers */}
           <div className="col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-3">
 
-            {/* ── Connectors Section ── */}
             <div className="border border-border rounded-lg shadow-sm bg-background p-5">
               <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
                 <div>
@@ -315,7 +306,6 @@ export default function ProjectDetailPage({
             </div>
           </div>
 
-          {/* Right Column: Workflow Pipeline */}
           <WorkflowPipeline
             pipelineStatuses={pipelineStatuses}
             completionPercentage={completionPercentage}
@@ -328,7 +318,7 @@ export default function ProjectDetailPage({
             onRunWorkflow={onRunWorkflow}
             onReRunWorkflow={onReRunWorkflow ? () => onReRunWorkflow() : undefined}
             onStopWorkflow={onStopWorkflow}
-            // onViewHistory={onViewHistory}
+
             onSelectStage={handleSelectStage}
             onApprove={() => onApprove()}
             onRetry={onRetry}
@@ -475,64 +465,7 @@ export default function ProjectDetailPage({
           ) : effectiveFeatureArchitect ? (
             <FeatureArchitectStepOutput featureArchitect={effectiveFeatureArchitect} />
           ) : null,
-          // "Model Training & Validation": (
-          //   effectiveModelSelection ||
-          //   effectiveTrainingConfig ||
-          //   effectivePreFlight ||
-          //   effectiveModelTraining ||
-          //   effectiveModelValidation
-          // ) ? (
-          //   <ModelTrainingValidationStepOutput
-          //     modelSelection={effectiveModelSelection}
-          //     trainingConfiguration={effectiveTrainingConfig}
-          //     preFlight={effectivePreFlight}
-          //     modelTraining={effectiveModelTraining}
-          //     modelValidation={effectiveModelValidation}
-          //     projectId={project.id}
-          //     activeSubstep={
-          //       selectedSubstepId ||
-          //       (effectiveModelValidation
-          //         ? "Model Validation"
-          //         : effectiveModelTraining
-          //           ? "Model Training"
-          //           : effectivePreFlight
-          //             ? "Pre Flight"
-          //             : effectiveTrainingConfig
-          //               ? "Training Configuration"
-          //               : "Model Selection")
-          //     }
-          //     activeRunTimestamp={effectiveRunTimestamp}
-          //     onSelectionConfirmed={(models) => {
-          //       if (onApprove) {
-          //         onApprove("Training Configuration", models);
-          //       }
-          //     }}
-          //     onApproveTraining={(selectedModels, splitEndDate) => {
-          //       if (onApprove) {
-          //         onApprove("Model Training", selectedModels, splitEndDate);
-          //       }
-          //     }}
-          //     onApprovePreFlight={() => {
-          //       if (onApprove) {
-          //         onApprove("Model Training");
-          //       }
-          //     }}
-          //     onNavigateToValidation={(models) => {
-          //       setSelectedSubstepId("Model Validation");
-          //     }}
-          //     onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
-          //       if (onApprove) {
-          //         onApprove("Model Validation", selectedModels, undefined, undefined, horizon, frequency, startDate);
-          //       }
-          //     }}
-          //     onApprove={(selectedModels, splitEndDate) => {
-          //       if (onApprove) {
-          //         onApprove("Pre Flight", selectedModels, undefined, splitEndDate);
-          //       }
-          //     }}
-          //     isApproving={isApproving}
-          //   />
-          // ) : null
+
         };
 
         return (

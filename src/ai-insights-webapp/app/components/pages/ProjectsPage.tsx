@@ -39,8 +39,6 @@ interface WorkflowResponse {
   };
 }
 
-// ─── Connector icon renderer (shared utility) ───────────────────────────────
-
 function renderConnectorIcon(type: string): React.ReactNode {
   switch (type) {
     case "postgres": return <PostgresqlIcon size={16} />;
@@ -55,8 +53,6 @@ function renderConnectorIcon(type: string): React.ReactNode {
     default: return null;
   }
 }
-
-// ─── View states ──────────────────────────────────────────────────────────────
 
 type View = "list" | "project";
 
@@ -94,8 +90,6 @@ const INITIAL_AGENT_STAGE_STATUSES: Record<string, string> = {
   featureValidatorNode: "Pending",
 };
 
-// ─── Root Page Component ──────────────────────────────────────────────────────
-
 export default function ProjectsPage() {
   const {
     projects,
@@ -114,15 +108,12 @@ export default function ProjectsPage() {
 
   const [activeProjectTab, setActiveProjectTab] = useState<ProjectTabType>("project-detail");
 
-  // Ref to track the currently running project ID across navigation
   const activeRunningProjectIdRef = useRef<string | null>(null);
 
-  // ── View routing ──────────────────────────────────────────────────────────
   const [view, setView] = useState<View>("list");
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const selectedProject = projects.find((p) => p.id === selectedProjectId);
 
-  // Reset to list when workspace changes
   useEffect(() => {
     setView("list");
     setSelectedProjectId(null);
@@ -130,7 +121,6 @@ export default function ProjectsPage() {
     resetPipeline();
   }, [activeWorkspaceId]);
 
-  // ── Pipeline simulation state ─────────────────────────────────────────────
   const [pipelineStatuses, setPipelineStatuses] = useState<PipelineStatuses>(
     INITIAL_PIPELINE_STATUSES
   );
@@ -147,7 +137,6 @@ export default function ProjectsPage() {
   const abortControllerRef = useRef<AbortController | null>(null);
   const isExecutingRef = useRef<boolean>(false);
 
-  // ── Pause/Resume state ────────────────────────────────────────────────────
   const [isPaused, setIsPaused] = useState(false);
   const [isAwaitingResponse, setIsAwaitingResponse] = useState(false);
   const [pausedAtPhase, setPausedAtPhase] = useState<string | null>(null);
@@ -173,7 +162,7 @@ export default function ProjectsPage() {
     setRequiresApproval(false);
     setApprovalNextStep(null);
     setIsAwaitingResponse(false);
-    // Clear pause state
+
     setIsPaused(false);
     setPausedAtPhase(null);
     setPausedStateSnapshot(null);
@@ -234,7 +223,6 @@ export default function ProjectsPage() {
     ], "Model Training");
     mapStage(["modelValidation", "modelValidationNode"], "Model Validation");
 
-    // Output presence confirmation
     if (stageOutputsParam) {
       if (stageOutputsParam.inspection) next["Data Inspection"] = "Completed";
       if (stageOutputsParam.dataProfile) next["Data Profiling"] = "Completed";
@@ -249,7 +237,6 @@ export default function ProjectsPage() {
       if (stageOutputsParam.modelTraining) next["Model Training"] = "Completed";
     }
 
-    // Ingestion completion: if resolveSchema is completed or both inspect & profileData completed without active running
     const inspectStatus = getStageStatus(["inspect"]) || (stageOutputsParam?.inspection ? "Completed" : undefined);
     const profileStatus = getStageStatus(["profileData", "dataProfile"]) || (stageOutputsParam?.dataProfile ? "Completed" : undefined);
     const schemaStatus = getStageStatus(["resolveSchema", "schemaResolution"]) || (stageOutputsParam?.schemaResolution ? "Completed" : undefined);
@@ -266,7 +253,6 @@ export default function ProjectsPage() {
       next["Data Ingestion"] = "Completed";
     }
 
-    // Feature Engineering composite status
     const hmVal = getStageStatus(["hierarchyMapper", "hierarchyMapperNode", "relationshipBuilder", "formBuilder"]) || (stageOutputsParam?.hierarchyMapper ? "Completed" : undefined);
     const faVal = getStageStatus(["featureArchitect", "featureArchitectNode"]) || (stageOutputsParam?.featureArchitect ? "Completed" : undefined);
     const fvVal = getStageStatus(["featureValidator", "featureValidatorNode"]) || (stageOutputsParam?.featureValidator ? "Completed" : undefined);
@@ -285,8 +271,6 @@ export default function ProjectsPage() {
 
     const isFEActiveOrDone = isFERunning || isFEDone || isCompleted(hmVal) || isCompleted(faVal) || isCompleted(fvVal) || isCompleted(exoVal);
 
-    // If Model Selection / Training / Validation is active or completed, earlier phases are guaranteed Completed
-    // ONLY if Data Ingestion or Feature Engineering is NOT currently running.
     const isModelPhaseActiveOrDone =
       !isDIRunning &&
       !isFERunning &&
@@ -342,7 +326,6 @@ export default function ProjectsPage() {
       next["Feature Engineering"] = "Completed";
     }
 
-    // Model sub-step cascaded completion:
     if (
       isCompleted(stageStatuses.trainingConfiguration) ||
       isRunning(stageStatuses.trainingConfiguration) ||
@@ -387,8 +370,6 @@ export default function ProjectsPage() {
       }
     }
 
-    // Some workflow updates identify the active node separately from stageStatuses.
-    // Use it to keep the matching modal substep visibly running.
     const activeStepByNode: Record<string, string> = {
       inspect: "Data Inspection",
       profileData: "Data Profiling",
@@ -439,7 +420,6 @@ export default function ProjectsPage() {
     const currentNode = (payload.currentNode || payload.currentStage || "").trim();
     const nextStep = (payload.nextStep || "").toLowerCase().trim();
 
-    // 1. Direct currentNode mapping (highest priority: current actively executing or paused node)
     if (currentNode === "modelValidationNode" || currentNode === "modelValidation") {
       return "Model Validation";
     }
@@ -489,7 +469,6 @@ export default function ProjectsPage() {
       return "Data Inspection";
     }
 
-    // 2. Explicit nextStep approval / resume targets
     if (nextStep.includes("validation")) {
       return "Model Validation";
     }
@@ -506,7 +485,6 @@ export default function ProjectsPage() {
       return "Model Selection";
     }
 
-    // 3. Fallback to latest outputs or stageStatuses in reverse lifecycle order
     if (
       stageStatuses?.modelValidation === "In Progress" ||
       stageStatuses?.modelValidation === "Completed" ||
@@ -627,7 +605,6 @@ export default function ProjectsPage() {
     return "inspect";
   };
 
-  // Hydrate pipeline state whenever selectedProject changes
   useEffect(() => {
     if (!selectedProjectId) return;
 
@@ -711,7 +688,6 @@ export default function ProjectsPage() {
       }
       setActiveStage(determineActiveStage(state));
 
-      // Check if waiting for internal HITL model confirmation
       const isWaitingForModelConfirmation =
         (nextStatuses["Model Selection"] === "Completed" || state.stageOutputs?.modelSelection !== undefined) &&
         !(state.stageOutputs as Record<string, any> | undefined)?.trainingConfiguration?.contractPath &&
@@ -759,7 +735,7 @@ export default function ProjectsPage() {
         setLastRunTime("Not run yet");
       }
     } else {
-      // Fresh project with no workflow runs yet
+
       if (isRunningLocally) {
         setRunStatus("Running");
       } else {
@@ -777,7 +753,6 @@ export default function ProjectsPage() {
       }
     }
 
-    // Check live state from backend to handle cross-tab or reloaded sessions
     let isCancelled = false;
     const checkLiveState = async () => {
       try {
@@ -866,7 +841,6 @@ export default function ProjectsPage() {
     };
   }, [selectedProjectId]);
 
-  // Background polling to synchronize state if workflow is running in background and client is not actively streaming
   useEffect(() => {
     const isProjectActive = Boolean(
       selectedProjectId && (
@@ -899,7 +873,6 @@ export default function ProjectsPage() {
         const freshState = freshProject.agentState;
         const freshStatus = (freshState.status || freshProject.status || "").toLowerCase();
 
-        // Keep local projects in sync
         setProjects((prev) =>
           prev.map((p) => (p.id === selectedProjectId ? { ...p, ...freshProject } : p))
         );
@@ -995,7 +968,7 @@ export default function ProjectsPage() {
           setIsPaused(false);
           setRequiresApproval(false);
           setApprovalNextStep(null);
-          // resetPipeline()
+
         }
       } catch (pollErr) {
         console.warn("[ProjectsPage] Background poll sync error:", pollErr);
@@ -1101,7 +1074,7 @@ export default function ProjectsPage() {
 
     const targetProjectId = activeRunningProjectIdRef.current || selectedProject?.id;
     if (targetProjectId) {
-      // Always keep local projects state in sync so re-entering the project has the latest data immediately
+
       setProjects((prev) => prev.map((project) => {
         if (project.id !== targetProjectId) return project;
         const existingAgentState = (project.agentState as Record<string, unknown>) || {};
@@ -1116,7 +1089,6 @@ export default function ProjectsPage() {
         };
       }));
 
-      // Local state is updated above; backend persists state directly to the database during workflow execution
     }
   };
 
@@ -1152,7 +1124,7 @@ export default function ProjectsPage() {
         return;
       }
     } catch {
-      // ignore active check network error
+
     }
 
     if (isExecutingRef.current) return;
@@ -1170,7 +1142,7 @@ export default function ProjectsPage() {
     if (action !== "approve") {
       setRunStatus("Running");
       setIsPaused(false);
-      // Immediately sync running status into AppContext projects
+
       setProjects((prev) =>
         prev.map((p) =>
           p.id === selectedProject.id
@@ -1231,7 +1203,7 @@ export default function ProjectsPage() {
         "Model Evaluation": "Pending",
         "Model Validation": "Pending",
       });
-      // Clear pause state when starting fresh
+
       setIsPaused(false);
       setPausedAtPhase(null);
       setPausedStateSnapshot(null);
@@ -1292,7 +1264,7 @@ export default function ProjectsPage() {
               if (chunk.success && chunk.data) {
                 setIsApproving(false);
                 lastData = chunk.data;
-                lastDataRef.current = chunk.data; // Store for pause resumption
+                lastDataRef.current = chunk.data;
                 updateWorkflowState(chunk.data);
                 if (chunk.data.status === "paused") {
                   setPausedStateSnapshot(null);
@@ -1343,15 +1315,7 @@ export default function ProjectsPage() {
         });
         return;
       }
-      // if (lastData && (lastData.status === "completed" || lastData.stageStatuses?.resolveSchema === "Completed")) {
-      //   updateWorkflowState(lastData);
-      //   const completionMsg = lastData.summary || "Data Ingestion completed successfully";
-      //   if (lastCompletedSummaryRef.current !== completionMsg) {
-      //     lastCompletedSummaryRef.current = completionMsg;
-      //     showAlert({ title: completionMsg, type: "success" });
-      //   }
-      //   return;
-      // }
+
       if (action !== "approve") {
         setRunStatus("Idle");
         setIsPaused(false);
@@ -1365,7 +1329,7 @@ export default function ProjectsPage() {
       if (abortControllerRef.current === controller) {
         abortControllerRef.current = null;
       }
-      // Stream complete; backend has persisted final/paused state
+
     }
   };
 
@@ -1480,7 +1444,6 @@ export default function ProjectsPage() {
       });
     }
 
-    // Clear pause state
     setIsPaused(false);
     setIsAwaitingResponse(false);
     setPausedAtPhase(null);
@@ -1560,7 +1523,7 @@ export default function ProjectsPage() {
         "modelValidation", "modelValidationNode"
       );
     } else {
-      // Model Training & Validation stage -> full stage retry from root node modelSelectionNode!
+
       rootNode = "modelSelectionNode";
       statusesToUpdate["Data Ingestion"] = "Completed";
       statusesToUpdate["Data Inspection"] = "Completed";
@@ -1644,7 +1607,6 @@ export default function ProjectsPage() {
     const currentSession = workflowSessionId || pausedSessionId;
     const currentProjectId = activeRunningProjectIdRef.current || selectedProject?.id;
 
-    // Step 1: Abort current API calls
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;
@@ -1652,12 +1614,10 @@ export default function ProjectsPage() {
     isExecutingRef.current = false;
     activeRunningProjectIdRef.current = null;
 
-    // Step 2: Notify backend to pause
     if (currentSession || currentProjectId) {
       void pauseWorkflowApi(currentSession || undefined, currentProjectId);
     }
 
-    // Step 3: Capture current state snapshot
     const stateSnapshot = {
       pipelineStatuses,
       stageOutputs,
@@ -1667,14 +1627,12 @@ export default function ProjectsPage() {
       lastData: lastDataRef.current,
     };
 
-    // Step 4: Save pause state
     setIsPaused(true);
     setRunStatus("Paused");
     setPausedStateSnapshot(stateSnapshot);
     setPausedAtPhase(activeStage || "inspect");
     setPausedSessionId(currentSession);
 
-    // Step 5: Update backend with pause status
     if (currentProjectId) {
       const existingAgentState = (selectedProject?.agentState as Record<string, any>) || {};
       const isAwaitingApproval = requiresApproval || isAwaitingResponse || approvalNextStep != null;
@@ -1725,7 +1683,6 @@ export default function ProjectsPage() {
     void runWorkflow("resume", resumePhase);
   };
 
-
   const handleStageSelect = (stepId: string) => {
     const stageMap: Record<string, string> = {
       "Data Inspection": "inspect",
@@ -1744,7 +1701,7 @@ export default function ProjectsPage() {
     if (validUseCase && validUseCase !== selectedProject.useCase) {
       await updateProject(selectedProject.id, { useCase: validUseCase });
     }
-    // Clear workflow session ID to start a fresh execution run
+
     setWorkflowSessionId(null);
     setRunStatus("Idle");
     setIsPaused(false);
@@ -1766,7 +1723,6 @@ export default function ProjectsPage() {
       "Model Validation": "Pending",
     });
 
-    // Cleanly clear project agentState in database so stale training configs don't leak into new run
     await updateProject(selectedProject.id, {
       status: "idle",
       agentState: {
@@ -1779,8 +1735,6 @@ export default function ProjectsPage() {
 
     void runWorkflow(undefined, undefined, validUseCase ?? selectedProject.useCase);
   };
-
-  // ── Navigation helpers ────────────────────────────────────────────────────
 
   const openProject = (id: string) => {
     setSelectedProjectId(id);
@@ -1806,8 +1760,6 @@ export default function ProjectsPage() {
       },
     });
   };
-
-  // ── Render ────────────────────────────────────────────────────────────────
 
   if (view === "project") {
     return (
@@ -1876,7 +1828,6 @@ export default function ProjectsPage() {
     );
   }
 
-  // Default: list view
   return (
     <ProjectsListPage
       projects={projects}

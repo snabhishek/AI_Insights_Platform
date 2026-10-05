@@ -2,7 +2,7 @@ import { IDuckDBService } from "../../../../services/duckdb/duckdb.service.inter
 import { ConnectorType, ConnectionConfig } from "../../../../models/connector.types";
 
 export interface DependencyStatsResult {
-  purity: number; // 0.0 to 1.0
+  purity: number;
   sampleSize: number;
   sourceType: string;
 }
@@ -13,7 +13,6 @@ export interface IGenericDataConnector {
   getFieldCardinality(field: string, tableName?: string): Promise<number>;
   getRowCount(tableName?: string): Promise<number>;
 }
-
 
 export class GenericDataConnector implements IGenericDataConnector {
   constructor(
@@ -32,9 +31,6 @@ export class GenericDataConnector implements IGenericDataConnector {
     return name.replace(/"/g, '""');
   }
 
-  /**
-   * Ensures file / API data sources are ingested into local query engine (DuckDB) once.
-   */
   private async ensureSourceIngested(): Promise<void> {
     if (this.duckDBService && ["csv", "tsv", "excel", "json"].includes(this.connectorType)) {
       try {
@@ -45,17 +41,12 @@ export class GenericDataConnector implements IGenericDataConnector {
     }
   }
 
-  /**
-   * Calculates functional dependency purity (0 to 1) and sample size
-   * for a parent_field -> child_field mapping using aggregated SQL.
-   */
   async getDependencyStats(parentField: string, childField: string, tableName?: string): Promise<DependencyStatsResult> {
     await this.ensureSourceIngested();
     const table = this.resolveTableName(tableName);
     const safeParent = this.sanitizeId(parentField);
     const safeChild = this.sanitizeId(childField);
 
-    // Default fallback values if query fails
     let purity = 1.0;
     let sampleSize = 0;
 
@@ -64,7 +55,7 @@ export class GenericDataConnector implements IGenericDataConnector {
         const dbPath = this.duckDBService.getDuckDbPath(this.connectionConfig.fileName || table);
         const sql = `
           WITH ParentChildFreq AS (
-            SELECT 
+            SELECT
               "${safeParent}" AS p_val,
               "${safeChild}" AS c_val,
               COUNT(*) AS freq
@@ -104,9 +95,6 @@ export class GenericDataConnector implements IGenericDataConnector {
     };
   }
 
-  /**
-   * Returns up to `limit` distinct values of a field.
-   */
   async getValueSet(field: string, limit: number = 20, tableName?: string): Promise<string[]> {
     await this.ensureSourceIngested();
     const table = this.resolveTableName(tableName);
@@ -131,9 +119,6 @@ export class GenericDataConnector implements IGenericDataConnector {
     return [];
   }
 
-  /**
-   * Returns distinct value count for a field.
-   */
   async getFieldCardinality(field: string, tableName?: string): Promise<number> {
     await this.ensureSourceIngested();
     const table = this.resolveTableName(tableName);
@@ -159,9 +144,6 @@ export class GenericDataConnector implements IGenericDataConnector {
     return 0;
   }
 
-  /**
-   * Returns total row count.
-   */
   async getRowCount(tableName?: string): Promise<number> {
     await this.ensureSourceIngested();
     const table = this.resolveTableName(tableName);

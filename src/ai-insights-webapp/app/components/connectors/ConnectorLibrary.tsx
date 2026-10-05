@@ -77,7 +77,7 @@ interface ConnectorLibraryProps {
 export default function ConnectorLibrary({ onSelectConnector }: ConnectorLibraryProps) {
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-surface p-6 shadow-soft hover:shadow-soft-hover transition-shadow duration-300 h-full">
-      {/* Header section with view all link */}
+
       <div className="flex justify-between items-center mb-6">
         <h3 className="text-base font-semibold text-foreground">
           Connector Library
@@ -104,7 +104,6 @@ export default function ConnectorLibrary({ onSelectConnector }: ConnectorLibrary
         </a>
       </div>
 
-      {/* Flex-wrap row — cards are fixed 150×216, wrap on smaller screens */}
       <div className="flex flex-wrap gap-3.5">
         {CONNECTORS.map((connector) => (
           <div
@@ -112,12 +111,11 @@ export default function ConnectorLibrary({ onSelectConnector }: ConnectorLibrary
             style={{ width: 153, height: 216 }}
             className="group flex flex-col items-center justify-between rounded-xl border border-border bg-surface p-4 text-center hover-lift duration-300 hover:border-primary/30 shrink-0"
           >
-            {/* Connector Icon */}
+
             <div className="flex items-center justify-center p-2 rounded-lg bg-surface-muted transition-colors group-hover:bg-primary/5">
               {connector.icon}
             </div>
 
-            {/* Title & Desc */}
             <div className="mt-2 flex flex-col flex-1 justify-center">
               <span className="text-sm font-semibold text-foreground tracking-tight">
                 {connector.name}
@@ -127,7 +125,6 @@ export default function ConnectorLibrary({ onSelectConnector }: ConnectorLibrary
               </p>
             </div>
 
-            {/* Action Connect Button */}
             <button
               type="button"
               onClick={() => onSelectConnector(connector.id as DataSource["type"])}

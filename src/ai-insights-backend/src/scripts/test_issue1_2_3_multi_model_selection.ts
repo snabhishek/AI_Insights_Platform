@@ -37,7 +37,6 @@ async function runIssue123Verification() {
 
   await ensureProjectRunFolder(workspaceName, projectName, runTimestamp);
 
-  // 1. Initial agent decision with 4 candidate models
   const initialDecision = {
     target_entity: {
       name: "WeeklySales",
@@ -57,7 +56,6 @@ async function runIssue123Verification() {
     ],
   };
 
-  // User selects ALL 4 candidate models (Issue 1 & 2 verification)
   const selected4Models = ["lightgbm_regressor", "xgboost_regressor", "catboost_regressor", "random_forest_regressor"];
 
   console.log("--- TEST A: User selects 4 models ---");
@@ -81,7 +79,6 @@ async function runIssue123Verification() {
   const saveRes = await saveModularTrainingJobContract(workspaceName, projectName, userConfirmedDecision, runTimestamp);
   console.log(`Saved contract to: ${saveRes.contractPath}`);
 
-  // Read back contract YAML from file system
   const writtenContent = fs.readFileSync(saveRes.contractPath, "utf-8");
   const parsedYaml: any = yaml.load(writtenContent);
   const persistedModels = parsedYaml?.model_selection?.models || [];
@@ -94,7 +91,6 @@ async function runIssue123Verification() {
   assert(persistedModelIds.includes("catboost_regressor"), "catboost_regressor is persisted");
   assert(persistedModelIds.includes("random_forest_regressor"), "random_forest_regressor is persisted");
 
-  // 2. Issue 3: In-place update from Training Configuration (e.g. user toggles off random_forest, now 3 models)
   console.log("\n--- TEST B: Re-select models inside Training Configuration (Issue 3 enhancement) ---");
   const reSelected3Models = ["lightgbm_regressor", "xgboost_regressor", "catboost_regressor"];
   const updatedDecision = {

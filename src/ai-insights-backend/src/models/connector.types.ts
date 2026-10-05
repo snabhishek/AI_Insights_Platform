@@ -4,11 +4,11 @@ export interface ConnectionConfig {
   database?: string;
   username?: string;
   password?: string;
-  account?: string;    // snowflake
-  url?: string;        // restapi
-  method?: string;     // restapi
-  headers?: string;    // restapi JSON
-  fileName?: string;   // excel/csv/tsv
+  account?: string;
+  url?: string;
+  method?: string;
+  headers?: string;
+  fileName?: string;
   fileContent?: string;
 }
 

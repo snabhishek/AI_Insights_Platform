@@ -41,7 +41,7 @@ export default function FeatureArchitectStepOutput({
 
   return (
     <div className="space-y-6 select-none">
-      {/* Banner */}
+
       <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900 text-xs text-blue-800 dark:text-blue-300 flex items-start gap-2.5 shadow-sm font-semibold select-none">
         <span className="text-sm">✓</span>
         <div>
@@ -52,7 +52,6 @@ export default function FeatureArchitectStepOutput({
         </div>
       </div>
 
-      {/* Meta Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="p-3 bg-surface-muted border border-border rounded">
           <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Problem Type</div>
@@ -72,7 +71,6 @@ export default function FeatureArchitectStepOutput({
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-border gap-4 text-xs font-semibold overflow-x-auto">
         <button
           onClick={() => setActiveTab("creation")}
@@ -116,7 +114,6 @@ export default function FeatureArchitectStepOutput({
         </button>
       </div>
 
-      {/* Tab Contents */}
       {activeTab === "creation" && (
         <div className="space-y-4 select-text">
           <SectionHeader

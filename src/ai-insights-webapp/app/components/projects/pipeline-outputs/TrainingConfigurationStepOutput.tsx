@@ -5,7 +5,6 @@ import dynamic from "next/dynamic";
 import { Badge } from "./utils";
 import { BACKEND_URL } from "../../providers/AppContext";
 
-// Dynamically import Monaco Editor without SSR to prevent hydration mismatches
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
   loading: () => (
@@ -56,7 +55,6 @@ export default function TrainingConfigurationStepOutput({
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
 
-  // Dynamic Dataset Date Range & Split Cutoff state
   const [dateRangeInfo, setDateRangeInfo] = useState<{
     hasTemporalData: boolean;
     timeColumn?: string | null;
@@ -72,7 +70,6 @@ export default function TrainingConfigurationStepOutput({
   const [selectedMonth, setSelectedMonth] = useState<number>(9);
   const [isLoadingDates, setIsLoadingDates] = useState<boolean>(false);
 
-  // Candidate models re-selection state
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
   const [hasUserEditedSelection, setHasUserEditedSelection] = useState<boolean>(false);
   const [isApplyingModels, setIsApplyingModels] = useState<boolean>(false);
@@ -102,10 +99,9 @@ export default function TrainingConfigurationStepOutput({
     return null;
   }, []);
 
-  // Fetch contract from backend
   const fetchContract = useCallback(async () => {
     if (!projectId) {
-      // Fallback from prop
+
       const config = trainingConfiguration?.configuration || trainingConfiguration || {};
       setParsedData(config);
       const existing = extractSplitDateParts(config, trainingConfiguration);
@@ -143,7 +139,7 @@ export default function TrainingConfigurationStepOutput({
       }
     } catch (err: any) {
       console.warn("[TrainingConfig] Could not fetch contract from API:", err);
-      // Fallback to trainingConfiguration prop
+
       const config = trainingConfiguration?.configuration || trainingConfiguration || {};
       setParsedData(config);
       const existing = extractSplitDateParts(config, trainingConfiguration);
@@ -161,7 +157,6 @@ export default function TrainingConfigurationStepOutput({
     fetchContract();
   }, [fetchContract]);
 
-  // Fetch dynamic dataset date range
   const fetchDateRange = useCallback(async () => {
     if (!projectId) return;
     setIsLoadingDates(true);
@@ -202,7 +197,6 @@ export default function TrainingConfigurationStepOutput({
     onApprove(selectedModelIds, formattedSplit);
   };
 
-  // Handle saving YAML back to file server
   const handleSaveYaml = async () => {
     if (!projectId) {
       setErrorMsg("Project ID is missing. Cannot save contract to file server.");
@@ -258,7 +252,6 @@ export default function TrainingConfigurationStepOutput({
 
   const isDirty = yamlContent !== originalYaml;
 
-  // Extract structured contract sections
   const trainingJob = parsedData.training_job || {};
   const task = parsedData.task || {};
   const split = parsedData.split || {};
@@ -288,7 +281,6 @@ export default function TrainingConfigurationStepOutput({
 
   const artifacts = parsedData.artifacts || {};
 
-  // Build a consolidated candidate pool from modelSelection and parsedData
   const candidatePool = useMemo(() => {
     const rawCandidates: any[] =
       modelSelection?.decision?.candidates ||
@@ -345,11 +337,9 @@ export default function TrainingConfigurationStepOutput({
     return Array.from(map.values());
   }, [modelSelection, parsedData.model_selection, confirmedModels]);
 
-  // Synchronize initial selection from contract or modelSelection
   useEffect(() => {
     if (hasUserEditedSelection) return;
 
-    // 1. First priority: parsedData.model_selection.models
     if (Array.isArray(parsedData.model_selection?.models) && parsedData.model_selection.models.length > 0) {
       const ids = parsedData.model_selection.models
         .filter((m: any) => m.enabled !== false)
@@ -361,7 +351,6 @@ export default function TrainingConfigurationStepOutput({
       }
     }
 
-    // 2. Second priority: modelSelection user selection
     const msUserSelection =
       modelSelection?.userSelection?.selectedModelIds ||
       modelSelection?.selectedModelIds;
@@ -370,7 +359,6 @@ export default function TrainingConfigurationStepOutput({
       return;
     }
 
-    // 3. Third priority: trainingConfiguration.models
     if (Array.isArray(trainingConfiguration?.models) && trainingConfiguration.models.length > 0) {
       const ids = trainingConfiguration.models
         .map((m: any) => (typeof m === "string" ? m : (m.model_id || m.id)))
@@ -381,7 +369,6 @@ export default function TrainingConfigurationStepOutput({
       }
     }
 
-    // 4. Fourth priority: confirmedModels
     if (Array.isArray(confirmedModels) && confirmedModels.length > 0) {
       const ids = confirmedModels
         .map((m: any) => (typeof m === "string" ? m : (m.model_id || m.id)))
@@ -392,7 +379,6 @@ export default function TrainingConfigurationStepOutput({
       }
     }
 
-    // 5. Fifth priority: If no prior selection exists anywhere, default strictly to recommended model (rank 1)
     if (candidatePool.length > 0) {
       const rec = candidatePool.find((c: any) => c.is_recommended || c.rank === 1);
       if (rec?.model_id) {
@@ -481,7 +467,6 @@ export default function TrainingConfigurationStepOutput({
         throw new Error(data.message || "Failed to apply selected models to training contract");
       }
 
-      // Re-fetch fresh YAML contract from file server
       await fetchContract();
 
       setHasUserEditedSelection(false);
@@ -517,7 +502,7 @@ export default function TrainingConfigurationStepOutput({
 
   return (
     <div className="space-y-6 animate-fadeIn text-foreground">
-      {/* ─── Top Control Bar: Mode Toggle & File Header ───────────────────────── */}
+
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-4 rounded-2xl border border-border bg-gradient-to-r from-surface to-surface-muted shadow-xs">
         <div className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold shrink-0">
@@ -540,7 +525,6 @@ export default function TrainingConfigurationStepOutput({
           </div>
         </div>
 
-        {/* Mode Switcher Tabs */}
         <div className="flex items-center bg-surface-muted border border-border p-1 rounded-xl shadow-2xs self-stretch sm:self-auto justify-center">
           <button
             type="button"
@@ -576,7 +560,6 @@ export default function TrainingConfigurationStepOutput({
         </div>
       </div>
 
-      {/* ─── Feedback Alerts ────────────────────────────────────────────────── */}
       {saveSuccessMsg && (
         <div className="p-3.5 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center justify-between animate-fadeIn">
           <div className="flex items-center gap-2">
@@ -600,10 +583,9 @@ export default function TrainingConfigurationStepOutput({
         </div>
       )}
 
-      {/* ─── Mode 1: View Mode ──────────────────────────────────────────────── */}
       {activeTab === "view" && (
         <div className="space-y-6 animate-fadeIn">
-          {/* Section 1: ML Task & Job Details Banner */}
+
           <div className="rounded-2xl border border-border/80 bg-surface p-5 shadow-xs">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
               <div>
@@ -642,9 +624,8 @@ export default function TrainingConfigurationStepOutput({
             </div>
           </div>
 
-          {/* Section 2: Primary Metric & Data Splitting Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {/* Primary Metric Card */}
+
             <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-3">
@@ -689,7 +670,6 @@ export default function TrainingConfigurationStepOutput({
                 )}
               </div>
 
-              {/* Secondary Metrics */}
               {Array.isArray(evaluation.secondary_metrics) && evaluation.secondary_metrics.length > 0 && (
                 <div className="mt-4 pt-3 border-t border-border flex items-center gap-2 flex-wrap">
                   <span className="text-[10px] uppercase font-bold text-muted-foreground">Secondary Metrics:</span>
@@ -700,7 +680,6 @@ export default function TrainingConfigurationStepOutput({
               )}
             </div>
 
-            {/* Data Splitting & Stratification Card */}
             <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-3">
@@ -717,7 +696,6 @@ export default function TrainingConfigurationStepOutput({
                   </Badge>
                 </div>
 
-                {/* Visual Segmented Progress Bar */}
                 <div className="my-3 space-y-1.5">
                   <div className="flex items-center justify-between text-[11px] font-semibold">
                     <span className="text-indigo-600 dark:text-indigo-400">Train ({trainRatio}%)</span>
@@ -746,7 +724,6 @@ export default function TrainingConfigurationStepOutput({
                   </div>
                 </div>
 
-                {/* Class Imbalance Section */}
                 <div className="mt-3 pt-3 border-t border-border flex items-center justify-between text-xs">
                   <span className="text-muted-foreground font-medium">Class Imbalance:</span>
                   <div className="flex items-center gap-2">
@@ -762,7 +739,6 @@ export default function TrainingConfigurationStepOutput({
             </div>
           </div>
 
-          {/* Section 3: Candidate Models Selection & Contract Customization */}
           <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs space-y-4">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-border/70">
               <div className="flex items-center gap-3">
@@ -791,7 +767,6 @@ export default function TrainingConfigurationStepOutput({
                 </div>
               </div>
 
-              {/* Quick action buttons & Apply Button */}
               <div className="flex items-center gap-2 self-start md:self-auto shrink-0 flex-wrap">
                 {candidatePool.length > 2 && (
                   <>
@@ -840,7 +815,6 @@ export default function TrainingConfigurationStepOutput({
               </div>
             </div>
 
-            {/* Apply Success Notification */}
             {applySuccessMsg && (
               <div className="p-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-xs font-semibold flex items-center justify-between animate-fadeIn">
                 <div className="flex items-center gap-2">
@@ -1001,9 +975,8 @@ export default function TrainingConfigurationStepOutput({
             )}
           </div>
 
-          {/* Section 4: HPO & Validation Gates Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-            {/* Hyperparameter Optimization */}
+
             <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -1043,7 +1016,6 @@ export default function TrainingConfigurationStepOutput({
               )}
             </div>
 
-            {/* Validation Gates */}
             <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs">
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground">
@@ -1080,7 +1052,6 @@ export default function TrainingConfigurationStepOutput({
             </div>
           </div>
 
-          {/* Section 4.5: Model Training Temporal Split Cutoff */}
           <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 via-surface to-surface p-5 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/70">
               <div className="flex items-center gap-3">
@@ -1119,7 +1090,7 @@ export default function TrainingConfigurationStepOutput({
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {/* Month Selector */}
+
               <div>
                 <label className="block text-xs font-semibold text-foreground mb-1.5">
                   Split End Month
@@ -1147,7 +1118,6 @@ export default function TrainingConfigurationStepOutput({
                 </select>
               </div>
 
-              {/* Year Selector */}
               <div>
                 <label className="block text-xs font-semibold text-foreground mb-1.5">
                   Split End Year
@@ -1170,7 +1140,6 @@ export default function TrainingConfigurationStepOutput({
               </div>
             </div>
 
-            {/* Split Information Summary */}
             <div className="p-3 rounded-xl bg-surface/80 border border-border/80 flex items-center justify-between text-xs">
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground">Calculated Split Boundary:</span>
@@ -1184,7 +1153,6 @@ export default function TrainingConfigurationStepOutput({
             </div>
           </div>
 
-          {/* Section 5: Approval & Handoff to Pre Flight */}
           {onApprove && (
             <div className="rounded-xl border border-border bg-gradient-to-r from-surface to-surface-muted p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -1229,10 +1197,9 @@ export default function TrainingConfigurationStepOutput({
         </div>
       )}
 
-      {/* ─── Mode 2: Code Edit Mode (Monaco YAML Editor) ────────────────────── */}
       {activeTab === "edit" && (
         <div className="rounded-2xl border border-border bg-surface shadow-sm overflow-hidden animate-fadeIn">
-          {/* Editor Action Toolbar */}
+
           <div className="p-3.5 border-b border-border bg-surface-muted flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <div className="flex items-center gap-2.5">
               <span className="text-xs font-mono font-bold text-foreground">
@@ -1306,7 +1273,6 @@ export default function TrainingConfigurationStepOutput({
             </div>
           </div>
 
-          {/* Monaco Editor Container */}
           <div className="h-[650px] w-full bg-[#1e1e1e]">
             <MonacoEditor
               height="100%"
@@ -1329,7 +1295,6 @@ export default function TrainingConfigurationStepOutput({
             />
           </div>
 
-          {/* Section 5: Approval & Handoff to Pre Flight (Edit Mode) */}
           {onApprove && (
             <div className="p-5 border-t border-border bg-gradient-to-r from-surface to-surface-muted flex flex-col sm:flex-row items-center justify-between gap-4">
               <div className="flex items-center gap-3">
@@ -1376,4 +1341,3 @@ export default function TrainingConfigurationStepOutput({
     </div>
   );
 }
-

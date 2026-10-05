@@ -4,10 +4,6 @@ import { logMilestoneThinking } from "../../utils/agentUtils";
 import { relationshipBuilderNode } from "./RelationshipBuilder/relationshipBuilderNode";
 import { formBuilderNode } from "./FormBuilder/formBuilderNode";
 
-/**
- * Hierarchy Mapper Parent Node
- * Executes Relationship Builder followed by Form Builder as the first step of Feature Engineering.
- */
 export async function hierarchyMapperNode(state: typeof AgentState.State, config?: RunnableConfig) {
   const services = config?.configurable?.services as IngestionServices;
   if (services?.isCancelled?.() || services?.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
@@ -21,10 +17,8 @@ export async function hierarchyMapperNode(state: typeof AgentState.State, config
     "Executing Hierarchy Mapper process (Relationship Builder -> Form Builder)..."
   );
 
-  // 1. Run Relationship Builder
   const relResult = await relationshipBuilderNode(state, config);
 
-  // Merge state for Form Builder
   const updatedState: typeof AgentState.State = {
     ...state,
     relationshipBuilder: relResult.relationshipBuilder as unknown as Record<string, unknown>,
@@ -32,7 +26,6 @@ export async function hierarchyMapperNode(state: typeof AgentState.State, config
     status: relResult.status,
   };
 
-  // 2. Run Form Builder
   const formResult = await formBuilderNode(updatedState, config);
 
   const combinedOutput = {

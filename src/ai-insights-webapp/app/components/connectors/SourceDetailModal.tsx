@@ -50,7 +50,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
   const [activeTab, setActiveTab] = useState<"config" | "data">("config");
   const [isEditing, setIsEditing] = useState(false);
 
-  // Editable fields state
   const [editName, setEditName] = useState("");
   const [editHost, setEditHost] = useState("");
   const [editPort, setEditPort] = useState("");
@@ -61,7 +60,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
   const [editUrl, setEditUrl] = useState("");
   const [editFileName, setEditFileName] = useState("");
 
-  // Sync edits when source changes
   useEffect(() => {
     if (source) {
       setEditName(source.name);
@@ -134,7 +132,7 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-md animate-fade-in">
       <div className="relative w-full max-w-3xl overflow-hidden rounded-xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col max-h-[90vh]">
-        {/* Modal Header */}
+
         <div className="flex items-center justify-between border-b border-border/80 px-5 py-3 bg-surface-muted/60">
           <div className="flex items-center gap-3">
             <div className="flex items-center justify-center p-1.5 rounded-lg bg-surface border border-border/20">
@@ -184,7 +182,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
           </button>
         </div>
 
-        {/* Tab Selection Bar */}
         <div className="flex border-b border-border px-6 bg-surface-muted/30">
           <button
             onClick={() => setActiveTab("config")}
@@ -208,11 +205,10 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
           </button>
         </div>
 
-        {/* Modal Body */}
         <div className="flex-1 overflow-y-auto p-6">
           {activeTab === "config" ? (
             <div className="space-y-6">
-              {/* Status & Health Pills */}
+
               <div className="grid grid-cols-2 gap-4">
                 <div className="bg-surface-muted rounded-xl p-3 border border-border/40">
                   <span className="block text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -259,14 +255,13 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                 </div>
               </div>
 
-              {/* Connection Parameters */}
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                   Connection Parameters
                 </h4>
 
                 <div className="rounded-xl border border-border/60 bg-surface divide-y divide-border/60 text-sm">
-                  {/* Host / Server IP */}
+
                   {source.connectionConfig?.host !== undefined && (
                     <div className="flex justify-between items-center p-3.5">
                       <span className="text-muted-foreground">Server Address</span>
@@ -283,7 +278,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                     </div>
                   )}
 
-                  {/* Port */}
                   {source.connectionConfig?.port !== undefined && (
                     <div className="flex justify-between items-center p-3.5">
                       <span className="text-muted-foreground">Port</span>
@@ -300,7 +294,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                     </div>
                   )}
 
-                  {/* Database Name */}
                   {source.connectionConfig?.database !== undefined && (
                     <div className="flex justify-between items-center p-3.5">
                       <span className="text-muted-foreground">Database Name</span>
@@ -317,7 +310,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                     </div>
                   )}
 
-                  {/* Snowflake Account */}
                   {source.connectionConfig?.account !== undefined && (
                     <div className="flex justify-between items-center p-3.5">
                       <span className="text-muted-foreground">Account Identifier</span>
@@ -334,7 +326,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                     </div>
                   )}
 
-                  {/* Username */}
                   {source.connectionConfig?.username !== undefined && (
                     <div className="flex justify-between items-center p-3.5">
                       <span className="text-muted-foreground">Username</span>
@@ -351,7 +342,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                     </div>
                   )}
 
-                  {/* Password */}
                   {source.connectionConfig?.password !== undefined && (
                     <div className="flex justify-between items-center p-3.5">
                       <span className="text-muted-foreground">Password</span>
@@ -369,7 +359,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                     </div>
                   )}
 
-                  {/* API URL */}
                   {source.connectionConfig?.url !== undefined && (
                     <div className="flex flex-col gap-1 p-3.5">
                       <span className="text-muted-foreground">API Endpoint URL</span>
@@ -388,7 +377,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                     </div>
                   )}
 
-                  {/* Excel/CSV File Name */}
                   {source.connectionConfig?.fileName !== undefined && (
                     <div className="flex justify-between items-center p-3.5">
                       <span className="text-muted-foreground">Local File Name</span>
@@ -405,7 +393,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                     </div>
                   )}
 
-                  {/* Un-editable Last Synced */}
                   <div className="flex justify-between p-3.5 text-xs text-muted-foreground bg-surface-muted/30">
                     <span>Last Synced</span>
                     <span className="font-mono">{source.lastSyncDate} ({source.lastSyncTime})</span>
@@ -413,7 +400,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
                 </div>
               </div>
 
-              {/* Connected Assets breakdown */}
               <div className="space-y-3">
                 <h4 className="text-xs font-bold text-muted-foreground uppercase tracking-wider">
                   Discovered Schema Assets (Read Only)
@@ -448,7 +434,6 @@ export default function SourceDetailModal({ source: propSource, onClose }: Sourc
           )}
         </div>
 
-        {/* Modal Footer */}
         <div className="flex items-center justify-between border-t border-border/80 px-5 py-3 bg-surface-muted/60">
           {activeTab === "config" ? (
             isEditing ? (

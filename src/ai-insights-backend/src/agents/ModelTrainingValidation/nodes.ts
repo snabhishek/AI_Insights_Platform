@@ -65,7 +65,6 @@ function readReport(state: State, services: IngestionServices): any {
     return JSON.parse(fs.readFileSync(reportPath, "utf-8"));
   }
 
-  // Check subdirectories for <projectName>_model_training/model_training_report.json
   if (fs.existsSync(runDir)) {
     try {
       const entries = fs.readdirSync(runDir, { withFileTypes: true });
@@ -84,7 +83,7 @@ function readReport(state: State, services: IngestionServices): any {
 }
 
 export async function modelSelectionNode(state: State, config?: RunnableConfig) {
-  // Phase 1: 3.1 Model Selection - Pre-training model selection agent
+
   const services = servicesFrom(config);
   const projectId = services.projectId || state.projectId || "default-project";
   const metadata = featureMetadata(state);
@@ -145,7 +144,7 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
 }
 
 export async function trainingConfigurationNode(state: State, config?: RunnableConfig) {
-  // Phase 2: 3.2 Training Configuration - Agent-first training configuration creation with self-healing validator
+
   const services = servicesFrom(config);
   if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
     console.info("[Workflow] trainingConfigurationNode skipping execution because workflow is stopped/paused.");
@@ -180,7 +179,6 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     (result: any) => TrainingConfigValidator.validate(result?.configuration || result)
   );
 
-  // Calculate dataset temporal range and maximum last date of dataset directly in trainingConfigurationNode
   try {
     const { extractDatasetDateRange } = await import("../tools/helpers/datasetDateRangeHelper");
     const wsName = (state as any).workspaceName || services.workspaceName || "DefaultWorkspace";
@@ -209,7 +207,6 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     console.warn("[trainingConfigurationNode] Failed to extract dataset date range:", rangeErr?.message || rangeErr);
   }
 
-  // Preserve split date explicitly on output and configuration
   const resolvedSplitDate =
     state.splitEndDate ||
     state.splitDate ||
@@ -252,7 +249,7 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
 }
 
 export async function preFlightNode(state: State, config?: RunnableConfig) {
-  // Phase 2.5: Pre Flight - Runs automatically to validate resources and readiness (no user approval required)
+
   const services = servicesFrom(config);
   if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
     console.info("[Workflow] preFlightNode skipping execution because workflow is stopped/paused.");
@@ -302,7 +299,6 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
     };
   }
 
-  // Automatic transition: status "running" cascades immediately into modelTrainingCodeNode
   return {
     preFlight: report,
     status: "running",
@@ -323,10 +319,6 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
   };
 }
 
-/**
- * Step 4A: Scaffolds modular Python model training project with train split dates.
- * Does NOT run Docker container.
- */
 export async function modelTrainingCodeNode(state: State, config?: RunnableConfig) {
   const services = servicesFrom(config);
   if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
@@ -377,9 +369,6 @@ export async function modelTrainingCodeNode(state: State, config?: RunnableConfi
   };
 }
 
-/**
- * Step 4B: Executes Python project in Docker sandbox for user-selected candidate models.
- */
 export async function modelTrainingExecNode(state: State, config?: RunnableConfig) {
   const services = servicesFrom(config);
   if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
@@ -426,9 +415,6 @@ export async function modelTrainingExecNode(state: State, config?: RunnableConfi
   };
 }
 
-/**
- * Legacy single-node modelTrainingNode maintained for backward compatibility.
- */
 export async function modelTrainingNode(state: State, config?: RunnableConfig) {
   const services = servicesFrom(config);
   if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
@@ -446,7 +432,7 @@ export async function modelTrainingNode(state: State, config?: RunnableConfig) {
 }
 
 export async function modelValidationNode(state: State, config?: RunnableConfig) {
-  // Phase 4: 3.4 Model Validation - Validate trained candidate models, calculate deterministic metrics, persist in dedicated validation directory
+
   const services = servicesFrom(config);
   const projectId = services.projectId || state.projectId || "default-project";
 
@@ -459,7 +445,6 @@ export async function modelValidationNode(state: State, config?: RunnableConfig)
 
   const output = await ModelValidationAgent.execute(state, services, options);
 
-  // Persist to Postgres database repository if available
   try {
     const db = drizzle(pool, { schema: modelValidationSchema });
     const repo = new PostgresModelValidationRepository(db);

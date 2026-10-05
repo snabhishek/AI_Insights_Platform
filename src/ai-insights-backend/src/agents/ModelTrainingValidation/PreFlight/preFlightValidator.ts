@@ -3,16 +3,12 @@ import path from "path";
 import { PreFlightCheck, SystemHardwareSnapshot } from "./types";
 
 export class PreFlightValidator {
-  /**
-   * Stage 2: Configuration Validation
-   * Validates contract sections, data splits, metric alignment, and HPO boundaries.
-   */
+
   validateConfiguration(config: any): PreFlightCheck[] {
     const checks: PreFlightCheck[] = [];
 
     const rawCfg = config?.configuration || config || {};
 
-    // 1. Data Splits Validation
     const splits = rawCfg.splits || rawCfg.data_splits || rawCfg.data_split || rawCfg.split || config.splits || config.data_splits || {};
     const trainRatio = Number(splits.train ?? splits.train_ratio ?? 0.7);
     const valRatio = Number(splits.validation ?? splits.val_ratio ?? splits.val ?? 0.15);
@@ -68,7 +64,6 @@ export class PreFlightValidator {
       });
     }
 
-    // 2. Metric Compatibility with Task Type
     const taskType = (
       rawCfg.task_type ||
       rawCfg.task?.task_type ||
@@ -156,7 +151,6 @@ export class PreFlightValidator {
       });
     }
 
-    // 3. Hyperparameter Search Validation
     const hpo = config.hyperparameter_tuning || config.hpo || {};
     if (hpo.enabled) {
       const maxTrials = Number(hpo.max_trials ?? hpo.trials ?? 0);
@@ -211,10 +205,6 @@ export class PreFlightValidator {
     return checks;
   }
 
-  /**
-   * Stage 3: Model & Framework Compatibility
-   * Validates framework availability, hardware compatibility, and multi-GPU requirements.
-   */
   validateModelAndFramework(config: any, system: SystemHardwareSnapshot): PreFlightCheck[] {
     const checks: PreFlightCheck[] = [];
     const rawCfg = config?.configuration || config || {};
@@ -230,7 +220,6 @@ export class PreFlightValidator {
     const models = Array.isArray(rawModels) ? rawModels : [];
     const framework = (rawCfg.framework || rawCfg.model_framework || config.framework || config.model_framework || "scikit-learn").toLowerCase();
 
-    // Check Candidate Models
     if (models.length === 0) {
       checks.push({
         id: "framework_candidates",
@@ -256,7 +245,6 @@ export class PreFlightValidator {
       });
     }
 
-    // Supported frameworks check
     const supportedFrameworks = ["scikit-learn", "sklearn", "xgboost", "lightgbm", "catboost", "pytorch", "torch"];
     const isSupported = supportedFrameworks.some((f) => framework.includes(f));
 
@@ -285,7 +273,6 @@ export class PreFlightValidator {
       });
     }
 
-    // Accelerator compatibility
     const requestedDevice = (config.device || config.hardware?.device || "auto").toLowerCase();
     if (requestedDevice === "cuda" || requestedDevice === "gpu") {
       if (system.gpus.length === 0) {
@@ -327,7 +314,6 @@ export class PreFlightValidator {
       });
     }
 
-    // Distributed / Multi-GPU check
     const distributed = config.distributed || config.multi_gpu || false;
     if (distributed) {
       if (system.gpus.length < 2) {
@@ -358,14 +344,9 @@ export class PreFlightValidator {
     return checks;
   }
 
-  /**
-   * Stage 4: Data & Feature Readiness
-   * Validates dataset file existence, target column, feature presence, and leakage protection.
-   */
   validateDataAndFeatures(config: any, context?: { runDir?: string; datasetPath?: string; metadata?: any }): PreFlightCheck[] {
     const checks: PreFlightCheck[] = [];
 
-    // 1. Target Column Check
     const targetColumn =
       config.target_column ||
       config.targetColumn ||
@@ -397,7 +378,6 @@ export class PreFlightValidator {
       });
     }
 
-    // 2. Dataset File Existence & Size
     const candidateParquetNames = [
       "dataset.parquet",
       "feature_validation.parquet",
@@ -477,7 +457,6 @@ export class PreFlightValidator {
       });
     }
 
-    // 3. Feature Pipeline Validation
     const features = config.features || config.selected_features || context?.metadata?.features || [];
     if (Array.isArray(features) && features.length > 0) {
       checks.push({
@@ -503,7 +482,6 @@ export class PreFlightValidator {
       });
     }
 
-    // 4. Leakage Prevention Check
     checks.push({
       id: "data_leakage_guard",
       stage: 4,
@@ -518,10 +496,6 @@ export class PreFlightValidator {
     return checks;
   }
 
-  /**
-   * Stage 9: Safe Pre-Execution Check
-   * Validates bounded filesystem access, output directory writability, and checkpoint paths.
-   */
   validatePreExecution(context?: { runDir?: string; outputDir?: string }): PreFlightCheck[] {
     const checks: PreFlightCheck[] = [];
     const targetDir = context?.outputDir || context?.runDir || process.cwd();
@@ -530,7 +504,7 @@ export class PreFlightValidator {
       if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
       }
-      // Test write permission by writing and deleting a temporary probe file
+
       const probeFile = path.join(targetDir, `.preflight_probe_${Date.now()}.tmp`);
       fs.writeFileSync(probeFile, "preflight_probe_ok");
       fs.unlinkSync(probeFile);

@@ -5,8 +5,6 @@ import { Badge } from "./utils";
 import { BACKEND_URL } from "../../providers/AppContext";
 import ModelValidationApexChart from "./ModelValidationApexChart";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
-
 export interface MetricDetail {
   value: number | null;
   status: "available" | "unavailable" | "undefined";
@@ -76,8 +74,6 @@ export interface ModelValidationStepOutputProps {
   isApproving?: boolean;
 }
 
-// ─── Inline Icons ─────────────────────────────────────────────────────────────
-
 function TrophyIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -126,8 +122,6 @@ function TrendingUpIcon({ className = "w-4 h-4" }: { className?: string }) {
     </svg>
   );
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function formatNumber(val: number | null | undefined, decimals = 1): string {
   if (val === null || val === undefined || isNaN(val)) return "N/A";
@@ -223,8 +217,6 @@ function getCandidateScoreInfo(cand: any, isClassification: boolean): { score: n
   return { score: undefined, primaryMetricName: cand?.primaryMetricName || "Score" };
 }
 
-// ─── Component ───────────────────────────────────────────────────────────────
-
 export default function ModelValidationStepOutput({
   modelValidation,
   modelTraining,
@@ -235,7 +227,7 @@ export default function ModelValidationStepOutput({
   onApproveValidation,
   isApproving,
 }: ModelValidationStepOutputProps) {
-  // Extract agent state / report
+
   const rawReport: ModelValidationReport | undefined =
     modelValidation?.report ||
     modelValidation?.data?.report ||
@@ -316,7 +308,6 @@ export default function ModelValidationStepOutput({
     });
   }, [problemType, candidates]);
 
-  // Active selected candidate model for tabs
   const [selectedModelId, setSelectedModelId] = useState<string>("");
 
   React.useEffect(() => {
@@ -333,7 +324,6 @@ export default function ModelValidationStepOutput({
 
   const [dateRangeInfo, setDateRangeInfo] = useState<any>(null);
 
-  // Fetch date range dynamically if not already present in trainingConfiguration
   useEffect(() => {
     if (!projectId) return;
     let isCancelled = false;
@@ -359,7 +349,6 @@ export default function ModelValidationStepOutput({
     };
   }, [BACKEND_URL, projectId, activeRunTimestamp]);
 
-  // Split date selected during training configuration
   const effectiveSplitDate = useMemo(() => {
     return (
       trainingConfiguration?.splitDate ||
@@ -375,7 +364,6 @@ export default function ModelValidationStepOutput({
     );
   }, [trainingConfiguration, modelTraining]);
 
-  // Earliest selectable date: starting month from split date
   const minSelectableDate = useMemo(() => {
     if (!effectiveSplitDate || typeof effectiveSplitDate !== "string") return undefined;
     const trimmed = effectiveSplitDate.trim();
@@ -397,7 +385,6 @@ export default function ModelValidationStepOutput({
     return trimmed.split("T")[0];
   }, [effectiveSplitDate]);
 
-  // Maximum selectable date: before or on the maximum last date of the dataset calculated during training configuration
   const maxSelectableDate = useMemo(() => {
     const rawMax =
       trainingConfiguration?.maxDate ||
@@ -419,7 +406,6 @@ export default function ModelValidationStepOutput({
     return trimmed.split("T")[0].split(" ")[0];
   }, [trainingConfiguration, dateRangeInfo]);
 
-  // Calculative start date derivation
   const defaultCalculatedStartDate = useMemo(() => {
     if (rawReport?.prediction_objective_start_date) {
       return rawReport.prediction_objective_start_date;
@@ -442,14 +428,13 @@ export default function ModelValidationStepOutput({
           return d.toISOString().split("T")[0];
         }
       } catch {
-        // fallback
+
       }
     }
     const today = new Date();
     return today.toISOString().split("T")[0];
   }, [rawReport, modelValidation, minSelectableDate, trainingConfiguration]);
 
-  // Validation Form Inputs - No silent fallbacks
   const [horizonInput, setHorizonInput] = useState<number>(
     rawReport?.prediction_objective_horizon || modelValidation?.predictionObjectiveHorizon || 0
   );
@@ -458,14 +443,12 @@ export default function ModelValidationStepOutput({
   );
   const [startDateInput, setStartDateInput] = useState<string>(defaultCalculatedStartDate);
 
-  // Synchronize startDateInput when minSelectableDate resolves
   useEffect(() => {
     if (minSelectableDate && (!startDateInput || startDateInput < minSelectableDate)) {
       setStartDateInput(minSelectableDate);
     }
   }, [minSelectableDate]);
 
-  // Synchronize frequency and horizon when rawReport or modelValidation updates
   useEffect(() => {
     const reportFreq = rawReport?.prediction_objective_frequency || modelValidation?.predictionObjectiveFrequency;
     if (reportFreq) {
@@ -477,7 +460,6 @@ export default function ModelValidationStepOutput({
     }
   }, [rawReport, modelValidation]);
 
-  // Check if date is out of range
   const isDateOutOfRange = useMemo(() => {
     if (!startDateInput) return false;
     if (minSelectableDate && startDateInput < minSelectableDate) return true;
@@ -485,7 +467,6 @@ export default function ModelValidationStepOutput({
     return false;
   }, [startDateInput, minSelectableDate, maxSelectableDate]);
 
-  // Dynamic Mode Calculation
   const isBacktesting = useMemo(() => {
     try {
       const target = new Date(startDateInput);
@@ -497,15 +478,12 @@ export default function ModelValidationStepOutput({
     }
   }, [startDateInput]);
 
-
-
   const handleRunValidation = () => {
     if (onApproveValidation) {
       onApproveValidation(horizonInput, frequencyInput, startDateInput);
     }
   };
 
-  // ─── Render Chart ──────────────────────────────────────────────────────────
   const chartData =
     activeCandidate?.chartData ||
     (activeCandidate as any)?.chart_data ||
@@ -527,11 +505,9 @@ export default function ModelValidationStepOutput({
     (chartData as any)?.predictions ||
     [];
 
-
-
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* ─── Top Control Card: Validation Horizon & Mode Configuration (Only when approval callback provided) ─── */}
+
       {Boolean(onApproveValidation) && (
       <div className="p-5 rounded-2xl bg-surface-raised border border-border shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
@@ -549,7 +525,6 @@ export default function ModelValidationStepOutput({
             </div>
           </div>
 
-          {/* Active Mode Pill */}
           <div className="flex items-center gap-2">
             <Badge variant={isBacktesting ? "success" : "info"} className="text-xs py-1 px-3">
               <span className="w-1.5 h-1.5 rounded-full bg-current mr-1 animate-pulse" />
@@ -558,9 +533,8 @@ export default function ModelValidationStepOutput({
           </div>
         </div>
 
-        {/* Configuration Form Controls */}
         <div className="mt-5 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-4 pt-4 border-t border-border/60">
-          {/* 1. Prediction Horizon */}
+
           <div>
             <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
               Forecast Horizon
@@ -580,7 +554,6 @@ export default function ModelValidationStepOutput({
             </div>
           </div>
 
-          {/* 2. Frequency */}
           <div>
             <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
               Frequency
@@ -596,7 +569,6 @@ export default function ModelValidationStepOutput({
             </select>
           </div>
 
-          {/* 3. Objective Start Date */}
           <div>
             <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
               Objective Start Date
@@ -617,7 +589,6 @@ export default function ModelValidationStepOutput({
             </div>
           </div>
 
-          {/* 4. Action Trigger Button */}
           <div className="flex items-end">
             <button
               type="button"
@@ -640,7 +611,6 @@ export default function ModelValidationStepOutput({
           </div>
         </div>
 
-        {/* Dynamic Mode Helper Text & Allowed Date Range Display */}
         <div className="mt-3 flex flex-col sm:flex-row sm:items-center justify-between text-xs text-muted-foreground gap-2">
           <div className="flex items-center gap-1.5">
             <CalendarIcon className="w-3.5 h-3.5 text-muted-foreground/80 flex-shrink-0" />
@@ -666,7 +636,6 @@ export default function ModelValidationStepOutput({
       </div>
       )}
 
-      {/* ─── If No Candidate Results Yet ─── */}
       {candidates.length === 0 && (
         <div className="p-10 rounded-2xl bg-surface-raised border border-dashed border-border text-center flex flex-col items-center justify-center min-h-[220px]">
           <div className="w-12 h-12 rounded-2xl bg-primary/10 border border-primary/20 flex items-center justify-center text-primary mb-3">
@@ -679,10 +648,9 @@ export default function ModelValidationStepOutput({
         </div>
       )}
 
-      {/* ─── Model Validation Results Display ─── */}
       {candidates.length > 0 && activeCandidate && (
         <div className="space-y-4">
-          {/* Candidate Switcher Tabs */}
+
           {candidates.length > 1 && (
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
               <span className="text-xs font-semibold text-muted-foreground whitespace-nowrap mr-1">
@@ -716,9 +684,8 @@ export default function ModelValidationStepOutput({
             </div>
           )}
 
-          {/* ─── Primary Reference Card UI ─── */}
           <div className="rounded-2xl border border-border bg-card shadow-sm overflow-hidden">
-            {/* Card Header: Model Name, Score Badge, and Legend */}
+
             {(() => {
               const activeCandidateId = activeCandidate.model_id || (activeCandidate as any).modelId;
               const activeScoreInfo = getCandidateScoreInfo(activeCandidate, isClassification);
@@ -751,7 +718,6 @@ export default function ModelValidationStepOutput({
           );
         })()}
 
-            {/* Middle Section: ApexCharts Zoomable Timeseries Line Chart */}
             <div className="p-5 select-none">
               {!isClassification && dates.length > 0 ? (
                 <ModelValidationApexChart
@@ -827,11 +793,10 @@ export default function ModelValidationStepOutput({
               )}
             </div>
 
-            {/* Bottom Section: 3-Row Metric Grid */}
             <div className="p-5 border-t border-border bg-surface-muted/30">
               {isClassification ? (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Row 1, Col 1: ACCURACY */}
+
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Accuracy
@@ -844,7 +809,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 1, Col 2: ROC AUC */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       ROC AUC
@@ -857,7 +821,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 1, Col 3: LOG LOSS */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Log Loss
@@ -870,7 +833,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 2, Col 1: PRECISION */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Precision
@@ -883,7 +845,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 2, Col 2: RECALL */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Recall
@@ -896,7 +857,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 2, Col 3: F1 SCORE */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       F1 Score
@@ -909,7 +869,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 3, Col 1: TARGET COLUMN */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Target Column
@@ -922,7 +881,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 3, Col 2: CANDIDATE MODELS */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Evaluated Models
@@ -935,7 +893,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 3, Col 3: EVALUATION STATUS */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Validation Status
@@ -950,7 +907,7 @@ export default function ModelValidationStepOutput({
                 </div>
               ) : (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Row 1, Col 1: ACTUAL TOTAL */}
+
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Actual Total
@@ -967,7 +924,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 1, Col 2: FORECAST TOTAL */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Forecast Total
@@ -980,7 +936,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 1, Col 3: DIFFERENCE (+/- %) */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Difference (+ / -)
@@ -1007,7 +962,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 2, Col 1: WAPE */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       WAPE (Weighted Abs Error)
@@ -1020,7 +974,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 2, Col 2: MAE / RMSE */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       MAE / RMSE
@@ -1045,7 +998,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 2, Col 3: PRECISION */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Precision
@@ -1058,7 +1010,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 3, Col 1: RECALL */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Recall
@@ -1071,7 +1022,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 3, Col 2: F1 SCORE */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       F1 Score
@@ -1084,7 +1034,6 @@ export default function ModelValidationStepOutput({
                     </div>
                   </div>
 
-                  {/* Row 3, Col 3: WEEKS / HORIZON */}
                   <div className="p-3.5 rounded-xl bg-card border border-border shadow-xs">
                     <div className="text-[11px] font-semibold text-muted-foreground uppercase tracking-wider">
                       Weeks / Horizon
@@ -1100,7 +1049,6 @@ export default function ModelValidationStepOutput({
               )}
             </div>
 
-            {/* Status Footer */}
             <div className="px-5 py-3 border-t border-border/60 bg-muted/20 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-muted-foreground">
               <div className="flex items-center gap-2">
                 <CheckCircleIcon className="w-4 h-4 text-emerald-500" />
@@ -1117,7 +1065,6 @@ export default function ModelValidationStepOutput({
             </div>
           </div>
 
-          {/* ─── Multi-Model Comparison Table ─── */}
           {candidates.length > 1 && (
             <div className="p-5 rounded-2xl bg-card border border-border shadow-sm">
               <h4 className="text-xs font-bold text-foreground uppercase tracking-wider mb-3">

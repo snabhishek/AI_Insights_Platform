@@ -96,7 +96,7 @@ export interface PreFlightReport {
   recommendations: OptimizationRecommendation[];
   pythonServiceStatus: "online" | "fallback_cli" | "unavailable";
   rawPipelineResult?: any;
-  // Structured Decision Tree Fields
+
   gpu_available?: boolean;
   gpu_evaluation?: HardwareEvaluationResult | null;
   cpu_evaluation?: HardwareEvaluationResult | null;

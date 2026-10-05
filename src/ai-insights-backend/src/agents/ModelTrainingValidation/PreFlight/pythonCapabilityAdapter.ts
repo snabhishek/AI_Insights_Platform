@@ -11,12 +11,12 @@ export class PythonCapabilityAdapter {
   private serviceUrl: string;
   private pythonServicePath: string;
 
-  constructor(serviceUrl = process.env.AI_INSIGHTS_SERVICE_URL || "http://127.0.0.1:8000") {
+  constructor(serviceUrl = process.env.AI_INSIGHTS_SERVICE_URL!) {
     this.serviceUrl = serviceUrl;
-    // Resolve path to ai-insights-service
+
     this.pythonServicePath = path.resolve(__dirname, "../../../../../ai-insights-service");
     if (!fs.existsSync(this.pythonServicePath)) {
-      // Fallback relative to project root
+
       const fallback = path.resolve(process.cwd(), "../ai-insights-service");
       if (fs.existsSync(fallback)) {
         this.pythonServicePath = fallback;
@@ -24,9 +24,6 @@ export class PythonCapabilityAdapter {
     }
   }
 
-  /**
-   * Executes the full preflight pipeline via Python FastAPI service or local CLI fallback.
-   */
   async runPreflightPipeline(config: any): Promise<{
     success: boolean;
     status: "online" | "fallback_cli" | "unavailable";
@@ -36,7 +33,7 @@ export class PythonCapabilityAdapter {
     raw?: any;
     error?: string;
   }> {
-    // 1. Try HTTP microservice first
+
     try {
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 3500);
@@ -62,10 +59,9 @@ export class PythonCapabilityAdapter {
         };
       }
     } catch (httpErr: any) {
-      // HTTP service offline or unreachable, proceeding to CLI fallback
+
     }
 
-    // 2. Fallback to CLI execution
     try {
       const configJson = JSON.stringify(config || {});
       const b64 = Buffer.from(configJson).toString("base64");
@@ -93,10 +89,9 @@ export class PythonCapabilityAdapter {
         };
       }
     } catch (cliErr: any) {
-      // CLI execution also failed
+
     }
 
-    // 3. Resilient fallback using native Node.js platform info
     const fallbackSystem = this.buildNodeFallbackSystem();
     return {
       success: false,

@@ -26,7 +26,6 @@ import {
 import { exogenousWorkerNode, exogenousAggregatorNode } from "./workerNode";
 import { createExogenousScoutGraph, dispatchBatches } from "./graph";
 
-// Re-export state and graph elements for external consumers
 export {
   ExogenousSourceRecommendation,
   TableExogenousAnalysis,
@@ -44,10 +43,6 @@ export {
   dispatchBatches,
 };
 
-/**
- * Main Exogenous Scout Node
- * Extracts batched tables from state and executes the LangGraph Map-Reduce worker graph.
- */
 export async function exogenousScoutNode(state: typeof AgentState.State, config?: RunnableConfig) {
   const services = config?.configurable?.services as IngestionServices;
   if (!services) {
@@ -58,7 +53,6 @@ export async function exogenousScoutNode(state: typeof AgentState.State, config?
     return { status: state.status || "failed" };
   }
 
-  // 1. Extract table names from batchedTables in state or discover from upstream state
   let tableNames: string[] = [];
   if (Array.isArray(state.batchedTables) && state.batchedTables.length > 0) {
     tableNames = state.batchedTables
@@ -66,13 +60,11 @@ export async function exogenousScoutNode(state: typeof AgentState.State, config?
       .filter((name: string) => typeof name === "string" && name.trim().length > 0);
   }
 
-  // Fallback to schemaResolution, dataProfile, or inspection if batchedTables is empty
   if (tableNames.length === 0) {
     const metaMap = extractTableMetadataMap(state);
     tableNames = Array.from(metaMap.keys());
   }
 
-  // Remove duplicates
   tableNames = Array.from(new Set(tableNames));
 
   if (tableNames.length === 0) {
@@ -83,7 +75,6 @@ export async function exogenousScoutNode(state: typeof AgentState.State, config?
   const projectDomain = (state.schemaResolution as any)?.domain || (state.schemaResolution as any)?.domainKnowledge?.tier2;
   const safeUserPrompt = typeof state.userPrompt === "string" ? state.userPrompt : "";
 
-  // 2. Chunk table names into batches
   const batches = chunkInspectionTableNames(tableNames, EXOGENOUS_INITIAL_BATCH_SIZE, EXOGENOUS_FOLLOW_UP_BATCH_SIZE);
 
   const systemPrompt = await getPromptFromFile(
@@ -97,7 +88,6 @@ export async function exogenousScoutNode(state: typeof AgentState.State, config?
     `Spawning LangGraph worker subagents for ${tableNames.length} tables in ${batches.length} batch(es)...`
   );
 
-  // 3. Execute the compiled LangGraph Map-Reduce graph
   const scoutGraph = createExogenousScoutGraph();
   const graphResult = await scoutGraph.invoke(
     {

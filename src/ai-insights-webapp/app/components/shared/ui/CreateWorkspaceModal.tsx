@@ -57,7 +57,6 @@ export default function CreateWorkspaceModal({
     >
       <div className="relative w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col">
 
-        {/* Header */}
         <div className="flex items-center justify-between border-b border-border/80 px-5 py-3 bg-surface-muted/60">
           <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg border shrink-0 bg-primary/10 border-primary/20 text-primary">
@@ -78,7 +77,6 @@ export default function CreateWorkspaceModal({
           </button>
         </div>
 
-        {/* Body */}
         <form onSubmit={handleSubmit}>
           <div className="p-5 flex flex-col gap-3.5">
             <p className="text-xs text-muted-foreground leading-relaxed">
@@ -102,7 +100,6 @@ export default function CreateWorkspaceModal({
             </div>
           </div>
 
-          {/* Footer */}
           <div className="border-t border-border/80 px-5 py-3 bg-surface-muted/60 flex justify-end gap-2.5">
             <button
               type="button"

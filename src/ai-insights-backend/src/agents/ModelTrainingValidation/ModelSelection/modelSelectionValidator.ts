@@ -17,18 +17,15 @@ export class ModelSelectionValidator {
       return { isValid: false, errors: ["Decision object is missing or null"] };
     }
 
-    // 1. Structural Validation: status enum
     const validStatuses = ["READY", "NEEDS_CLARIFICATION", "UNSUPPORTED", "INVALID_DATA"];
     if (!validStatuses.includes(decision.status)) {
       errors.push(`Invalid decision status: "${decision.status}". Must be one of: ${validStatuses.join(", ")}`);
     }
 
-    // If status is not READY, detailed candidates might be omitted
     if (decision.status !== "READY") {
       return { isValid: errors.length === 0, errors };
     }
 
-    // 1.1 Problem Specification & Evaluation Metrics Validation
     if (!decision.problem_type || typeof decision.problem_type !== "string" || !decision.problem_type.trim()) {
       errors.push("Missing required field: problem_type");
     }
@@ -51,7 +48,6 @@ export class ModelSelectionValidator {
       errors.push("Missing required field: secondary_metrics (must contain at least one metric)");
     }
 
-    // 2. Target Entity & Grain validation
     if (!decision.target_entity || typeof decision.target_entity !== "object") {
       errors.push("Missing required field: target_entity");
     } else {
@@ -66,7 +62,6 @@ export class ModelSelectionValidator {
       if (!decision.prediction_grain.entity) errors.push("prediction_grain.entity is required");
     }
 
-    // 3. Recommended Model Validation
     if (!decision.recommended_model || !decision.recommended_model.model_id) {
       errors.push("Missing required field: recommended_model with valid model_id when status is READY");
     } else {
@@ -82,7 +77,6 @@ export class ModelSelectionValidator {
       }
     }
 
-    // 4. Candidates List Validation
     if (!Array.isArray(decision.candidates) || decision.candidates.length === 0) {
       errors.push("Candidates list must contain at least one candidate when status is READY");
     } else {
@@ -97,7 +91,6 @@ export class ModelSelectionValidator {
           return;
         }
 
-        // Check duplicates
         if (seenIds.has(id)) {
           errors.push(`Duplicate candidate model_id detected: "${id}"`);
         }
@@ -113,12 +106,10 @@ export class ModelSelectionValidator {
           errors.push(`Candidate "${id}" is missing required reasoning fields (strengths, weaknesses, suitability)`);
         }
 
-        // Check registry existence
         if (!registry.isModelSupported(id)) {
           errors.push(`Candidate model_id "${id}" does not exist in Model Capability Registry`);
         }
 
-        // Check score range
         if (
           typeof candidate.suitability_score !== "number" ||
           candidate.suitability_score < 0 ||
@@ -129,7 +120,6 @@ export class ModelSelectionValidator {
           );
         }
 
-        // Check rank uniqueness and sequential order starting at 1
         if (typeof candidate.rank !== "number") {
           errors.push(`Candidate "${id}" rank must be a number`);
         } else {
@@ -146,7 +136,6 @@ export class ModelSelectionValidator {
           previousRank = candidate.rank;
         }
 
-        // Check recommendation type enum
         if (candidate.recommendation !== "primary" && candidate.recommendation !== "alternative") {
           if (candidate.recommendation === "baseline") {
             candidate.recommendation = "alternative";
@@ -157,19 +146,16 @@ export class ModelSelectionValidator {
           }
         }
 
-        // Validate source metadata format if provided
         if (candidate.source_type && candidate.source_type !== "external" && candidate.source_type !== "builtin") {
           errors.push(`Candidate "${id}" source_type must be "external" or "builtin", received: "${candidate.source_type}"`);
         }
       });
 
-      // Exactly one candidate must be primary
       const primaryCandidates = decision.candidates.filter((c) => c.recommendation === "primary");
       if (primaryCandidates.length !== 1) {
         errors.push(`Exactly one candidate must have recommendation "primary", found: ${primaryCandidates.length}`);
       }
 
-      // The primary candidate must match recommended_model.model_id
       if (decision.recommended_model?.model_id && primaryCandidates.length === 1) {
         if (
           primaryCandidates[0].model_id.toLowerCase().trim() !==
@@ -182,7 +168,6 @@ export class ModelSelectionValidator {
       }
     }
 
-    // 5. Training Strategy validation
     if (!decision.training || typeof decision.training !== "object") {
       errors.push("Missing required field: training");
     } else {
@@ -195,7 +180,6 @@ export class ModelSelectionValidator {
       }
     }
 
-    // 6. Feature Requirements validation
     if (!Array.isArray(decision.featureRequirements) || decision.featureRequirements.length === 0) {
       errors.push("Missing required field: featureRequirements (must contain at least one requirement)");
     } else {
@@ -206,7 +190,6 @@ export class ModelSelectionValidator {
       });
     }
 
-    // 7. Hyperparameter Optimization validation
     if (!decision.hyperparameterOptimization || typeof decision.hyperparameterOptimization !== "object") {
       errors.push("Missing required field: hyperparameterOptimization");
     } else {
@@ -218,7 +201,6 @@ export class ModelSelectionValidator {
       }
     }
 
-    // 8. Confidence score validation
     if (!decision.confidence || typeof decision.confidence !== "object") {
       errors.push("Missing required field: confidence");
     } else {
@@ -234,7 +216,6 @@ export class ModelSelectionValidator {
       }
     }
 
-    // 9. Models array validation
     if (Array.isArray(decision.models)) {
       decision.models.forEach((m, idx) => {
         if (!m.model_id) {

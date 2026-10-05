@@ -5,10 +5,8 @@ async function runTest() {
   const projectId = "test-project";
   const runTimestamp = `${Date.now()}`;
 
-  // Simple python program that requires --db-path and imports yaml (PyYAML)
   const pythonCode = `import argparse\nimport yaml\n\nparser = argparse.ArgumentParser()\nparser.add_argument('--db-path', required=True)\nargs = parser.parse_args()\nprint('DB_PATH=' + args.db_path)\nprint('YAML_OK' if hasattr(yaml, 'safe_load') else 'YAML_FAIL')\n`;
 
-  // Minimal mock services object; provide a connectorService.getById that returns a CSV connector
   const services = ({
     connectorService: {
       getById: async (id: string) => {

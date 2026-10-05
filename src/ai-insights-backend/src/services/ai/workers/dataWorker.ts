@@ -8,7 +8,7 @@ export interface WorkerTask {
 
 export default async function parseFileWorker(task: WorkerTask) {
   const { type, filePath } = task;
-  
+
   if (type === "excel") {
     const workbook = xlsx.readFile(filePath);
     const tablesList = workbook.SheetNames.map((sheetName: string) => {
@@ -25,7 +25,7 @@ export default async function parseFileWorker(task: WorkerTask) {
     });
     return { success: true, type: "file", tables: tablesList };
   }
-  
+
   if (type === "csv" || type === "tsv") {
     const content = fs.readFileSync(filePath, "utf8");
     const lines = content.split(/\r?\n/).filter((line) => line.trim().length > 0);
@@ -39,6 +39,6 @@ export default async function parseFileWorker(task: WorkerTask) {
       ]
     };
   }
-  
+
   throw new Error(`Unsupported file type: ${type}`);
 }

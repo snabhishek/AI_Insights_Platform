@@ -48,10 +48,6 @@ export interface ResolvedSchemaPayload {
   unmappedDatasetFields?: string[];
 }
 
-/**
- * Resolves the root packages directory across various execution contexts (root, src/backend, dist).
- * Defaults to backend/storage/packages as per updated specification.
- */
 export function getPackagesDir(): string {
   const candidateDirs = [
     path.resolve(process.cwd(), "storage/packages"),
@@ -81,9 +77,6 @@ export function getPackagesDir(): string {
   return candidateDirs[0];
 }
 
-/**
- * Resolves the projectFiles parent directory inside packages (checking projectFiles or ProjectFiles).
- */
 export function getProjectFilesParent(packagesDir: string): string {
   const candidates = ["projectFiles", "ProjectFiles"];
   for (const name of candidates) {
@@ -95,20 +88,17 @@ export function getProjectFilesParent(packagesDir: string): string {
   return path.resolve(packagesDir, "projectFiles");
 }
 
-/**
- * Resolves the project folder name inside projectFiles/ (projectName preferred, fallback to legacy workspaceName-projectName).
- */
 export function resolveProjectFolderName(
   projectFilesParent: string,
   projectName: string,
   workspaceName?: string
 ): string {
   const cleanProjectTitle = sanitizeName(projectName);
-  // 1. Prefer projectName directly (e.g. backend/storage/packages/projectFiles/projectName/)
+
   if (fsSync.existsSync(path.resolve(projectFilesParent, cleanProjectTitle))) {
     return cleanProjectTitle;
   }
-  // 2. Fallback to legacy workspaceName-projectName if that existing directory is on disk
+
   if (workspaceName) {
     const cleanWsName = sanitizeName(workspaceName);
     const legacyName = `${cleanWsName}-${cleanProjectTitle}`;
@@ -116,13 +106,10 @@ export function resolveProjectFolderName(
       return legacyName;
     }
   }
-  // 3. Otherwise standard is cleanProjectTitle (projectName)
+
   return cleanProjectTitle;
 }
 
-/**
- * Resolves the location of candidate package files in the workspace.
- */
 export function resolvePackageFilePath(filename: string): string {
   const packagesDir = getPackagesDir();
   const candidatePaths = [
@@ -145,10 +132,6 @@ export function resolvePackageFilePath(filename: string): string {
   return candidatePaths[0];
 }
 
-/**
- * Loads and merges the base modular schema files (Domain.yaml, DataIngestion.yaml, FeatureEngineering.yaml)
- * from the packages/Schemas folder.
- */
 export async function loadFieldSchemaYaml(): Promise<string> {
   const packagesDir = getPackagesDir();
   const schemasDir = path.resolve(packagesDir, "Schemas");
@@ -174,10 +157,6 @@ export async function loadFieldSchemaYaml(): Promise<string> {
   return "";
 }
 
-/**
- * Resolves the path of existing schema files for a project inside workspaces/<workspace>/projects/<project>/<timestamp>/schemas/
- * or legacy packages/projectFiles/<Project>/Schemas/.
- */
 export async function getProjectSchemaDirs(
   workspaceName?: string,
   projectName?: string
@@ -185,7 +164,6 @@ export async function getProjectSchemaDirs(
   if (!workspaceName && !projectName) return [];
   const results: string[] = [];
 
-  // 1. Scan workspaces/<workspace>/projects/<projectName>/<timestamp>/schemas/
   if (workspaceName && projectName) {
     const projectDir = getProjectDir(workspaceName, projectName);
     if (fsSync.existsSync(projectDir)) {
@@ -194,7 +172,7 @@ export async function getProjectSchemaDirs(
         const timestampDirs = entries
           .filter((d) => d.isDirectory())
           .map((d) => d.name)
-          .sort((a, b) => b.localeCompare(a)); // Sort latest first
+          .sort((a, b) => b.localeCompare(a));
 
         for (const ts of timestampDirs) {
           const schemaDir = path.resolve(projectDir, ts, "schemas");
@@ -233,7 +211,6 @@ export async function getProjectSchemaDirs(
     }
   }
 
-  // 2. Legacy fallback to packages/projectFiles/<Project>/Schemas
   const packagesDir = getPackagesDir();
   const projectFilesParent = getProjectFilesParent(packagesDir);
   const cleanWsName = workspaceName ? sanitizeName(workspaceName) : "";
@@ -266,9 +243,6 @@ export async function getProjectSchemaDirs(
   return results;
 }
 
-/**
- * Resolves the path of an existing schema file for a project inside packages/ProjectFiles/<Workspace>-<Project>/Schemas/.
- */
 export async function getProjectSchemaPath(
   workspaceName?: string,
   projectName?: string
@@ -295,10 +269,6 @@ export async function getProjectSchemaPath(
   return null;
 }
 
-/**
- * Loads the project schema YAML from packages/ProjectFiles if present,
- * merging modular schemas, or falls back to base modular Schema files.
- */
 export async function loadProjectOrFieldSchemaYaml(
   workspaceName?: string,
   projectName?: string
@@ -336,9 +306,6 @@ export async function loadProjectOrFieldSchemaYaml(
   return { content, sourcePath: defaultSchemaPath, isProjectSchema: false };
 }
 
-/**
- * Writes the resolved dataset-to-topic mappings and domain knowledge to a structured YAML file.
- */
 export async function writeResolvedSchemaYaml(
   filePath: string,
   payload: ResolvedSchemaPayload
@@ -396,10 +363,6 @@ export interface ProjectSchemaInput {
   useCase?: string;
 }
 
-/**
- * Creates the initial Domain.yaml modular schema with domain knowledge inside
- * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/<usecasetitle>_domain_<timestamp>.yaml
- */
 export async function createProjectSchemaFile(
   workspaceName: string,
   projectInput: ProjectSchemaInput,
@@ -413,7 +376,6 @@ export async function createProjectSchemaFile(
   const targetDir = getProjectSchemasDir(workspaceName, projectInput.name, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
-  // Load Domain.yaml template from packages/Schemas or codebase
   const domainTemplatePath = resolvePackageFilePath("Domain.yaml");
   let domainObj: any = {};
   if (fsSync.existsSync(domainTemplatePath)) {
@@ -444,10 +406,6 @@ export async function createProjectSchemaFile(
   return domainTargetPath;
 }
 
-/**
- * Searches for modular schema files for the given project.
- * Updates <usecasetitle>_domain_<timestamp>.yaml with domain knowledge and updates modular schemas with resolved mappings.
- */
 export async function updateOrCreateProjectSchemaFile(
   workspaceName: string,
   projectTitle: string,
@@ -462,7 +420,6 @@ export async function updateOrCreateProjectSchemaFile(
   const targetDir = getProjectSchemasDir(workspaceName, projectTitle, timestamp);
   await fs.mkdir(targetDir, { recursive: true });
 
-  // Update or create the domain file
   const filesInDir = await fs.readdir(targetDir);
   let domainFileName = filesInDir.find((f) => f.includes("_domain_") && (f.endsWith(".yaml") || f.endsWith(".yml")));
   if (!domainFileName) {
@@ -508,7 +465,6 @@ export async function updateOrCreateProjectSchemaFile(
   await fs.writeFile(domainFilePath, yaml.dump(domainObj, { indent: 2, lineWidth: -1, noRefs: true }), "utf-8");
   console.info(`[updateOrCreateProjectSchemaFile] Updated domain schema file at ${domainFilePath}`);
 
-  // Update DataIngestion.yaml with mapped fields
   const dataIngestionPath = path.resolve(targetDir, `${useCaseSlug}_data_ingestion_${timestamp}.yaml`);
   let dataIngestionObj: any = { version: "1.0", generatedAt: new Date().toISOString(), resolvedTables: payload.resolvedTables || [], fields: {} };
   if (fsSync.existsSync(dataIngestionPath)) {
@@ -516,7 +472,7 @@ export async function updateOrCreateProjectSchemaFile(
       const content = await fs.readFile(dataIngestionPath, "utf-8");
       dataIngestionObj = yaml.load(content) || dataIngestionObj;
     } catch (e) {
-      // use default
+
     }
   }
   dataIngestionObj.resolvedTables = payload.resolvedTables || [];
@@ -555,9 +511,6 @@ export interface ModularSchemaPayload {
   };
 }
 
-/**
- * Resolves the latest existing project run folder timestamp, or returns undefined if none exist.
- */
 export function getLatestProjectRunTimestamp(
   workspaceName: string,
   projectName: string
@@ -565,7 +518,6 @@ export function getLatestProjectRunTimestamp(
   const fromConfig = getLatestProjectTimestamp(workspaceName, projectName);
   if (fromConfig) return fromConfig;
 
-  // Legacy fallback check
   try {
     const packagesDir = getPackagesDir();
     const projectFilesParent = getProjectFilesParent(packagesDir);
@@ -595,12 +547,6 @@ export function getLatestProjectRunTimestamp(
   return undefined;
 }
 
-/**
- * Resolves the unified project run timestamp:
- * 1. If runTimestamp is provided and valid, use it.
- * 2. If not, check if a run folder already exists for this project on disk.
- * 3. Otherwise generate a new timestamp.
- */
 export function resolveProjectRunTimestamp(
   workspaceName: string,
   projectName: string,
@@ -616,10 +562,6 @@ export function resolveProjectRunTimestamp(
   return generateDateTimeStamp();
 }
 
-/**
- * Ensures the project run folder exists inside workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/
- * without copying old domain schemas from past runs.
- */
 export async function ensureProjectRunFolder(
   workspaceName: string,
   projectName: string,
@@ -631,11 +573,6 @@ export async function ensureProjectRunFolder(
   return runSchemasDir;
 }
 
-/**
- * Saves resolved Schema Resolver output into modular Data Ingestion YAML file inside
- * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
- * <usecasetitle>_data_ingestion_<timestamp>.yaml
- */
 export async function saveModularResolvedSchemas(
   workspaceName: string,
   projectName: string,
@@ -664,11 +601,6 @@ export async function saveModularResolvedSchemas(
   return { dataIngestionPath };
 }
 
-/**
- * Saves resolved Relationship Schema output into modular Relationship Schema YAML file inside
- * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
- * <usecasetitle>_relationship_schema_<timestamp>.yaml
- */
 export async function saveModularRelationshipSchema(
   workspaceName: string,
   projectName: string,
@@ -691,11 +623,6 @@ export async function saveModularRelationshipSchema(
   return { relationshipSchemaPath };
 }
 
-/**
- * Saves resolved Form Schema output into modular Form Schema YAML file inside
- * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
- * <usecasetitle>_form_schema_<timestamp>.yaml
- */
 export async function saveModularFormSchema(
   workspaceName: string,
   projectName: string,
@@ -718,14 +645,6 @@ export async function saveModularFormSchema(
   return { formSchemaPath };
 }
 
-/**
- * Saves or updates the modular Training Job Contract YAML file inside
- * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
- * <usecasetitle>_training_job_contract_<timestamp>.yaml
- */
-/**
- * Comment headers preserving the exact structure and documentation from TrainingJobContract schema.
- */
 export const TRAINING_JOB_CONTRACT_COMMENTS = {
   HEADER: `# =============================================================================
 # TRAINING JOB CONTRACT — AutoML Platform
@@ -825,10 +744,6 @@ function dumpSectionYaml(data: Record<string, any>): string {
   return yaml.dump(data, { indent: 2, lineWidth: -1, noRefs: true }).trim();
 }
 
-/**
- * Reads the feature validation report from project_folder/latest_timestamp/python_script folder
- * and extracts the array of kept/validated feature names.
- */
 export async function readValidatedFeaturesFromReport(
   workspaceName: string,
   projectName: string,
@@ -844,7 +759,6 @@ export async function readValidatedFeaturesFromReport(
       path.join(getProjectDir(workspaceName, projectName), "python_script", "feature_validation_report.json"),
     ];
 
-    // If latest timestamp on disk differs from resolved timestamp, check it as well
     const latestTs = getLatestProjectTimestamp(workspaceName, projectName);
     if (latestTs && latestTs !== timestamp) {
       candidatePaths.push(
@@ -882,14 +796,6 @@ export async function readValidatedFeaturesFromReport(
   return [];
 }
 
-/**
- * Saves or updates the modular Training Job Contract YAML file inside
- * workspaces/<Workspace>/projects/<Project>/<Timestamp>/schemas/:
- * <usecasetitle>_training_job_contract_<timestamp>.yaml
- *
- * Formats the YAML content between the standard comment section headers for both
- * Model Selection and Training Configuration agents.
- */
 export async function saveModularTrainingJobContract(
   workspaceName: string,
   projectName: string,
@@ -906,7 +812,6 @@ export async function saveModularTrainingJobContract(
   const contractFileName = `${useCaseSlug}_training_job_contract_${timestamp}.yaml`;
   const contractPath = path.resolve(targetDir, contractFileName);
 
-  // 1. Read existing contract file if present to preserve/merge data
   let existingObj: Record<string, any> = {};
   if (fsSync.existsSync(contractPath)) {
     try {
@@ -926,15 +831,12 @@ export async function saveModularTrainingJobContract(
     } catch {}
   }
 
-  // Unwrap config/decision if nested
   const rawData = payload?.configuration || payload?.decision || payload?.modelSelection || payload || {};
 
-  // Check if incoming payload is a full training configuration
   const isTrainingConfig = Boolean(
     rawData.task || rawData.split || rawData.search_space || rawData.objective || rawData.training_job || payload?.configuration
   );
 
-  // Determine primary metric name and definition
   const primaryMetricName =
     rawData["x-primary-metric-name"] ||
     rawData.primary_metric_name ||
@@ -986,7 +888,6 @@ export async function saveModularTrainingJobContract(
     secondary_metrics: rawSecondaryMetrics,
   };
 
-  // Build model_selection data (merging candidates/models with training steps)
   const existingModelSel = existingObj.model_selection || {};
   const incomingModelSel = rawData.model_selection || (isTrainingConfig ? {} : rawData);
 
@@ -1086,7 +987,6 @@ export async function saveModularTrainingJobContract(
     } : (existingModelSel.hyperparameter_optimization ? { hyperparameter_optimization: existingModelSel.hyperparameter_optimization } : {})),
   };
 
-  // Assemble remaining sections from rawData (if training config) or existingObj / defaults
   const trainingJobData = rawData.training_job || existingObj.training_job || {
     job_id: `${cleanProjectTitle}_training_${timestamp}`,
     experiment_name: cleanProjectTitle,
@@ -1104,10 +1004,6 @@ export async function saveModularTrainingJobContract(
     ""
   ).toLowerCase();
 
-  // const isForecast = detectedProblemType.includes("forecast");
-  // const isClass = detectedProblemType.includes("class");
-  // const isReg = detectedProblemType.includes("regress");
-
   const taskData = rawData.task || existingObj.task || {
     task_type: rawData.task?.task_type || rawData.problemType || rawData.problem_type || existingObj.task?.task_type,
     task_subtype: rawData.task_subtype ?? '',
@@ -1115,7 +1011,6 @@ export async function saveModularTrainingJobContract(
     prediction_type: rawData.prediction_type ?? ''
   };
 
-  // Resolve validated features by reading the feature validation report from project run python_script folder
   const reportValidatedFeatures = await readValidatedFeaturesFromReport(workspaceName, projectName, timestamp);
   const incomingValidatedFeatures =
     rawData.upstream_artifacts?.validated_features ||
@@ -1233,7 +1128,6 @@ export async function saveModularTrainingJobContract(
     explainability_method: "none",
   };
 
-  // 2. Format the complete document between the exact comment headers from TrainingJobContract schema
   const formattedYaml = [
     TRAINING_JOB_CONTRACT_COMMENTS.HEADER,
     "",
@@ -1320,14 +1214,6 @@ export async function saveModularTrainingJobContract(
 
 export const saveModularTrainingConfigContract = saveModularTrainingJobContract;
 
-/**
- * Synchronizes a chosen split date (splitDate or splitEndDate) across:
- * 1. Agent state top-level splitDate and splitEndDate
- * 2. targetState.trainingConfiguration (splitDate, splitEndDate, configuration.split.split_date, etc.)
- * 3. targetState.stageOutputs.trainingConfiguration
- * 4. The training configuration YAML contract file on disk
- * 5. Any python training_config.yaml file in the run directory if present
- */
 export async function syncTrainingConfigSplitDate(
   workspaceName: string,
   projectName: string,
@@ -1346,11 +1232,9 @@ export async function syncTrainingConfigSplitDate(
     runTimestamp || targetState?.runTimestamp
   );
 
-  // 1. Synchronize top-level agent state
   targetState.splitDate = splitVal;
   targetState.splitEndDate = splitVal;
 
-  // 2. Synchronize targetState.trainingConfiguration
   const existingTC = targetState.trainingConfiguration || targetState.stageOutputs?.trainingConfiguration || {};
   const updatedTC = {
     ...existingTC,
@@ -1377,7 +1261,6 @@ export async function syncTrainingConfigSplitDate(
   };
   targetState.trainingConfiguration = updatedTC;
 
-  // 3. Synchronize targetState.stageOutputs.trainingConfiguration
   if (!targetState.stageOutputs) {
     targetState.stageOutputs = {};
   }
@@ -1399,7 +1282,6 @@ export async function syncTrainingConfigSplitDate(
     },
   };
 
-  // 4. Update the training configuration YAML contract file on disk
   let savedContractPath: string | undefined;
   try {
     const targetDir = getProjectSchemasDir(workspaceName, projectName, effectiveTs);
@@ -1469,7 +1351,6 @@ export async function syncTrainingConfigSplitDate(
     console.warn(`[syncTrainingConfigSplitDate] Warning saving contract YAML with split date:`, contractErr?.message || contractErr);
   }
 
-  // 5. Update python model training config if it already exists
   try {
     const runDir = getProjectRunDir(workspaceName, projectName, effectiveTs);
     if (fsSync.existsSync(runDir)) {
@@ -1500,19 +1381,12 @@ export async function syncTrainingConfigSplitDate(
   return { updatedState: targetState, contractPath: savedContractPath };
 }
 
-
-/**
- * Sanitizes a string for use in folder and file names.
- */
 export function sanitizeName(name: string): string {
   if (!name || typeof name !== "string") return "Default";
   const clean = name.trim().replace(/[\\/:*?"<>|]/g, "-").replace(/\s+/g, " ");
   return clean || "Default";
 }
 
-/**
- * Generates a DateTimeStamp formatted as YYYYMMDD-HHmmss
- */
 export function generateDateTimeStamp(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -1524,10 +1398,6 @@ export function generateDateTimeStamp(): string {
   return `${year}${month}${day}-${hours}${minutes}${seconds}`;
 }
 
-/**
- * Deletes the project folder inside packages (e.g. packages/projectFiles/<Project> or packages/projectFiles/<Workspace>-<Project>).
- * Ensures all related files inside projectFiles respective to the project are completely deleted.
- */
 export async function deleteProjectSchemaFolder(
   workspaceName: string,
   projectName: string
@@ -1567,7 +1437,6 @@ export async function deleteProjectSchemaFolder(
       }
     }
 
-    // Additional scan in projectFilesParent directory for matching folder name
     if (fsSync.existsSync(projectFilesParent)) {
       const entries = await fs.readdir(projectFilesParent);
       for (const entry of entries) {
@@ -1593,6 +1462,3 @@ export async function deleteProjectSchemaFolder(
     return false;
   }
 }
-
-
-

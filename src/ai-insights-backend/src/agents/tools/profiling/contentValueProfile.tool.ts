@@ -23,7 +23,6 @@ const PATTERN_CHECKS: Array<{ name: string; regex: RegExp }> = [
   { name: "currency", regex: /^[\$€£¥]\s?[\d,]+\.?\d*$/ },
 ];
 
-
 const filterNonEmptySeries = (s: pl.Series): pl.Series => {
   const lengths = s.str.lengths();
   const zeroSeries = pl.Series("zeros", Array(lengths.length).fill(0));
@@ -145,7 +144,7 @@ export const createContentValueProfileTool = (
       connectionConfig,
       tableName,
       sampleMethod,
-      // sampleSize,
+
       seed,
       stratifyColumn,
       relationships,
@@ -162,7 +161,7 @@ export const createContentValueProfileTool = (
           connectionConfig,
           tableName,
           sampleMethod,
-          // sampleSize,
+
           seed,
           stratifyColumn,
           relationships,
@@ -221,7 +220,7 @@ export const createContentValueProfileTool = (
         totalRows: sampleRows.length,
         columnsProfiled: columnProfiles.length,
         columns: columnProfiles,
-        // rows: sampleRows, // Retain fetched rows so the agent can extract PKs to sync child tables
+
       };
     },
     {
@@ -235,7 +234,7 @@ export const createContentValueProfileTool = (
         connectionConfig: connectionConfigSchema,
         tableName: z.string().describe("Table name for context"),
         sampleMethod: z.enum(["random", "stratified", "interval"]).optional().describe("Sampling method"),
-        // sampleSize: z.number().optional().describe("Number of sample records to fetch (stratified defaults to 40% of table row count)"),
+
         seed: z.number().optional().describe("Deterministic seed for reproducible sampling"),
         stratifyColumn: z.string().optional().describe("Column to group by for stratified sampling"),
         relationships: z.array(z.object({

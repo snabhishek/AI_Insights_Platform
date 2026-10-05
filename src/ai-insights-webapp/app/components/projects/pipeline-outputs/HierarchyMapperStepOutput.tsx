@@ -16,7 +16,6 @@ export default function HierarchyMapperStepOutput({
 }: HierarchyMapperStepOutputProps) {
   const [activeTab, setActiveTab] = useState<"relationships" | "forms">("relationships");
 
-  // Resolve relationship output
   const relData = relationshipBuilder || hierarchyMapper?.relationshipBuilder || hierarchyMapper;
   const formData = formBuilder || hierarchyMapper?.formBuilder || hierarchyMapper;
 
@@ -55,7 +54,7 @@ export default function HierarchyMapperStepOutput({
 
   return (
     <div className="space-y-6 select-none">
-      {/* Banner */}
+
       <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5 shadow-sm font-semibold select-none">
         <span className="text-sm">✓</span>
         <div>
@@ -66,7 +65,6 @@ export default function HierarchyMapperStepOutput({
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-border gap-4 text-xs font-semibold">
         <button
           onClick={() => setActiveTab("relationships")}
@@ -92,7 +90,7 @@ export default function HierarchyMapperStepOutput({
 
       {activeTab === "relationships" && (
         <div className="space-y-6 select-text">
-          {/* Nodes Table */}
+
           <div className="space-y-3">
             <SectionHeader title="Hierarchy Nodes" subtitle="Discovered entity nodes and column aliases" badgeText={`${nodes.length} Nodes`} />
             <div className="border border-border overflow-x-auto">
@@ -127,7 +125,6 @@ export default function HierarchyMapperStepOutput({
             </div>
           </div>
 
-          {/* Relationships Table */}
           <div className="space-y-3">
             <SectionHeader title="Functional Dependencies & Hierarchies" subtitle="Statistical parent-child dependencies and purity ratios" badgeText={`${relationships.length} Links`} />
             <div className="border border-border overflow-x-auto">
@@ -164,7 +161,6 @@ export default function HierarchyMapperStepOutput({
             </div>
           </div>
 
-          {/* Conformed Groups */}
           {conformedGroups.length > 0 && (
             <div className="p-4 border border-border bg-surface-muted/30 space-y-2">
               <span className="text-[10px] font-black uppercase tracking-wider text-muted-foreground block">Conformed Dimension Decisions</span>
@@ -217,8 +213,7 @@ export default function HierarchyMapperStepOutput({
                             <Badge variant={getControlTypeBadgeVariant(f.controlType || f.type)}>{f.controlType || f.type || "dropdown"}</Badge>
                           </div>
                           <p className="text-[11px] text-muted-foreground font-medium">{f.label || f.description || ""}</p>
-                          
-                          {/* Multi-Parent Badge Rendering */}
+
                           {parentFieldsList.length > 0 ? (
                             <div className="text-[10px] text-emerald-600 dark:text-emerald-400 font-mono flex items-center gap-1.5 flex-wrap">
                               <span className="font-bold">Depends on parents:</span>

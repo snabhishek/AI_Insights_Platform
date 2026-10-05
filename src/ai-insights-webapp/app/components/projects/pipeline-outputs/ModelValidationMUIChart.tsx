@@ -13,14 +13,14 @@ interface ModelValidationMUIChartProps {
 }
 
 const PALETTE = [
-  "#38bdf8", // Sky Blue
-  "#f59e0b", // Amber / Gold (Champion)
-  "#818cf8", // Indigo
-  "#ec4899", // Pink
-  "#14b8a6", // Teal
-  "#a855f7", // Purple
-  "#fb923c", // Orange
-  "#06b6d4", // Cyan
+  "#38bdf8",
+  "#f59e0b",
+  "#818cf8",
+  "#ec4899",
+  "#14b8a6",
+  "#a855f7",
+  "#fb923c",
+  "#06b6d4",
 ];
 
 function formatNumber(val: number | null | undefined, decimals = 1): string {
@@ -37,16 +37,13 @@ export default function ModelValidationMUIChart({
   frequency = "Weekly",
   isClassification = false,
 }: ModelValidationMUIChartProps) {
-  // View mode: 'single' (focused active model) or 'compare' (all candidate models overlaid)
+
   const [viewMode, setViewMode] = useState<"single" | "compare">("single");
 
-  // Aggregation method: 'sum' (total per date period) | 'mean' (average per date period) | 'raw' (each test record sequentially)
   const [aggregationMode, setAggregationMode] = useState<"sum" | "mean" | "raw">("sum");
 
-  // Curve style: 'monotoneX' (strictly monotonic, no loops) | 'linear'
   const [curveType, setCurveType] = useState<"monotoneX" | "linear">("monotoneX");
 
-  // ─── Data Extraction & Multi-Record Date Aggregation ─────────────────────────
   const processedData = useMemo(() => {
     const cand = activeCandidate || candidates[0];
     const raw =
@@ -84,7 +81,6 @@ export default function ModelValidationMUIChart({
       };
     }
 
-    // Check if there are repeated timestamps in the validation evaluation dataset
     const dateCounts: Record<string, number> = {};
     rawDates.forEach((d) => {
       dateCounts[d] = (dateCounts[d] || 0) + 1;
@@ -92,7 +88,6 @@ export default function ModelValidationMUIChart({
     const uniqueDatesList = Object.keys(dateCounts);
     const hasDuplicates = uniqueDatesList.length < rawLength;
 
-    // Build candidate predictions raw map
     const candRawForecasts: Record<string, number[]> = {};
     candidates.forEach((c) => {
       const cId = c.model_id || (c as any).modelId;
@@ -110,7 +105,6 @@ export default function ModelValidationMUIChart({
         [];
     });
 
-    // If 'raw' mode is selected or no duplicates exist, format sequentially
     if (aggregationMode === "raw" || (!hasDuplicates && aggregationMode === "sum")) {
       const formattedDates = rawDates.map((d, idx) =>
         hasDuplicates ? `${d} (#${idx + 1})` : d
@@ -127,7 +121,6 @@ export default function ModelValidationMUIChart({
       };
     }
 
-    // Sort unique dates chronologically
     const sortedUniqueDates = [...uniqueDatesList].sort((a, b) => {
       const ta = new Date(a).getTime();
       const tb = new Date(b).getTime();
@@ -135,7 +128,6 @@ export default function ModelValidationMUIChart({
       return a.localeCompare(b);
     });
 
-    // Aggregate values per unique date period
     const aggregatedActuals: Array<number | null> = [];
     const aggregatedForecasts: number[] = [];
     const aggregatedCandMap: Record<string, number[]> = {};
@@ -144,13 +136,12 @@ export default function ModelValidationMUIChart({
     });
 
     sortedUniqueDates.forEach((d) => {
-      // Find all row indices matching this date
+
       const indices: number[] = [];
       for (let i = 0; i < rawDates.length; i++) {
         if (rawDates[i] === d) indices.push(i);
       }
 
-      // Aggregate Actuals
       const validActuals = indices
         .map((i) => rawActuals[i])
         .filter((v): v is number => v !== null && v !== undefined && !isNaN(v));
@@ -162,7 +153,6 @@ export default function ModelValidationMUIChart({
         aggregatedActuals.push(aggregationMode === "sum" ? sum : sum / validActuals.length);
       }
 
-      // Aggregate Active Candidate Forecasts
       const validForecasts = indices
         .map((i) => rawForecasts[i])
         .filter((v): v is number => typeof v === "number" && !isNaN(v));
@@ -174,7 +164,6 @@ export default function ModelValidationMUIChart({
         aggregatedForecasts.push(aggregationMode === "sum" ? sum : sum / validForecasts.length);
       }
 
-      // Aggregate each candidate model's predictions
       candidates.forEach((c) => {
         const cId = c.model_id || (c as any).modelId;
         const cList = candRawForecasts[cId] || [];
@@ -204,10 +193,8 @@ export default function ModelValidationMUIChart({
 
   const totalPoints = processedData.dates.length;
 
-  // Zoom range state: [startIndex, endIndex]
   const [zoomRange, setZoomRange] = useState<[number, number]>([0, Math.max(0, totalPoints - 1)]);
 
-  // Reset zoom when dataset or aggregation changes
   useEffect(() => {
     if (totalPoints > 0) {
       setZoomRange([0, totalPoints - 1]);
@@ -217,7 +204,6 @@ export default function ModelValidationMUIChart({
   const [startIdx, endIdx] = zoomRange;
   const visibleCount = Math.max(1, endIdx - startIdx + 1);
 
-  // ─── Mouse Scroll, Touchpad Pinch Zoom & Drag-To-Pan Handlers ───────────────
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ isDragging: boolean; startX: number; initialRange: [number, number] }>({
     isDragging: false,
@@ -240,7 +226,7 @@ export default function ModelValidationMUIChart({
         const zoomStep = Math.max(1, Math.round(currentSpan * 0.15));
 
         if (delta < 0) {
-          // Zoom IN
+
           if (currentSpan <= 2) return [currStart, currEnd];
           const leftChange = Math.round(zoomStep * focalRatio);
           const rightChange = zoomStep - leftChange;
@@ -248,7 +234,7 @@ export default function ModelValidationMUIChart({
           const nextEnd = Math.max(currStart + 2, currEnd - rightChange);
           return [Math.max(0, nextStart), Math.min(totalPoints - 1, nextEnd)];
         } else {
-          // Zoom OUT
+
           const leftChange = Math.round(zoomStep * focalRatio);
           const rightChange = zoomStep - leftChange;
           const nextStart = Math.max(0, currStart - leftChange);
@@ -282,20 +268,19 @@ export default function ModelValidationMUIChart({
     [totalPoints]
   );
 
-  // Attach non-passive wheel event listener to chart container for smooth scroll zoom
   useEffect(() => {
     const el = chartContainerRef.current;
     if (!el) return;
 
     const onWheel = (e: WheelEvent) => {
-      // If user scrolls over the chart, zoom in/out with scroll wheel or touchpad pinch
+
       if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) {
         e.preventDefault();
         const rect = el.getBoundingClientRect();
         const focalRatio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
         handleZoomByDelta(e.deltaY, focalRatio);
       } else if (Math.abs(e.deltaX) > 0) {
-        // Horizontal touchpad swipe pans the timeline
+
         e.preventDefault();
         handlePanByDelta(e.deltaX);
       }
@@ -307,7 +292,6 @@ export default function ModelValidationMUIChart({
     };
   }, [handleZoomByDelta, handlePanByDelta]);
 
-  // Click-and-drag to pan
   const onMouseDown = (e: React.MouseEvent) => {
     if (totalPoints <= 2) return;
     dragRef.current = {
@@ -350,12 +334,10 @@ export default function ModelValidationMUIChart({
     }
   };
 
-  // Slice visible dates
   const visibleDates = useMemo(() => {
     return processedData.dates.slice(startIdx, endIdx + 1);
   }, [processedData.dates, startIdx, endIdx]);
 
-  // Construct series based on Single vs Multi-Model Comparison
   const series = useMemo(() => {
     if (totalPoints === 0) return [];
 
@@ -365,7 +347,7 @@ export default function ModelValidationMUIChart({
       id: "actual",
       data: visibleActuals,
       label: "Actual (Ground Truth)",
-      color: "#10b981", // Emerald
+      color: "#10b981",
       curve: curveType,
       connectNulls: true,
       showMark: true,
@@ -381,14 +363,13 @@ export default function ModelValidationMUIChart({
           id: "forecast",
           data: visibleForecasts,
           label: `Forecast (${activeModelLabel})`,
-          color: "#38bdf8", // Sky Blue
+          color: "#38bdf8",
           curve: curveType,
           showMark: true,
         },
       ];
     }
 
-    // Compare All Models Mode
     const candidateSeriesList = candidates.map((cand, idx) => {
       const candId = cand.model_id || (cand as any).modelId || `cand-${idx}`;
       const forecastsList = processedData.candidateForecastsMap[candId] || [];
@@ -397,7 +378,7 @@ export default function ModelValidationMUIChart({
       const isSelected = candId === (activeCandidate?.model_id || (activeCandidate as any)?.modelId);
 
       let color = PALETTE[idx % PALETTE.length];
-      if (isChampion) color = "#f59e0b"; // Gold for champion
+      if (isChampion) color = "#f59e0b";
       else if (isSelected) color = "#38bdf8";
 
       return {
@@ -435,11 +416,11 @@ export default function ModelValidationMUIChart({
 
   return (
     <div className="space-y-3">
-      {/* ─── Top Control Toolbar: View Toggle, Aggregation, and Window Info ─── */}
+
       <div className="flex flex-wrap items-center justify-between gap-3 pb-2.5 border-b border-border/60 text-xs">
-        {/* Left: View Mode & Aggregation Switcher */}
+
         <div className="flex flex-wrap items-center gap-2">
-          {/* View Mode */}
+
           <div className="flex items-center gap-1 p-1 bg-surface-raised border border-border rounded-xl">
             <button
               type="button"
@@ -467,7 +448,6 @@ export default function ModelValidationMUIChart({
             )}
           </div>
 
-          {/* Aggregation Mode (Sum / Average / Raw Records) */}
           {processedData.hasDuplicates && (
             <div className="flex items-center gap-1 p-1 bg-surface-raised border border-border rounded-xl">
               <span className="text-[10px] uppercase font-semibold text-muted-foreground px-1.5">
@@ -512,7 +492,6 @@ export default function ModelValidationMUIChart({
             </div>
           )}
 
-          {/* Curve Interpolation Toggle */}
           <div className="flex items-center gap-1 p-1 bg-surface-raised border border-border rounded-xl">
             <button
               type="button"
@@ -525,7 +504,6 @@ export default function ModelValidationMUIChart({
           </div>
         </div>
 
-        {/* Right: Zoom Window Information & Mouse Gesture Hint */}
         <div className="flex items-center gap-2">
           {totalPoints > 2 && (
             <span className="hidden sm:inline-flex text-[11px] text-muted-foreground items-center gap-1 bg-muted/40 px-2 py-0.5 rounded border border-border/40">
@@ -551,7 +529,6 @@ export default function ModelValidationMUIChart({
         </div>
       </div>
 
-      {/* ─── Interactive MUI Line Chart Container (Mouse Scroll / Pinch / Drag Active) ─── */}
       <div
         ref={chartContainerRef}
         onMouseDown={onMouseDown}

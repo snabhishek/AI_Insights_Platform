@@ -10,7 +10,7 @@ export interface SourceRegistryEntry {
   connectionConfig: ConnectionConfig;
   backingEngine: BackingEngineType;
   details: {
-    storagePath?: string;   // e.g. uploads/duckdb/<fileName>.duckdb for DuckDB
+    storagePath?: string;
     databaseName?: string;
     host?: string;
     port?: number;

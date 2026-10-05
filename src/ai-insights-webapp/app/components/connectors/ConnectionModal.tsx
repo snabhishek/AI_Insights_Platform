@@ -61,9 +61,9 @@ export default function ConnectionModal({
   const [database, setDatabase] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [account, setAccount] = useState(""); // snowflake
-  const [url, setUrl] = useState(""); // restapi
-  const [fileName, setFileName] = useState(""); // excel/csv/tsv
+  const [account, setAccount] = useState("");
+  const [url, setUrl] = useState("");
+  const [fileName, setFileName] = useState("");
   const [fileContent, setFileContent] = useState("");
 
   const [testing, setTesting] = useState(false);
@@ -211,7 +211,7 @@ export default function ConnectionModal({
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-md animate-fade-in">
       <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col max-h-[90vh]">
-        {/* Modal Header */}
+
         <div className="flex items-center justify-between border-b border-border/80 px-5 py-3 bg-surface-muted/60">
           <div className="flex items-center gap-2.5">
             <div className="flex items-center justify-center p-1.5 rounded-lg bg-surface border border-border/20 shrink-0">
@@ -247,7 +247,6 @@ export default function ConnectionModal({
           </button>
         </div>
 
-        {/* Modal Form */}
         <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-5 space-y-3.5">
           <div>
             <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
@@ -268,7 +267,6 @@ export default function ConnectionModal({
             )}
           </div>
 
-          {/* Database Inputs */}
           {["postgres", "mysql", "sqlserver", "snowflake", "mongodb"].includes(type) && (
             <>
               <div className="grid grid-cols-3 gap-3">
@@ -355,7 +353,6 @@ export default function ConnectionModal({
             </>
           )}
 
-          {/* File Upload zone */}
           {["excel", "csv", "tsv"].includes(type) && (
             <div>
               <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
@@ -413,7 +410,6 @@ export default function ConnectionModal({
             </div>
           )}
 
-          {/* REST API inputs */}
           {type === "restapi" && (
             <>
               <div>
@@ -453,7 +449,6 @@ export default function ConnectionModal({
             </>
           )}
 
-          {/* Test Connection Results */}
           {testing && (
             <div className="flex items-center gap-2 text-sm text-primary animate-pulse">
               <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
@@ -479,7 +474,6 @@ export default function ConnectionModal({
           )}
         </form>
 
-        {/* Modal Footer */}
         <div className="flex items-center justify-between border-t border-border/80 px-5 py-3 bg-surface-muted/60">
           {!["excel", "csv", "tsv"].includes(type) ? (
             <button

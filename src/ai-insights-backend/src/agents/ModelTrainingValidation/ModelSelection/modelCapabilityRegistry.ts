@@ -5,11 +5,6 @@ import {
   ModelDefinition,
 } from "../../../models/modelSelection.types";
 
-/**
- * Empty baseline array: all hardcoded models removed per requirements.
- * Data store starts from scratch and is dynamically populated via web exploration
- * and hydrated from PostgreSQL dynamic_model_registry.
- */
 export const DEFAULT_BASE_MODELS: ModelDefinition[] = [];
 
 export class ModelCapabilityRegistry {
@@ -21,11 +16,6 @@ export class ModelCapabilityRegistry {
     }
   }
 
-  /**
-   * Registers a new model or updates an existing model's metadata in the registry.
-   * Prevents duplicate registrations by checking modelId, updating existing entries
-   * with newer or more accurate information discovered from the web.
-   */
   public registerModel(model: ModelDefinition): void {
     if (!model || !model.modelId) return;
     const id = model.modelId.toLowerCase().trim();
@@ -37,7 +27,7 @@ export class ModelCapabilityRegistry {
     const updatedAt = new Date().toISOString();
 
     if (existing) {
-      // Merge and enrich existing model metadata
+
       const mergedCapabilities = Array.from(
         new Set([...(existing.capabilities || []), ...(model.capabilities || [])])
       );
@@ -79,7 +69,6 @@ export class ModelCapabilityRegistry {
       return;
     }
 
-    // New model registration
     this.models.set(id, {
       ...model,
       modelId: id,
@@ -106,9 +95,6 @@ export class ModelCapabilityRegistry {
     });
   }
 
-  /**
-   * Updates specific metadata fields for an existing model in the registry.
-   */
   public updateModelMetadata(modelId: string, updates: Partial<ModelDefinition>): boolean {
     if (!modelId) return false;
     const id = modelId.toLowerCase().trim();
@@ -124,9 +110,6 @@ export class ModelCapabilityRegistry {
     return true;
   }
 
-  /**
-   * Bulk registers dynamic models (e.g. loaded from PostgreSQL dynamic_model_registry).
-   */
   public registerDynamicModels(models: ModelDefinition[]): void {
     for (const model of models) {
       this.registerModel({ ...model, isDynamic: true });
@@ -147,27 +130,18 @@ export class ModelCapabilityRegistry {
     return Array.from(this.models.values());
   }
 
-  /**
-   * Returns all models originating from external sources.
-   */
   public getExternalModels(): ModelDefinition[] {
     return Array.from(this.models.values()).filter(
       (m) => m.sourceTypeId === "external" || m.sourceType === "external" || m.isDynamic
     );
   }
 
-  /**
-   * Returns built-in baseline or platform native models.
-   */
   public getBuiltinModels(): ModelDefinition[] {
     return Array.from(this.models.values()).filter(
       (m) => m.sourceTypeId === "builtin" || m.source === "builtin"
     );
   }
 
-  /**
-   * Returns models originating from a specific provider, domain, or platform.
-   */
   public getModelsBySource(source: string): ModelDefinition[] {
     if (!source) return [];
     const target = source.toLowerCase().trim();
@@ -177,16 +151,10 @@ export class ModelCapabilityRegistry {
     );
   }
 
-  /**
-   * Clears all models from the in-memory registry.
-   */
   public clearModels(): void {
     this.models.clear();
   }
 
-  /**
-   * Deterministically filter candidate models by task, subtype, and prediction type.
-   */
   public filterCandidates(criteria: {
     task?: MLTaskType | string;
     subtype?: MLTaskSubtype | string;
@@ -198,12 +166,11 @@ export class ModelCapabilityRegistry {
     const preferred = criteria.preferredFrameworks?.map((f) => f.toLowerCase().trim()) || [];
 
     return Array.from(this.models.values()).filter((model) => {
-      // 1. Check exclusions
+
       if (excluded.has(model.modelId.toLowerCase().trim())) {
         return false;
       }
 
-      // 2. Check task match
       if (criteria.task && model.supportedTasks && model.supportedTasks.length > 0) {
         const matchesTask = model.supportedTasks.some(
           (t) => String(t).toLowerCase() === String(criteria.task).toLowerCase()
@@ -213,7 +180,6 @@ export class ModelCapabilityRegistry {
         }
       }
 
-      // 3. Check subtype match if provided
       if (criteria.subtype && model.supportedSubTasks && model.supportedSubTasks.length > 0) {
         const matchesSubtype = model.supportedSubTasks.some(
           (st) => String(st).toLowerCase() === String(criteria.subtype).toLowerCase()
@@ -223,7 +189,6 @@ export class ModelCapabilityRegistry {
         }
       }
 
-      // 4. Check prediction type if provided
       if (criteria.predictionType && model.supportedPredictionTypes && model.supportedPredictionTypes.length > 0) {
         const matchesPredType = model.supportedPredictionTypes.some(
           (pt) => String(pt).toLowerCase() === String(criteria.predictionType).toLowerCase()
@@ -233,18 +198,14 @@ export class ModelCapabilityRegistry {
         }
       }
 
-      // 5. Check preferred frameworks if provided
       if (preferred.length > 0 && model.framework && !preferred.includes(model.framework.toLowerCase())) {
-        // We keep it as alternative unless strictly excluded
+
       }
 
       return true;
     });
   }
 
-  /**
-   * Find baseline models compatible with the given task.
-   */
   public getBaselinesForTask(task: MLTaskType | string): ModelDefinition[] {
     const targetTask = String(task).toLowerCase();
     return Array.from(this.models.values()).filter(
@@ -253,5 +214,4 @@ export class ModelCapabilityRegistry {
   }
 }
 
-// Export singleton instance initialized with empty catalog
 export const defaultModelCapabilityRegistry = new ModelCapabilityRegistry();

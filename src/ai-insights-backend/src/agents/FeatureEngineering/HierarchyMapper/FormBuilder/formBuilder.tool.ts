@@ -18,7 +18,6 @@ export async function generateHierarchicalFormsTool(
 
   const filterGroups: HierarchicalFormSchema[] = [];
 
-  // Group nodes by entity scope
   const entityGroupMap = new Map<string, typeof nodes>();
   for (const node of nodes) {
     const scope = node.entityScope || "general";
@@ -34,11 +33,9 @@ export async function generateHierarchicalFormsTool(
     for (const node of groupNodes) {
       if (node.role === "identifier") continue;
 
-      // Find all parent relationships where r.child === node.id
       const parentRels = relationships.filter((r) => r.child === node.id && r.status !== "rejected");
       const parentFields = parentRels.map((r) => r.parent);
 
-      // Control type determination
       const isDailyDate = /date|timestamp/i.test(node.id) && !/year|quarter|month|week|dayofweek/i.test(node.id);
       const isCalendarUnit = /year|quarter|month|week|dayofweek/i.test(node.id) || (node.role === "temporal" && !isDailyDate);
 
@@ -110,7 +107,6 @@ export function normalizeAndEnforceFormSchema(
   const relNodes = relationshipSchema?.nodes || [];
   const rels = relationshipSchema?.relationships || [];
 
-  // Track visited nodes
   const visitedNodeIds = new Set<string>();
 
   const normalizedGroups = rawGroups.map((group: any) => {
@@ -123,7 +119,6 @@ export function normalizeAndEnforceFormSchema(
         (n) => n.id === fieldId || n.columnName === fieldId || (n.aliasOf && n.aliasOf.includes(fieldId))
       );
 
-      // Collect all parent relationships
       const activeParentRels = rels.filter(
         (r) => (r.child === fieldId || (relNode && r.child === relNode.id)) && r.status !== "rejected"
       );
@@ -131,7 +126,6 @@ export function normalizeAndEnforceFormSchema(
         ? field.parentFields
         : activeParentRels.map((r) => r.parent);
 
-      // Calendar Control Overrides
       const isDailyDate = /date|timestamp/i.test(fieldId) && !/year|quarter|month|week|dayofweek/i.test(fieldId);
       const isCalendarUnit = /year|quarter|month|week|dayofweek/i.test(fieldId) || (relNode?.role === "temporal" && !isDailyDate);
 
@@ -142,7 +136,6 @@ export function normalizeAndEnforceFormSchema(
         controlType = "dropdown";
       }
 
-      // Explicitly remove legacy optionsSource and optionsEndpoint
       const { optionsSource, optionsEndpoint, ...cleanField } = field;
 
       const resolvedOptions =
@@ -172,7 +165,6 @@ export function normalizeAndEnforceFormSchema(
     };
   });
 
-  // Collect zero-edge standalone nodes not yet visited
   const standaloneFields: FormFieldDefinition[] = [];
   for (const node of relNodes) {
     const colName = node.columnName || node.aliasOf?.[0] || node.id;

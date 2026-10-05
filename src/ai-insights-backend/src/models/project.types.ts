@@ -13,7 +13,7 @@ export interface Project {
   folderPath?: string;
   status?: string;
   agentState?: AgentStateType | undefined;
-  createdAt: string;  
+  createdAt: string;
 }
 
 export interface ProjectRun {
@@ -29,4 +29,3 @@ export interface ProjectWithWorkspace {
   project: Project;
   workspaceName: string;
 }
-

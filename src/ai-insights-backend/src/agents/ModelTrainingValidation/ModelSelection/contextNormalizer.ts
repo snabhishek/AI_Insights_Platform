@@ -7,18 +7,10 @@ import {
   TargetEntitySpec,
 } from "../../../models/modelSelection.types";
 
-/**
- * Normalizes disparate upstream artifacts into a generic ModelSelectionContext.
- * Gracefully handles missing, partial, or evolving upstream schemas without hard-coding
- * assumptions about exact agent response shapes.
- *
- * NOTE: As specified, leakage findings are excluded from the normalization scope.
- */
 export class ModelSelectionContextNormalizer {
   public static normalize(rawInput: any): ModelSelectionContext {
     const raw = rawInput || {};
 
-    // 1. Business Context
     const businessContext = {
       useCase:
         raw.useCase ||
@@ -55,7 +47,6 @@ export class ModelSelectionContextNormalizer {
         "medium",
     };
 
-    // 2. Data Context (resolve target, shape, columns from upstream state)
     const architect = raw.featureArchitect || raw.stageOutputs?.featureArchitect || {};
     const validator = raw.featureValidator || raw.stageOutputs?.featureValidator || architect.featureValidator || {};
     const inspection = raw.inspection || raw.stageOutputs?.inspection || {};
@@ -113,7 +104,6 @@ export class ModelSelectionContextNormalizer {
       columns,
     };
 
-    // 3. Feature Context
     const candidateFeatures: string[] =
       raw.featureContext?.candidateFeatures ||
       validator.validatedFeatureSet?.kept ||
@@ -149,14 +139,12 @@ export class ModelSelectionContextNormalizer {
       datasetPath: raw.datasetPath || raw.featureContext?.datasetPath,
     };
 
-    // 4. Model Context (user preferences / exclusions)
     const modelContext = {
       preferredFrameworks: raw.preferredFrameworks || raw.modelContext?.preferredFrameworks || [],
       excludedModels: raw.excludedModels || raw.modelContext?.excludedModels || [],
       maxModelsToRank: raw.maxModelsToRank || raw.modelContext?.maxModelsToRank || 5,
     };
 
-    // 5. Additional Context (preserve anything unmapped)
     const additionalContext = {
       ...(raw.additionalContext || {}),
       projectId: raw.projectId,
@@ -172,10 +160,6 @@ export class ModelSelectionContextNormalizer {
     };
   }
 
-  /**
-   * Deterministically infers ML task classification, target grain, and target entity specs
-   * from the normalized context, which will be validated by the LLM and validator.
-   */
   public static inferProblemSpecs(context: ModelSelectionContext): {
     targetEntity: TargetEntitySpec;
     predictionGrain: PredictionGrainSpec;
@@ -189,7 +173,6 @@ export class ModelSelectionContextNormalizer {
     const hasTimeCol = Boolean(context.dataContext.temporalColumn);
     const domainLower = (context.businessContext.domain || "").toLowerCase();
 
-    // 1. Target Entity
     const entityName =
       context.featureContext.entityKeys?.[0] ||
       (targetCol.includes("_") ? targetCol.split("_")[0] : "record");
@@ -201,14 +184,12 @@ export class ModelSelectionContextNormalizer {
       source: "upstream_features",
     };
 
-    // 2. Grain
     const predictionGrain: PredictionGrainSpec = {
       entity: entityName,
       keys: context.featureContext.entityKeys || [],
       frequency: hasTimeCol ? context.dataContext.dateGrain || "daily" : null,
     };
 
-    // 3. Task Inference
     let task: MLTaskType = "tabular_regression";
     let subtype: MLTaskSubtype = "standard_regression";
     let predictionType: MLPredictionType = "value";

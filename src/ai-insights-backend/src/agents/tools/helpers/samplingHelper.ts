@@ -50,7 +50,7 @@ export async function fetchRowsOnDemand(
     connectionConfig,
     tableName,
     sampleMethod,
-    // sampleSize: inputSampleSize,
+
     seed = 42,
     intervals,
     stratifyColumn,
@@ -84,7 +84,7 @@ export async function fetchRowsOnDemand(
           (c) => c.id === connectorId || c.name === connectorId || c.name.toLowerCase() === connectorId.toLowerCase()
         );
       } catch {
-        // Ignore error
+
       }
     }
   }

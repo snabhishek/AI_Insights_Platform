@@ -2,12 +2,6 @@ import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { chromium, Browser } from "playwright";
 
-/**
- * Creates the extract_url_content tool for AI Agents.
- * Uses Playwright headless Chromium exclusively to execute client-side JavaScript,
- * ensuring dynamic content (e.g., Hugging Face model cards, tags, GitHub READMEs, SPA pages)
- * is fully rendered and extracted.
- */
 export const createExtractUrlContentTool = () => {
   return tool(
     async (arg: { url: string; maxChars?: number }) => {
@@ -41,31 +35,26 @@ export const createExtractUrlContentTool = () => {
 
         const page = await context.newPage();
 
-        // Navigate to the URL and wait for DOM loaded
         await page.goto(trimmedUrl, {
           waitUntil: "domcontentloaded",
           timeout: 25000,
         });
 
-        // Wait for dynamic JavaScript rendering/hydration
         try {
           await page.waitForLoadState("networkidle", { timeout: 7000 });
         } catch {
-          // If networkidle times out (common on pages with continuous telemetry), proceed with rendered DOM
+
         }
 
-        // Extract fully rendered text from the dynamic DOM
         const textContent = await page.evaluate(() => {
           const doc = (globalThis as any).document;
           if (!doc) return "";
 
-          // Remove non-content elements
           const elementsToRemove = doc.querySelectorAll(
             "script, style, noscript, svg, nav, footer, header, iframe"
           );
           elementsToRemove.forEach((el: any) => el.remove());
 
-          // Prefer main article or readme containers if present
           const contentContainer =
             doc.querySelector("article") ||
             doc.querySelector(".markdown-body") ||
@@ -97,7 +86,7 @@ export const createExtractUrlContentTool = () => {
           try {
             await browser.close();
           } catch {
-            // Ignore close errors
+
           }
         }
       }

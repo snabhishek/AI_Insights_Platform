@@ -1,5 +1,3 @@
-// Shared types for the Projects feature
-
 export type PipelineStatus = "Completed" | "In Progress" | "Pending" | "Stopped" | "None" | "Awaiting Approval";
 export type RunStatus = "Success" | "Running" | "Paused" | "Stopped" | "Failed" | "Idle";
 

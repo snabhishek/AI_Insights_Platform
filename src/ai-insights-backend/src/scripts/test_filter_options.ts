@@ -26,14 +26,12 @@ async function testFilterOptions() {
   const connectorRepo = new PostgresConnectorRepository(db);
   const sourceRegistry = new SourceRegistryService(connectorRepo, connectionTester, duckDBService);
 
-  // 1. Check existing connectors in DB
   const connectors = await connectorRepo.getAll();
   console.log(`Found ${connectors.length} connectors in database:`);
   for (const c of connectors) {
     console.log(` - ID: [${c.id}], Name: "${c.name}", Type: "${c.type}", Config:`, c.connectionConfig);
   }
 
-  // 1.1 Inspect DuckDB tables and columns
   const dbPath = duckDBService.getDuckDbPath(connectors[0]?.connectionConfig?.fileName || "carrier_forecast_dataset");
   console.log(`\nInspecting DuckDB at: ${dbPath}`);
   try {
@@ -48,7 +46,6 @@ async function testFilterOptions() {
     console.error("DuckDB inspect error:", err.message);
   }
 
-  // 2. Load agent_state_last_run.json to get the form builder fields
   const jsonPath = path.resolve(__dirname, "../../logs/agent_state_last_run.json");
   let formBuilderSchema: any = null;
   if (fs.existsSync(jsonPath)) {
@@ -59,7 +56,6 @@ async function testFilterOptions() {
   const primarySourceId = connectors[0]?.id || "default_source";
   console.log(`\nTesting filter option extraction against sourceId: [${primarySourceId}]`);
 
-  // Let's test smart column resolution
   const tables = await duckDBService.runQuery(dbPath, "SHOW TABLES");
   const actualTableName = Object.values(tables[0])[0] as string;
   const cols = await duckDBService.runQuery(dbPath, `DESCRIBE "${actualTableName}"`);
@@ -67,16 +63,16 @@ async function testFilterOptions() {
 
   function findBestColumn(fieldId: string, availableCols: string[]): string | null {
     const clean = fieldId.toLowerCase().replace(/[^a-z0-9]/g, "");
-    // 1. Exact match case-insensitive
+
     const exact = availableCols.find((c) => c.toLowerCase() === fieldId.toLowerCase());
     if (exact) return exact;
-    // 2. Normalized match (remove underscores)
+
     const norm = availableCols.find((c) => c.toLowerCase().replace(/[^a-z0-9]/g, "") === clean);
     if (norm) return norm;
-    // 3. Prefix / suffix / Name match (e.g. product -> Product_Name, customer -> Customer_Name)
+
     const nameMatch = availableCols.find((c) => c.toLowerCase().replace(/[^a-z0-9]/g, "") === `${clean}name` || c.toLowerCase().replace(/[^a-z0-9]/g, "") === `name${clean}`);
     if (nameMatch) return nameMatch;
-    // 4. Substring match
+
     const sub = availableCols.find((c) => c.toLowerCase().replace(/[^a-z0-9]/g, "").includes(clean) || clean.includes(c.toLowerCase().replace(/[^a-z0-9]/g, "")));
     if (sub) return sub;
     return null;

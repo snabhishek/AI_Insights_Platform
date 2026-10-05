@@ -17,25 +17,17 @@ export interface ArtifactHeaderInfo {
   rowCountEstimate?: number | null;
 }
 
-/**
- * Creates a tool to inspect the headers and column schemas of Parquet, CSV, or JSON
- * feature artifacts within the project run folder, strictly without reading full table contents.
- * All file descriptors and database connections are closed immediately in finally blocks.
- * File paths are never disclosed in the return output to preserve security and clean abstraction.
- */
 export function createReadArtifactHeadersTool(services: IngestionServices, runTimestamp?: string) {
   return tool(
     async ({ artifactName }: { artifactName: string }) => {
       const runDir = getPythonScriptDirectory(services, runTimestamp);
       const safeBasename = path.basename(artifactName.trim());
 
-      // Candidate search locations strictly within project scope
       const candidatePaths = [
         path.join(runDir, safeBasename),
         path.join(runDir, "schemas", safeBasename),
       ];
 
-      // If projectService is available, also search run schema folder
       if (services.projectService && services.projectId) {
         try {
           const pWs = await services.projectService.getProjectWithWorkspace(services.projectId);
@@ -88,10 +80,6 @@ export function createReadArtifactHeadersTool(services: IngestionServices, runTi
   );
 }
 
-/**
- * Inspects Parquet schema using an ephemeral DuckDB in-memory instance.
- * Tears down connection and closes DB immediately.
- */
 async function inspectParquetHeaders(artifactName: string, filePath: string): Promise<string> {
   let db: duckdb.Database | null = null;
   let conn: duckdb.Connection | null = null;
@@ -125,7 +113,7 @@ async function inspectParquetHeaders(artifactName: string, filePath: string): Pr
 
     return JSON.stringify(result, null, 2);
   } finally {
-    // Immediate teardown of database connection to avoid holding memory or file locks
+
     try {
       if (conn) conn.close();
     } catch {}
@@ -135,10 +123,6 @@ async function inspectParquetHeaders(artifactName: string, filePath: string): Pr
   }
 }
 
-/**
- * Inspects CSV headers by reading strictly the first line with a streamed chunk.
- * Destroys stream immediately after first line.
- */
 async function inspectCsvHeaders(artifactName: string, filePath: string): Promise<string> {
   let fileStream: fs.ReadStream | null = null;
   let rl: readline.Interface | null = null;
@@ -167,7 +151,6 @@ async function inspectCsvHeaders(artifactName: string, filePath: string): Promis
       });
     }
 
-    // Split headers handling potential quotes
     const rawCols = firstLine.split(",").map((c) => c.replace(/^["']|["']$/g, "").trim());
     const columns = rawCols.map((name) => ({ name, type: "unknown" }));
 
@@ -190,9 +173,6 @@ async function inspectCsvHeaders(artifactName: string, filePath: string): Promis
   }
 }
 
-/**
- * Inspects JSON top-level structure or schema arrays without caching.
- */
 async function inspectJsonHeaders(artifactName: string, filePath: string): Promise<string> {
   const content = await fs.promises.readFile(filePath, "utf-8");
   try {

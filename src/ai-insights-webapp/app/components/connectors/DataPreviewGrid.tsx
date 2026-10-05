@@ -36,7 +36,7 @@ export default function DataPreviewGrid({ source }: DataPreviewGridProps) {
   const [selectedTableId, setSelectedTableId] = useState<string>("");
   const [headers, setHeaders] = useState<string[]>([]);
   const [rows, setRows] = useState<any[]>([]);
-  
+
   const [loadingSchema, setLoadingSchema] = useState(true);
   const [loadingData, setLoadingData] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -44,7 +44,6 @@ export default function DataPreviewGrid({ source }: DataPreviewGridProps) {
   const isFile = ["excel", "csv", "tsv"].includes(source.type);
   const isApi = source.type === "restapi";
 
-  // 1. Fetch tables / schema list on mount or source change
   useEffect(() => {
     async function fetchSchema() {
       setLoadingSchema(true);
@@ -73,7 +72,6 @@ export default function DataPreviewGrid({ source }: DataPreviewGridProps) {
     fetchSchema();
   }, [source.id]);
 
-  // 2. Fetch rows / preview data when selection changes
   useEffect(() => {
     if (!selectedTableId && !isFile && !isApi) return;
 
@@ -123,7 +121,6 @@ export default function DataPreviewGrid({ source }: DataPreviewGridProps) {
     );
   }
 
-  // 3. Render Excel / CSV / TSV Layout
   if (isFile) {
     const activeTable = tablesList[0];
     return (
@@ -177,7 +174,6 @@ export default function DataPreviewGrid({ source }: DataPreviewGridProps) {
     );
   }
 
-  // 4. Render REST API layout
   if (isApi) {
     return (
       <div className="flex flex-col gap-4 h-full">
@@ -205,12 +201,11 @@ export default function DataPreviewGrid({ source }: DataPreviewGridProps) {
     );
   }
 
-  // 5. Render SQL Database split layout
   const activeTableId = selectedTableId || (tablesList[0]?.id || "");
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-12 gap-5 h-full items-stretch">
-      {/* Tables sidebar list (4 columns width) */}
+
       <div className="md:col-span-4 border border-border/80 rounded-xl bg-surface-muted/40 p-3 flex flex-col gap-2 max-h-[350px] overflow-y-auto">
         <h5 className="font-bold text-muted-foreground uppercase text-[9px] tracking-wider px-1.5 mb-1.5">
           Catalogs Discovered ({tablesList.length})
@@ -257,7 +252,6 @@ export default function DataPreviewGrid({ source }: DataPreviewGridProps) {
         )}
       </div>
 
-      {/* Grid Display table (8 columns width) */}
       <div className="md:col-span-8 flex flex-col gap-3">
         <div className="flex items-center justify-between text-xs font-semibold text-muted-foreground bg-surface-muted/40 p-2.5 rounded-lg border border-border/40">
           <span>

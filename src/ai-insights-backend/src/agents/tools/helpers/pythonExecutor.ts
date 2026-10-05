@@ -19,10 +19,6 @@ export interface ExecutionResult {
   logFilePath?: string;
 }
 
-/**
- * Generates a timestamp formatted as YYYYMMDD-HHmmss for the current time
- * when Docker execution and log writing begins.
- */
 export function generateLogTimestamp(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -48,9 +44,6 @@ const IMPORT_TO_PACKAGE: Record<string, string> = {
   scipy: "scipy",
 };
 
-/**
- * Normalizes the list of required packages provided explicitly by the agent output.
- */
 export function normalizeRequiredPackages(explicitPackages?: string[]): string[] {
   const packages = new Set<string>();
 
@@ -82,9 +75,6 @@ function getDockerClient(): Docker {
   return new Docker({ socketPath: "/var/run/docker.sock" });
 }
 
-/**
- * Checks if Docker daemon is responsive.
- */
 async function isDockerRunning(docker: Docker): Promise<boolean> {
   try {
     await docker.ping();
@@ -94,9 +84,6 @@ async function isDockerRunning(docker: Docker): Promise<boolean> {
   }
 }
 
-/**
- * Automatically launches Docker Desktop if not currently running and waits for it to be ready.
- */
 async function ensureDockerDaemon(docker: Docker): Promise<boolean> {
   if (await isDockerRunning(docker)) {
     return true;
@@ -118,7 +105,6 @@ async function ensureDockerDaemon(docker: Docker): Promise<boolean> {
         console.warn(`[DockerExecutor] Failed to launch Docker Desktop:`, e.message);
       }
 
-      // Poll for up to 30 seconds for Docker daemon to become responsive
       const start = Date.now();
       while (Date.now() - start < 30000) {
         await new Promise((r) => setTimeout(r, 2000));
@@ -133,10 +119,6 @@ async function ensureDockerDaemon(docker: Docker): Promise<boolean> {
   return false;
 }
 
-/**
- * Runs a CLI process via spawn with live streaming to log file, maxBuffer and timeout handling.
- * By default, raw container logs are suppressed from console.log to keep the backend console clean.
- */
 function executeProcess(
   command: string,
   options: {
@@ -187,14 +169,12 @@ function executeProcess(
         stdoutData += text;
       }
 
-      // Append raw stream directly into the dedicated log file
       if (options.logFilePath) {
         try {
           fs.appendFileSync(options.logFilePath, text, "utf-8");
         } catch {}
       }
 
-      // Stream to backend console only if silentConsole is explicitly disabled
       if (!silentConsole) {
         const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
         for (const line of lines) {
@@ -238,14 +218,8 @@ function executeProcess(
   });
 }
 
-/**
- * Track active docker compose project directories per run session.
- */
 const activeComposeSessions = new Map<string, { composeDir: string; composeFile: string }>();
 
-/**
- * Ensures requirements.txt exists and syncs any new required packages.
- */
 export function ensureRequirementsTxt(
   targetDir: string,
   explicitPackages: string[] = []
@@ -274,12 +248,11 @@ export function ensureRequirementsTxt(
       });
   }
 
-  // De-duplicate based on canonical package names (preferring version-pinned ones if present)
   const pkgMap = new Map<string, string>();
   for (const pkg of [...allNeeded, ...existingPkgs]) {
     const nameMatch = pkg.match(/^([a-zA-Z0-9_-]+)/);
     const key = nameMatch ? nameMatch[1].toLowerCase() : pkg.toLowerCase();
-    // If we already have a pinned package, keep it; otherwise set current
+
     if (!pkgMap.has(key) || pkg.includes("==") || pkg.includes(">=") || pkg.includes("<=")) {
       pkgMap.set(key, pkg);
     }
@@ -291,9 +264,6 @@ export function ensureRequirementsTxt(
   return reqPath;
 }
 
-/**
- * Ensures Dockerfile exists in target directory.
- */
 export function ensureDockerfile(targetDir: string): string {
   const dockerfilePath = path.join(targetDir, "Dockerfile");
   const dockerfileContent = [
@@ -314,7 +284,7 @@ export function ensureDockerfile(targetDir: string): string {
     fs.mkdirSync(targetDir, { recursive: true });
     fs.writeFileSync(dockerfilePath, dockerfileContent, "utf-8");
   } else {
-    // If Dockerfile exists but lacks essential build dependencies, update it
+
     try {
       const existing = fs.readFileSync(dockerfilePath, "utf-8");
       if (!existing.includes("python3-dev") || !existing.includes("libgomp1")) {
@@ -325,9 +295,6 @@ export function ensureDockerfile(targetDir: string): string {
   return dockerfilePath;
 }
 
-/**
- * Ensures docker-compose.yml exists in target directory.
- */
 export function ensureDockerCompose(
   targetDir: string,
   serviceName: string = "app",
@@ -378,10 +345,6 @@ export function ensureDockerCompose(
   return composeYml;
 }
 
-/**
- * Resolves the appropriate directory where docker-compose.yml, Dockerfile, and requirements.txt
- * are maintained for the execution of a Python script.
- */
 function resolveExecutionDirectory(
   scriptPath: string,
   projectRootDir: string,
@@ -390,7 +353,6 @@ function resolveExecutionDirectory(
   const scriptDir = path.dirname(scriptPath);
   const baseName = path.basename(scriptDir).toLowerCase();
 
-  // 1. If script is in a specialized subfolder (e.g. <projectName>_model_training, <projectName>_model_validation, python_script)
   if (
     baseName.endsWith("_model_training") ||
     baseName.endsWith("_model_validation") ||
@@ -402,7 +364,6 @@ function resolveExecutionDirectory(
     return scriptDir;
   }
 
-  // 2. Check run directory
   const runDir = path.join(projectRootDir, effectiveTimestamp);
   if (
     fs.existsSync(path.join(runDir, "docker-compose.yml")) ||
@@ -411,14 +372,9 @@ function resolveExecutionDirectory(
     return runDir;
   }
 
-  // 3. Default to script directory
   return scriptDir;
 }
 
-/**
- * Executes a Python script inside a Docker container managed exclusively via
- * docker-compose, Dockerfile, and requirements.txt.
- */
 export async function executePythonScript(
   scriptName: string,
   code: string,
@@ -445,7 +401,6 @@ export async function executePythonScript(
     }
   }
 
-  // 1. Resolve project directory on host
   const projectRootDir = path.join(
     getFileServerBasePath(),
     "workspaces",
@@ -456,7 +411,6 @@ export async function executePythonScript(
   ensureDirectoryExists(projectRootDir);
   const normProjectDir = path.resolve(projectRootDir).replace(/\\/g, "/");
 
-  // 2. Always resolve the latest timestamp folder for script execution
   const effectiveTimestamp =
     getLatestProjectTimestamp(workspaceName, projectName) ||
     (runTimestamp && runTimestamp !== "default" ? runTimestamp.trim() : undefined) ||
@@ -467,7 +421,6 @@ export async function executePythonScript(
   const baseDir = getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
   ensureDirectoryExists(baseDir);
 
-  // 3. Resolve script path (handles both nested project paths and standard python_script paths)
   let scriptPath: string;
   const isSubpath = scriptName.includes("/") || scriptName.includes("\\");
   if (isSubpath) {
@@ -500,12 +453,10 @@ export async function executePythonScript(
     }
   }
 
-  // 4. Compute relative script path from project root (/workspace in container)
   const relFromProjectRoot = path.relative(projectRootDir, scriptPath).replace(/\\/g, "/");
   const scriptDirRel = path.relative(projectRootDir, path.dirname(scriptPath)).replace(/\\/g, "/");
   const containerOutDir = scriptDirRel && scriptDirRel !== "." ? `/workspace/${scriptDirRel}`.replace(/\/+/g, "/") : "/workspace";
 
-  // Formulate command line arguments for the datasource and output directory
   const args: string[] = [`--out-dir "${containerOutDir}"`];
   if (extraArgs && extraArgs.length > 0) {
     args.push(...extraArgs);
@@ -539,7 +490,6 @@ export async function executePythonScript(
     }
   }
 
-  // Ensure Docker daemon is running
   const docker = getDockerClient();
   const isAvailable = await ensureDockerDaemon(docker);
   if (!isAvailable) {
@@ -550,11 +500,9 @@ export async function executePythonScript(
     };
   }
 
-  // 5. Determine directory containing requirements.txt, Dockerfile, and docker-compose.yml
   const execDir = resolveExecutionDirectory(scriptPath, projectRootDir, effectiveTimestamp);
   ensureDirectoryExists(execDir);
 
-  // Sync requirements.txt, Dockerfile, and docker-compose.yml
   ensureRequirementsTxt(execDir, requiredPackages);
   ensureDockerfile(execDir);
   const composeFile = ensureDockerCompose(execDir, "app", resourceLimits);
@@ -570,11 +518,9 @@ export async function executePythonScript(
 
   console.info(`[DockerExecutor] Building and running via Docker Compose in [${execDir}] for script [${relFromProjectRoot}]`);
 
-  // Ensure dedicated docker_logs directory inside execDir
   const dockerLogsDir = path.join(execDir, "docker_logs");
   ensureDirectoryExists(dockerLogsDir);
 
-  // Generate log timestamp based purely on current timestamp when logs start to write
   const logTimestamp = generateLogTimestamp();
   let logFileName = `${logTimestamp}.txt`;
   let logFilePath = path.join(dockerLogsDir, logFileName);
@@ -585,7 +531,6 @@ export async function executePythonScript(
     duplicateIndex++;
   }
 
-  // Initialize log file header
   const initLogHeader = [
     "=".repeat(80),
     `DOCKER CONTAINER EXECUTION LOG`,
@@ -601,7 +546,6 @@ export async function executePythonScript(
 
   console.info(`[DockerExecutor] Docker container logs writing to: ${logFilePath}`);
 
-  // Step 1: Build Docker Compose image
   const buildCmd = `docker compose -f "${composeFileName}" build`;
   fs.appendFileSync(
     logFilePath,
@@ -619,7 +563,7 @@ export async function executePythonScript(
   const buildResult = await executeProcess(buildCmd, {
     cwd: execDir,
     env,
-    timeoutMs: 300000, // 5 min build timeout
+    timeoutMs: 300000,
     silentConsole: true,
     logFilePath,
   });
@@ -659,8 +603,6 @@ export async function executePythonScript(
     "utf-8"
   );
 
-  // Step 2: Run service via Docker Compose
-  // Determine service name from compose file (default: app, or first service defined)
   let serviceName = "app";
   try {
     const composeContent = fs.readFileSync(composeFile, "utf-8");
@@ -687,7 +629,7 @@ export async function executePythonScript(
   const execResult = await executeProcess(runCmd, {
     cwd: execDir,
     env,
-    timeoutMs: 600000, // 10 min execution timeout
+    timeoutMs: 600000,
     silentConsole: true,
     logFilePath,
   });
@@ -721,9 +663,6 @@ export async function executePythonScript(
   };
 }
 
-/**
- * Cleans up container resources and stops docker compose services for a specific run.
- */
 export async function cleanupRunContainer(projectId: string, runTimestamp?: string): Promise<void> {
   const safeProj = projectId || "default";
   const sessionKey = `${safeProj}__${runTimestamp || "default"}`;
@@ -742,7 +681,6 @@ export async function cleanupRunContainer(projectId: string, runTimestamp?: stri
     }
   }
 
-  // Fallback cleanup across any session matching project
   for (const [key, sess] of activeComposeSessions.entries()) {
     if (key.startsWith(`${safeProj}__`)) {
       try {
@@ -756,9 +694,6 @@ export async function cleanupRunContainer(projectId: string, runTimestamp?: stri
   }
 }
 
-/**
- * Cleans up all active compose sessions.
- */
 export async function cleanupAllRunContainers(): Promise<void> {
   for (const [key, sess] of activeComposeSessions.entries()) {
     try {

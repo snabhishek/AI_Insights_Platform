@@ -79,7 +79,6 @@ export default function ModelSelectionStepOutput({
   const hpo = payload.hyperparameterOptimization || {};
   const confidence = payload.confidence || {};
 
-  // User model selection state
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
   const [expandedCandidateIds, setExpandedCandidateIds] = useState<string[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -92,7 +91,6 @@ export default function ModelSelectionStepOutput({
     );
   };
 
-  // Initialize selection with primary model and any pre-existing user selection
   useEffect(() => {
     const decisionKey = payload.id || modelSelection?.id || recommendedModel?.model_id || "default";
     const existingUserSelection =
@@ -101,7 +99,6 @@ export default function ModelSelectionStepOutput({
       (Array.isArray(payload.models) && typeof payload.models[0] === "string" ? payload.models : undefined) ||
       (Array.isArray(payload.models) && payload.models[0]?.model_id ? payload.models.map((m: any) => m.model_id) : undefined);
 
-    // If already initialized for this decision and user has an active selection, do not overwrite during background polling
     if (initializedDecisionIdRef.current === decisionKey) {
       if (Array.isArray(existingUserSelection) && existingUserSelection.length > 0) {
         setSelectedModelIds((current) => (current.length === 0 ? existingUserSelection : current));
@@ -114,7 +111,7 @@ export default function ModelSelectionStepOutput({
     if (Array.isArray(existingUserSelection) && existingUserSelection.length > 0) {
       setSelectedModelIds(existingUserSelection);
     } else if (recommendedModel?.model_id) {
-      // Default select the primary model and the top alternative
+
       const initial = [recommendedModel.model_id];
       if (candidates.length > 1) {
         const alt = candidates.find((c) => c.model_id !== recommendedModel.model_id);
@@ -198,7 +195,7 @@ export default function ModelSelectionStepOutput({
 
   return (
     <div className="space-y-6 animate-fadeIn text-foreground">
-      {/* ─── Problem & Target Entity Header ────────────────────────────────────────── */}
+
       <div className="rounded-2xl border border-border/80 bg-gradient-to-br from-surface to-surface-muted/60 p-5 shadow-sm">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div>
@@ -226,7 +223,6 @@ export default function ModelSelectionStepOutput({
             )}
           </div>
 
-          {/* Prediction Grain & Horizon */}
           <div className="flex items-center gap-3 bg-surface border border-border rounded-xl px-4 py-2.5 shadow-2xs self-start md:self-auto">
             <div className="text-left">
               <span className="text-[10px] uppercase font-bold text-muted-foreground block">Prediction Grain</span>
@@ -251,7 +247,6 @@ export default function ModelSelectionStepOutput({
         )}
       </div>
 
-      {/* ─── Primary Model Recommendation Spotlight ─────────────────────────────────── */}
       {primaryCandidate && (
         <div className="relative rounded-2xl border-2 border-emerald-500/40 bg-gradient-to-br from-emerald-500/5 via-surface to-indigo-500/5 p-6 shadow-md transition-all hover:border-emerald-500/60">
           <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
@@ -303,7 +298,6 @@ export default function ModelSelectionStepOutput({
                 </p>
               )}
 
-              {/* Rationale and Strengths */}
               {primaryCandidate.reasoning && (
                 <div className="mt-4 space-y-2.5 text-xs">
                   {primaryCandidate.reasoning.suitability && primaryCandidate.reasoning.suitability.length > 0 && (
@@ -343,7 +337,6 @@ export default function ModelSelectionStepOutput({
               )}
             </div>
 
-            {/* Suitability Gauge & Selection Checkbox */}
             <div className="flex flex-row lg:flex-col items-center lg:items-end justify-between gap-4 shrink-0 pt-2 lg:pt-0">
               <div className="text-center lg:text-right">
                 <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider block">
@@ -377,7 +370,6 @@ export default function ModelSelectionStepOutput({
         </div>
       )}
 
-      {/* ─── Alternative Ranked Candidates ─────────────────────────────────────────── */}
       {alternativeCandidates.length > 0 && (
         <div className="space-y-3">
           <div className="flex items-center justify-between">
@@ -450,7 +442,6 @@ export default function ModelSelectionStepOutput({
                     </div>
                   </div>
 
-                  {/* Expandable Reasoning */}
                   {candidate.reasoning && (
                     <div className="mt-3 pt-2.5 border-t border-border/60">
                       <button
@@ -491,7 +482,6 @@ export default function ModelSelectionStepOutput({
                     </div>
                   )}
 
-                  {/* Selection Checkbox */}
                   <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-between">
                     <span className="text-[11px] text-muted-foreground">AutomL Candidate</span>
                     <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs font-semibold">
@@ -513,9 +503,8 @@ export default function ModelSelectionStepOutput({
         </div>
       )}
 
-      {/* ─── Training Strategy, Baseline & HPO Details ─────────────────────────────── */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Baseline Benchmark */}
+
         <div className="rounded-xl border border-border bg-surface p-4">
           <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
@@ -535,7 +524,6 @@ export default function ModelSelectionStepOutput({
           </div>
         </div>
 
-        {/* HPO Recommendation */}
         <div className="rounded-xl border border-border bg-surface p-4">
           <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
@@ -553,7 +541,6 @@ export default function ModelSelectionStepOutput({
           </p>
         </div>
 
-        {/* Feature Requirements */}
         <div className="rounded-xl border border-border bg-surface p-4">
           <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider text-muted-foreground mb-2">
             <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2">
@@ -586,7 +573,6 @@ export default function ModelSelectionStepOutput({
         </div>
       </div>
 
-      {/* ─── Confirmation & Handoff Section ────────────────────────────────────────── */}
       <div className="rounded-xl border border-border bg-surface p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-8 h-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm shrink-0">

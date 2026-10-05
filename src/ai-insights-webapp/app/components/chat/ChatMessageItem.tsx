@@ -42,22 +42,9 @@ export default function ChatMessageItem({
           : "bg-surface-muted/20"
       }`}
     >
-      {/* Avatar */}
-      {/* <div className="shrink-0 pt-0.5">
-        {isUser ? (
-          <div className="w-8 h-8 rounded-xl bg-primary text-primary-foreground flex items-center justify-center font-bold text-xs shadow-md">
-            👤
-          </div>
-        ) : (
-          <div className="w-8 h-8 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-base shadow-sm">
-            {message.agentAvatar || ""}
-          </div>
-        )}
-      </div> */}
 
-      {/* Message Body */}
       <div className="flex-1 min-w-0 space-y-3">
-        {/* Header: Name, Badge & Time */}
+
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-foreground">
@@ -72,7 +59,6 @@ export default function ChatMessageItem({
           <span className="text-[10px] text-muted-foreground">{message.timestamp}</span>
         </div>
 
-        {/* Thinking Accordion for Assistant */}
         {!isUser && message.thinking && message.thinking.length > 0 && (
           <ChatThinkingAccordion
             thinking={message.thinking}
@@ -81,10 +67,8 @@ export default function ChatMessageItem({
           />
         )}
 
-        {/* Text Content */}
         <MarkdownRenderer content={message.content} />
 
-        {/* Metric Cards if present */}
         {message.metricCards && message.metricCards.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
             {message.metricCards.map((metric, mIdx) => (
@@ -119,7 +103,6 @@ export default function ChatMessageItem({
           </div>
         )}
 
-        {/* Interactive Table if present */}
         {message.tables && message.tables.length > 0 && (
           <div className="space-y-3 pt-2">
             {message.tables.map((table, tIdx) => (
@@ -154,7 +137,6 @@ export default function ChatMessageItem({
           </div>
         )}
 
-        {/* Chart Visualization if present */}
         {message.chart && (
           <div className="p-3.5 rounded-xl border border-border/80 bg-surface/60 space-y-2 pt-2">
             <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
@@ -185,7 +167,6 @@ export default function ChatMessageItem({
           </div>
         )}
 
-        {/* Code Snippet with Copy if present */}
         {message.codeSnippet && (
           <div className="rounded-xl border border-border/80 bg-slate-950 text-slate-100 overflow-hidden text-xs font-mono shadow-sm">
             <div className="px-3 py-1.5 bg-slate-900 border-b border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
@@ -214,7 +195,6 @@ export default function ChatMessageItem({
           </div>
         )}
 
-        {/* Suggested Follow-up Actions */}
         {!isUser && message.suggestedActions && message.suggestedActions.length > 0 && (
           <div className="pt-2 flex flex-wrap gap-1.5">
             {message.suggestedActions.map((action, aIdx) => (
@@ -231,7 +211,6 @@ export default function ChatMessageItem({
           </div>
         )}
 
-        {/* Message Action Footer (Copy, Feedback) */}
         {!isUser && (
           <div className="flex items-center gap-3 pt-1 text-muted-foreground text-[10px] select-none">
             <button

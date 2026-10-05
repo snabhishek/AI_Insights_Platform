@@ -59,12 +59,10 @@ export class ConnectorService {
       wsName = workspaceId;
     }
 
-    // 1. File upload check:
     if (["excel", "csv", "tsv"].includes(type) && connectionConfig.fileName && connectionConfig.fileContent) {
       await this.fileService.saveDatasourceFile(name, connectionConfig.fileName, connectionConfig.fileContent, wsName);
     }
 
-    // 2. Database metadata check:
     if (type === "postgres" && connectionConfig.host && connectionConfig.database) {
       try {
         const schema = await this.connectionTester.getSchema(type, connectionConfig);
@@ -119,7 +117,6 @@ export class ConnectorService {
     const health = "Healthy";
     const assets = { tables, views, pipelines };
 
-    // Erase fileContent before database save to prevent large rows
     const savedConfig = { ...connectionConfig };
     delete savedConfig.fileContent;
 

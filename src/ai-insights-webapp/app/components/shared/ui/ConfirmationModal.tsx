@@ -26,8 +26,7 @@ export default function ConfirmationModal({
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-md animate-fade-in">
       <div className="relative w-full max-w-md overflow-hidden rounded-xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col">
-        
-        {/* Modal Header */}
+
         <div className="flex items-center justify-between border-b border-border/80 px-5 py-3 bg-surface-muted/60">
           <div className="flex items-center gap-2.5">
             <div className="p-1.5 rounded-lg border shrink-0 bg-amber-500/10 border-amber-500/20 text-amber-500">
@@ -48,12 +47,10 @@ export default function ConfirmationModal({
           </button>
         </div>
 
-        {/* Modal Middle Message Section */}
         <div className="p-5 flex flex-col gap-3 overflow-y-auto text-sm text-foreground">
           <p className="leading-relaxed font-semibold">{message}</p>
         </div>
 
-        {/* Horizontal Line Separator & Footer Section */}
         <div className="border-t border-border/80 px-5 py-3 bg-surface-muted/60 flex justify-end gap-2.5">
           <button
             onClick={onCancel}

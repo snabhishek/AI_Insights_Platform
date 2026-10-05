@@ -9,9 +9,6 @@ import {
 export { PIPELINE_NAMES, PipelineName };
 export { getApprovalGateForNode, getStageRuleByNode, WORKFLOW_STAGE_RULES } from "./workflowRules.config";
 
-/**
- * Dynamically resolves the pipeline domain category for any given substep or node name.
- */
 export function getPipelineForSubstep(substepOrNode?: string | null): PipelineName {
   if (!substepOrNode) return PIPELINE_NAMES.DATA_INGESTION;
   const category = getCategoryForSubstep(substepOrNode);
@@ -20,9 +17,6 @@ export function getPipelineForSubstep(substepOrNode?: string | null): PipelineNa
   return PIPELINE_NAMES.DATA_INGESTION;
 }
 
-/**
- * Defensively resolves the LangGraph predecessor node when restoring checkpointer state.
- */
 export function resolveSafePredecessorNode(
   requestedStep: string | undefined,
   savedState: any

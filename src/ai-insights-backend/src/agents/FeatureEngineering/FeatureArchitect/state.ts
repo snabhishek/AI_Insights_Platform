@@ -158,11 +158,8 @@ export interface FeatureValidatorOutput extends Record<string, unknown> {
   yamlLineage?: string;
 }
 
-/**
- * Feature Architect LangGraph State Annotation Schema
- */
 export const FeatureArchitectAnnotation = Annotation.Root({
-  // Inputs
+
   batchedTables: Annotation<BatchedTableState[]>({
     reducer: (left, right) => right ?? left,
     default: () => [],
@@ -189,7 +186,6 @@ export const FeatureArchitectAnnotation = Annotation.Root({
     default: () => "",
   }),
 
-  // Orchestrator decision
   orchestrationDecision: Annotation<OrchestrationDecisionOutput>({
     reducer: (left, right) => right ?? left,
     default: () => ({ status: "Pending", summary: "" }),
@@ -199,7 +195,6 @@ export const FeatureArchitectAnnotation = Annotation.Root({
     default: () => "",
   }),
 
-  // Outputs of individual steps
   featureCreation: Annotation<FeatureCreationOutput>({
     reducer: (left, right) => right ?? left,
     default: () => ({ status: "Pending", summary: "" }),
@@ -229,7 +224,6 @@ export const FeatureArchitectAnnotation = Annotation.Root({
     default: () => ({ status: "Pending", summary: "" }),
   }),
 
-  // Supervisor tracking
   nextWorker: Annotation<string>({
     reducer: (left, right) => right ?? left,
     default: () => "",
@@ -243,7 +237,6 @@ export const FeatureArchitectAnnotation = Annotation.Root({
     default: () => "",
   }),
 
-  // Aggregated script and locking for single-file workflow
   aggregatedScriptPath: Annotation<string>({
     reducer: (left, right) => right ?? left,
     default: () => "aggregated_feature_pipeline.py",
@@ -261,7 +254,6 @@ export const FeatureArchitectAnnotation = Annotation.Root({
     default: () => "",
   }),
 
-  // Aggregated output of Feature Architect
   finalOutput: Annotation<Record<string, unknown>>({
     reducer: (left, right) => ({ ...left, ...right }),
     default: () => ({}),

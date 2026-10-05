@@ -1,8 +1,3 @@
-/**
- * Centralized Timestamped Logger Utility
- * Automatically formats all console outputs with [YYYY-MM-DD HH:mm:ss.SSS] timestamps.
- */
-
 export function getFormattedTimestamp(): string {
   const now = new Date();
   const year = now.getFullYear();

@@ -24,8 +24,7 @@ export default function MessageModal({
   return (
     <div className="fixed inset-0 z-[150] flex items-center justify-center p-4 bg-slate-950/50 backdrop-blur-md animate-fade-in">
       <div className="relative w-full max-w-lg overflow-hidden rounded-xl border border-border bg-surface shadow-2xl transition-all scale-100 flex flex-col max-h-[85vh]">
-        
-        {/* Modal Header */}
+
         <div className="flex items-center justify-between border-b border-border/80 px-5 py-3 bg-surface-muted/60">
           <div className="flex items-center gap-2.5">
             <div className={`p-1.5 rounded-lg border shrink-0 ${
@@ -64,11 +63,9 @@ export default function MessageModal({
           </button>
         </div>
 
-        {/* Modal Middle Message Section */}
         <div className="p-5 flex flex-col gap-3 overflow-y-auto text-sm text-foreground">
           <p className="leading-relaxed font-medium">{message}</p>
 
-          {/* Logs Block if provided */}
           {logs && (
             <div className="flex flex-col gap-1.5 mt-2">
               <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
@@ -81,7 +78,6 @@ export default function MessageModal({
           )}
         </div>
 
-        {/* Horizontal Line Separator & Footer Section */}
         <div className="border-t border-border/80 px-5 py-3 bg-surface-muted/60 flex justify-end">
           <button
             onClick={onClose}

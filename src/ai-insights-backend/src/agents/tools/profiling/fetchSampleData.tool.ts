@@ -43,7 +43,7 @@ export const createFetchSampleDataTool = (
               (c) => c.id === connectorId || c.name === connectorId || c.name.toLowerCase() === connectorId.toLowerCase()
             );
           } catch {
-            // Ignore error
+
           }
         }
       }

@@ -35,7 +35,6 @@ export default function ProjectConnectors({
         </p>
       </div>
 
-      {/* List */}
       <div className="space-y-3 mb-5 flex-1">
         {displaySources.map((ds) => {
           const category = getSubtextCategory(ds.subtext);
@@ -49,7 +48,7 @@ export default function ProjectConnectors({
               className="flex items-center justify-between p-3.5 border border-border bg-surface rounded-xl hover:shadow-sm transition-all"
             >
               <div className="flex items-center gap-3 overflow-hidden">
-                {/* Icon placeholder — text initials fallback */}
+
                 <div className="w-9 h-9 rounded-xl bg-surface-muted border border-border flex items-center justify-center shrink-0 text-[10px] font-bold text-muted-foreground uppercase">
                   {ds.name.slice(0, 2)}
                 </div>

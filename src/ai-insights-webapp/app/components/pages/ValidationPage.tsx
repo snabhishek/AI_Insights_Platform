@@ -105,10 +105,6 @@ function ModernProjectSelect({ projects, selectedProjectId, onSelect }: ModernPr
   );
 }
 
-/**
- * Strips technical logging prefixes from error messages so the message
- * is presented cleanly without log prefixes.
- */
 function cleanErrorMessage(msg: string | null): string {
   if (!msg) return "";
   return msg
@@ -117,10 +113,6 @@ function cleanErrorMessage(msg: string | null): string {
     .trim();
 }
 
-/**
- * Robustly inspects an agentState object across candidate locations
- * to extract a non-empty FormBuilder filter schema.
- */
 function extractFormSchemaFromState(state: any, project: any): FormSchema | null {
   if (!state || typeof state !== "object") return null;
 
@@ -165,10 +157,8 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
   const [activeSchema, setActiveSchema] = useState<FormSchema | null>(null);
   const [isLoadingSchema, setIsLoadingSchema] = useState<boolean>(false);
 
-  // Filter state captured from Active Filter Form
   const [filterValues, setFilterValues] = useState<Record<string, any>>({});
 
-  // Model Validation Execution State — NO SILENT DEFAULTS
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
   const [startDate, setStartDate] = useState<string>("");
   const [horizon, setHorizon] = useState<number | "">("");
@@ -177,7 +167,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
   const [validationError, setValidationError] = useState<string | null>(null);
   const [validationResults, setValidationResults] = useState<any | null>(null);
 
-  // Automatically select the project or sync when projects change
   useEffect(() => {
     if (propProject?.id) {
       setSelectedProjectId(propProject.id);
@@ -193,7 +182,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
 
   const currentProject = propProject || projects.find((p) => p.id === selectedProjectId);
 
-  // Extract trained candidate models from project state
   const candidateModels = useMemo(() => {
     const state = currentProject?.agentState as any;
     const report = state?.modelTraining?.report || state?.stageOutputs?.modelTraining?.report;
@@ -229,7 +217,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
     return report?.champion_model_id || report?.best_model_id || null;
   }, [currentProject?.agentState]);
 
-  // Resolve user-selected split date from model training / configuration
   const trainingSplitStartDate = useMemo(() => {
     if (!currentProject) return "";
     const state = currentProject.agentState as any;
@@ -252,7 +239,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
     const trimmed = split.trim();
     if (!trimmed) return "";
 
-    // Starting month from that particular split date: YYYY-MM-01
     const match = /^(\d{4})-(\d{2})/.exec(trimmed);
     if (match) {
       return `${match[1]}-${match[2]}-01`;
@@ -268,12 +254,10 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
     return trimmed;
   }, [currentProject]);
 
-  // Minimum selectable date: starting month from training split date
   const minSelectableDate = useMemo(() => {
     return trainingSplitStartDate || undefined;
   }, [trainingSplitStartDate]);
 
-  // Auto-populate prediction objective start date from model training split date
   useEffect(() => {
     if (trainingSplitStartDate) {
       setStartDate(trainingSplitStartDate);
@@ -282,7 +266,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
     }
   }, [currentProject?.id, trainingSplitStartDate]);
 
-  // Fetch initial validation run or schema on project change
   useEffect(() => {
     if (!currentProject) {
       setActiveSchema(null);
@@ -291,7 +274,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
       return;
     }
 
-    // 1. Try immediate synchronous extraction from in-memory project.agentState
     const inMemorySchema = extractFormSchemaFromState(currentProject.agentState, currentProject);
     if (inMemorySchema) {
       setActiveSchema(inMemorySchema);
@@ -334,7 +316,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
       fetchFormSchema();
     }
 
-    // 2. Fetch latest validation run from dedicated repository endpoint
     let isMountedVal = true;
     async function fetchValidation() {
       try {
@@ -351,7 +332,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
       }
     }
 
-    // Check project state first, then fallback to API
     const inStateValidation =
       (currentProject.agentState as any)?.modelValidation ||
       (currentProject.agentState as any)?.stageOutputs?.modelValidation;
@@ -366,7 +346,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
     };
   }, [currentProject?.id, currentProject?.agentState]);
 
-  // Model Validation Execution Handler
   const handleValidateModels = async () => {
     if (
       !startDate ||
@@ -416,7 +395,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
 
       setValidationResults(json.data);
 
-      // Update in memory application state
       if (updateProject && currentProject.id) {
         const existingAgentState = (currentProject.agentState as any) || {};
         await updateProject(currentProject.id, {
@@ -449,7 +427,7 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
 
   return (
     <main className="min-h-full bg-background/50 p-6 md:p-8 space-y-8">
-      {/* Top Bar: Left-Aligned Modern Project Selector if not scoped to a propProject */}
+
       {!propProject && projects.length > 0 && (
         <div className="flex items-center justify-between pb-2 border-b border-border/80">
           <ModernProjectSelect
@@ -460,7 +438,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
         </div>
       )}
 
-      {/* Main Content Area */}
       <div className="w-full space-y-8">
         {isLoadingSchema ? (
           <div className="flex flex-col items-center justify-center min-h-[440px] w-full rounded-3xl border border-border/60 bg-surface/30 backdrop-blur-sm p-12 text-center shadow-sm animate-pulse space-y-4">
@@ -496,9 +473,8 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
           </div>
         )}
 
-        {/* ─── Dedicated Model Validation Section ─── */}
         <div className="w-full rounded-3xl border border-border/80 bg-surface/40 backdrop-blur-sm p-6 sm:p-8 space-y-6 shadow-sm">
-          {/* Section Header */}
+
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-border/80">
             <div>
               <h3 className="text-base font-bold text-foreground tracking-tight flex items-center gap-2">
@@ -510,7 +486,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
               </p>
             </div>
 
-            {/* Filter Status Badge */}
             <div className="shrink-0">
               {Object.keys(filterValues).length > 0 ? (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold">
@@ -526,7 +501,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
             </div>
           </div>
 
-          {/* Model Selection from Completed Training */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <label className="text-xs font-bold text-foreground tracking-wide uppercase">
@@ -611,7 +585,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
             )}
           </div>
 
-          {/* Primary Outlined Error Message Banner - On top of input parameters */}
           {validationError && (
             <div className="flex items-center gap-2.5 px-4 py-3 rounded-xl border border-destructive/60 bg-destructive/5 text-destructive text-xs font-semibold">
               <svg className="w-4 h-4 shrink-0 text-destructive" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
@@ -621,9 +594,8 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
             </div>
           )}
 
-          {/* Validation Parameters Form Controls */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-4 border-t border-border/60">
-            {/* Start Date */}
+
             <div>
               <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
                 {VALIDATION_UI_STRINGS.START_DATE_LABEL}
@@ -638,7 +610,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
               />
             </div>
 
-            {/* Forecast Horizon */}
             <div>
               <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
                 {VALIDATION_UI_STRINGS.HORIZON_LABEL}
@@ -653,7 +624,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
               />
             </div>
 
-            {/* Forecast Frequency */}
             <div>
               <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
                 {VALIDATION_UI_STRINGS.FREQUENCY_LABEL}
@@ -673,7 +643,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
             </div>
           </div>
 
-          {/* Action Trigger */}
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-2">
             <p className="text-xs text-muted-foreground">
               {selectedModels.length} {VALIDATION_UI_STRINGS.MODELS_SELECTED_SUFFIX}
@@ -699,7 +668,6 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
             </button>
           </div>
 
-          {/* Validation Results Display */}
           {validationResults && (
             <div className="mt-8 pt-6 border-t border-border/80">
               <h3 className="text-base font-bold text-foreground mb-4">

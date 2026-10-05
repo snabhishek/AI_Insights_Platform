@@ -15,7 +15,7 @@ export const PHASE_SEQUENCE: readonly PipelinePhase[] = [
 ];
 
 export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
-  // Data Ingestion
+
   "inspect": PIPELINE_PHASES.DATA_INGESTION,
   "profileData": PIPELINE_PHASES.DATA_INGESTION,
   "dataProfile": PIPELINE_PHASES.DATA_INGESTION,
@@ -26,7 +26,6 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
   "Schema Resolver": PIPELINE_PHASES.DATA_INGESTION,
   "Data Ingestion": PIPELINE_PHASES.DATA_INGESTION,
 
-  // Feature Engineering
   "Hierarchy Mapper": PIPELINE_PHASES.FEATURE_ENGINEERING,
   "hierarchyMapper": PIPELINE_PHASES.FEATURE_ENGINEERING,
   "hierarchyMapperNode": PIPELINE_PHASES.FEATURE_ENGINEERING,
@@ -43,7 +42,6 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
   "exogenous": PIPELINE_PHASES.FEATURE_ENGINEERING,
   "Feature Engineering": PIPELINE_PHASES.FEATURE_ENGINEERING,
 
-  // Model Training & Validation
   "Model Selection": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelSelection": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelSelectionNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
@@ -71,7 +69,7 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
 };
 
 export const STEP_TO_NODE_MAP: Record<string, string> = {
-  // Data Ingestion
+
   "Data Inspection": "inspect",
   "Data Profiling": "profileData",
   "dataProfile": "profileData",
@@ -81,7 +79,6 @@ export const STEP_TO_NODE_MAP: Record<string, string> = {
   "profileData": "profileData",
   "resolveSchema": "resolveSchema",
 
-  // Feature Engineering
   "Hierarchy Mapper": "hierarchyMapperNode",
   "hierarchyMapper": "hierarchyMapperNode",
   "hierarchyMapperNode": "hierarchyMapperNode",
@@ -98,7 +95,6 @@ export const STEP_TO_NODE_MAP: Record<string, string> = {
   "exogenousScout": "exogenous",
   "Feature Engineering": "hierarchyMapperNode",
 
-  // Model Training & Validation
   "Model Selection": "modelSelectionNode",
   "modelSelection": "modelSelectionNode",
   "modelSelectionNode": "modelSelectionNode",
@@ -144,14 +140,9 @@ export interface ResolveNextPhaseResult {
   outputsToClear: string[];
 }
 
-/**
- * Resolves the next workflow phase and step payload for approval actions,
- * preventing stale downstream state from hijacking upstream stages.
- */
 export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): ResolveNextPhaseResult {
   const { approvalNextStep, overrideTargetPhase } = params;
 
-  // 1. Explicit user override (e.g. from candidate model selection modal)
   const validOverride =
     typeof overrideTargetPhase === "string" && overrideTargetPhase.trim().length > 0
       ? overrideTargetPhase.trim()
@@ -197,19 +188,18 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
     ) {
       targetPhase = "Model Selection";
     } else {
-      // Default transition after Data Ingestion approval
+
       targetPhase = "Feature Engineering";
     }
   }
 
   const stepNode = STEP_TO_NODE_MAP[targetPhase] || targetPhase;
 
-  // 2. Determine state cleanups and status updates based on target phase
   const statusesToUpdate: Record<string, PipelineStatus> = {};
   const outputsToClear: string[] = [];
 
   if (targetPhase === "Feature Engineering") {
-    // Starting Feature Engineering: earlier phase Data Ingestion is complete
+
     statusesToUpdate["Data Ingestion"] = "Completed";
     statusesToUpdate["Data Inspection"] = "Completed";
     statusesToUpdate["Data Profiling"] = "Completed";
@@ -234,7 +224,7 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
       "modelTraining"
     );
   } else if (targetPhase === "Model Selection") {
-    // Starting Model Phase: Data Ingestion and Feature Engineering are complete
+
     statusesToUpdate["Data Ingestion"] = "Completed";
     statusesToUpdate["Data Inspection"] = "Completed";
     statusesToUpdate["Data Profiling"] = "Completed";
@@ -334,4 +324,3 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
     outputsToClear,
   };
 }
-

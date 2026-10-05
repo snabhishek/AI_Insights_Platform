@@ -35,9 +35,6 @@ export interface WorkflowApiResponse {
   data: WorkflowResponseData;
 }
 
-/**
-  Executes or resumes an AI ingestion workflow.
- */
 export async function executeWorkflowApi(
   payload: WorkflowRequestPayload,
   signal?: AbortSignal
@@ -65,9 +62,6 @@ export async function executeWorkflowApi(
   return res;
 }
 
-/**
-  Checks if any AI workflow is currently active in the backend.
- */
 export async function fetchActiveWorkflowApi(): Promise<{
   success: boolean;
   data: { active: boolean; projectId?: string | null; sessionId?: string | null; status?: string };
@@ -81,9 +75,6 @@ export async function fetchActiveWorkflowApi(): Promise<{
   return { success: false, data: { active: false, projectId: null, sessionId: null, status: "idle" } };
 }
 
-/**
-  Signals the backend to pause an active AI workflow session.
- */
 export async function pauseWorkflowApi(sessionId?: string, projectId?: string): Promise<void> {
   if (!sessionId && !projectId) return;
 
@@ -96,9 +87,6 @@ export async function pauseWorkflowApi(sessionId?: string, projectId?: string): 
   });
 }
 
-/**
-  Signals the backend to cancel/stop an active AI workflow session.
- */
 export async function stopWorkflowApi(sessionId?: string, projectId?: string): Promise<void> {
   if (!sessionId && !projectId) return;
 
@@ -111,9 +99,6 @@ export async function stopWorkflowApi(sessionId?: string, projectId?: string): P
   });
 }
 
-/**
-  Fetches saved agent thinking logs from the backend.
- */
 export async function fetchAgentThinkingApi(
   projectId: string,
   pipeline: string,
@@ -131,9 +116,6 @@ export async function fetchAgentThinkingApi(
   return res.json();
 }
 
-/**
-  Fetches all saved agent thinking logs for a project from the backend.
- */
 export async function fetchProjectThinkingApi(
   projectId: string,
   pipeline?: string
@@ -152,4 +134,3 @@ export async function fetchProjectThinkingApi(
   }
   return res.json();
 }
-

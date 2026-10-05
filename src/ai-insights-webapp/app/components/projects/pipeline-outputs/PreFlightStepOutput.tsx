@@ -10,7 +10,6 @@ interface PreFlightStepOutputProps {
   isApproving?: boolean;
 }
 
-// ─── Inline SVG Icons ────────────────────────────────────────────────────────
 function CheckCircleIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -209,7 +208,6 @@ export default function PreFlightStepOutput({
 
   const decisionBadge = getDecisionBadge();
 
-  // Filter checks
   const filteredChecks = checks.filter((c) => {
     if (filterCategory === "ALL") return true;
     if (filterCategory === "WARNINGS_FAILED") return c.status === "WARNING" || c.status === "FAILED";
@@ -221,7 +219,7 @@ export default function PreFlightStepOutput({
 
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
-      {/* 1. Decision Status Header */}
+
       <div className={`p-5 rounded-2xl border ${decisionBadge.bg} flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm backdrop-blur-sm`}>
         <div className="flex items-start gap-3.5">
           <div className="p-2 rounded-xl bg-surface/80 border border-border shadow-xs mt-0.5">
@@ -254,7 +252,6 @@ export default function PreFlightStepOutput({
           </div>
         </div>
 
-        {/* Action / Gate Indicator */}
         <div className="flex items-center gap-2 self-end md:self-center">
           <div className="px-3 py-1.5 rounded-lg bg-surface/90 border border-border text-right text-xs">
             <span className="text-[10px] uppercase font-bold text-muted-foreground block">Gate State</span>
@@ -265,9 +262,8 @@ export default function PreFlightStepOutput({
         </div>
       </div>
 
-      {/* 2. Key Metrics & Estimation Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {/* Checks Ratio */}
+
         <div className="p-4 rounded-xl border border-border bg-surface shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-semibold uppercase tracking-wider">Health Checks</span>
@@ -290,7 +286,6 @@ export default function PreFlightStepOutput({
           </div>
         </div>
 
-        {/* RAM Projection */}
         <div className="p-4 rounded-xl border border-border bg-surface shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-semibold uppercase tracking-wider">Memory Allocation</span>
@@ -309,7 +304,6 @@ export default function PreFlightStepOutput({
           </div>
         </div>
 
-        {/* Estimated Duration */}
         <div className="p-4 rounded-xl border border-border bg-surface shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-semibold uppercase tracking-wider">Estimated Time</span>
@@ -330,7 +324,6 @@ export default function PreFlightStepOutput({
           </div>
         </div>
 
-        {/* Disk & Artifacts */}
         <div className="p-4 rounded-xl border border-border bg-surface shadow-xs">
           <div className="flex items-center justify-between text-muted-foreground">
             <span className="text-xs font-semibold uppercase tracking-wider">Artifact Footprint</span>
@@ -350,7 +343,6 @@ export default function PreFlightStepOutput({
         </div>
       </div>
 
-      {/* 2.5 Execution Strategy & Hardware Feasibility Decision Tree */}
       {(selectedStrategy || gpuEval || cpuEval || decisionReason) && (
         <div className="rounded-xl border border-primary/20 bg-gradient-to-br from-primary/5 via-surface to-surface p-5 shadow-xs">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/60">
@@ -372,7 +364,7 @@ export default function PreFlightStepOutput({
             </div>
 
             <div className="flex items-center gap-2 flex-wrap">
-              {/* Selected Resource Badge */}
+
               <div className={`px-2.5 py-1 rounded-md text-xs font-bold flex items-center gap-1.5 border ${
                 selectedResource === "gpu"
                   ? "bg-emerald-500/10 border-emerald-500/30 text-emerald-600 dark:text-emerald-400"
@@ -386,7 +378,6 @@ export default function PreFlightStepOutput({
                 Target: {selectedResource?.toUpperCase() || "CPU"}
               </div>
 
-              {/* Selected Strategy Badge */}
               <div className="px-2.5 py-1 rounded-md text-xs font-mono font-bold bg-foreground/5 border border-border text-foreground flex items-center gap-1.5">
                 <ExecutionStrategyIcon strategy={selectedStrategy} className="w-3.5 h-3.5 text-primary" />
                 Strategy: {selectedStrategy?.replace(/_/g, " ").toUpperCase() || "DIRECT CPU"}
@@ -394,9 +385,8 @@ export default function PreFlightStepOutput({
             </div>
           </div>
 
-          {/* Decision Tree 4-Step Summary Cards */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
-            {/* GPU Evaluation Card */}
+
             <div className={`p-4 rounded-lg border text-xs flex flex-col justify-between ${
               gpuEval?.available
                 ? "bg-surface border-border/80"
@@ -458,7 +448,6 @@ export default function PreFlightStepOutput({
               )}
             </div>
 
-            {/* CPU Evaluation Card */}
             <div className="p-4 rounded-lg border bg-surface border-border/80 text-xs flex flex-col justify-between">
               <div>
                 <div className="flex items-center justify-between mb-2">
@@ -513,7 +502,6 @@ export default function PreFlightStepOutput({
             </div>
           </div>
 
-          {/* Decision Rationale & Constraints */}
           {(decisionReason || (constraints && constraints.length > 0)) && (
             <div className="mt-4 p-3.5 rounded-lg bg-surface-muted/60 border border-border/80 text-xs">
               {decisionReason && (
@@ -545,7 +533,6 @@ export default function PreFlightStepOutput({
         </div>
       )}
 
-      {/* 3. System Hardware & Runtime Environment */}
       <div className="rounded-xl border border-border bg-surface p-5 shadow-xs">
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
@@ -587,7 +574,6 @@ export default function PreFlightStepOutput({
         </div>
       </div>
 
-      {/* 4. Optimization Recommendations (if present) */}
       {recs.length > 0 && (
         <div className="rounded-xl border border-border bg-surface p-5 shadow-xs">
           <div className="flex items-center gap-2 mb-3">
@@ -653,7 +639,6 @@ export default function PreFlightStepOutput({
         </div>
       )}
 
-      {/* 5. 10-Stage Detailed Pre-Flight Checks */}
       <div className="rounded-xl border border-border bg-surface p-5 shadow-xs">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
@@ -662,7 +647,6 @@ export default function PreFlightStepOutput({
             <span className="text-xs text-muted-foreground">({checks.length} checks performed)</span>
           </div>
 
-          {/* Filter Pills */}
           <div className="flex items-center gap-1.5 flex-wrap">
             <button
               onClick={() => setFilterCategory("ALL")}
@@ -717,7 +701,6 @@ export default function PreFlightStepOutput({
           </div>
         </div>
 
-        {/* Checks List */}
         <div className="space-y-2.5">
           {filteredChecks.length === 0 ? (
             <div className="p-6 text-center text-muted-foreground text-xs">
@@ -770,7 +753,6 @@ export default function PreFlightStepOutput({
         </div>
       </div>
 
-      {/* ─── Handoff / Approval to Model Training ─── */}
       {onApprovePreFlight && (
         <div className="rounded-xl border border-border bg-gradient-to-r from-surface to-surface-muted p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4 mt-6">
           <div className="flex items-center gap-3">

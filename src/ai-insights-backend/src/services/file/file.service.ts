@@ -91,13 +91,12 @@ export class LocalFileService implements IFileService {
   }
 
   getDatasourceFilePath(dataSourceName: string, fileName: string, workspaceName?: string): string {
-    // 1. If workspace is provided, check workspace-specific datasource directory first
+
     if (workspaceName) {
       const wsPath = getWorkspaceDatasourceFilePath(workspaceName, dataSourceName, fileName);
       if (fs.existsSync(wsPath)) return wsPath;
     }
 
-    // 2. Search across all workspace datasource directories
     const workspacesBase = getWorkspacesBasePath();
     if (fs.existsSync(workspacesBase)) {
       try {
@@ -109,16 +108,13 @@ export class LocalFileService implements IFileService {
       } catch {}
     }
 
-    // 3. Check global datasources directory
     const globalPath = getDatasourceFilePath(dataSourceName, fileName);
     if (fs.existsSync(globalPath)) return globalPath;
 
-    // 4. Fallback to legacy uploads directory
     if (fs.existsSync(path.join(this.legacyUploadDir, fileName))) {
       return path.join(this.legacyUploadDir, fileName);
     }
 
-    // Default target path
     return workspaceName
       ? getWorkspaceDatasourceFilePath(workspaceName, dataSourceName, fileName)
       : globalPath;
@@ -183,7 +179,6 @@ export class LocalFileService implements IFileService {
       return fileName;
     }
 
-    // 1. Search inside workspace datasources if workspaceName provided
     if (workspaceName) {
       const wsDsBase = path.join(getWorkspacesBasePath(), sanitizeFolderName(workspaceName), "datasources");
       if (fs.existsSync(wsDsBase)) {
@@ -195,7 +190,6 @@ export class LocalFileService implements IFileService {
       }
     }
 
-    // 2. Search across all workspace datasource directories
     const workspacesBase = getWorkspacesBasePath();
     if (fs.existsSync(workspacesBase)) {
       try {
@@ -213,13 +207,11 @@ export class LocalFileService implements IFileService {
       } catch {}
     }
 
-    // 3. Check legacy upload directory
     const legacyPath = path.join(this.legacyUploadDir, fileName);
     if (fs.existsSync(legacyPath)) {
       return legacyPath;
     }
 
-    // 4. Default target path inside workspace
     return getWorkspaceDatasourceFilePath(workspaceName || "Default_Workspace", dataSourceName || "default", fileName);
   }
 

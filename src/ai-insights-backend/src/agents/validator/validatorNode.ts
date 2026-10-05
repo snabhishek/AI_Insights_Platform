@@ -52,7 +52,6 @@ export function looksLikeError(stepName: string, payload: unknown): boolean {
       return true;
     }
 
-    // If core keys exist even without an explicit status match, accept it
     const hasCoreKeys = expected.every((key) => key in obj && obj[key] !== null && obj[key] !== undefined);
     return !hasCoreKeys;
   } catch (e) {
@@ -90,11 +89,10 @@ Do not return any other text.`;
     try {
       const result = await invokeFn(lastFeedback);
 
-      // 1. If custom deterministic validator is supplied, check it first
       if (typeof customValidator === "function") {
         const check = await Promise.resolve(customValidator(result));
         if (check.isValid) {
-          return result; // Shows green immediately
+          return result;
         }
 
         const errorsJoined = Array.isArray(check.errors) && check.errors.length > 0
@@ -112,12 +110,6 @@ Do not return any other text.`;
         continue;
       }
 
-      // 2. Structural validation first — if valid, accept immediately
-      // if (!looksLikeError(stepName, result)) {
-      //   return result;
-      // }
-
-      // 3. If structural checks flagged potential issue and model is available, consult validator agent
       if (model && services && attempt <= maxRetries) {
         try {
           const expected = expectedMap[stepName] || expectedMap[stepName.toLowerCase()] || [];
@@ -140,7 +132,7 @@ Do not return any other text.`;
 
           const parsed = parseJsonObject(JSON.stringify(agentEval), { shouldRetry: false } as any);
           if (parsed && typeof (parsed as any).shouldRetry === "boolean" && !(parsed as any).shouldRetry) {
-            return result; // Agent validator approved output
+            return result;
           }
 
           const retryReason = (parsed as any)?.reason || "imperfect output";

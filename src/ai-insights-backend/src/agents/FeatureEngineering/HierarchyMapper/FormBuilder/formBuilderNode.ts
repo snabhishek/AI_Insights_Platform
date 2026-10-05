@@ -120,10 +120,6 @@ export function validateFormBuilderRawOutput(
   return errors.length > 0 ? { isValid: false, errors } : { isValid: true };
 }
 
-/**
- * Form Builder Agent Node (Agent 2 of Hierarchy Mapper)
- * Converts Relationship Schema into dynamic hierarchical Form Schema for cascading filter UI.
- */
 export async function formBuilderNode(state: typeof AgentState.State, config?: RunnableConfig) {
   const services = config?.configurable?.services as IngestionServices;
 
@@ -146,7 +142,6 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
     (state as any)?.connector?.id ||
     "default_source";
 
-  // 1. Generate fallback Form Schema from tool logic
   const fallbackResult: FormBuilderOutput = await generateHierarchicalFormsTool({
     relationshipBuilderOutput: relOutput,
     schemaResolution: state.schemaResolution,
@@ -154,7 +149,6 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
     sourceId,
   });
 
-  // 2. Assemble prompt for LLM Agent
   const prompt = [
     systemPrompt,
     "## Context",
@@ -173,7 +167,6 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
     "Executing LLM reasoning for Form Schema generation (grouping by entityScope, priority ordering, controlType decision)..."
   );
 
-  // 3. Invoke LLM Agent with AI trace logging
   const rawAgentResult = await validateWithRetry<Record<string, unknown>>(
     "formBuilder",
     async (feedbackPrompt?: string) =>
@@ -195,10 +188,8 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
   const rawValidation = validateFormBuilderRawOutput(rawAgentResult, relOutput, sourceId);
   const rawResult = (rawValidation.isValid ? rawAgentResult : fallbackResult) as FormBuilderOutput;
 
-  // Enforce deterministic rules: parentFields array, calendar date_range overrides, zero-edge standalone nodes, top-level sourceId, and accurate summary count
   const finalResult = normalizeAndEnforceFormSchema(rawResult, relOutput, sourceId);
 
-  // 4. Save Form Schema into Project Folder with timestamped filename
   const effectiveRunTimestamp = state.runTimestamp || (services as any)?.runTimestamp;
   if (services?.projectService && services?.projectId) {
     try {

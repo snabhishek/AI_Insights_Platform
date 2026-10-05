@@ -3,13 +3,13 @@
 import { ButtonHTMLAttributes, ReactNode } from "react";
 
 interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
-  /** Optional icon rendered alongside (or instead of) the label */
+
   icon?: ReactNode;
-  /** Position of the icon relative to the label */
+
   iconPosition?: "left" | "right";
-  /** Visual style; "primary" uses the brand background, "default" uses the surface */
+
   variant?: "default" | "primary";
-  /** Button label; when omitted the button renders as a square icon-only button */
+
   children?: ReactNode;
 }
 
