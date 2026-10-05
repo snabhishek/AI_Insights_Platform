@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useApp, Project } from "../providers/AppContext";
 import {
   ChatMessage,
@@ -8,6 +8,7 @@ import {
   AgentPersonaId,
   PromptTemplate,
   ThinkingStep,
+  TrainedModelOption,
 } from "../chat/types";
 import { AGENT_PERSONAS, INITIAL_CHAT_SESSIONS } from "../chat/constants";
 import {
@@ -17,8 +18,8 @@ import {
   saveActiveSessionId,
   generateAgentChatResponse,
 } from "../../services/aiAgentChatService";
+import { fetchChatSuggestions } from "../../services/chatSuggestionService";
 import ChatSidebar from "../chat/ChatSidebar";
-import ChatHeader from "../chat/ChatHeader";
 import ChatMessageList from "../chat/ChatMessageList";
 import ChatInputArea from "../chat/ChatInputArea";
 import ChatPromptTemplates from "../chat/ChatPromptTemplates";
@@ -34,8 +35,26 @@ export default function AIAgentChatPage() {
   const [isGenerating, setIsGenerating] = useState<boolean>(false);
   const [isPersonaModalOpen, setIsPersonaModalOpen] = useState<boolean>(false);
   const [isTemplatesModalOpen, setIsTemplatesModalOpen] = useState<boolean>(false);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   const abortGenerationRef = useRef<boolean>(false);
+
+  // Load chat suggestions from database on mount
+  useEffect(() => {
+    let isMounted = true;
+    fetchChatSuggestions()
+      .then((data) => {
+        if (isMounted) {
+          setSuggestions(data);
+        }
+      })
+      .catch((err) => {
+        console.error("[AIAgentChatPage] Failed to load chat suggestions from DB:", err);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   // Hydrate saved sessions on mount
   useEffect(() => {
@@ -75,15 +94,83 @@ export default function AIAgentChatPage() {
   const activePersona = AGENT_PERSONAS[selectedPersonaId] || AGENT_PERSONAS.orchestrator;
   const currentScopedProject = projects.find((p) => p.id === selectedProjectId) || null;
 
+  // Extract candidate trained models for selected project
+  const trainedModels = useMemo<TrainedModelOption[]>(() => {
+    const defaultOption: TrainedModelOption = {
+      id: "any",
+      displayName: "Any (Auto)",
+      framework: "Auto inference",
+      isChampion: false,
+    };
+
+    if (!currentScopedProject) {
+      return [defaultOption];
+    }
+
+    const state = currentScopedProject.agentState as any;
+    const report = state?.modelTraining?.report || state?.stageOutputs?.modelTraining?.report;
+    const championId = report?.champion_model_id || report?.best_model_id || null;
+
+    const rawCandidates =
+      report?.ranked_models ||
+      report?.model_results ||
+      state?.modelSelection?.candidates ||
+      state?.stageOutputs?.modelSelection?.candidates ||
+      [];
+
+    let extracted: TrainedModelOption[] = [];
+    if (Array.isArray(rawCandidates)) {
+      extracted = rawCandidates.map((c: any) => {
+        const modelId = c.model_id || c.id || String(c);
+        return {
+          id: modelId,
+          displayName: c.displayName || c.model_name || modelId,
+          framework: c.framework,
+          isChampion: modelId === championId,
+        };
+      });
+    } else if (rawCandidates && typeof rawCandidates === "object") {
+      extracted = Object.entries(rawCandidates).map(([k, v]: [string, any]) => {
+        const modelId = v?.model_id || k;
+        return {
+          id: modelId,
+          displayName: v?.displayName || v?.model_name || modelId,
+          framework: v?.framework,
+          isChampion: modelId === championId,
+        };
+      });
+    }
+
+    const seen = new Set<string>();
+    const unique: TrainedModelOption[] = [];
+    for (const m of extracted) {
+      if (m.id && !seen.has(m.id)) {
+        seen.add(m.id);
+        unique.push(m);
+      }
+    }
+
+    return [defaultOption, ...unique];
+  }, [currentScopedProject]);
+
   // Handler: Create New Session
   const handleNewSession = () => {
+    if (!selectedProjectId) {
+      showAlert({
+        title: "Project Selection Required",
+        message: "Please choose a project above the New Conversation button to start.",
+        type: "info",
+      });
+      return;
+    }
+
     const newSessionId = `session-${Date.now()}`;
     const newSession: ChatSession = {
       id: newSessionId,
       title: "New AI Inquiry",
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
-      projectId: selectedProjectId || undefined,
+      projectId: selectedProjectId,
       projectName: currentScopedProject?.name,
       agentPersona: selectedPersonaId,
       messages: [],
@@ -135,66 +222,37 @@ export default function AIAgentChatPage() {
     }
   };
 
-  // Handler: Clear Session
-  const handleClearSession = () => {
-    if (!activeSession) return;
-    showConfirm({
-      title: "Clear Current Chat",
-      message: "Are you sure you want to clear all messages in this conversation?",
-      confirmText: "Clear",
-      cancelText: "Cancel",
-      onConfirm: () => {
-        setSessions((prev) =>
-          prev.map((s) => (s.id === activeSession.id ? { ...s, messages: [] } : s))
-        );
-      },
-    });
-  };
 
-  // Handler: Export Session
-  const handleExportSession = () => {
-    if (!activeSession) return;
-    const lines = [
-      `# ${activeSession.title}`,
-      `*Exported on ${new Date().toLocaleString()}*`,
-      `*Agent Persona: ${activePersona.name} (${activePersona.role})*`,
-      `*Project Scope: ${currentScopedProject ? currentScopedProject.name : "Global Workspace Scope"}*`,
-      `\n---\n`,
-    ];
-
-    activeSession.messages.forEach((msg) => {
-      const sender = msg.role === "user" ? "User" : msg.agentName || "AI Copilot";
-      lines.push(`### [${msg.timestamp}] ${sender}`);
-      lines.push(msg.content);
-      lines.push(`\n`);
-    });
-
-    const blob = new Blob([lines.join("\n")], { type: "text/markdown" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `${activeSession.title.toLowerCase().replace(/[^a-z0-9]/g, "_")}.md`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showAlert({ title: "Conversation exported to Markdown", type: "success" });
-  };
 
   // Handler: Send Message & Process Agent AI Response
-  const handleSendMessage = async (text: string) => {
-    if (!text.trim() || isGenerating) return;
+  const handleSendMessage = async (
+    text: string,
+    options?: { modelId?: string; attachments?: File[] }
+  ) => {
+    if (!text.trim() || isGenerating || !selectedProjectId) return;
 
     abortGenerationRef.current = false;
     setIsGenerating(true);
 
     const userMessageId = `msg-u-${Date.now()}`;
+    const attachmentNote =
+      options?.attachments && options.attachments.length > 0
+        ? `\n\n📎 *Attached: ${options.attachments.map((f) => f.name).join(", ")}*`
+        : "";
+
     const userMessage: ChatMessage = {
       id: userMessageId,
       role: "user",
-      content: text,
+      content: `${text}${attachmentNote}`,
       timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
     };
 
     const assistantMessageId = `msg-a-${Date.now() + 1}`;
+    const modelNote =
+      options?.modelId && options.modelId !== "any"
+        ? ` [Model: ${options.modelId}]`
+        : "";
+
     const initialAssistantMessage: ChatMessage = {
       id: assistantMessageId,
       role: "assistant",
@@ -205,7 +263,13 @@ export default function AIAgentChatPage() {
       agentBadge: activePersona.badge,
       agentAvatar: activePersona.avatar,
       isThinking: true,
-      thinking: [{ time: "00:01", text: `Analyzing query intent and activating ${activePersona.name}...`, done: false }],
+      thinking: [
+        {
+          time: "00:01",
+          text: `Analyzing query intent and activating ${activePersona.name}${modelNote}...`,
+          done: false,
+        },
+      ],
       status: "sending",
     };
 
@@ -369,40 +433,34 @@ export default function AIAgentChatPage() {
             );
           }
         }}
+        projects={projects}
+        selectedProjectId={selectedProjectId}
+        onSelectProject={(pId) => {
+          setSelectedProjectId(pId);
+          if (activeSession) {
+            const proj = projects.find((p) => p.id === pId);
+            setSessions((prev) =>
+              prev.map((s) =>
+                s.id === activeSession.id
+                  ? { ...s, projectId: pId || undefined, projectName: proj?.name }
+                  : s
+              )
+            );
+          }
+        }}
       />
 
       {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col h-full min-w-0 relative overflow-hidden px-10">
-        {/* Chat Top Header */}
-        <ChatHeader
-          activePersona={activePersona}
-          selectedProject={currentScopedProject}
-          allProjects={projects}
-          onSelectProject={(pId) => {
-            setSelectedProjectId(pId);
-            if (activeSession) {
-              const proj = projects.find((p) => p.id === pId);
-              setSessions((prev) =>
-                prev.map((s) =>
-                  s.id === activeSession.id
-                    ? { ...s, projectId: pId || undefined, projectName: proj?.name }
-                    : s
-                )
-              );
-            }
-          }}
-          onOpenPersonaModal={() => setIsPersonaModalOpen(true)}
-          onOpenTemplates={() => setIsTemplatesModalOpen(true)}
-          onClearSession={handleClearSession}
-          onExportSession={handleExportSession}
-          isGenerating={isGenerating}
-        />
+      <div className="flex-1 flex flex-col h-full min-w-0 relative overflow-hidden px-4 sm:px-10">
+
 
         {/* Message Stream Area */}
         <ChatMessageList
           messages={activeSession?.messages || []}
           activePersona={activePersona}
           isGenerating={isGenerating}
+          selectedProject={currentScopedProject}
+          isChatEnabled={Boolean(selectedProjectId)}
           onSelectAction={(actionText) => handleSendMessage(actionText)}
           onRetry={(mId) => {
             const idx = activeSession.messages.findIndex((m) => m.id === mId);
@@ -416,11 +474,14 @@ export default function AIAgentChatPage() {
 
         {/* Chat Bottom Input Area */}
         <ChatInputArea
-          onSendMessage={handleSendMessage}
+          onSendMessage={(text, opts) => handleSendMessage(text, opts)}
           isGenerating={isGenerating}
           onStopGenerating={handleStopGenerating}
           selectedProject={currentScopedProject}
           activePersona={activePersona}
+          isChatEnabled={Boolean(selectedProjectId)}
+          trainedModels={trainedModels}
+          suggestions={suggestions}
           onOpenTemplates={() => setIsTemplatesModalOpen(true)}
           onOpenPersonaModal={() => setIsPersonaModalOpen(true)}
         />

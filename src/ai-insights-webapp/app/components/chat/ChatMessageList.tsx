@@ -2,6 +2,7 @@
 
 import React, { useRef, useEffect } from "react";
 import { ChatMessage, AgentPersona } from "./types";
+import { Project } from "../providers/AppContext";
 import ChatMessageItem from "./ChatMessageItem";
 
 interface ChatMessageListProps {
@@ -12,6 +13,8 @@ interface ChatMessageListProps {
   onRetry?: (messageId: string) => void;
   onFeedback?: (messageId: string, type: "like" | "dislike") => void;
   onSelectSuggestedQuestion?: (question: string) => void;
+  selectedProject?: Project | null;
+  isChatEnabled?: boolean;
 }
 
 export default function ChatMessageList({
@@ -22,66 +25,89 @@ export default function ChatMessageList({
   onRetry,
   onFeedback,
   onSelectSuggestedQuestion,
+  selectedProject,
+  isChatEnabled = true,
 }: ChatMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Check if there are real conversation messages from user
+  const hasUserMessages = messages.some((m) => m.role === "user");
+  const conversationMessages = messages.filter((m) => m.id !== "msg-welcome-1");
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, isGenerating]);
 
   return (
-    <div className="flex-1 bg-surface overflow-y-auto relative px-4 sm:px-6 py-6 space-y-4">
-      {messages.length === 0 ? (
-        /* Empty Conversation State with Persona Welcome Card */
-        <div className="flex flex-col items-center justify-center min-h-[380px] max-w-2xl mx-auto text-center p-6 space-y-6 animate-fade-in">
-          <div className="w-16 h-16 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-400 flex items-center justify-center text-3xl shadow-sm">
-            {activePersona.avatar}
-          </div>
+    <div className="flex-1 bg-surface overflow-y-auto relative px-4 sm:px-6 py-6 space-y-4 flex flex-col">
+      {!hasUserMessages ? (
+        /* ─── Contained Center-Center Welcome Text ─── */
+        <div className="flex-1 flex flex-col items-center justify-center my-auto min-h-[420px] p-4 text-center animate-fade-in select-none">
+          <div className="w-full max-w-xl mx-auto rounded-3xl border border-border/80 bg-surface-muted/30 dark:bg-zinc-900/60 backdrop-blur-md p-6 sm:p-8 space-y-5 shadow-sm text-center">
+            {/* Persona Avatar / Icon */}
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center text-3xl shadow-sm mx-auto">
+              <span>{activePersona.avatar || "🧠"}</span>
+            </div>
 
-          <div className="space-y-1.5">
-            <h2 className="text-lg font-bold text-foreground">
-              Chat with {activePersona.name}
-            </h2>
-            <p className="text-xs text-muted-foreground max-w-md mx-auto leading-relaxed">
-              {activePersona.description}
-            </p>
-          </div>
+            {/* Title & Introduction */}
+            <div className="space-y-2">
+              <h2 className="text-lg sm:text-xl font-bold text-foreground tracking-tight">
+                Welcome to the AI Agent Chat Copilot!
+              </h2>
+            </div>
 
-          {/* Persona Capabilities */}
-          <div className="flex flex-wrap justify-center gap-2 max-w-lg">
-            {activePersona.capabilities.map((cap, idx) => (
-              <span
-                key={idx}
-                className="text-[11px] font-medium px-2.5 py-1 rounded-lg bg-surface border border-border/80 text-foreground/80 shadow-xs"
-              >
-                ✨ {cap}
+            {/* Contained Capabilities Box */}
+            <div className="text-left bg-surface/80 border border-border/70 rounded-2xl p-4 space-y-2.5 shadow-2xs">
+              <span className="text-[11px] font-bold text-foreground uppercase tracking-wider block">
+                What I can help you with:
               </span>
-            ))}
-          </div>
+              <ul className="space-y-2 text-xs text-foreground/80 leading-snug">
+                <li className="flex items-start gap-2">
+                  <span className="shrink-0 text-sm">📊</span>
+                  <div>
+                    <strong className="text-foreground">End-to-End Insights:</strong> Synthesize multi-stage pipeline outputs and project health.
+                  </div>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="shrink-0 text-sm">⚡</span>
+                  <div>
+                    <strong className="text-foreground">Feature Engineering:</strong> Formulate rolling lags, seasonal transformations, and scout exogenous regressors.
+                  </div>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="shrink-0 text-sm">🔬</span>
+                  <div>
+                    <strong className="text-foreground">Model Diagnostics:</strong> Compare LightGBM, XGBoost, and Prophet models with SHAP explainability.
+                  </div>
+                </li>
+                <li className="flex items-start gap-2">
+                  <span className="shrink-0 text-sm">🛠️</span>
+                  <div>
+                    <strong className="text-foreground">Data Engineering:</strong> Inspect schema integrity, cardinality, and SQL query optimizations.
+                  </div>
+                </li>
+              </ul>
+            </div>
 
-          {/* Quick Questions */}
-          <div className="w-full space-y-2 pt-2 text-left">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block text-center">
-              Suggested Questions for this Persona:
-            </span>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-              {activePersona.suggestedQuestions.map((q, idx) => (
-                <button
-                  key={idx}
-                  type="button"
-                  onClick={() => onSelectSuggestedQuestion?.(q)}
-                  className="p-3 rounded-xl border border-border/80 bg-surface/70 hover:bg-surface hover:border-primary/40 text-left text-xs text-foreground/90 transition-all cursor-pointer shadow-xs hover:shadow-sm group active:scale-98"
-                >
-                  <span className="text-primary font-bold mr-1.5">›</span>
-                  <span className="group-hover:text-primary transition-colors">{q}</span>
-                </button>
-              ))}
+            {/* Scope / Status Notification Badge */}
+            <div className="pt-1">
+              {selectedProject ? (
+                <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold shadow-2xs">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>Scoped to project: {selectedProject.name}</span>
+                </div>
+              ) : (
+                <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-semibold shadow-2xs">
+                  <span>⚠️</span>
+                  <span>Select a project from the sidebar dropdown above to enable chat</span>
+                </div>
+              )}
             </div>
           </div>
         </div>
       ) : (
-        /* Message Items */
-        messages.map((msg) => (
+        /* Conversation Message Items */
+        conversationMessages.map((msg) => (
           <ChatMessageItem
             key={msg.id}
             message={msg}
@@ -94,8 +120,8 @@ export default function ChatMessageList({
 
       {/* Generating Spinner Pill */}
       {isGenerating && (
-        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-indigo-500/30 text-indigo-400 text-xs font-semibold w-fit animate-pulse shadow-sm">
-          <span className="inline-block w-3 h-3 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
+        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-primary/30 text-primary text-xs font-semibold w-fit animate-pulse shadow-sm">
+          <span className="inline-block w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
           <span>Generating AI response & executing pipeline tools...</span>
         </div>
       )}

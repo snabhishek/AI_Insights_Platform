@@ -188,38 +188,6 @@ export const INITIAL_CHAT_SESSIONS: ChatSession[] = [
     updatedAt: new Date().toISOString(),
     agentPersona: "orchestrator",
     pinned: true,
-    messages: [
-      {
-        id: "msg-welcome-1",
-        role: "assistant",
-        agentId: "orchestrator",
-        agentName: "Insights Maestro",
-        agentBadge: "Master Agent",
-        agentAvatar: "🧠",
-        timestamp: "Just now",
-        content: `👋 **Welcome to the AI Agent Chat Copilot!**
-
-I am your intelligent assistant for the **AI Insights Platform**. You can consult me or switch between specialized agent personas to explore datasets, construct features, tune model hyperparameters, and diagnose validation reports.
-
-### What I can help you with:
-- 📊 **End-to-End Insights**: Synthesize multi-stage pipeline outputs and project health.
-- ⚡ **Feature Engineering**: Formulate rolling lags, seasonal transformations, and scout exogenous regressors.
-- 🔬 **Model Diagnostics**: Compare LightGBM, XGBoost, and Prophet models with SHAP explainability.
-- 🛠️ **Data Engineering**: Inspect schema integrity, cardinality, and SQL query optimizations.
-
-*Select a project above to scope our conversation to your live project data, or try one of the prompt templates below!*`,
-        suggestedActions: [
-          "Summarize the overall health and status of my active projects",
-          "Inspect Data Quality & Null Ratios",
-          "Suggest High-Impact Features for demand forecasting",
-          "Compare candidate ML models and explain selection criteria",
-        ],
-        thinking: [
-          { time: "00:01", text: "Initialized AI Agent Chat session context", done: true },
-          { time: "00:02", text: "Loaded workspace project registries and active connector metadata", done: true },
-          { time: "00:03", text: "Ready to answer contextual analytical inquiries", done: true },
-        ],
-      },
-    ],
+    messages: [],
   },
 ];

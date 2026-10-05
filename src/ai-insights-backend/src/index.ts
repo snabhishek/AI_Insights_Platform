@@ -27,9 +27,14 @@ import * as agentThinkingSchema from "./db/agentThinking";
 import * as agentJobsSchema from "./db/agentJobs";
 import * as modelSelectionSchema from "./db/modelSelection";
 import * as modelValidationSchema from "./db/modelValidation";
-const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema, ...modelSelectionSchema, ...modelValidationSchema };
+import * as chatSuggestionsSchema from "./db/chatSuggestions";
+const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema, ...modelSelectionSchema, ...modelValidationSchema, ...chatSuggestionsSchema };
 import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
 import { PostgresModelValidationRepository } from "./repositories/modelValidation.repository";
+import { PostgresChatSuggestionRepository } from "./repositories/chatSuggestion.repository";
+import { ChatSuggestionService } from "./services/chat/chatSuggestion.service";
+import { ChatSuggestionController } from "./controllers/chatSuggestion.controller";
+import createChatSuggestionRouter from "./routes/chatSuggestions";
 import { AgentThinkingService } from "./services/ai/agent-thinking/agentThinking.service";
 import { IngestionAgentService } from "./services/ai/ingestion-agent/ingestionAgent.service";
 import { QueueService } from "./services/queue/queue.service";
@@ -141,6 +146,10 @@ async function bootstrap() {
   );
   const modelValidationController = new ModelValidationController(modelValidationService);
 
+  const chatSuggestionRepository = new PostgresChatSuggestionRepository(db);
+  const chatSuggestionService = new ChatSuggestionService(chatSuggestionRepository);
+  const chatSuggestionController = new ChatSuggestionController(chatSuggestionService);
+
   // 4. Mount Main routers
   app.get("/api/filter-options", connectorController.getFilterOptions);
   app.use("/api/connectors", createConnectorRouter(connectorController));
@@ -148,6 +157,7 @@ async function bootstrap() {
   app.use("/api/model-selection", createModelSelectionRouter(modelSelectionController));
   app.use("/api/training-config", createTrainingConfigRouter(trainingConfigController));
   app.use("/api/model-validation", createModelValidationRouter(modelValidationController));
+  app.use("/api/chat-suggestions", createChatSuggestionRouter(chatSuggestionController));
 
   // Agent Router
   const agentRouter = express.Router();
