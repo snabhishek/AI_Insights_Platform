@@ -119,7 +119,7 @@ export default function ProjectDetailPage({
       if (stepId !== mainId) {
         setSelectedSubstepId(stepId);
       } else if (mainId === "Model Training & Validation") {
-        const substeps = ["Model Validation", "Model Training", "Pre Flight", "Training Configuration", "Model Selection"];
+        const substeps = ["Model Training", "Pre Flight", "Training Configuration", "Model Selection"];
         const inProgress = substeps.find((s) => pipelineStatuses[s] === "In Progress");
         const withOutput = substeps.find((s) => stageOutputs?.[s] != null || pipelineStatuses[s] === "Completed");
         setSelectedSubstepId(inProgress || withOutput || "Model Selection");

@@ -555,29 +555,33 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
 
     const recursionLimit = options?.recursionLimit ?? 100;
 
-    const finalResult = await services.traceHelper.invokeWithTrace(
-      options?.traceLabel ?? `agent:${stepName}`,
-      { systemPrompt: options?.systemPrompt, userMessage },
-      async () => {
-        let lastResult: any = null;
-        const stream = await agent.stream(input, {
-          streamMode: "values",
-          recursionLimit,
-          signal: services?.abortSignal,
-        });
+    const streamExecutor = async () => {
+      let lastResult: any = null;
+      const stream = await agent.stream(input, {
+        streamMode: "values",
+        recursionLimit,
+        signal: services?.abortSignal,
+      });
 
-        for await (const chunk of stream) {
-          if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
-            console.info(`[Workflow] Node [${stepName}] interrupted mid-stream because session is stopped/paused`);
-            break;
-          }
-          lastResult = chunk;
-          await logAgentMessagesAsThinking(services, substep, chunk);
+      for await (const chunk of stream) {
+        if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
+          console.info(`[Workflow] Node [${stepName}] interrupted mid-stream because session is stopped/paused`);
+          break;
         }
-
-        return lastResult;
+        lastResult = chunk;
+        await logAgentMessagesAsThinking(services, substep, chunk);
       }
-    );
+
+      return lastResult;
+    };
+
+    const finalResult = services?.traceHelper?.invokeWithTrace
+      ? await services.traceHelper.invokeWithTrace(
+          options?.traceLabel ?? `agent:${stepName}`,
+          { systemPrompt: options?.systemPrompt, userMessage },
+          streamExecutor
+        )
+      : await streamExecutor();
 
     if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
       console.info(`[Workflow] Node [${stepName}] returning fallback because session is stopped/paused`);
@@ -670,26 +674,30 @@ export async function invokeAgentText(
 
     const recursionLimit = options?.recursionLimit ?? 100;
 
-    const finalResult = await services.traceHelper.invokeWithTrace(
-      options?.traceLabel ?? `agent:${stepName}`,
-      { systemPrompt: options?.systemPrompt, userMessage },
-      async () => {
-        let lastResult: any = null;
-        const stream = await agent.stream(input, {
-          recursionLimit,
-          signal: services.abortSignal,
-        });
+    const streamExecutor = async () => {
+      let lastResult: any = null;
+      const stream = await agent.stream(input, {
+        recursionLimit,
+        signal: services?.abortSignal,
+      });
 
-        for await (const chunk of stream) {
-          if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
-            console.info(`[Workflow] Node [${stepName}] interrupted during stream`);
-            break;
-          }
-          lastResult = chunk;
+      for await (const chunk of stream) {
+        if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
+          console.info(`[Workflow] Node [${stepName}] interrupted during stream`);
+          break;
         }
-        return lastResult;
+        lastResult = chunk;
       }
-    );
+      return lastResult;
+    };
+
+    const finalResult = services?.traceHelper?.invokeWithTrace
+      ? await services.traceHelper.invokeWithTrace(
+          options?.traceLabel ?? `agent:${stepName}`,
+          { systemPrompt: options?.systemPrompt, userMessage },
+          streamExecutor
+        )
+      : await streamExecutor();
 
     if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
       console.info(`[Workflow] Node [${stepName}] returning fallback because session is stopped/paused`);
@@ -1153,8 +1161,7 @@ export function buildResultFromGraphState(
   const isAtModelApproval = (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) && (ss.exogenousScout === "Completed" || ss.exogenous === "Completed");
   const isAtTrainingConfigApproval = (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration")) && (ss.modelSelection === "Completed" || ss.modelSelectionNode === "Completed");
   const isAtModelTrainingApproval = (nextNodes.includes("modelTrainingCodeNode") || nextNodes.includes("modelTrainingNode") || nextNodes.includes("modelTraining")) && (ss.preFlight === "Completed" || ss.preFlightNode === "Completed");
-  const isAtModelValidationApproval = (nextNodes.includes("modelValidationNode") || nextNodes.includes("modelValidation")) && (ss.modelTraining === "Completed" || ss.modelTrainingExecNode === "Completed");
-  const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval || isAtTrainingConfigApproval || isAtModelTrainingApproval || isAtModelValidationApproval);
+  const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval || isAtTrainingConfigApproval || isAtModelTrainingApproval);
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
 
   return {

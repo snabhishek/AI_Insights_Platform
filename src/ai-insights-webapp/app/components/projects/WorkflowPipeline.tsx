@@ -70,9 +70,7 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
     pipelineStatuses["Pre Flight"] === "Completed" ||
     pipelineStatuses["Pre Flight"] === "In Progress" ||
     pipelineStatuses["Model Training"] === "Completed" ||
-    pipelineStatuses["Model Training"] === "In Progress" ||
-    pipelineStatuses["Model Validation"] === "Completed" ||
-    pipelineStatuses["Model Validation"] === "In Progress";
+    pipelineStatuses["Model Training"] === "In Progress";
 
   if (isDownstreamActiveOrPending) {
     return "Completed";
@@ -124,9 +122,7 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
     pipelineStatuses["Pre Flight"] === "Completed" ||
     pipelineStatuses["Pre Flight"] === "In Progress" ||
     pipelineStatuses["Model Training"] === "Completed" ||
-    pipelineStatuses["Model Training"] === "In Progress" ||
-    pipelineStatuses["Model Validation"] === "Completed" ||
-    pipelineStatuses["Model Validation"] === "In Progress";
+    pipelineStatuses["Model Training"] === "In Progress";
 
   if (isModelPhaseActiveOrCompleted) {
     return "Completed";
@@ -161,7 +157,6 @@ const MODEL_SUBSTEPS = [
   "Training Configuration",
   "Pre Flight",
   "Model Training",
-  "Model Validation",
 ] as const;
 
 function calculateModelStatus(pipelineStatuses: PipelineStatuses): PipelineStatus {
@@ -326,12 +321,9 @@ export default function WorkflowPipeline({
                   approvalNextStep === "Model Training" ||
                   approvalNextStep === "modelTrainingNode" ||
                   approvalNextStep === "modelTrainingCodeNode" ||
-                  approvalNextStep === "Model Validation" ||
-                  approvalNextStep === "modelValidationNode" ||
                   pausedAtPhase === "Training Configuration" ||
                   pausedAtPhase === "Pre Flight" ||
                   pausedAtPhase === "Model Training" ||
-                  pausedAtPhase === "Model Validation" ||
                   isAwaitingResponse;
 
                 if (isModelTrainingSubprocess) {

@@ -58,9 +58,6 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
   "Model Training": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelTraining": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelTrainingNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "Model Validation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "modelValidation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "modelValidationNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "Model Training & Validation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
 };
 
@@ -108,9 +105,6 @@ export const STEP_TO_NODE_MAP: Record<string, string> = {
   "Model Training": "modelTrainingCodeNode",
   "modelTraining": "modelTrainingCodeNode",
   "modelTrainingNode": "modelTrainingCodeNode",
-  "Model Validation": "modelValidationNode",
-  "modelValidation": "modelValidationNode",
-  "modelValidationNode": "modelValidationNode",
 };
 
 export function getPipelineForSubstep(substepOrNode: string | null | undefined): PipelinePhase {
@@ -180,10 +174,6 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
     ) {
       targetPhase = "Model Training Execution";
     } else if (
-      nextStepLower.includes("validation")
-    ) {
-      targetPhase = "Model Validation";
-    } else if (
       nextStepLower.includes("model") ||
       nextStepLower.includes("selection")
     ) {
@@ -217,15 +207,13 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
     statusesToUpdate["Training Configuration"] = "Pending";
     statusesToUpdate["Pre Flight"] = "Pending";
     statusesToUpdate["Model Training"] = "Pending";
-    statusesToUpdate["Model Validation"] = "Pending";
 
     outputsToClear.push(
       "modelSelection",
       "trainingConfiguration",
       "preFlight",
       "modelTrainingCode",
-      "modelTraining",
-      "modelValidation"
+      "modelTraining"
     );
   } else if (targetPhase === "Model Selection") {
     // Starting Model Phase: Data Ingestion and Feature Engineering are complete
@@ -244,40 +232,32 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
     statusesToUpdate["Training Configuration"] = "Pending";
     statusesToUpdate["Pre Flight"] = "Pending";
     statusesToUpdate["Model Training"] = "Pending";
-    statusesToUpdate["Model Validation"] = "Pending";
 
     outputsToClear.push(
       "modelSelection",
       "trainingConfiguration",
       "preFlight",
       "modelTrainingCode",
-      "modelTraining",
-      "modelValidation"
+      "modelTraining"
     );
   } else if (targetPhase === "Training Configuration") {
     statusesToUpdate["Training Configuration"] = "In Progress";
     statusesToUpdate["Pre Flight"] = "Pending";
     statusesToUpdate["Model Training"] = "Pending";
-    statusesToUpdate["Model Validation"] = "Pending";
 
-    outputsToClear.push("trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining", "modelValidation");
+    outputsToClear.push("trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining");
   } else if (targetPhase === "Pre Flight") {
     statusesToUpdate["Pre Flight"] = "In Progress";
     statusesToUpdate["Model Training"] = "Pending";
-    statusesToUpdate["Model Validation"] = "Pending";
 
-    outputsToClear.push("preFlight", "modelTrainingCode", "modelTraining", "modelValidation");
+    outputsToClear.push("preFlight", "modelTrainingCode", "modelTraining");
   } else if (targetPhase === "Model Training Code Generation" || targetPhase === "Model Training") {
     statusesToUpdate["Model Training"] = "In Progress";
-    statusesToUpdate["Model Validation"] = "Pending";
 
-    outputsToClear.push("modelTrainingCode", "modelTraining", "modelValidation");
+    outputsToClear.push("modelTrainingCode", "modelTraining");
   } else if (targetPhase === "Model Training Execution") {
     statusesToUpdate["Model Training"] = "In Progress";
-    outputsToClear.push("modelTraining", "modelValidation");
-  } else if (targetPhase === "Model Validation") {
-    statusesToUpdate["Model Validation"] = "In Progress";
-    outputsToClear.push("modelValidation");
+    outputsToClear.push("modelTraining");
   }
 
   return {

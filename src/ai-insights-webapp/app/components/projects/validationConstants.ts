@@ -1,0 +1,48 @@
+export const VALIDATION_FREQUENCY_OPTIONS = [
+  { value: "Weekly", label: "Weekly" },
+  { value: "Monthly", label: "Monthly" },
+  { value: "Yearly", label: "Yearly" },
+] as const;
+
+export const VALIDATION_UI_STRINGS = {
+  TRAINING_COMPLETED_TITLE: "Model Training Completed",
+  TRAINING_COMPLETED_DESC: "Validate the models using the validation tab under projects.",
+  NAVIGATE_TO_VALIDATION_BUTTON: "Go to Validation Tab",
+  VALIDATION_SECTION_TITLE: "Model Validation & Forecasting",
+  VALIDATION_SECTION_DESC: "Execute out-of-sample backtesting or future forecast evaluation across trained candidate models.",
+  FORM_SECTION_HEADER: "Validation Parameters",
+  START_DATE_LABEL: "Prediction Objective Start Date",
+  START_DATE_PLACEHOLDER: "Select prediction start date",
+  HORIZON_LABEL: "Forecast Horizon (Periods)",
+  HORIZON_PLACEHOLDER: "Enter number of periods",
+  FREQUENCY_LABEL: "Forecast Frequency",
+  FREQUENCY_PLACEHOLDER: "Select frequency",
+  MODELS_LABEL: "Trained Models to Validate",
+  VALIDATE_MODELS_BUTTON: "Validate Models",
+  VALIDATING_BUTTON: "Executing Validation Agent...",
+  VALIDATION_COMPLETE_TITLE: "Validation Results",
+  MISSING_SELECTION_ALERT: "Please select at least one trained model and enter the start date, horizon, and frequency.",
+  NO_TRAINED_MODELS_ALERT: "No trained candidate models found for this project. Please run and complete Model Training first.",
+  ACTIVE_FILTER_NOTICE: "Active filters configured above will be applied to the validation dataset.",
+  UNFILTERED_NOTICE: "No filters applied. Full dataset within the specified timeline will be validated.",
+  SELECT_ALL_LABEL: "Select All",
+  DESELECT_ALL_LABEL: "Deselect All",
+  CHAMPION_BADGE: "Champion",
+  BACKTESTING_BADGE: "Backtesting Mode",
+  FUTURE_PREDICTION_BADGE: "Future Prediction Mode",
+  LOADING_SCHEMA_TITLE: "Loading Validation Forms...",
+  LOADING_SCHEMA_DESC: "Resolving AI-generated data hierarchies and interactive filter configurations.",
+  PROJECT_NOT_DESIGNED_TITLE: "Project is yet to be designed.",
+  PROJECT_NOT_DESIGNED_DESC: "Run the AI workflow pipeline to generate data hierarchies and filter forms.",
+  VALIDATION_FAILED_ERROR: "Model validation execution failed",
+  MODELS_SELECTED_SUFFIX: "model(s) selected for validation.",
+  SELECT_PROJECT_LABEL: "Select Project:",
+  CHOOSE_PROJECT_PLACEHOLDER: "Choose a project",
+  DEFAULT_UNKNOWN_FRAMEWORK: "—",
+} as const;
+
+export const VALIDATION_API_ENDPOINTS = {
+  VALIDATE: "/model-validation/validate",
+  RESULTS: "/model-validation",
+  CANDIDATES: "/model-validation",
+} as const;

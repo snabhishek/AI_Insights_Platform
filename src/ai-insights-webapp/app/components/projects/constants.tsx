@@ -153,7 +153,6 @@ export const PIPELINE_STEPS: Workflow[] = [
       { id: "Training Configuration", title: "Training Configuration", description: "Configure training environment and dataset splits", metric: "Configure", color: "pink", icon: <span>02</span> },
       { id: "Pre Flight", title: "Pre Flight", description: "Validate runtime resources, environment and strategy pre-flight", metric: "Validate", color: "pink", icon: <span>03</span> },
       { id: "Model Training", title: "Model Training", description: "Train candidate models from the validated feature dataset", metric: "Train", color: "pink", icon: <span>04</span> },
-      { id: "Model Validation", title: "Model Validation", description: "Validate the leading model on held-out data", metric: "Validate", color: "teal", icon: <span>05</span> },
     ],
   },
 ];
@@ -167,5 +166,4 @@ export const INITIAL_PIPELINE_STATUSES: Record<string, "Pending"> = {
   "Training Configuration": "Pending",
   "Pre Flight": "Pending",
   "Model Training": "Pending",
-  "Model Validation": "Pending",
 };

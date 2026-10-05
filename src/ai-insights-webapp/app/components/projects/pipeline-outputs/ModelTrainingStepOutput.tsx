@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { BACKEND_URL } from "../../providers/AppContext";
+import { VALIDATION_UI_STRINGS } from "../validationConstants";
 
 export interface CandidateModelItem {
   model_id: string;
@@ -866,110 +867,36 @@ export default function ModelTrainingStepOutput({
         </div>
       )}
 
-      {/* ─── Handoff to Model Validation with Model Selection ─── */}
-      {hasExecutionReport && candidateModels.length > 0 && (onNavigateToValidation || onApproveValidation) && (
-        <div className="rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/5 via-surface to-surface p-5 space-y-4 shadow-sm animate-fadeIn">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/80">
-            <div>
-              <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-                <CheckCircleIcon className="w-4 h-4 text-primary" />
-                Select Models for Held-Out Model Validation
-              </h4>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Choose which trained estimators to validate on the held-out verification dataset. Only selected models will be validated.
-              </p>
+      {/* ─── Model Training Completed — Next Step Notice ─── */}
+      {hasExecutionReport && (
+        <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-950/20 p-5 shadow-sm animate-fadeIn">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-start sm:items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-600 dark:text-emerald-400 shrink-0">
+                <CheckCircleIcon className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="text-sm font-bold text-foreground">
+                  {VALIDATION_UI_STRINGS.TRAINING_COMPLETED_TITLE}
+                </h4>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  {VALIDATION_UI_STRINGS.TRAINING_COMPLETED_DESC}
+                </p>
+              </div>
             </div>
-            <div className="flex items-center gap-2">
+
+            {onNavigateToValidation && (
               <button
                 type="button"
-                onClick={() => setSelectedModelsForValidation(candidateModels.map((c) => c.model_id))}
-                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
+                onClick={() => onNavigateToValidation([])}
+                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide shadow-sm hover:bg-primary/90 transition-all cursor-pointer shrink-0"
               >
-                Select All
+                <span>{VALIDATION_UI_STRINGS.NAVIGATE_TO_VALIDATION_BUTTON}</span>
+                <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <polyline points="9 18 15 12 9 6" />
+                </svg>
               </button>
-              <button
-                type="button"
-                onClick={() => setSelectedModelsForValidation([])}
-                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
-              >
-                Deselect All
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-            {candidateModels.map((candidate) => {
-              const isChecked = selectedModelsForValidation.includes(candidate.model_id);
-              const isChamp = candidate.model_id === championModelId;
-              return (
-                <div
-                  key={candidate.model_id}
-                  onClick={() => {
-                    setSelectedModelsForValidation((prev) =>
-                      prev.includes(candidate.model_id)
-                        ? prev.filter((id) => id !== candidate.model_id)
-                        : [...prev, candidate.model_id]
-                    );
-                  }}
-                  className={`p-3.5 rounded-xl border transition-all cursor-pointer select-none flex items-start gap-3 ${
-                    isChecked
-                      ? "border-primary bg-primary/5 dark:bg-primary/10 shadow-xs ring-1 ring-primary/20"
-                      : "border-border bg-surface/70 hover:border-border/80 opacity-70"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => {}}
-                    className="mt-0.5 w-4 h-4 rounded text-primary border-border focus:ring-0 cursor-pointer"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-1.5">
-                      <span className="text-xs font-bold text-foreground truncate">
-                        {candidate.displayName || candidate.model_id}
-                      </span>
-                      {isChamp && (
-                        <span className="text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-emerald-500 text-white shrink-0">
-                          Champion
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex items-center justify-between mt-1 text-[11px] text-muted-foreground">
-                      <span className="font-mono">{candidate.framework || "sklearn"}</span>
-                      {typeof candidate.score === "number" && (
-                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold font-mono">
-                          {(candidate.score * 100).toFixed(1)}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          <div className="pt-3 border-t border-border flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <p className="text-xs text-muted-foreground">
-              {selectedModelsForValidation.length} model(s) selected for Model Validation evaluation.
-            </p>
-
-            <button
-              type="button"
-              disabled={selectedModelsForValidation.length === 0 || isApproving}
-              onClick={() => {
-                if (onNavigateToValidation) {
-                  onNavigateToValidation(selectedModelsForValidation);
-                } else if (onApproveValidation) {
-                  onApproveValidation(selectedModelsForValidation);
-                }
-              }}
-              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-            >
-              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-              <span>Proceed to Model Validation ({selectedModelsForValidation.length} Models)</span>
-            </button>
+            )}
           </div>
         </div>
       )}

@@ -23,6 +23,7 @@ import {
 import { webSearchTool, extractUrlContentTool } from "../../tools/search";
 import {
   getFileServerBasePath,
+  getWorkspacesBasePath,
   sanitizeFolderName,
 } from "../../../config/fileServer.config";
 import {
@@ -91,14 +92,20 @@ export class ModelValidationAgent {
       trainingConfig?.split?.test_start_date;
 
     if (cutoffDateStr && typeof cutoffDateStr === "string" && cutoffDateStr.trim().length > 0) {
+      const trimmed = cutoffDateStr.trim();
+      const match = /^(\d{4})-(\d{2})/.exec(trimmed);
+      if (match) {
+        return `${match[1]}-${match[2]}-01`;
+      }
       try {
-        const d = new Date(cutoffDateStr.trim());
+        const d = new Date(trimmed);
         if (!isNaN(d.getTime())) {
-          d.setDate(d.getDate() + 1);
-          return d.toISOString().slice(0, 10);
+          const y = d.getFullYear();
+          const m = String(d.getMonth() + 1).padStart(2, "0");
+          return `${y}-${m}-01`;
         }
       } catch { }
-      return cutoffDateStr.trim().slice(0, 10);
+      return trimmed.slice(0, 10);
     }
 
     return new Date().toISOString().slice(0, 10);
@@ -183,51 +190,176 @@ export class ModelValidationAgent {
   }
 
   /**
+   * Extracts the validated features array from training configuration contract,
+   * agent state, or feature validation report.
+   */
+  public static extractValidatedFeatures(
+    trainingConfig: any,
+    state: AgentStateType,
+    runDir?: string
+  ): string[] {
+    // 1. From training configuration contract / file
+    const configFeatures =
+      trainingConfig?.upstream_artifacts?.validated_features ||
+      trainingConfig?.upstream_artifacts?.validatedFeatures ||
+      trainingConfig?.validated_features ||
+      trainingConfig?.validatedFeatures ||
+      trainingConfig?.features ||
+      trainingConfig?.features_list ||
+      trainingConfig?.feature_list ||
+      trainingConfig?.model_selection?.features;
+
+    if (Array.isArray(configFeatures) && configFeatures.length > 0) {
+      return Array.from(new Set(configFeatures.map((f: any) => String(f).trim()).filter(Boolean)));
+    }
+
+    // 2. From agent state (trainingConfiguration, featureValidator, etc.)
+    const stateConfig = (state.trainingConfiguration as any)?.configuration || state.trainingConfiguration || {};
+    const stateFeatures =
+      stateConfig?.upstream_artifacts?.validated_features ||
+      stateConfig?.upstream_artifacts?.validatedFeatures ||
+      stateConfig?.validated_features ||
+      stateConfig?.validatedFeatures ||
+      stateConfig?.features ||
+      (state.featureValidator as any)?.validatedFeatureSet?.kept ||
+      (state.stageOutputs as any)?.featureValidator?.validatedFeatureSet?.kept ||
+      (state as any)?.features ||
+      (state as any)?.validatedFeatures ||
+      (state.featureArchitect as any)?.validatedFeatureSet?.kept ||
+      (state.stageOutputs as any)?.modelTraining?.features;
+
+    if (Array.isArray(stateFeatures) && stateFeatures.length > 0) {
+      return Array.from(new Set(stateFeatures.map((f: any) => String(f).trim()).filter(Boolean)));
+    }
+
+    // 3. From feature_validation_report.json in python_script directory if present
+    if (runDir) {
+      const reportPath = path.join(runDir, "python_script", "feature_validation_report.json");
+      if (fs.existsSync(reportPath)) {
+        try {
+          const raw = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
+          const reportFeatures =
+            raw?.validatedFeatureSet?.kept ||
+            raw?.kept ||
+            raw?.validated_features ||
+            raw?.validatedFeatures;
+          if (Array.isArray(reportFeatures) && reportFeatures.length > 0) {
+            return Array.from(new Set(reportFeatures.map((f: any) => String(f).trim()).filter(Boolean)));
+          }
+        } catch {}
+      }
+    }
+
+    return [];
+  }
+
+  /**
    * Resolves project directories and artifact locations.
    */
   private static getProjectContext(state: AgentStateType, services: IngestionServices) {
     const projectId = state.projectId || services?.projectId || "default-project";
-    const workspaceName = (state as any).workspaceName || services?.workspaceName || "Default_Workspace";
+    let workspaceName = (state as any).workspaceName || services?.workspaceName || "";
     const projectName = (state as any).projectName || services?.projectName || "Forecasting";
     const runTimestamp = state.runTimestamp || services?.runTimestamp || "";
 
-    const projectRootDir = path.join(
-      getFileServerBasePath(),
-      "workspaces",
-      sanitizeFolderName(workspaceName),
+    const workspacesBase = getWorkspacesBasePath();
+
+    let projectRootDir = path.join(
+      workspacesBase,
+      sanitizeFolderName(workspaceName || "Default_Workspace"),
       "projects",
       sanitizeFolderName(projectName)
     );
 
-    const runDir = runTimestamp ? path.join(projectRootDir, runTimestamp) : projectRootDir;
+    let runDir = runTimestamp ? path.join(projectRootDir, runTimestamp) : projectRootDir;
+    let datasetPath = path.join(runDir, "python_script", "dataset.parquet");
+
+    // Dynamic resolution: If datasetPath does not exist under workspaceName, search all workspaces
+    if (!fs.existsSync(datasetPath) && fs.existsSync(workspacesBase)) {
+      try {
+        const wsEntries = fs.readdirSync(workspacesBase, { withFileTypes: true }).filter((d) => d.isDirectory());
+        for (const ws of wsEntries) {
+          const candProjectDir = path.join(workspacesBase, ws.name, "projects", sanitizeFolderName(projectName));
+          const candRunDir = runTimestamp ? path.join(candProjectDir, runTimestamp) : candProjectDir;
+          const candDataset = path.join(candRunDir, "python_script", "dataset.parquet");
+          if (fs.existsSync(candDataset)) {
+            workspaceName = ws.name;
+            projectRootDir = candProjectDir;
+            runDir = candRunDir;
+            datasetPath = candDataset;
+            break;
+          }
+        }
+      } catch {}
+    }
+
     const modelTrainingDir = path.join(runDir, `${projectName}_model_training`);
     const modelValidationDir = path.join(runDir, `${projectName}_model_validation`);
     const modelsDir = path.join(modelTrainingDir, "artifacts", "models");
 
-    // Discover finalized dataset (STRICT - NO FALLBACK PATHS)
-    const candidateDatasetPaths = [
-      path.join(runDir, "python_script", "dataset.parquet"),
-      path.join(runDir, "dataset.parquet"),
-      path.join(runDir, "python_script", "feature_validation.parquet"),
-      path.join(runDir, "feature_validation.parquet"),
-      path.join(runDir, "python_script", "feature_selection.parquet"),
-      path.join(runDir, "python_script", "feature_extraction.parquet"),
-    ];
-    const datasetPath = candidateDatasetPaths.find((p) => fs.existsSync(p));
-    if (!datasetPath) {
-      throw new Error(`[ModelValidationAgent] Finalized dataset artifact was not found in ${runDir} or ${projectRootDir}. Validated dataset is required.`);
+    if (!fs.existsSync(datasetPath)) {
+      throw new Error(`[ModelValidationAgent] Finalized dataset artifact was not found at ${datasetPath}. 'dataset.parquet' is required.`);
     }
 
     // Read training config (STRICT - NO FALLBACKS)
     let trainingConfig: any = {};
-    const configPath = path.join(modelTrainingDir, "configs", "training_config.yaml");
-    if (!fs.existsSync(configPath)) {
-      throw new Error(`[ModelValidationAgent] Training configuration contract not found at ${configPath}. Training configuration is required.`);
+    const configCandidates = [
+      path.join(modelTrainingDir, "configs", "training_config.yaml"),
+      path.join(modelTrainingDir, "training_config.yaml"),
+      (state.trainingConfiguration as any)?.contractPath,
+    ];
+
+    const schemasDir = path.join(runDir, "schemas");
+    if (fs.existsSync(schemasDir)) {
+      try {
+        const yamlFiles = fs.readdirSync(schemasDir).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+        const contractYaml = yamlFiles.find((f) => f.toLowerCase().includes("training_job_contract") || f.toLowerCase().includes("contract")) || yamlFiles[0];
+        if (contractYaml) {
+          configCandidates.push(path.join(schemasDir, contractYaml));
+        }
+      } catch {}
     }
-    try {
-      trainingConfig = yaml.load(fs.readFileSync(configPath, "utf-8")) || {};
-    } catch (e: any) {
-      throw new Error(`[ModelValidationAgent] Failed to read training configuration contract at ${configPath}: ${e?.message || e}`);
+
+    const foundConfig = configCandidates.find((c) => c && fs.existsSync(c));
+    if (!foundConfig && !(state.trainingConfiguration as any)?.configuration) {
+      throw new Error(`[ModelValidationAgent] Training configuration contract not found at ${path.join(modelTrainingDir, "configs", "training_config.yaml")}. Training configuration is required.`);
+    }
+
+    if (foundConfig) {
+      try {
+        trainingConfig = yaml.load(fs.readFileSync(foundConfig, "utf-8")) || {};
+      } catch (e: any) {
+        throw new Error(`[ModelValidationAgent] Failed to read training configuration contract at ${foundConfig}: ${e?.message || e}`);
+      }
+    } else {
+      trainingConfig = (state.trainingConfiguration as any)?.configuration || {};
+    }
+
+    // Merge upstream contract from schemas if trainingConfig lacks validated_features
+    if (!trainingConfig?.upstream_artifacts?.validated_features && !trainingConfig?.validated_features) {
+      if (fs.existsSync(schemasDir)) {
+        try {
+          const yamlFiles = fs.readdirSync(schemasDir).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
+          const contractYaml = yamlFiles.find((f) => f.toLowerCase().includes("training_job_contract") || f.toLowerCase().includes("contract"));
+          if (contractYaml) {
+            const schemaContract = yaml.load(fs.readFileSync(path.join(schemasDir, contractYaml), "utf-8")) as any;
+            if (schemaContract?.upstream_artifacts) {
+              trainingConfig.upstream_artifacts = {
+                ...(schemaContract.upstream_artifacts || {}),
+                ...(trainingConfig.upstream_artifacts || {}),
+              };
+            }
+          }
+        } catch {}
+      }
+    }
+
+    // Extract validated features array from training configuration or state (STRICT - NO FALLBACKS)
+    const validatedFeatures = this.extractValidatedFeatures(trainingConfig, state, runDir);
+    if (!validatedFeatures || validatedFeatures.length === 0) {
+      throw new Error(
+        `[ModelValidationAgent] Validated features array not found in training configuration contract at ${foundConfig || path.join(modelTrainingDir, "configs", "training_config.yaml")} or in state. Validated features are required for model validation.`
+      );
     }
 
     // Read training report (STRICT - NO FALLBACKS)
@@ -264,6 +396,7 @@ export class ModelValidationAgent {
       datasetPath,
       trainingConfig,
       trainingReport,
+      validatedFeatures,
     };
   }
 
@@ -280,6 +413,8 @@ export class ModelValidationAgent {
       predictionHorizon?: number;
       predictionFrequency?: string;
       predictionObjectiveStartDate?: string;
+      selectedModels?: string[];
+      filters?: Record<string, any>;
       maxRetries?: number;
     }
   ): Promise<ModelValidationAgentOutput> {
@@ -297,22 +432,34 @@ export class ModelValidationAgent {
       datasetPath,
       trainingConfig,
       trainingReport,
+      validatedFeatures,
     } = ctx;
 
     // Scaffolds the dedicated validation directory
     this.setupValidationDirectory(modelValidationDir);
 
-    // Resolve Parameters
-    const horizon = options?.predictionHorizon || (state as any).predictionHorizon || 12;
-    const frequency: ValidationFrequency =
-      (options?.predictionFrequency as ValidationFrequency) ||
-      ((state as any).predictionFrequency as ValidationFrequency) ||
-      "Weekly";
+    // Resolve Parameters strictly from user options or explicit state
+    const horizon = options?.predictionHorizon ?? (state as any).predictionHorizon;
+    if (!horizon || typeof horizon !== "number" || horizon <= 0) {
+      throw new Error("[ModelValidationAgent] Prediction horizon is required and must be an integer greater than 0.");
+    }
 
-    const predictionStartDate =
-      (options?.predictionObjectiveStartDate && options.predictionObjectiveStartDate.trim().length > 0)
-        ? options.predictionObjectiveStartDate.trim().slice(0, 10)
-        : this.resolvePredictionStartDate(state, trainingConfig);
+    const frequency: ValidationFrequency = (
+      options?.predictionFrequency as ValidationFrequency ||
+      (state as any).predictionFrequency as ValidationFrequency
+    );
+    if (!frequency) {
+      throw new Error("[ModelValidationAgent] Prediction frequency is required. Please specify Weekly, Monthly, or Yearly.");
+    }
+
+    const rawStartDate = options?.predictionObjectiveStartDate ?? (state as any).predictionObjectiveStartDate;
+    const predictionStartDate = (rawStartDate && typeof rawStartDate === "string" && rawStartDate.trim().length > 0)
+      ? rawStartDate.trim().slice(0, 10)
+      : this.resolvePredictionStartDate(state, trainingConfig);
+
+    if (!predictionStartDate) {
+      throw new Error("[ModelValidationAgent] Prediction objective start date is required.");
+    }
 
     const mode = this.determineValidationMode(predictionStartDate);
 
@@ -406,7 +553,9 @@ export class ModelValidationAgent {
       : Object.keys(trainingReport?.model_results || trainingReport?.results || {});
 
     const effectiveSelectedModels: string[] = (
-      Array.isArray(state.selectedModels) && state.selectedModels.length > 0
+      Array.isArray(options?.selectedModels) && options!.selectedModels.length > 0
+        ? options!.selectedModels
+        : Array.isArray(state.selectedModels) && state.selectedModels.length > 0
         ? state.selectedModels
         : Array.isArray((state as any).selectedModelsToValidate) && (state as any).selectedModelsToValidate.length > 0
         ? (state as any).selectedModelsToValidate
@@ -424,6 +573,32 @@ export class ModelValidationAgent {
       "Model Validation",
       `Model Validation Agent initializing in ${mode} mode for project '${projectName}' (${horizon} ${frequency} periods starting ${predictionStartDate})...`
     );
+
+    // Persist initial validation_config.yaml with validated features and objective specs
+    try {
+      const initialValConfig = {
+        project_id: projectId,
+        project_name: projectName,
+        run_timestamp: runTimestamp,
+        validation_mode: mode,
+        prediction_objective_start_date: predictionStartDate,
+        prediction_objective_horizon: horizon,
+        prediction_objective_frequency: frequency,
+        time_column: timeCol,
+        target_column: targetCol,
+        group_column: groupCol || null,
+        problem_type: problemType,
+        selected_models: effectiveSelectedModels,
+        validated_features: validatedFeatures,
+      };
+      fs.writeFileSync(
+        path.join(modelValidationDir, "configs", "validation_config.yaml"),
+        yaml.dump(initialValConfig),
+        "utf-8"
+      );
+    } catch (confWriteErr: any) {
+      console.warn("[ModelValidationAgent] Failed to write initial validation_config.yaml:", confWriteErr?.message || confWriteErr);
+    }
 
     // 1. Prepare Tools for the Agent
     const fsTools = await getMcpFilesystemTools({ projectId, workspaceName, projectName, runTimestamp });
@@ -451,6 +626,10 @@ export class ModelValidationAgent {
 
     const relativeValidationRunner = path.join(modelValidationDir, "validation_runner.py");
 
+    const relDatasetPath = path.relative(projectRootDir, datasetPath).replace(/\\/g, "/");
+    const relModelsDir = path.relative(projectRootDir, modelsDir).replace(/\\/g, "/");
+    const relOutputDir = path.relative(projectRootDir, modelValidationDir).replace(/\\/g, "/");
+
     const userPrompt = [
       `Generate the complete Python model validation and prediction runner for project '${projectName}' in '${runTimestamp}/${projectName}_model_validation'.`,
       `--- Active Run & Artifact Context ---`,
@@ -464,6 +643,15 @@ export class ModelValidationAgent {
       `Target Column: ${targetCol}`,
       `Entity / Grouping Column: ${groupCol || "None"}`,
       `Problem Type: ${problemType}`,
+      `--- Feature Specifications (Model Training Contract Alignment) ---`,
+      `Validated Features Count: ${validatedFeatures.length}`,
+      `Validated Features Array: ${JSON.stringify(validatedFeatures)}`,
+      `CRITICAL FEATURE EXTRACTION MANDATES:`,
+      `1. The validation runner MUST load 'dataset.parquet' from '${datasetPath}' (container path: /workspace/${relDatasetPath}).`,
+      `2. Extract strictly the ${validatedFeatures.length} validated features: ${validatedFeatures.join(", ")}.`,
+      `3. Construct the model input matrix X using strictly these validated feature columns (along with target '${targetCol}' and time '${timeCol}' where applicable).`,
+      `4. DO NOT include arbitrary, unvalidated, or target-leakage columns in X that were not present in the training partition.`,
+      `5. Align features strictly with 'preprocessor.joblib' or candidate estimator expectations (estimator.n_features_in_) so that feature dimensions match identically to Model Training.`,
       `--- Prediction Objective ---`,
       `Objective Start Date: ${predictionStartDate}`,
       `Forecast Horizon: ${horizon} periods`,
@@ -615,10 +803,6 @@ export class ModelValidationAgent {
     }
 
     // 4. Execution in Container Sandbox
-    const relDatasetPath = path.relative(projectRootDir, datasetPath).replace(/\\/g, "/");
-    const relModelsDir = path.relative(projectRootDir, modelsDir).replace(/\\/g, "/");
-    const relOutputDir = path.relative(projectRootDir, modelValidationDir).replace(/\\/g, "/");
-
     const extraArgs = [
       `--dataset-path "/workspace/${relDatasetPath}"`,
       `--models-dir "/workspace/${relModelsDir}"`,
@@ -631,6 +815,7 @@ export class ModelValidationAgent {
       `--target-col "${targetCol}"`,
       `--group-col "${groupCol}"`,
       `--problem-type "${problemType}"`,
+      `--features "${validatedFeatures.join(",")}"`,
     ];
 
     if (effectiveSelectedModels.length > 0) {
@@ -690,6 +875,8 @@ export class ModelValidationAgent {
         execResult.stderr || execResult.stdout || "Report was not generated or models failed.",
         `--- Execution Command Arguments ---`,
         extraArgs.join(" "),
+        `--- Validated Features ---`,
+        `Validated Features (${validatedFeatures.length}): ${validatedFeatures.join(", ")}`,
         `Diagnose the root cause (e.g. missing package dependencies, feature count/preprocessing mismatch such as preprocessor.joblib vs validation features, or model inference exceptions) and advise on exact code modifications to '${runTimestamp}/${projectName}_model_validation/validation_runner.py'. If packages are missing, list them in requiredPackages.`,
       ].filter(Boolean).join("\n\n");
 
@@ -750,7 +937,7 @@ export class ModelValidationAgent {
             const regenResult = await invokeAgentJson<ValidationCodingAgentResult>(
               "modelValidationCode",
               model,
-              `PREVIOUS EXECUTION FAILED:\n${validationHealth.reason || ""}\n${failedModelDetails}\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nFix the issues and regenerate the validation_runner.py.`,
+              `PREVIOUS EXECUTION FAILED:\n${validationHealth.reason || ""}\n${failedModelDetails}\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nValidated Features (${validatedFeatures.length}): ${validatedFeatures.join(", ")}\n\nFix the issues, ensure feature dimensions align with preprocessor.joblib and estimators, and regenerate the validation_runner.py.`,
               codingFallback,
               services,
               {

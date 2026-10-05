@@ -270,6 +270,9 @@ export default function ModelValidationStepOutput({
     if (modelValidation?.candidates && Array.isArray(modelValidation.candidates)) {
       return modelValidation.candidates;
     }
+    if (modelValidation?.results && Array.isArray(modelValidation.results)) {
+      return modelValidation.results;
+    }
     if (rawReport?.models) {
       return Array.isArray(rawReport.models)
         ? rawReport.models
@@ -372,29 +375,26 @@ export default function ModelValidationStepOutput({
     );
   }, [trainingConfiguration, modelTraining]);
 
-  // Earliest selectable date: strictly AFTER split date selected during training configuration
+  // Earliest selectable date: starting month from split date
   const minSelectableDate = useMemo(() => {
     if (!effectiveSplitDate || typeof effectiveSplitDate !== "string") return undefined;
     const trimmed = effectiveSplitDate.trim();
     if (!trimmed) return undefined;
 
-    try {
-      const ym = /^(\d{4})-(\d{2})$/.exec(trimmed);
-      if (ym) {
-        const y = parseInt(ym[1], 10);
-        const m = parseInt(ym[2], 10);
-        const d = new Date(Date.UTC(y, m - 1, 1));
-        d.setUTCDate(d.getUTCDate() + 1);
-        return d.toISOString().split("T")[0];
-      }
+    const ym = /^(\d{4})-(\d{2})/.exec(trimmed);
+    if (ym) {
+      return `${ym[1]}-${ym[2]}-01`;
+    }
 
+    try {
       const d = new Date(trimmed);
       if (!isNaN(d.getTime())) {
-        d.setDate(d.getDate() + 1);
-        return d.toISOString().split("T")[0];
+        const y = d.getFullYear();
+        const m = String(d.getMonth() + 1).padStart(2, "0");
+        return `${y}-${m}-01`;
       }
     } catch {}
-    return undefined;
+    return trimmed.split("T")[0];
   }, [effectiveSplitDate]);
 
   // Maximum selectable date: before or on the maximum last date of the dataset calculated during training configuration
@@ -449,12 +449,12 @@ export default function ModelValidationStepOutput({
     return today.toISOString().split("T")[0];
   }, [rawReport, modelValidation, minSelectableDate, trainingConfiguration]);
 
-  // Validation Form Inputs
+  // Validation Form Inputs - No silent fallbacks
   const [horizonInput, setHorizonInput] = useState<number>(
-    rawReport?.prediction_objective_horizon || modelValidation?.predictionObjectiveHorizon || 12
+    rawReport?.prediction_objective_horizon || modelValidation?.predictionObjectiveHorizon || 0
   );
-  const [frequencyInput, setFrequencyInput] = useState<"Weekly" | "Monthly" | "Yearly">(
-    (rawReport?.prediction_objective_frequency as any) || modelValidation?.predictionObjectiveFrequency || "Weekly"
+  const [frequencyInput, setFrequencyInput] = useState<"Weekly" | "Monthly" | "Yearly" | "">(
+    (rawReport?.prediction_objective_frequency as any) || modelValidation?.predictionObjectiveFrequency || ""
   );
   const [startDateInput, setStartDateInput] = useState<string>(defaultCalculatedStartDate);
 
@@ -531,7 +531,8 @@ export default function ModelValidationStepOutput({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
-      {/* ─── Top Control Card: Validation Horizon & Mode Configuration ─── */}
+      {/* ─── Top Control Card: Validation Horizon & Mode Configuration (Only when approval callback provided) ─── */}
+      {Boolean(onApproveValidation) && (
       <div className="p-5 rounded-2xl bg-surface-raised border border-border shadow-sm">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="space-y-1">
@@ -663,6 +664,7 @@ export default function ModelValidationStepOutput({
           )}
         </div>
       </div>
+      )}
 
       {/* ─── If No Candidate Results Yet ─── */}
       {candidates.length === 0 && (
