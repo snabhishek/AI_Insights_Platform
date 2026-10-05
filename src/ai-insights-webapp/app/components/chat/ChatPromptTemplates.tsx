@@ -24,7 +24,7 @@ export default function ChatPromptTemplates({
 
   return (
     <div className="p-4 sm:p-5 bg-surface border border-border rounded-2xl shadow-xl space-y-4 max-w-2xl w-full select-none">
-      {/* Header */}
+
       <div className="flex items-center justify-between pb-2 border-b border-border/80">
         <div className="flex items-center gap-2">
           <span className="text-base">💡</span>
@@ -44,7 +44,6 @@ export default function ChatPromptTemplates({
         )}
       </div>
 
-      {/* Category Pills */}
       <div className="flex flex-wrap gap-1.5">
         {categories.map((cat) => (
           <button
@@ -62,7 +61,6 @@ export default function ChatPromptTemplates({
         ))}
       </div>
 
-      {/* Templates Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 max-h-72 overflow-y-auto pr-1">
         {filteredTemplates.map((template) => {
           const recPersona = AGENT_PERSONAS[template.recommendedPersona];

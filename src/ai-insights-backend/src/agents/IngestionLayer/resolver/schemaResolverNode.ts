@@ -3,29 +3,29 @@ import * as path from "path";
 import * as fsSync from "fs";
 import * as yaml from "js-yaml";
 import { AgentState, IngestionServices } from "../../state";
-import { 
-  getModel, 
+import {
+  getModel,
   invokeAgentJson,
   mergeBatchedTableStates,
   buildBatchedTableState,
   logMilestoneThinking,
   getPromptFromFile
 } from "../../utils/agentUtils";
-import { 
-  writeResolvedSchemaYaml, 
+import {
+  writeResolvedSchemaYaml,
   loadFieldSchemaYaml,
   loadProjectOrFieldSchemaYaml,
   updateOrCreateProjectSchemaFile,
   saveModularResolvedSchemas,
   getPackagesDir,
-  sanitizeName, 
-  generateDateTimeStamp 
+  sanitizeName,
+  generateDateTimeStamp
 } from "../../tools/helpers";
 
 export async function resolveSchema(
-  connector: any, 
-  inspection: Record<string, unknown>, 
-  userPrompt: string | undefined, 
+  connector: any,
+  inspection: Record<string, unknown>,
+  userPrompt: string | undefined,
   dataProfile: Record<string, unknown> | undefined,
   projectId: string | undefined,
   services: IngestionServices,
@@ -36,7 +36,6 @@ export async function resolveSchema(
     : [inspection];
   const tables = inspectionSources.flatMap((source: any) => Array.isArray(source?.tables) ? source.tables : []);
 
-  // Infer business domain fallback from tables or connector name
   const tableDomain = tables.find((t: any) => t.businessDomain || t.domain)?.businessDomain || tables.find((t: any) => t.businessDomain || t.domain)?.domain;
   const inferredDomain = tableDomain || (connector?.name ? `${connector.name} Data Domain` : "General Business Domain");
 
@@ -99,7 +98,7 @@ export async function resolveSchema(
     }
   }
 
-  const { content: rawFieldSchemaYaml, sourcePath: schemaSourcePath, isProjectSchema } = 
+  const { content: rawFieldSchemaYaml, sourcePath: schemaSourcePath, isProjectSchema } =
     await loadProjectOrFieldSchemaYaml(workspaceName, projectName);
 
   if (isProjectSchema && rawFieldSchemaYaml) {
@@ -119,7 +118,7 @@ export async function resolveSchema(
         }
       }
     } catch (e) {
-      // ignore fallback error
+
     }
   }
 
@@ -128,8 +127,8 @@ export async function resolveSchema(
     "You are an expert AI Data Architect specialized in schema resolution and data ingestion planning."
   );
 
-  const safeUserRequest = typeof userPrompt === "string" && userPrompt.trim().length > 0 
-    ? userPrompt 
+  const safeUserRequest = typeof userPrompt === "string" && userPrompt.trim().length > 0
+    ? userPrompt
     : "No additional request provided.";
 
   const schemaHeader = isProjectSchema
@@ -175,7 +174,6 @@ export async function resolveSchema(
   let outputYamlPath = path.resolve(packagesDir, "resolved_schema.yaml");
   const resolvedTablesList = result?.dataIngestionSchema?.resolvedTables || result?.resolvedTables || fallback.resolvedTables;
 
-  // Build/extract dataIngestionSchema
   let dataIngestionSchema = result?.dataIngestionSchema;
   if (!dataIngestionSchema || !dataIngestionSchema.fields) {
     const fieldsObj: Record<string, any[]> = {};
@@ -268,8 +266,8 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
   const resolvedSources = await Promise.all(validConnectors.map(async (connector) => {
     const inspection = inspectionSources.find((source: any) => source?.connectorId === connector.id) || state.inspection;
     const resolved = await resolveSchema(
-      connector, 
-      inspection, 
+      connector,
+      inspection,
       typeof state.userPrompt === "string" ? state.userPrompt : "",
       state.dataProfile,
       (state as any).projectId,

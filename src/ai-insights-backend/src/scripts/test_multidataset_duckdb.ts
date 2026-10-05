@@ -32,7 +32,6 @@ async function runMultiDatasetDuckDBTest() {
 
   console.log(`[Step 1] Ingesting multiple datasets into project folder: ${projectDir}`);
 
-  // Create mock CSV datasets in uploads for testing
   const uploadsDir = path.join(process.cwd(), "uploads");
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
@@ -85,11 +84,9 @@ async function runMultiDatasetDuckDBTest() {
     throw new Error(`Project master DB does not exist at ${projectMasterDb}`);
   }
 
-  // Verify project folder contains the duckdb files
   const projectFiles = fs.readdirSync(projectDir);
   console.log(`Project folder contents:`, projectFiles);
 
-  // 2. Test Multi-Dataset Table & Column Resolution
   console.log("\n[Step 2] Testing column queries across multiple tables in project...");
 
   const testQueries = [
@@ -113,7 +110,6 @@ async function runMultiDatasetDuckDBTest() {
     }
   }
 
-  // 3. Test date_range query
   console.log("\n[Step 3] Testing date_range bounds calculation for order_purchase_timestamp...");
   const dateRes = await sourceRegistry.fetchFilterOptions({
     sourceId: projectName,
@@ -126,7 +122,6 @@ async function runMultiDatasetDuckDBTest() {
     throw new Error("Date range calculation failed");
   }
 
-  // 4. Test Concurrency Safety (Simultaneous 30 requests)
   console.log("\n[Step 4] Testing high-concurrency parallel queries (30 simultaneous queries)...");
   const concurrentPromises = [];
   for (let i = 0; i < 30; i++) {
@@ -147,7 +142,6 @@ async function runMultiDatasetDuckDBTest() {
     throw new Error("Concurrent query execution had failures");
   }
 
-  // Clean up test files
   await new Promise((resolve) => setTimeout(resolve, 500));
   await duckDBService.deleteProjectFolder(projectName);
   for (const f of [sellersCsv, customersCsv, ordersCsv, translationCsv]) {

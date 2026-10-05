@@ -211,16 +211,10 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
   },
 ] as const;
 
-/**
- * Returns an array of node IDs that require LangGraph to pause before execution.
- */
 export function getInterruptBeforeNodes(): string[] {
   return WORKFLOW_STAGE_RULES.filter((rule) => rule.interruptBefore).map((rule) => rule.id);
 }
 
-/**
- * Resolves a stage rule by its exact node ID or known aliases.
- */
 export function getStageRuleByNode(nodeIdOrAlias?: string | null): StageRuleConfig | undefined {
   if (!nodeIdOrAlias) return undefined;
   const target = nodeIdOrAlias.trim();
@@ -232,17 +226,11 @@ export function getStageRuleByNode(nodeIdOrAlias?: string | null): StageRuleConf
   );
 }
 
-/**
- * Resolves the pipeline category for any substep, node name, or alias.
- */
 export function getPipelineForSubstep(substepOrNode?: string | null): PipelineCategory {
   const rule = getStageRuleByNode(substepOrNode);
   return rule?.pipeline ?? "Data Ingestion";
 }
 
-/**
- * Resolves the safe predecessor node to anchor checkpointer state on resume, retry, or approval.
- */
 export function resolveSafePredecessorNode(
   requestedStep: string | undefined,
   savedState: any
@@ -250,7 +238,6 @@ export function resolveSafePredecessorNode(
   const rule = getStageRuleByNode(requestedStep);
   if (!rule) return "resolveSchema";
 
-  // If node has prerequisites, verify them against state
   if (rule.prerequisites && !rule.prerequisites(savedState)) {
     const predRule = getStageRuleByNode(rule.predecessorNode);
     if (predRule && (!predRule.prerequisites || predRule.prerequisites(savedState))) {
@@ -262,9 +249,6 @@ export function resolveSafePredecessorNode(
   return rule.predecessorNode;
 }
 
-/**
- * Checks if a given node is an approval gate and returns its gate details.
- */
 export function getApprovalGateForNode(nodeIdOrAlias?: string | null): {
   isGate: boolean;
   approvalPrompt: string;

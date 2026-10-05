@@ -83,7 +83,6 @@ export class PostgresModelValidationRepository implements IModelValidationReposi
         .set(runValues)
         .where(eq(schema.modelValidationRuns.id, effectiveRunId));
 
-      // Remove previous candidate results for this runId to allow clean idempotent rewrite
       await this.db
         .delete(schema.modelValidationResults)
         .where(eq(schema.modelValidationResults.validationRunId, effectiveRunId));
@@ -94,7 +93,6 @@ export class PostgresModelValidationRepository implements IModelValidationReposi
       });
     }
 
-    // Insert model-level validation result records
     for (const m of modelsList) {
       const modelId = String(m.model_id || m.modelId || "model").slice(0, 100);
       const resultId = `mvr-${uuidv4()}`.slice(0, 50);

@@ -21,7 +21,7 @@ export class ModelValidationService implements IModelValidationService {
   ) {}
 
   public async validateModels(input: ValidateModelsInput): Promise<any> {
-    // 1. Strict Validation of User Inputs — No Silent Defaults or Fallbacks
+
     if (!input.projectId || typeof input.projectId !== "string" || input.projectId.trim().length === 0) {
       throw new Error(VALIDATION_ERROR_MESSAGES.MISSING_PROJECT_ID);
     }
@@ -60,7 +60,6 @@ export class ModelValidationService implements IModelValidationService {
       throw new Error(VALIDATION_ERROR_MESSAGES.MISSING_SELECTED_MODELS);
     }
 
-    // 2. Fetch Project Context
     const project = await this.projectService.getById(input.projectId.trim());
     if (!project) {
       throw new Error(VALIDATION_ERROR_MESSAGES.PROJECT_NOT_FOUND);
@@ -84,7 +83,6 @@ export class ModelValidationService implements IModelValidationService {
       predictionObjectiveStartDate: input.predictionObjectiveStartDate.trim(),
     };
 
-    // 3. Assemble Dependencies
     const services = {
       projectService: this.projectService,
       agentThinkingService: this.agentThinkingService,
@@ -97,7 +95,6 @@ export class ModelValidationService implements IModelValidationService {
       onThinkingUpdate: async () => {},
     } as unknown as IngestionServices;
 
-    // 4. Execute the Standalone Model Validation Agent
     const output = await ModelValidationAgent.execute(state as any, services, {
       predictionHorizon: input.predictionHorizon,
       predictionFrequency: input.predictionFrequency,
@@ -107,7 +104,6 @@ export class ModelValidationService implements IModelValidationService {
       maxRetries: VALIDATION_PIPELINE_CONSTANTS.DEFAULT_MAX_RETRIES,
     });
 
-    // 5. Persist to Postgres Repository
     if (output.report) {
       try {
         const runId = output.report.validation_run_id || `val-${state.runTimestamp || Date.now()}`;
@@ -123,7 +119,6 @@ export class ModelValidationService implements IModelValidationService {
       }
     }
 
-    // 6. Update Project Agent State
     try {
       const updatedAgentState = {
         ...((project.agentState as any) || {}),

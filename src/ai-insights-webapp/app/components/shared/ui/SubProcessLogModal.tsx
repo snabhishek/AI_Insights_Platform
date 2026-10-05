@@ -68,14 +68,12 @@ export default function SubProcessLogModal({
     setMounted(true);
   }, []);
 
-  // Update currentStep if prop changes
   useEffect(() => {
     if (substep) {
       setCurrentStep(substep);
     }
   }, [substep?.id]);
 
-  // Handle ESC key to close modal
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -87,14 +85,12 @@ export default function SubProcessLogModal({
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [isOpen, onClose]);
 
-  // Active step status
   const currentStepId = currentStep?.id || "";
   const currentStepStatus: PipelineStatus = currentStepId
     ? (pipelineStatuses[currentStepId] ?? "Pending")
     : "Pending";
   const isRunning = currentStepStatus === "In Progress" && runStatus !== "Stopped";
 
-  // Load / Sync thinking logs
   useEffect(() => {
     if (!isOpen || !currentStepId) return;
 
@@ -141,7 +137,6 @@ export default function SubProcessLogModal({
     agentState?.agentThinking,
   ]);
 
-  // Periodic refresh when running if no live logs in memory
   useEffect(() => {
     if (!isOpen || !isRunning || !projectId || !currentStepId) return;
     const interval = setInterval(async () => {
@@ -151,30 +146,28 @@ export default function SubProcessLogModal({
           setThinkingLogs(res.data.thinking);
         }
       } catch {
-        // silent catch during polling
+
       }
     }, 2000);
     return () => clearInterval(interval);
   }, [isOpen, isRunning, projectId, pipelineTitle, currentStepId]);
 
-  // Auto-scroll to bottom when new logs stream in
   useEffect(() => {
     if (logsContainerRef.current) {
       logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
   }, [thinkingLogs]);
 
-  // Filter logs by search and severity
   const filteredLogs = useMemo(() => {
     return thinkingLogs.filter((log) => {
-      // Text match
+
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase();
         const textMatch = log.text.toLowerCase().includes(query);
         const timeMatch = log.time.toLowerCase().includes(query);
         if (!textMatch && !timeMatch) return false;
       }
-      // Level filter
+
       if (logLevel === "all") return true;
       return getLogLevel(log) === logLevel;
     });
@@ -226,7 +219,7 @@ export default function SubProcessLogModal({
 
   return createPortal(
     <div className="fixed inset-0 z-[250] flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md select-none animate-fade-in">
-      {/* Terminal Window Card */}
+
       <div
         className={`relative flex flex-col bg-[#0b0f19] text-slate-200 border border-slate-700/80 rounded-2xl shadow-2xl shadow-black/80 overflow-hidden transition-all duration-200 ${
           isMaximized
@@ -234,9 +227,9 @@ export default function SubProcessLogModal({
             : "w-[92vw] sm:w-[85vw] max-w-5xl h-[86vh]"
         }`}
       >
-        {/* Terminal Header Bar */}
+
         <div className="flex items-center justify-between px-4 py-3 bg-[#0d1322] border-b border-slate-800 shrink-0">
-          {/* Left: Window Control Dots */}
+
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -269,7 +262,6 @@ export default function SubProcessLogModal({
               </span>
             </button>
 
-            {/* Separator & Terminal Prompt Icon */}
             <div className="ml-3 pl-3 border-l border-slate-800 flex items-center gap-2">
               <span className="text-emerald-400 font-mono text-xs font-bold select-none">&gt;_</span>
               <span className="font-mono text-xs text-slate-300 font-semibold tracking-wide truncate max-w-[200px] sm:max-w-md">
@@ -278,9 +270,8 @@ export default function SubProcessLogModal({
             </div>
           </div>
 
-          {/* Right: Status badge & Actions */}
           <div className="flex items-center gap-2 sm:gap-3">
-            {/* Live streaming status indicator */}
+
             {isRunning ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
                 <span className="relative flex h-2 w-2">
@@ -301,7 +292,6 @@ export default function SubProcessLogModal({
               </span>
             )}
 
-            {/* Maximize toggle button */}
             <button
               type="button"
               onClick={() => setIsMaximized((prev) => !prev)}
@@ -325,7 +315,6 @@ export default function SubProcessLogModal({
               )}
             </button>
 
-            {/* Close button */}
             <button
               type="button"
               onClick={onClose}
@@ -340,7 +329,6 @@ export default function SubProcessLogModal({
           </div>
         </div>
 
-        {/* Sub-process Switcher Bar (if multiple steps available in this pipeline card) */}
         {stepsList.length > 1 && (
           <div className="flex items-center gap-1.5 px-4 py-2 bg-[#090d16] border-b border-slate-800/80 overflow-x-auto shrink-0 select-none scrollbar-none">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-2 shrink-0">
@@ -386,9 +374,8 @@ export default function SubProcessLogModal({
           </div>
         )}
 
-        {/* Log Window Toolbar (Search, Filter, Actions) */}
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-[#0e1424] border-b border-slate-800 text-xs shrink-0 select-none">
-          {/* Search Input */}
+
           <div className="relative flex items-center min-w-[200px] sm:min-w-[260px]">
             <svg
               viewBox="0 0 24 24"
@@ -420,7 +407,6 @@ export default function SubProcessLogModal({
             )}
           </div>
 
-          {/* Level Filter Buttons */}
           <div className="flex items-center gap-1 bg-[#080c14] p-0.5 rounded-lg border border-slate-800">
             {(
               [
@@ -446,10 +432,8 @@ export default function SubProcessLogModal({
             ))}
           </div>
 
-          {/* Action buttons (Copy, Download) */}
           <div className="flex items-center gap-2">
 
-            {/* Copy button */}
             <button
               type="button"
               onClick={handleCopyLogs}
@@ -475,7 +459,6 @@ export default function SubProcessLogModal({
               )}
             </button>
 
-            {/* Download button */}
             <button
               type="button"
               onClick={handleDownloadLogs}
@@ -493,13 +476,11 @@ export default function SubProcessLogModal({
           </div>
         </div>
 
-        {/* Log Stream Body (Monospace Terminal Screen) */}
         <div
           ref={logsContainerRef}
           className="flex-1 overflow-y-auto p-4 font-mono text-xs sm:text-[13px] leading-relaxed bg-[#080c14] select-text"
         >
 
-          {/* Log Lines */}
           {filteredLogs.length > 0 ? (
             <div className="space-y-1">
               {filteredLogs.map((log, idx) => {
@@ -523,17 +504,15 @@ export default function SubProcessLogModal({
                               : "text-indigo-300 bg-indigo-950/15"
                     }`}
                   >
-                    {/* Line number gutter */}
+
                     <span className="text-slate-600 select-none text-[11px] w-8 text-right shrink-0 group-hover:text-slate-500 pt-0.5">
                       {String(idx + 1).padStart(3, "0")}
                     </span>
 
-                    {/* Timestamp */}
                     <span className="text-slate-500 select-none text-[11px] shrink-0 pt-0.5 font-semibold">
                       [{log.time}]
                     </span>
 
-                    {/* Prefix tag */}
                     <span
                       className={`text-[10px] font-bold px-1.5 py-0.2 rounded shrink-0 select-none uppercase ${
                         isError
@@ -550,10 +529,9 @@ export default function SubProcessLogModal({
                       {isError ? "ERR" : isWarn ? "WARN" : isSuccess ? "DONE" : log.done ? "INFO" : "EXEC"}
                     </span>
 
-                    {/* Log text content */}
                     <div className="flex-1 break-words leading-relaxed font-mono">
                       <span>{log.text}</span>
-                      {/* Streaming cursor if last log and still in progress */}
+
                       {!log.done && idx === filteredLogs.length - 1 && isRunning && (
                         <span className="inline-block w-2 h-3.5 bg-emerald-400 ml-1.5 animate-pulse align-middle" />
                       )}
@@ -579,7 +557,6 @@ export default function SubProcessLogModal({
           )}
         </div>
 
-        {/* Terminal Footer Bar */}
         <div className="flex items-center justify-between px-4 py-2 bg-[#0d1322] border-t border-slate-800 text-[11px] text-slate-500 shrink-0 font-mono select-none">
           <div className="flex items-center gap-3">
             <span>Encoding: UTF-8</span>

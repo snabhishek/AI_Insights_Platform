@@ -54,7 +54,6 @@ async function runConcurrencyRaceTest() {
 
   const sourceRegistry = new SourceRegistryService(mockConnectorRepo, connectionTester, duckDBService, mockProjectRepo);
 
-  // Ensure project folder is clean before test (not yet ingested)
   await duckDBService.deleteProjectFolder("Demand Forecasting Race Test");
 
   const fields = ["category", "product_sku", "customer", "customer_region", "energy_rating"];
@@ -92,7 +91,6 @@ async function runConcurrencyRaceTest() {
     throw new Error(`Concurrency test failed! Expected 20/20 successes, got ${successCount}/20`);
   }
 
-  // Cleanup
   await duckDBService.deleteProjectFolder("Demand Forecasting Race Test");
   try { fs.unlinkSync(testCsv); } catch {}
 

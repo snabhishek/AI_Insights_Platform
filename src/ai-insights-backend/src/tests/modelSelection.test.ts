@@ -38,9 +38,6 @@ async function runModelSelectionTests() {
     }
   }
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 1. Context Normalization & Problem Inference Tests
-  // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n--- Category 1: Context Normalization & Problem Inference ---");
 
   const classInput = {
@@ -106,12 +103,8 @@ async function runModelSelectionTests() {
     `Got task: ${forecastInferred.task}, subtype: ${forecastInferred.subtype}`
   );
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 2. Model Capability Registry & Dynamic Registration Tests
-  // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n--- Category 2: Model Capability Registry & Dynamic Extension ---");
 
-  // Test 2.1: Registry starts with empty catalog per requirement (no hardcoded legacy models)
   const registry = new ModelCapabilityRegistry();
   assert(
     registry.getAllModels().length === 0,
@@ -119,7 +112,6 @@ async function runModelSelectionTests() {
     `Actual count: ${registry.getAllModels().length}`
   );
 
-  // Test 2.2: Register external model with dynamic source metadata
   dynamicallyRegisterExploredModel(registry, {
     modelId: "catboost_sota",
     displayName: "CatBoost Gradient Boosting",
@@ -152,7 +144,6 @@ async function runModelSelectionTests() {
     "Dynamic model metadata correctly records source, source_type, repositoryUrl, and version"
   );
 
-  // Test 2.3: Register model from Hugging Face
   dynamicallyRegisterExploredModel(registry, {
     modelId: "timegpt_forecaster",
     displayName: "TimeGPT Foundation Forecaster",
@@ -177,7 +168,6 @@ async function runModelSelectionTests() {
     "Hugging Face explored model 'timegpt_forecaster' is registered"
   );
 
-  // Test 2.4: Register a Builtin Baseline Model
   registry.registerModel({
     modelId: "logistic_regression",
     displayName: "Logistic Regression",
@@ -200,7 +190,6 @@ async function runModelSelectionTests() {
     "Built-in baseline model is registered"
   );
 
-  // Test 2.5: Distinguish Builtin vs External Models
   const externalModels = registry.getExternalModels();
   const builtinModels = registry.getBuiltinModels();
   assert(
@@ -214,14 +203,12 @@ async function runModelSelectionTests() {
     `Builtin count: ${builtinModels.length}`
   );
 
-  // Test 2.6: Filter Candidates by Source
   const hfModels = registry.getModelsBySource("huggingface.co");
   assert(
     hfModels.length === 1 && hfModels[0].modelId === "timegpt_forecaster",
     "filterCandidates / getModelsBySource retrieves models from specific platform (huggingface.co)"
   );
 
-  // Test 2.7: Deduplication and Metadata Update
   const initialTimeGptUpdated = registry.getModel("timegpt_forecaster")?.updatedAt;
   registry.registerModel({
     modelId: "timegpt_forecaster",
@@ -252,12 +239,8 @@ async function runModelSelectionTests() {
     "Existing model metadata is updated and enriched upon subsequent exploration"
   );
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 3. Model Selection Decision Validation Tests
-  // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n--- Category 3: Output Schema & Structural Validation ---");
 
-  // Register additional candidate for tabular classification
   registry.registerModel({
     modelId: "lightgbm_classifier",
     displayName: "LightGBM Classifier",
@@ -385,7 +368,6 @@ async function runModelSelectionTests() {
   const validRes = ModelSelectionValidator.validate(validDecision, registry);
   assert(validRes.isValid, "Valid decision with source metadata passes all validation checks", validRes.errors.join("; "));
 
-  // Test Invalid Suitability Score (> 1.0)
   const invalidScoreDecision: ModelSelectionDecision = JSON.parse(JSON.stringify(validDecision));
   invalidScoreDecision.candidates[0].suitability_score = 1.45;
   const invalidScoreRes = ModelSelectionValidator.validate(invalidScoreDecision, registry);
@@ -394,7 +376,6 @@ async function runModelSelectionTests() {
     "Validator rejects suitability score greater than 1.0"
   );
 
-  // Test Unknown Model ID not in Registry
   const unknownModelDecision: ModelSelectionDecision = JSON.parse(JSON.stringify(validDecision));
   unknownModelDecision.candidates[1].model_id = "unregistered_magic_model_9000";
   const unknownModelRes = ModelSelectionValidator.validate(unknownModelDecision, registry);
@@ -403,7 +384,6 @@ async function runModelSelectionTests() {
     "Validator rejects candidate model not present in ModelCapabilityRegistry"
   );
 
-  // Test Invalid source_type
   const invalidSourceDecision: ModelSelectionDecision = JSON.parse(JSON.stringify(validDecision));
   invalidSourceDecision.candidates[0].source_type = "invalid_source_type" as any;
   const invalidSourceRes = ModelSelectionValidator.validate(invalidSourceDecision, registry);
@@ -412,9 +392,6 @@ async function runModelSelectionTests() {
     "Validator validates source_type values"
   );
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 4. Dynamic URL Parsing & Provider Resolution (No Hardcoding)
-  // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n--- Category 4: Dynamic URL Parsing & Provider Resolution ---");
 
   const mockRepo = {
@@ -454,9 +431,6 @@ async function runModelSelectionTests() {
     JSON.stringify(customInfo)
   );
 
-  // ─────────────────────────────────────────────────────────────────────────────
-  // 5. Automatic Tool Execution in Agent Loop
-  // ─────────────────────────────────────────────────────────────────────────────
   console.log("\n--- Category 5: Automatic Tool Execution in Agent Loop ---");
 
   let toolExecuted: boolean = false;
@@ -560,7 +534,6 @@ async function runModelSelectionTests() {
     "Tool received correct arguments from agent loop"
   );
 
-  // Test 5.2: ModelSelectionValidator validates required fields and rejects missing fields without fallback
   const sampleDecision: ModelSelectionDecision = {
     status: "READY",
     problem_type: "classification",

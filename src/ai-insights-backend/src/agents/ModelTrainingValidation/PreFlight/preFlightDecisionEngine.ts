@@ -9,9 +9,7 @@ import {
 } from "./types";
 
 export class PreFlightDecisionEngine {
-  /**
-   * Stage 5: Optimization Strategy Evaluation
-   */
+
   evaluateOptimizations(
     config: any,
     system: SystemHardwareSnapshot,
@@ -20,7 +18,6 @@ export class PreFlightDecisionEngine {
     const checks: PreFlightCheck[] = [];
     const recommendations: OptimizationRecommendation[] = [];
 
-    // 1. Batch Size & DataLoader Optimization
     const batchSize = Number(config.batch_size || config.batchSize || 32);
     const numWorkers = Number(config.num_workers ?? config.workers ?? (system.cpu_logical > 4 ? 2 : 0));
 
@@ -59,7 +56,6 @@ export class PreFlightDecisionEngine {
       });
     }
 
-    // 2. Precision & Mixed Precision
     const hasGpu = system.gpus && system.gpus.length > 0;
     const precision = (config.precision || config.mixed_precision || "fp32").toString().toLowerCase();
 
@@ -108,7 +104,6 @@ export class PreFlightDecisionEngine {
       });
     }
 
-    // 3. Process Python optimization proposals
     if (Array.isArray(pythonProposals)) {
       for (const prop of pythonProposals) {
         recommendations.push({
@@ -127,10 +122,6 @@ export class PreFlightDecisionEngine {
     return { checks, recommendations };
   }
 
-  /**
-   * Stage 6: Resource & Training Estimation
-   * Uses realistic calculations and preserves confidence without fabricating numbers.
-   */
   estimateResources(
     config: any,
     system: SystemHardwareSnapshot,
@@ -142,7 +133,6 @@ export class PreFlightDecisionEngine {
     const epochs = Number(config.epochs || config.max_epochs || 10);
     const batchSize = Number(config.batch_size || 32);
 
-    // Heuristic estimation based on model type and dataset
     const estRamGb = Math.min(
       Math.max(1.5, Math.round((modelCount * 0.5 + 1.0) * 10) / 10),
       Math.round(system.ram_total_gb * 0.8 * 10) / 10
@@ -154,7 +144,6 @@ export class PreFlightDecisionEngine {
     const estSeconds = Math.round(modelCount * (epochs * 1.5 + 10));
     const estModelSizeMb = Math.round(modelCount * 25);
 
-    // If python returned an estimate, honor its values
     const pyEst = pythonDecision?.estimate;
     const finalRam = pyEst?.required_ram_gb != null ? pyEst.required_ram_gb : estRamGb;
     const finalVram = pyEst?.required_vram_gb != null ? pyEst.required_vram_gb : estVramGb;
@@ -199,9 +188,6 @@ export class PreFlightDecisionEngine {
     return { estimates, checks };
   }
 
-  /**
-   * Stage 7: Resource Safety Assessment
-   */
   assessResourceSafety(
     system: SystemHardwareSnapshot,
     estimates: ResourceEstimations
@@ -210,7 +196,6 @@ export class PreFlightDecisionEngine {
     let bottleneck = "none";
     let criticalFailure: string | undefined;
 
-    // 1. Disk Space Safety Check (Critical: minimum 1.0 GB)
     if (system.disk_free_gb < 1.0) {
       bottleneck = "disk";
       criticalFailure = `Critical storage depletion: Available disk space (${system.disk_free_gb.toFixed(2)} GB) is below the safe threshold of 1.0 GB.`;
@@ -238,7 +223,6 @@ export class PreFlightDecisionEngine {
       });
     }
 
-    // 2. RAM Safety Check (Safety margin: 85% of available RAM)
     const ramSafetyLimit = system.ram_available_gb * 0.85;
     if (estimates.ram_gb && estimates.ram_gb > ramSafetyLimit && system.ram_available_gb > 0) {
       bottleneck = "ram";
@@ -266,7 +250,6 @@ export class PreFlightDecisionEngine {
       });
     }
 
-    // 3. VRAM Safety Check (if GPU present)
     if (system.gpus && system.gpus.length > 0 && estimates.vram_gb) {
       const gpu = system.gpus[0];
       const vramLimit = gpu.free_vram_gb * 0.85;
@@ -300,10 +283,6 @@ export class PreFlightDecisionEngine {
     return { checks, bottleneck, criticalFailure };
   }
 
-  /**
-   * Stage 10: Final Decision
-   * Synthesizes all checks, bottlenecks, and recommendations into the final decision.
-   */
   makeFinalDecision(
     checks: PreFlightCheck[],
     recommendations: OptimizationRecommendation[],
@@ -361,9 +340,6 @@ export class PreFlightDecisionEngine {
     };
   }
 
-  /**
-   * Evaluates hardware and execution feasibility according to the structured 4-step decision tree.
-   */
   evaluateHardwareAndStrategy(
     config: any,
     system: SystemHardwareSnapshot,
@@ -380,7 +356,7 @@ export class PreFlightDecisionEngine {
     decision_reason: string;
     constraints_or_missing_requirements: string[];
   } {
-    // If Python microservice already returned structured evaluation, normalize and return it
+
     if (pythonDecision && pythonDecision.selected_strategy) {
       return {
         gpu_available: Boolean(pythonDecision.gpu_available),
@@ -397,11 +373,9 @@ export class PreFlightDecisionEngine {
       };
     }
 
-    // Step 1: Check GPU Availability from actual environment snapshot
     const hasGpu = Boolean(system.gpus && system.gpus.length > 0);
     const gpu = hasGpu ? system.gpus[0] : null;
 
-    // Step 2: Evaluate Hardware Capability
     const rawCfg = config?.configuration || config || {};
     const models = rawCfg.models || rawCfg.candidate_models || rawCfg.model_selection?.models || rawCfg.model_selection?.candidates || [];
     const framework = (rawCfg.framework || rawCfg.model_framework || "scikit-learn").toLowerCase();
@@ -460,7 +434,6 @@ export class PreFlightDecisionEngine {
       };
     }
 
-    // CPU Evaluation
     const ramLimit = (system.ram_available_gb || 8.0) * 0.85;
     const ramSufficient = reqRam <= ramLimit;
     const cpuConstraints: string[] = [];
@@ -487,7 +460,6 @@ export class PreFlightDecisionEngine {
       constraints: cpuConstraints,
     };
 
-    // Determine suitable resource
     let selectedResource: "gpu" | "cpu" | "none" = "cpu";
     if (!diskOk) {
       selectedResource = "none";
@@ -501,7 +473,6 @@ export class PreFlightDecisionEngine {
       selectedResource = "cpu";
     }
 
-    // Step 3: Evaluate Direct Execution Feasibility
     if (selectedResource === "gpu" && gpuFeasible) {
       const reason = `Direct GPU execution feasible: Model verified on ${gpu?.name || "GPU"} (${(reqVram || 1.2).toFixed(1)} GB VRAM required vs ${gpu?.free_vram_gb || 0} GB available).`;
       return {
@@ -532,7 +503,6 @@ export class PreFlightDecisionEngine {
       };
     }
 
-    // Step 4: Evaluate Optimization Feasibility
     if (!diskOk) {
       const reason = `Critical host storage depletion: Available disk space (${system.disk_free_gb} GB) is below the minimum 1.0 GB threshold.`;
       return {
@@ -548,7 +518,6 @@ export class PreFlightDecisionEngine {
       };
     }
 
-    // If GPU direct execution failed, check alternative CPU or GPU optimizations
     if (selectedResource === "gpu") {
       if (cpuFeasible) {
         const failoverReason = `GPU execution infeasible (${gpuEval?.constraints[0] || "insufficient VRAM"}); successfully failed over to direct CPU execution with sufficient host RAM (${system.ram_available_gb.toFixed(1)} GB free).`;
@@ -565,7 +534,6 @@ export class PreFlightDecisionEngine {
         };
       }
 
-      // Try GPU optimization
       const vramWithOpt = (reqVram || 2.0) * 0.55;
       if (hasGpu && gpu && vramWithOpt <= (gpu.free_vram_gb || 0) * 0.85 && gpuRuntimeCompatible) {
         const reason = "Direct GPU execution exceeded safe VRAM headroom; execution enabled via GPU optimizations (mixed precision FP16 / batch size reduction).";
@@ -583,7 +551,6 @@ export class PreFlightDecisionEngine {
       }
     }
 
-    // Try CPU optimization (chunking / batch size reduction)
     if (ramLimit >= reqRam * 0.6) {
       const reason = "Direct CPU execution exceeded safe RAM limit; execution enabled via CPU optimizations (batch size reduction / data chunking).";
       return {
@@ -599,7 +566,6 @@ export class PreFlightDecisionEngine {
       };
     }
 
-    // Infeasible
     const infeasibleReason = "No feasible execution strategy exists: system RAM and compute capacity do not satisfy model requirements even with optimizations.";
     return {
       gpu_available: hasGpu,

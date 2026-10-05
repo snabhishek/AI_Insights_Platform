@@ -24,23 +24,16 @@ export class PreFlightAgent {
     this.decisionEngine = new PreFlightDecisionEngine();
   }
 
-  /**
-   * Normalizes incoming training configuration by unwrapping envelopes,
-   * discovering candidate models from all contract sections or disk YAML,
-   * and hoisting canonical configuration fields to the root.
-   */
   public normalizeTrainingConfig(trainingConfig: any, context: PreFlightContext = {}): any {
     const raw = trainingConfig || {};
     let configObj: Record<string, any> = {};
 
-    // 1. Unwrap envelope if configuration is nested
     if (raw.configuration && typeof raw.configuration === "object" && Object.keys(raw.configuration).length > 0) {
       configObj = { ...raw.configuration };
     } else {
       configObj = { ...raw };
     }
 
-    // 2. If contractPath exists on disk, read and merge from YAML contract file if candidates are missing
     const contractPath = raw.contractPath || configObj.contractPath;
     if (contractPath && typeof contractPath === "string" && fs.existsSync(contractPath)) {
       try {
@@ -52,7 +45,6 @@ export class PreFlightAgent {
       }
     }
 
-    // 3. Extract candidate models from all possible locations
     const modelSel = configObj.model_selection || raw.model_selection || {};
     const rawCandidates: any[] =
       (Array.isArray(configObj.models) && configObj.models.length > 0 ? configObj.models : null) ||
@@ -79,7 +71,6 @@ export class PreFlightAgent {
     configObj.models = normalizedModels;
     configObj.candidate_models = normalizedModels;
 
-    // 4. Resolve framework
     if (!configObj.framework && !configObj.model_framework) {
       if (normalizedModels.length > 0) {
         configObj.framework = normalizedModels[0].framework || "scikit-learn";
@@ -88,7 +79,6 @@ export class PreFlightAgent {
       }
     }
 
-    // 5. Ensure splits, task_type, primary_metric, target_column are top-level accessible
     if (!configObj.splits && !configObj.data_splits) {
       if (configObj.split) {
         configObj.splits = configObj.split;
@@ -117,13 +107,9 @@ export class PreFlightAgent {
     return configObj;
   }
 
-  /**
-   * Executes the 10-stage pre-flight pipeline sequentially.
-   */
   async execute(trainingConfig: any, context: PreFlightContext = {}): Promise<PreFlightReport> {
     console.info("[PreFlightAgent] Starting 10-stage Pre-Flight Assessment...");
 
-    // Stage 1: Understand Training Job
     const config = this.normalizeTrainingConfig(trainingConfig, context);
     const models = config.models || config.candidate_models || [];
     const modelCount = Array.isArray(models) && models.length > 0 ? models.length : 1;
@@ -138,7 +124,6 @@ export class PreFlightAgent {
 
     console.info(`[PreFlightAgent] Stage 1: Job understood. ${models.length} model(s), frameworks: [${frameworks.join(", ")}].`);
 
-    // Fetch system snapshot and Python capabilities
     const pyPipeline = await this.pythonAdapter.runPreflightPipeline(config);
     const system = pyPipeline.system;
     console.info(
@@ -147,22 +132,18 @@ export class PreFlightAgent {
 
     const allChecks: PreFlightCheck[] = [];
 
-    // Stage 2: Configuration Validation
     const stage2Checks = this.validator.validateConfiguration(config);
     allChecks.push(...stage2Checks);
     console.info(`[PreFlightAgent] Stage 2: Configuration validated (${stage2Checks.length} checks).`);
 
-    // Stage 3: Model & Framework Compatibility
     const stage3Checks = this.validator.validateModelAndFramework(config, system);
     allChecks.push(...stage3Checks);
     console.info(`[PreFlightAgent] Stage 3: Framework compatibility verified (${stage3Checks.length} checks).`);
 
-    // Stage 4: Data & Feature Readiness
     const stage4Checks = this.validator.validateDataAndFeatures(config, context);
     allChecks.push(...stage4Checks);
     console.info(`[PreFlightAgent] Stage 4: Data & feature readiness verified (${stage4Checks.length} checks).`);
 
-    // Stage 5: Optimization Strategy Evaluation
     const pyProposals = pyPipeline.decision?.optimizations || [];
     const { checks: stage5Checks, recommendations: optRecs } = this.decisionEngine.evaluateOptimizations(
       config,
@@ -172,7 +153,6 @@ export class PreFlightAgent {
     allChecks.push(...stage5Checks);
     console.info(`[PreFlightAgent] Stage 5: Optimization evaluation complete (${stage5Checks.length} checks, ${optRecs.length} recommendations).`);
 
-    // Stage 6: Resource & Training Estimation
     const { estimates, checks: stage6Checks } = this.decisionEngine.estimateResources(
       config,
       system,
@@ -181,7 +161,6 @@ export class PreFlightAgent {
     allChecks.push(...stage6Checks);
     console.info(`[PreFlightAgent] Stage 6: Resource estimations computed (RAM: ${estimates.ram_gb} GB, confidence: ${estimates.confidence}).`);
 
-    // Stage 7: Resource Safety Assessment
     const { checks: stage7Checks, bottleneck, criticalFailure } = this.decisionEngine.assessResourceSafety(
       system,
       estimates
@@ -190,11 +169,9 @@ export class PreFlightAgent {
     estimates.bottleneck = bottleneck;
     console.info(`[PreFlightAgent] Stage 7: Safety assessment complete. Bottleneck: '${bottleneck}'.`);
 
-    // Stage 8: Configuration Change Analysis (consolidate recommendations)
     const allRecommendations: OptimizationRecommendation[] = [...optRecs];
     console.info(`[PreFlightAgent] Stage 8: Configuration change analysis produced ${allRecommendations.length} action items.`);
 
-    // Stage 9: Safe Pre-Execution Check
     const stage9Checks = this.validator.validatePreExecution({
       runDir: context.runDir,
       outputDir: config.output_dir || config.artifacts_dir,
@@ -202,7 +179,6 @@ export class PreFlightAgent {
     allChecks.push(...stage9Checks);
     console.info(`[PreFlightAgent] Stage 9: Safe pre-execution filesystem check verified.`);
 
-    // Stage 10: Final Decision
     const { decision, status, summary } = this.decisionEngine.makeFinalDecision(
       allChecks,
       allRecommendations,
@@ -211,7 +187,6 @@ export class PreFlightAgent {
     );
     console.info(`[PreFlightAgent] Stage 10: Final Pre-Flight Decision: [${decision}] - ${summary}`);
 
-    // Structured Hardware Evaluation & Strategy Resolution
     const hardwareDecision = this.decisionEngine.evaluateHardwareAndStrategy(
       config,
       system,

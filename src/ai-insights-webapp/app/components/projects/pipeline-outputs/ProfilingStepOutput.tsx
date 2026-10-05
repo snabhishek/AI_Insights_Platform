@@ -15,7 +15,6 @@ export default function ProfilingStepOutput({ profileData }: ProfilingStepOutput
   const [selectedTableKey, setSelectedTableKey] = useState<string | null>(null);
   const [isSchemaOpen, setIsSchemaOpen] = useState(true);
 
-  // 1. Build sources array similar to ingestion output
   const rawSources = profileData?.sources;
   const sources = Array.isArray(rawSources)
     ? rawSources
@@ -53,7 +52,6 @@ export default function ProfilingStepOutput({ profileData }: ProfilingStepOutput
     setIsSchemaOpen(false);
   }, [selectedTableKey]);
 
-  // Get active tab for a specific table
   const getActiveTab = (tableKey: string): TabType => {
     return activeTabs[tableKey] || "quality";
   };
@@ -111,7 +109,7 @@ export default function ProfilingStepOutput({ profileData }: ProfilingStepOutput
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 items-start">
-        {/* Left Column: Sidebar / Table Selector */}
+
         <aside className="lg:col-span-1 space-y-4">
           <div className="border border-border/80 bg-surface p-3 space-y-3">
             <div className="flex items-center justify-between pb-2 border-b border-border/60">
@@ -163,7 +161,6 @@ export default function ProfilingStepOutput({ profileData }: ProfilingStepOutput
           </div>
         </aside>
 
-        {/* Right Column: Tabbed Table Details */}
         <section className="lg:col-span-3 space-y-6">
           {selectedTable ? (
             <div className="space-y-6">

@@ -12,11 +12,11 @@ export interface ConnectionConfig {
   database?: string;
   username?: string;
   password?: string;
-  account?: string;    // snowflake
-  url?: string;        // restapi
-  method?: string;     // restapi
-  headers?: string;    // restapi JSON
-  fileName?: string;   // excel/csv/tsv
+  account?: string;
+  url?: string;
+  method?: string;
+  headers?: string;
+  fileName?: string;
   fileContent?: string;
 }
 
@@ -113,13 +113,12 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:5000/api";
+export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL!;
 
-// Helper function to fetch resources with retry logic to handle initial dev server spin-up delays
 async function fetchWithRetry(url: string, options?: RequestInit, retries = 5, delay = 1000): Promise<Response> {
   try {
     const res = await fetch(url, options);
-    // If we get a server-side error that might be temporary (e.g. while database is migrating/seeding)
+
     if (!res.ok && retries > 0 && [500, 502, 503, 504].includes(res.status)) {
       console.warn(`Fetch to ${url} failed with status ${res.status}. Retrying in ${delay}ms... (${retries} retries left)`);
       await new Promise((resolve) => setTimeout(resolve, delay));
@@ -150,7 +149,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [dataSources, setDataSources] = useState<DataSource[]>([]);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
 
-  // Toast Notification state (top-right modern shared notification)
   const [toasts, setToasts] = useState<ToastItem[]>([]);
   const lastToastRef = useRef<{ title: string; time: number } | null>(null);
 
@@ -173,7 +171,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         lastToastRef.current.title === messageText &&
         now - lastToastRef.current.time < 5000
       ) {
-        return; // Suppress duplicate notification loops
+        return;
       }
       lastToastRef.current = { title: messageText, time: now };
 
@@ -195,7 +193,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     []
   );
 
-  // Message Modal state (for full diagnostic logs)
   const [alertOpen, setAlertOpen] = useState(false);
   const [alertConfig, setAlertConfig] = useState<{
     title: string;
@@ -204,7 +201,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     logs?: string;
   }>({ title: "", message: "", type: "info" });
 
-  // Confirmation Modal state
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmConfig, setConfirmConfig] = useState<{
     title: string;
@@ -214,7 +210,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     onConfirm: () => void;
   }>({ title: "", message: "", onConfirm: () => {} });
 
-  // Create Workspace Modal state
   const [createWsOpen, setCreateWsOpen] = useState(false);
 
   const showAlert = useCallback(
@@ -225,7 +220,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       logs?: string;
       isModal?: boolean;
     }) => {
-      // If diagnostic logs or isModal is requested, render full MessageModal
+
       if (config.logs || config.isModal) {
         setAlertConfig({
           title: config.title || "Notice",
@@ -235,7 +230,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         });
         setAlertOpen(true);
       } else {
-        // Standard notification: display shared top-right modern toast with ONLY the message, no explanation
+
         const messageText = config.title || config.message || "";
         showToast({
           title: messageText,
@@ -251,7 +246,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setConfirmOpen(true);
   };
 
-
   const [userProfile, setUserProfile] = useState<UserProfile>({
     name: "SanthoshKumaran",
     email: "santhosh@cei.com",
@@ -261,7 +255,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     tasksCount: 100,
   });
 
-  // ─── Fetch workspaces on mount ──────────────────────────────────────────────
   useEffect(() => {
     async function fetchWorkspaces() {
       try {
@@ -275,12 +268,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
             const hasSaved = savedWsId && data.some((w) => w.id === savedWsId);
 
             if (hasSaved) {
-              // Land on current workspace user was in (default or custom)
+
               setActiveWorkspaceIdState(savedWsId!);
             } else {
-              // First load rules:
-              // If there are no workspaces other than Default workspace then load default workspace
-              // else load the first available workspace in the list.
+
               const defaultWs = data.find((w) => w.isDefault || w.id === "default");
               const nonDefaultWorkspaces = data.filter((w) => !w.isDefault && w.id !== "default");
 
@@ -305,7 +296,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     fetchWorkspaces();
   }, []);
 
-  // ─── Fetch projects + data sources when active workspace changes ────────────
   const fetchWorkspaceData = useCallback(async (wsId: string) => {
     try {
       const [projRes, srcRes] = await Promise.all([
@@ -336,7 +326,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (activeWorkspaceId) fetchWorkspaceData(activeWorkspaceId);
   }, [activeWorkspaceId, fetchWorkspaceData]);
 
-  // ─── Workspace switching ────────────────────────────────────────────────────
   const setActiveWorkspaceId = (id: string) => {
     setActiveWorkspaceIdState(id);
     if (typeof window !== "undefined") {
@@ -344,7 +333,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // ─── Create workspace ───────────────────────────────────────────────────────
   const addWorkspace = async (name: string) => {
     const res = await fetch(`${BACKEND_URL}/workspaces`, {
       method: "POST",
@@ -357,7 +345,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setActiveWorkspaceId(data.id);
   };
 
-  // ─── Delete workspace ───────────────────────────────────────────────────────
   const deleteWorkspace = async (id: string) => {
     const res = await fetch(`${BACKEND_URL}/workspaces/${id}`, { method: "DELETE" });
     const data = await res.json();
@@ -377,7 +364,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  // ─── Projects ───────────────────────────────────────────────────────────────
   const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string): Promise<Project | null> => {
     const initials = userProfile.name
       .split(" ")
@@ -449,7 +435,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  // ─── Connectors ─────────────────────────────────────────────────────────────
   const testConnection = async (type: DataSource["type"], config: ConnectionConfig) => {
     try {
       const res = await fetch(`${BACKEND_URL}/connectors/test`, {

@@ -10,95 +10,6 @@ import { AgentStateType } from "../agents/state";
 export class PostgresProjectRepository implements IProjectRepository {
   constructor(private db: NodePgDatabase<typeof schema>) { }
 
-  // private normalizeAgentState(agentState: AgentStateType): AgentStateType {
-  //   if (!agentState || typeof agentState !== "object") return agentState;
-  //   const stageOutputs = agentState.stageOutputs || null;
-
-  //   if (agentState.status === 'stopped') {
-  //     agentState = {
-  //       connectorId: agentState.connectorId,
-  //       projectId: agentState.projectId,
-  //       userPrompt: agentState.userPrompt,
-  //       prediction_target_column: agentState.prediction_target_column ?? "",
-  //       runTimestamp: agentState.runTimestamp,
-  //       splitDate: agentState.splitDate,
-  //       splitEndDate: agentState.splitEndDate,
-  //       selectedModels: agentState.selectedModels,
-  //       predictionHorizon: agentState.predictionHorizon,
-  //       predictionFrequency: agentState.predictionFrequency,
-  //       predictionObjectiveStartDate: agentState.predictionObjectiveStartDate,
-  //       batchedTables: [],
-  //       inspection: {},
-  //       dataProfile: {},
-  //       schemaResolution: {},
-  //       hierarchyMapper: {},
-  //       relationshipBuilder: {},
-  //       formBuilder: {},
-  //       featureArchitect: {},
-  //       featureValidator: {},
-  //       exogenousScout: {},
-  //       modelSelection: {},
-  //       trainingConfiguration: {},
-  //       preFlight: {},
-  //       modelTraining: {},
-  //       modelEvaluation: {},
-  //       modelValidation: {},
-  //       status: "running",
-  //       summary: "Ingestion workflow started",
-  //       steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
-  //       stageOutputs: {},
-  //       stageStatuses: {
-  //         inspect: "In Progress",
-  //         profileData: "Pending",
-  //         resolveSchema: "Pending",
-  //         hierarchyMapper: "Pending",
-  //         featureArchitect: "Pending",
-  //         featureValidator: "Pending",
-  //         exogenousScout: "Pending",
-  //         modelSelection: "Pending",
-  //         trainingConfiguration: "Pending",
-  //         preFlight: "Pending",
-  //         modelTraining: "Pending",
-  //         modelEvaluation: "Pending",
-  //         modelValidation: "Pending"
-  //       }
-  //     };
-  //     return agentState;
-  //   }
-
-  //   const hasForms = (obj: any) =>
-  //     obj &&
-  //     typeof obj === "object" &&
-  //     ((Array.isArray(obj.filterGroups) && obj.filterGroups.length > 0) ||
-  //       (Array.isArray(obj.forms) && obj.forms.length > 0));
-
-  //   if (!hasForms(agentState.formBuilder)) {
-  //     if (hasForms(stageOutputs?.formBuilder)) {
-  //       agentState.formBuilder = stageOutputs?.formBuilder as any;
-  //     } else if (stageOutputs && hasForms(stageOutputs.hierarchyMapper?.formBuilder)) {
-  //       agentState.formBuilder = stageOutputs?.hierarchyMapper?.formBuilder as any;
-  //     } else if (hasForms(agentState.hierarchyMapper?.formBuilder)) {
-  //       agentState.formBuilder = agentState.hierarchyMapper.formBuilder as any;
-  //     }
-  //   }
-
-  //   if (!agentState.hierarchyMapper || Object.keys(agentState.hierarchyMapper).length === 0) {
-  //     if (stageOutputs.hierarchyMapper && Object.keys(stageOutputs.hierarchyMapper).length > 0) {
-  //       agentState.hierarchyMapper = stageOutputs?.hierarchyMapper || {};
-  //     }
-  //   }
-
-  //   if (!agentState.relationshipBuilder || Object.keys(agentState.relationshipBuilder).length === 0) {
-  //     if (stageOutputs.relationshipBuilder && Object.keys(stageOutputs.relationshipBuilder).length > 0) {
-  //       agentState.relationshipBuilder = stageOutputs.relationshipBuilder;
-  //     } else if (stageOutputs.hierarchyMapper?.relationshipBuilder) {
-  //       agentState.relationshipBuilder = stageOutputs.hierarchyMapper.relationshipBuilder;
-  //     }
-  //   }
-
-  //   return agentState;
-  // }
-
   private mapRowToProject(row: any): Project {
     const rawAgentState = row.agent_state ?? row.agentState ?? {};
     return {
@@ -113,7 +24,7 @@ export class PostgresProjectRepository implements IProjectRepository {
       subDomain: row.sub_domain ?? row.subDomain ?? undefined,
       folderPath: row.folder_path ?? row.folderPath ?? undefined,
       status: row.status || (row.agent_state?.status) || "idle",
-      // agentState: this.normalizeAgentState(rawAgentState),
+
       agentState: rawAgentState,
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
     };
@@ -197,14 +108,13 @@ export class PostgresProjectRepository implements IProjectRepository {
     const currentProj = await this.getById(id);
     if (currentProj?.agentState?.status === "completed" || currentProj?.agentState?.status === "stopped") {
       currentProj.agentState = undefined;
-      
+
       return currentProj;
     }
-    
+
     const effectiveUseCase = useCase ?? currentProj?.useCase;
     const effectiveStatus = (agentState?.status as string) || currentProj?.status || "idle";
 
-    // Merge previous agentState with new agentState so that fields like stageOutputs, modelSelection, etc. are NOT lost
     const existingState = replaceState ? {} : ((currentProj?.agentState as Record<string, unknown>) || {});
     const existingOutputs = (existingState?.stageOutputs as Record<string, unknown>) || {};
     const incomingOutputs = (agentState?.stageOutputs as Record<string, unknown>) || {};
@@ -252,8 +162,6 @@ export class PostgresProjectRepository implements IProjectRepository {
       } as AgentStateType
     )
 
-
-    // Update projects table with status and useCase
     const projectUpdates: Record<string, any> = {
       status: effectiveStatus,
     };
@@ -265,7 +173,6 @@ export class PostgresProjectRepository implements IProjectRepository {
       .set(projectUpdates)
       .where(eq(schema.projects.id, id));
 
-    // Always insert a new state execution record into project_runs table
     try {
       const runId = `run-${uuidv4()}`;
       await this.db.insert(schema.projectRuns).values({
@@ -371,4 +278,3 @@ export class PostgresProjectRepository implements IProjectRepository {
     return (res.rowCount ?? 0) > 0;
   }
 }
-

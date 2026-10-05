@@ -65,7 +65,7 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
   async saveThinking(projectId: string, pipeline: string, substep: string, thinking: ThinkingLog[]): Promise<AgentThinking> {
     try {
       const existing = await this.getThinking(projectId, pipeline, substep);
-      
+
       if (existing) {
         const res = await this.db.update(agentThinking)
           .set({

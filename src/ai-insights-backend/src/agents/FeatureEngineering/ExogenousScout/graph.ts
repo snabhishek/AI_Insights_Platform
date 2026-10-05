@@ -2,9 +2,6 @@ import { StateGraph, Send } from "@langchain/langgraph";
 import { ExogenousScoutAnnotation } from "./state";
 import { exogenousWorkerNode, exogenousAggregatorNode } from "./workerNode";
 
-/**
- * Dynamic routing function that maps each batch to a parallel workerNode via LangGraph Send API
- */
 export function dispatchBatches(state: typeof ExogenousScoutAnnotation.State) {
   const { batches, tableMetaMap, userPrompt, projectDomain, systemPrompt } = state;
   if (!batches || batches.length === 0) {
@@ -25,9 +22,6 @@ export function dispatchBatches(state: typeof ExogenousScoutAnnotation.State) {
   });
 }
 
-/**
- * Builds and compiles the LangGraph Map-Reduce StateGraph for Exogenous Scouting
- */
 export function createExogenousScoutGraph() {
   return new StateGraph(ExogenousScoutAnnotation)
     .addNode("exogenousWorkerNode", exogenousWorkerNode)

@@ -11,11 +11,6 @@ export interface AnalyzeDependenciesInput {
   connectorType?: string;
 }
 
-/**
- * High-performance Relationship Builder Engine
- * Discovers real hierarchical relationships across tables/files via generic data connector functions
- * without pulling raw row data into LLM context.
- */
 export async function analyzeFunctionalDependenciesTool(
   input: AnalyzeDependenciesInput
 ): Promise<RelationshipSchemaOutput> {
@@ -27,7 +22,6 @@ export async function analyzeFunctionalDependenciesTool(
   const relationships: HierarchyRelationship[] = [];
   const conformedGroups: ConformedGroup[] = [];
 
-  // Extract columns & roles from schema resolution or inspection state
   const schemaFields = (input.schemaResolution as any)?.dataIngestionSchema?.fields || {};
   const inspectionTables = (input.inspection as any)?.tables || [];
 
@@ -41,8 +35,6 @@ export async function analyzeFunctionalDependenciesTool(
 
   const candidates: ColumnCandidate[] = [];
 
-  // Step 1: Scope work
-  // Filter for Identifier, Categorical, Location, and Critical Temporal columns only.
   for (const [catName, fieldList] of Object.entries(schemaFields)) {
     if (!Array.isArray(fieldList)) continue;
 
@@ -60,7 +52,7 @@ export async function analyzeFunctionalDependenciesTool(
 
       const priority = (f.priority || "Medium").toLowerCase();
       if (role === "temporal" && priority !== "critical" && priority !== "high") {
-        continue; // Ignore non-critical temporal
+        continue;
       }
 
       if (role) {
@@ -68,7 +60,6 @@ export async function analyzeFunctionalDependenciesTool(
         const table = parts.length > 1 ? parts[0] : (input.tableNames?.[0] || "default_table");
         const col = parts.length > 1 ? parts[1] : parts[0];
 
-        // Derive entityScope from column prefix or table name
         const prefix = col.includes("_") ? col.split("_")[0] : table;
         const entityScope = prefix.toLowerCase();
 
@@ -83,7 +74,6 @@ export async function analyzeFunctionalDependenciesTool(
     }
   }
 
-  // Fallback candidates if schemaResolution was empty
   if (candidates.length === 0 && inspectionTables.length > 0) {
     for (const t of inspectionTables) {
       const tableName = t.tableName || t.name || "table";
@@ -112,13 +102,11 @@ export async function analyzeFunctionalDependenciesTool(
     }
   }
 
-  // Step 2 & 3: Merge aliases & Group by entity scope
-  const aliasMap = new Map<string, string[]>(); // canonicalId -> [colNames]
+  const aliasMap = new Map<string, string[]>();
 
   for (const cand of candidates) {
     const colId = cand.originalName;
-    
-    // Check cardinality and real sample values if connector is provided
+
     let cardinality = 0;
     let sampleValues: string[] = [];
     if (connector) {
@@ -140,7 +128,6 @@ export async function analyzeFunctionalDependenciesTool(
     });
   }
 
-  // Step 4: Test each candidate pair within the same entity scope for hierarchies
   const entityGroups = new Map<string, RelationshipNode[]>();
   for (const node of nodes) {
     if (!entityGroups.has(node.entityScope)) {
@@ -156,7 +143,6 @@ export async function analyzeFunctionalDependenciesTool(
         const parentNode = scopeNodes[i];
         const childNode = scopeNodes[j];
 
-        // Only test if parent has lower or equal cardinality than child (higher level of hierarchy)
         if (parentNode.cardinality > 0 && childNode.cardinality > 0 && parentNode.cardinality >= childNode.cardinality) {
           continue;
         }
@@ -195,7 +181,6 @@ export async function analyzeFunctionalDependenciesTool(
     }
   }
 
-  // Step 5: Handle temporal fields separately (calendar hierarchy)
   const temporalNodes = nodes.filter((n) => n.role === "temporal");
   for (const tempNode of temporalNodes) {
     relationships.push({
@@ -215,8 +200,7 @@ export async function analyzeFunctionalDependenciesTool(
     });
   }
 
-  // Step 6: Check for conformed dimensions across entity scopes
-  const conceptMap = new Map<string, string[]>(); // conceptName -> entityScopes
+  const conceptMap = new Map<string, string[]>();
   for (const node of nodes) {
     const conceptName = node.aliasOf[0].replace(/^(customer|supplier|order|product)_?/i, "");
     if (conceptName && conceptName.length > 2) {
@@ -267,17 +251,17 @@ export function verifyNodeSampleValues(
   const fallbackNodes = fallbackOutput?.nodes || [];
 
   const verifiedNodes = output.nodes.map((node) => {
-    // Find matching fallback node produced by ground-truth connector tool queries
+
     const fallbackMatch = fallbackNodes.find(
       (fn) => fn.id === node.id || (Array.isArray(fn.aliasOf) && Array.isArray(node.aliasOf) && fn.aliasOf.some((a) => node.aliasOf.includes(a)))
     );
 
     let sampleValues: string[] = [];
     if (fallbackMatch && Array.isArray(fallbackMatch.sampleValues) && fallbackMatch.sampleValues.length > 0) {
-      // Overwrite with verified data connector value set
+
       sampleValues = fallbackMatch.sampleValues;
     } else if (Array.isArray(node.sampleValues) && fallbackMatch) {
-      // Cross-check if model values overlap with verified fallback values
+
       const verifiedSet = new Set(fallbackMatch.sampleValues || []);
       if (verifiedSet.size > 0) {
         sampleValues = node.sampleValues.filter((val) => verifiedSet.has(val));

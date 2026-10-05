@@ -52,4 +52,3 @@ export class ProjectService {
     return this.repository.deleteProject(id);
   }
 }
-

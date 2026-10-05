@@ -13,7 +13,6 @@ async function testDemandForecastingFilters() {
   const duckDBService = new DuckDBService(fileService);
   const connectionTester = new ConnectionTesterService(fileService, duckDBService);
 
-  // Clean out previous Demand Forecasting folder
   await duckDBService.deleteProjectFolder("Demand Forecasting");
 
   const mockConnectors: Record<string, any> = {

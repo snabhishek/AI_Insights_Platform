@@ -34,7 +34,7 @@ export function parseForeignKeyValues(foreignKeyValues: unknown): Record<string,
         return parsed as Record<string, string[]>;
       }
     } catch {
-      // Ignore
+
     }
   }
   if (typeof foreignKeyValues === "object") {
@@ -61,7 +61,7 @@ export function parseColumnTypes(columnTypes: unknown): Record<string, string> {
         return parsed as Record<string, string>;
       }
     } catch {
-      // Ignore
+
     }
   }
   if (typeof columnTypes === "object") {

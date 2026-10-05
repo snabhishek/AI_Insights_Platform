@@ -265,9 +265,9 @@ export class ConnectionTesterService implements IConnectionTesterService {
       });
 
       const schemaRes = await targetPool.query(`
-        SELECT table_name as name, table_type as type 
-        FROM information_schema.tables 
-        WHERE table_schema = 'public' 
+        SELECT table_name as name, table_type as type
+        FROM information_schema.tables
+        WHERE table_schema = 'public'
         ORDER BY table_name
       `);
 
@@ -303,9 +303,9 @@ export class ConnectionTesterService implements IConnectionTesterService {
       });
 
       const [schemaRows] = await connection.query(`
-        SELECT table_name as name, table_type as type 
-        FROM information_schema.tables 
-        WHERE table_schema = ? 
+        SELECT table_name as name, table_type as type
+        FROM information_schema.tables
+        WHERE table_schema = ?
         ORDER BY table_name
       `, [config.database]);
 
@@ -816,7 +816,6 @@ export class ConnectionTesterService implements IConnectionTesterService {
       }
     }
 
-    // File-based and restapi sources do not support direct updates
     return { success: false, rowsAffected: 0 };
   }
 
@@ -837,7 +836,7 @@ export class ConnectionTesterService implements IConnectionTesterService {
 
   private async applyDbCleaningOperations(type: string, config: ConnectionConfig, tableName: string, operations: any[]): Promise<{ results: any[] }> {
     const results: any[] = [];
-    
+
     let getPoolOrConn: any;
     let runQuery: any;
     let closeConn: any;
@@ -876,13 +875,13 @@ export class ConnectionTesterService implements IConnectionTesterService {
         options: { encrypt: false, trustServerCertificate: true },
       });
       getPoolOrConn = async () => pool;
-      runQuery = async (p: any, querySql: string, params: any[]) => { 
+      runQuery = async (p: any, querySql: string, params: any[]) => {
         const req = p.request();
         params.forEach((pVal: any, i: number) => req.input(`p${i}`, pVal));
         let i = 0;
         const msSql = querySql.replace(/\?/g, () => `@p${i++}`);
         const r = await req.query(msSql);
-        return r.rowsAffected[0] ?? 0; 
+        return r.rowsAffected[0] ?? 0;
       };
       closeConn = async (p: any) => await p.close();
     }
@@ -956,7 +955,7 @@ export class ConnectionTesterService implements IConnectionTesterService {
             if (lower !== undefined && upper !== undefined) {
               if (type === "postgres") {
                 await runQuery(conn, `UPDATE ${qTableName} SET ${qCol} = $1 WHERE ${qCol} < $1`, [lower]);
-                await runQuery(conn, `UPDATE ${qTableName} SET ${qCol} = $2 WHERE ${qCol} > $2`, [lower, upper]); // Wait, $2 is upper.
+                await runQuery(conn, `UPDATE ${qTableName} SET ${qCol} = $2 WHERE ${qCol} > $2`, [lower, upper]);
               } else {
                 await runQuery(conn, `UPDATE ${qTableName} SET ${qCol} = ? WHERE ${qCol} < ?`, [lower, lower]);
                 await runQuery(conn, `UPDATE ${qTableName} SET ${qCol} = ? WHERE ${qCol} > ?`, [upper, upper]);
@@ -986,16 +985,16 @@ export class ConnectionTesterService implements IConnectionTesterService {
     if (!fileName || !this.fileService.fileExists(fileName)) {
        return { results: operations.map(op => ({ columnName: op.columnName, method: op.method, success: false, rowsAffected: 0, details: "File not found" })) };
     }
-    
+
     const filePath = this.fileService.getFilePath(fileName);
     const results: any[] = [];
-    
+
     try {
       const workbook = xlsx.readFile(filePath);
       const sheetName = tableName && workbook.SheetNames.includes(tableName) ? tableName : workbook.SheetNames[0];
       const worksheet = workbook.Sheets[sheetName];
       let rows = xlsx.utils.sheet_to_json<Record<string, any>>(worksheet, { defval: "" });
-      
+
       for (const op of operations) {
         const col = op.columnName;
         const method = op.method;
@@ -1003,7 +1002,7 @@ export class ConnectionTesterService implements IConnectionTesterService {
         let rowsAffected = 0;
         let success = true;
         let details = "";
-        
+
         try {
           if (["impute_constant", "impute_median", "impute_mean", "impute_mode"].includes(method)) {
             const fillValue = params.fillValue ?? params.value ?? "";
@@ -1074,10 +1073,10 @@ export class ConnectionTesterService implements IConnectionTesterService {
 
         results.push({ columnName: col, method, success, rowsAffected, details });
       }
-      
+
       const newWorksheet = xlsx.utils.json_to_sheet(rows);
       workbook.Sheets[sheetName] = newWorksheet;
-      
+
       if (type === "csv") {
         const csvContent = xlsx.utils.sheet_to_csv(newWorksheet);
         await this.fileService.saveFile(fileName, csvContent);
@@ -1091,7 +1090,7 @@ export class ConnectionTesterService implements IConnectionTesterService {
     } catch (error: any) {
       return { results: operations.map(op => ({ columnName: op.columnName, method: op.method, success: false, rowsAffected: 0, details: error.message })) };
     }
-    
+
     return { results };
   }
 

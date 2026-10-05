@@ -23,7 +23,7 @@ export default function ChatThinkingAccordion({
 
   return (
     <div className="w-full my-2 rounded-xl overflow-hidden text-xs transition-all shadow-sm">
-      {/* Header Bar */}
+
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
@@ -32,7 +32,7 @@ export default function ChatThinkingAccordion({
         <div className="flex items-center gap-2 text-indigo-400 font-semibold truncate">
           <span className="text-sm">🧠</span>
           <span>Agent Reasoning & Pipeline Trace</span>
-          {isStreaming ? ( 
+          {isStreaming ? (
             <span className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 animate-pulse border border-indigo-500/30">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
               Thinking...
@@ -58,7 +58,6 @@ export default function ChatThinkingAccordion({
         </div>
       </button>
 
-      {/* Accordion Body */}
       {isExpanded && (
         <div className="p-3 bg-surface-muted/30 font-mono text-[11px] space-y-1.5 max-h-56 overflow-y-auto select-text">
           {thinking.map((step, idx) => (

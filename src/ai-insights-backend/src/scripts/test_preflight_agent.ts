@@ -22,7 +22,6 @@ async function runTests() {
     }
   }
 
-  // TEST 1: PythonCapabilityAdapter
   console.log("[Test 1] PythonCapabilityAdapter System Profiler & Pipeline Execution");
   const adapter = new PythonCapabilityAdapter();
   const pyResult = await adapter.runPreflightPipeline({
@@ -40,11 +39,9 @@ async function runTests() {
   );
   console.log(`  Host OS: ${pyResult.system.os_name}, RAM: ${pyResult.system.ram_total_gb} GB, Available: ${pyResult.system.ram_available_gb} GB, Free Disk: ${pyResult.system.disk_free_gb} GB\n`);
 
-  // TEST 2: Stage 2 Configuration Validator - Splits and Metrics
   console.log("[Test 2] PreFlightValidator - Configuration Validation");
   const validator = new PreFlightValidator();
 
-  // 2a. Valid configuration
   const validConfig = {
     task_type: "classification",
     primary_metric: "f1",
@@ -57,28 +54,25 @@ async function runTests() {
   assert(splitsCheck?.status === "PASSED", "Split proportions summing to 1.0 should PASS");
   assert(metricCheck?.status === "PASSED", "Classification metric 'f1' on classification task should PASS");
 
-  // 2b. Invalid metric configuration
   const invalidMetricConfig = {
     task_type: "classification",
-    primary_metric: "rmse", // Invalid for classification!
+    primary_metric: "rmse",
     splits: { train: 0.7, validation: 0.15, test: 0.15 },
   };
   const checksInvalidMetric = validator.validateConfiguration(invalidMetricConfig);
   const badMetricCheck = checksInvalidMetric.find((c) => c.id === "conf_metric_alignment");
   assert(badMetricCheck?.status === "FAILED", "Regression metric 'rmse' on classification task must FAIL");
 
-  // 2c. Invalid splits sum
   const badSplitsConfig = {
     task_type: "regression",
     primary_metric: "rmse",
-    splits: { train: 0.9, validation: 0.3, test: 0.1 }, // Sums to 1.3
+    splits: { train: 0.9, validation: 0.3, test: 0.1 },
   };
   const checksBadSplits = validator.validateConfiguration(badSplitsConfig);
   const badSplitCheck = checksBadSplits.find((c) => c.id === "conf_splits_sum");
   assert(badSplitCheck?.status === "WARNING", "Split proportions summing to 1.3 must produce WARNING");
   console.log();
 
-  // TEST 3: Stage 3 Model & Framework Compatibility
   console.log("[Test 3] PreFlightValidator - Model & Framework Compatibility");
   const frameworkChecks = validator.validateModelAndFramework(
     { framework: "xgboost", models: [{ model_id: "xgboost_regressor" }] },
@@ -88,11 +82,9 @@ async function runTests() {
   assert(fwSupport?.status === "PASSED", "XGBoost framework must be supported");
   console.log();
 
-  // TEST 4: Resource Safety Assessment & Bottleneck Detection
   console.log("[Test 4] PreFlightDecisionEngine - Resource Safety & Gate Assessment");
   const engine = new PreFlightDecisionEngine();
 
-  // 4a. Safe scenario
   const safeSafety = engine.assessResourceSafety(pyResult.system, {
     ram_gb: 2.0,
     vram_gb: null,
@@ -107,7 +99,6 @@ async function runTests() {
   assert(safeSafety.bottleneck === "none", "Normal resource usage should have bottleneck 'none'");
   assert(safeSafety.criticalFailure === undefined, "Normal resource usage should have no critical failure");
 
-  // 4b. Critical low disk space (< 1 GB)
   const lowDiskSystem = { ...pyResult.system, disk_free_gb: 0.4 };
   const blockedSafety = engine.assessResourceSafety(lowDiskSystem, {
     ram_gb: 2.0,
@@ -132,7 +123,6 @@ async function runTests() {
   assert(blockedDecision.decision === "BLOCKED", "Critical storage depletion must result in decision 'BLOCKED'");
   console.log();
 
-  // TEST 5: Full 10-Stage Pipeline End-to-End Execution
   console.log("[Test 5] PreFlightAgent - Full 10-Stage Pipeline Execution");
   const agent = new PreFlightAgent(adapter);
 
@@ -169,14 +159,13 @@ async function runTests() {
   console.log(`  RAM Estimate: ${report.estimates.ram_gb} GB, Est Training Time: ${report.estimates.training_time_seconds}s`);
   console.log();
 
-  // TEST 6: Gate Blocking Test with Invalid Target & Metric
   console.log("[Test 6] PreFlightAgent - Gate Blocking on Unrecoverable Configuration");
   const badJobConfig = {
     task_type: "classification",
-    primary_metric: "mse", // Invalid!
-    splits: { train: 1.0, validation: 0.0, test: 0.0 }, // No holdout!
+    primary_metric: "mse",
+    splits: { train: 1.0, validation: 0.0, test: 0.0 },
     models: [{ model_id: "rf", framework: "scikit-learn" }],
-    // No target column!
+
   };
 
   const blockedReport = await agent.execute(badJobConfig, {});
@@ -188,7 +177,6 @@ async function runTests() {
   console.log(`  Blocked Summary: ${blockedReport.summary}`);
   console.log();
 
-  // TEST 7: Candidate Models Extraction from Nested Training Configuration Envelope
   console.log("[Test 7] Candidate Models Discovery from Envelope & model_selection hierarchy");
   const envelopeConfig = {
     status: "Completed",
@@ -225,7 +213,6 @@ async function runTests() {
   console.log(`  Extracted ${envelopeReport.modelCount} candidate model(s): ${envelopeReport.frameworks.join(", ")}`);
   console.log();
 
-  // TEST 8: Structured 4-Step Decision Tree Output Verification
   console.log("[Test 8] Pre-Flight Structured Decision Tree Verification");
   assert(envelopeReport.gpu_available !== undefined, "gpu_available must be defined in report");
   assert(typeof envelopeReport.gpu_available === "boolean", "gpu_available must be boolean");

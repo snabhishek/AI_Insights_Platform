@@ -1,24 +1,24 @@
 export interface RelationshipNode {
-  id: string; // Canonical / Column ID (e.g., "carrier_name", "order_country")
-  columnName?: string; // Exact physical database column name
-  tableName?: string; // Originating database/file table name
-  aliasOf: string[]; // Original columns merged into this node
+  id: string;
+  columnName?: string;
+  tableName?: string;
+  aliasOf: string[];
   role: "identifier" | "categorical" | "location" | "temporal";
-  entityScope: string; // Entity group (e.g. "product", "customer", "order")
+  entityScope: string;
   cardinality: number;
   sampleValues: string[];
 }
 
 export interface RelationshipEvidence {
   method: "dependency_stats" | "date_decomposition" | "value_set_comparison" | "manual_confirmed";
-  sourceType: string; // "database" | "csv" | "tsv" | "excel" | "json_api"
-  purity: number; // 0.0 to 1.0
+  sourceType: string;
+  purity: number;
   sampleSize: number;
 }
 
 export interface HierarchyRelationship {
-  parent: string; // parent node id
-  child: string; // child node id
+  parent: string;
+  child: string;
   type: "strict_hierarchy" | "geographic_hierarchy" | "temporal_hierarchy" | "reference_link";
   evidence: RelationshipEvidence;
   confidence: number;
@@ -49,5 +49,4 @@ export interface RelationshipSchemaOutput {
   summary?: string;
 }
 
-// Backward-compatible alias
 export type RelationshipBuilderOutput = RelationshipSchemaOutput;

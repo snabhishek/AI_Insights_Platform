@@ -34,7 +34,7 @@ export interface CandidateModelValidationRun {
   totals: ModelValidationTotals;
   chartData: ModelValidationChartData;
   evaluationRecordCount: number;
-  actualDataCoverage: number | null; // 0 - 100 percentage
+  actualDataCoverage: number | null;
   modelArtifactPath?: string;
   error?: string;
 }

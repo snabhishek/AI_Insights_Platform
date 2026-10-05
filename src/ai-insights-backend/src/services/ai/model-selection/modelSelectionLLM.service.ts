@@ -36,10 +36,6 @@ export class ModelSelectionLLMService implements IModelSelectionLLMService {
     return this.promptVersion;
   }
 
-  /**
-   * Loads the prompt file strictly from the backend prompts directory.
-   * Per user requirement: No fallback prompt template is provided.
-   */
   private loadPromptTemplate(): string {
     const candidatePaths = [
       path.resolve(process.cwd(), "prompts/ModelSelection/modelSelection.md"),
@@ -69,10 +65,8 @@ export class ModelSelectionLLMService implements IModelSelectionLLMService {
   ): Promise<ModelSelectionDecision> {
     const promptTemplate = this.loadPromptTemplate();
 
-    // 1. Infer baseline problem characteristics
     const inferred = ModelSelectionContextNormalizer.inferProblemSpecs(context);
 
-    // 2. Query available candidate models from registry matching inferred task
     const availableModels = registry.filterCandidates({
       task: inferred.task,
       subtype: inferred.subtype,
@@ -86,12 +80,10 @@ export class ModelSelectionLLMService implements IModelSelectionLLMService {
       );
     }
 
-    // 3. Prepare existing web search tools for model exploration (as used by Exogenous Scout)
     const webSearchToolInstance = createWebSearchTool();
     const extractUrlContentToolInstance = createExtractUrlContentTool();
     const searchTools = [webSearchToolInstance, extractUrlContentToolInstance];
 
-    // 4. Assemble system prompt with runtime context and candidate choices
     const contextSnippet = JSON.stringify(
       {
         businessContext: context.businessContext,
@@ -212,7 +204,6 @@ Ensure you output valid JSON matching this schema:
       context.businessContext.useCase || "Automated ML Pipeline"
     }". Determine target entity, derivation, prediction grain, select primary recommendation, rank candidates with suitability scores (0-1), determine training strategy, models list, feature requirements, and HPO recommendation.`;
 
-    // 5. Invoke LangGraph agent loop with tools (using invokeAgentJson / createAgent as in Feature Engineering)
     const emptyFallback: Record<string, unknown> = {};
 
     let parsed: any;
@@ -248,9 +239,6 @@ Ensure you output valid JSON matching this schema:
     return this.normalizeLLMDecision(parsed, context, availableModels, registry);
   }
 
-  /**
-   * Normalizes the parsed LLM output to conform strictly to the ModelSelectionDecision contract schema.
-   */
   private normalizeLLMDecision(
     raw: any,
     context: ModelSelectionContext,
@@ -261,7 +249,6 @@ Ensure you output valid JSON matching this schema:
       throw new Error("Parsed LLM output is not a valid object");
     }
 
-    // Unpack root wrapper if present (e.g. { model_selection: { ... } } or { decision: { ... } })
     let data = raw;
     if (data.model_selection && typeof data.model_selection === "object") {
       data = { ...data.model_selection, status: data.status || data.model_selection.status };
@@ -269,14 +256,12 @@ Ensure you output valid JSON matching this schema:
       data = { ...data.decision, status: data.status || data.decision.status };
     }
 
-    // 1. Status validation
     const rawStatus = (typeof data.status === "string" ? data.status : data.status?.code || "").toUpperCase();
     if (!["READY", "NEEDS_CLARIFICATION", "UNSUPPORTED", "INVALID_DATA"].includes(rawStatus)) {
       throw new Error(`[ModelSelectionLLMService] Invalid or missing status: '${rawStatus}'. Must be READY, NEEDS_CLARIFICATION, UNSUPPORTED, or INVALID_DATA.`);
     }
     const status = rawStatus as ModelSelectionStatus;
 
-    // 2. Target Entity validation (STRICT - NO FALLBACKS)
     const rawTarget = data.target_entity || data.targetEntity || data.target;
     if (!rawTarget || typeof rawTarget !== "object" || !rawTarget.name || !rawTarget.datatype || !rawTarget.description) {
       throw new Error("[ModelSelectionLLMService] target_entity with valid 'name', 'datatype', and 'description' is required from Model Selection agent.");
@@ -293,7 +278,6 @@ Ensure you output valid JSON matching this schema:
       source: rawTarget.source || null,
     };
 
-    // 3. Prediction Grain validation (STRICT - NO FALLBACKS)
     const rawGrain = data.prediction_grain || data.predictionGrain || data.grain;
     if (!rawGrain || (typeof rawGrain !== "object" && typeof rawGrain !== "string")) {
       throw new Error("[ModelSelectionLLMService] prediction_grain is required from Model Selection agent.");
@@ -309,7 +293,6 @@ Ensure you output valid JSON matching this schema:
       throw new Error("[ModelSelectionLLMService] prediction_grain.entity is required from Model Selection agent.");
     }
 
-    // 4. Candidates validation (STRICT - NO FALLBACKS)
     const rawCandidates: any[] = Array.isArray(data.candidates)
       ? data.candidates
       : Array.isArray(data.models)
@@ -411,7 +394,6 @@ Ensure you output valid JSON matching this schema:
       c.rank = idx + 1;
     });
 
-    // 5. Recommended Model validation (STRICT - NO FALLBACKS)
     const rawRec = data.recommended_model || data.recommendedModel;
     if (!rawRec || (!rawRec.model_id && !rawRec.modelId)) {
       throw new Error("[ModelSelectionLLMService] recommended_model is required from Model Selection agent.");
@@ -436,7 +418,6 @@ Ensure you output valid JSON matching this schema:
       discovered_at: primaryCandidate.discovered_at,
     };
 
-    // 6. Problem Specification & Evaluation Metrics (strictly from agent response - NO FALLBACKS)
     const problem_type = data.problem_type || data.problemType;
     const task_type = data.task_type || data.taskType;
     const task_subtype = data.task_subtype || data.taskSubtype;
@@ -464,7 +445,6 @@ Ensure you output valid JSON matching this schema:
       );
     }
 
-    // 7. Training Strategy validation (STRICT - NO FALLBACKS)
     const rawTraining = data.training || data.trainingStrategy;
     if (!rawTraining || typeof rawTraining !== "object" || !rawTraining.mode) {
       throw new Error("[ModelSelectionLLMService] training specification with 'mode' is required from Model Selection agent.");
@@ -488,7 +468,6 @@ Ensure you output valid JSON matching this schema:
       },
     };
 
-    // 8. Models config array
     const models: ModelConfigItem[] = candidates.map((c) => {
       const matched = availableModels.find((m) => m.modelId === c.model_id);
       return {
@@ -500,7 +479,6 @@ Ensure you output valid JSON matching this schema:
       };
     });
 
-    // 9. Feature Requirements validation (STRICT - NO FALLBACKS)
     const rawFeatReq = data.featureRequirements || data.feature_requirements;
     if (!Array.isArray(rawFeatReq) || rawFeatReq.length === 0) {
       throw new Error("[ModelSelectionLLMService] featureRequirements array is required from Model Selection agent. Fallbacks are disabled.");
@@ -520,7 +498,6 @@ Ensure you output valid JSON matching this schema:
       };
     });
 
-    // 10. Hyperparameter Optimization validation (STRICT - NO FALLBACKS)
     const rawHpo = data.hyperparameterOptimization || data.hyperparameter_optimization;
     if (!rawHpo || typeof rawHpo !== "object" || !rawHpo.approach || !rawHpo.rationale) {
       throw new Error("[ModelSelectionLLMService] hyperparameterOptimization object with 'approach' and 'rationale' is required from Model Selection agent.");
@@ -541,7 +518,6 @@ Ensure you output valid JSON matching this schema:
       rationale: String(rawHpo.rationale).trim(),
     };
 
-    // 11. Confidence validation (STRICT - NO FALLBACKS)
     const rawConf = data.confidence;
     if (!rawConf || typeof rawConf !== "object" || typeof rawConf.score !== "number" || !rawConf.rationale) {
       throw new Error("[ModelSelectionLLMService] confidence object with numeric 'score' and string 'rationale' is required from Model Selection agent.");

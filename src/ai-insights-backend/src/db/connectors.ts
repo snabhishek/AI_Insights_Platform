@@ -70,9 +70,3 @@ export const projectRuns = pgTable("project_runs", {
     statusIdx: index("project_runs_status_idx").on(table.status),
   };
 });
-// export const domains = pgTable("domains", {
-//   id: varchar("id", { length: 50 }).primaryKey(),
-//   domain: varchar("domain", { length: 255 }).notNull().unique(),
-//   subDomains: jsonb("sub_domains").default(sql`'[]'::jsonb`).notNull(),
-//   createdAt: timestamp("created_at").defaultNow().notNull(),
-// });

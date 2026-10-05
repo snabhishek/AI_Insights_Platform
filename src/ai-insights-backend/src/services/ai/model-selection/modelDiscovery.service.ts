@@ -13,10 +13,6 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
 
   constructor(private repository: IModelSelectionRepository) {}
 
-  /**
-   * Helper to parse provider and repository details from an arbitrary URL.
-   * Dynamically resolves the source domain and provider without hardcoding.
-   */
   public parseUrlSource(rawUrl: string): {
     providerId: string;
     providerName: string;
@@ -28,12 +24,10 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
       const hostname = parsed.hostname.toLowerCase().replace(/^www\./, "");
       const pathParts = parsed.pathname.split("/").filter(Boolean);
 
-      // Clean domain name for display
       const providerId = hostname.replace(/[^a-z0-9_-]/g, "_");
       const providerName = hostname;
       const baseUrl = `${parsed.protocol}//${parsed.hostname}`;
 
-      // Extract repo or model ID if path parts exist (e.g. /org/model)
       let repositoryId: string | undefined;
       if (pathParts.length >= 2) {
         repositoryId = `${pathParts[0]}/${pathParts[1]}`;
@@ -55,9 +49,6 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
     }
   }
 
-  /**
-   * Generates targeted search queries based on the context's inferred task, modality, and domain.
-   */
   private generateSearchQueries(context: ModelSelectionContext): string[] {
     const inferred = ModelSelectionContextNormalizer.inferProblemSpecs(context);
     const domain = context.businessContext.domain || "";
@@ -96,10 +87,6 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
     return queries;
   }
 
-  /**
-   * Discovers relevant models dynamically via web search, inspects their metadata via Playwright,
-   * evaluates their suitability, registers them into the registry, and persists to PostgreSQL.
-   */
   public async discoverAndRegisterModels(
     context: ModelSelectionContext,
     registry: ModelCapabilityRegistry,
@@ -117,7 +104,6 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
         const searchRawResult = await this.webSearchTool.invoke({ query });
         const resultString = typeof searchRawResult === "string" ? searchRawResult : JSON.stringify(searchRawResult);
 
-        // Parse search result items
         let items: Array<{ title?: string; url?: string; snippet?: string; content?: string }> = [];
         try {
           const parsed = JSON.parse(resultString);
@@ -127,17 +113,15 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
             items = parsed.results;
           }
         } catch {
-          // If not JSON, search string may contain lines
+
           items = [{ snippet: resultString }];
         }
 
-        // Process discovered items and extract candidate model architectures
         for (const item of items.slice(0, 5)) {
           const title = item.title || "";
           const url = item.url || "";
           const snippet = item.snippet || item.content || "";
 
-          // Inspect page content via Playwright if a relevant URL is available
           let detailedContent = snippet;
           if (url && (url.includes("huggingface.co") || url.includes("github.com") || url.includes("paperswithcode.com"))) {
             try {
@@ -150,16 +134,14 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
             }
           }
 
-          // Extract model identifiers and architecture from title / snippet / URL
           const extractedModels = this.extractModelsFromSearchData(title, url, detailedContent, inferred.task);
 
           for (const modelDef of extractedModels) {
-            // 1. Resolve source provider dynamically
+
             const sourceInfo = this.parseUrlSource(modelDef.repositoryUrl || url || "");
             const sourceProviderId = sourceInfo.providerId;
             const sourceName = sourceInfo.providerName;
 
-            // Ensure source provider is stored in the database lookup table
             try {
               await this.repository.ensureSourceProvider({
                 id: sourceProviderId,
@@ -183,10 +165,8 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
               updatedAt: new Date().toISOString(),
             };
 
-            // 2. Register/update in-memory registry (handles deduplication)
             registry.registerModel(completeDef);
 
-            // 3. Persist to PostgreSQL dynamic_model_registry
             try {
               await this.repository.saveDynamicModel(completeDef);
             } catch (dbErr: any) {
@@ -205,9 +185,6 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
     return discoveredModels;
   }
 
-  /**
-   * Intelligently parses candidate models and architectural metadata from search results and page text.
-   */
   private extractModelsFromSearchData(
     title: string,
     url: string,
@@ -217,7 +194,6 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
     const combined = `${title} ${url} ${content}`.toLowerCase();
     const candidates: Array<Omit<ModelDefinition, "sourceTypeId" | "sourceType" | "sourceProviderId" | "source">> = [];
 
-    // Well-known modern architectures to extract when found in search findings
     const patterns = [
       {
         id: "catboost_sota",
@@ -324,12 +300,10 @@ export class ModelDiscoveryService implements IModelDiscoveryService {
       }
     }
 
-    // If no specific recognized model pattern matched, but a valid URL and title exists:
     if (candidates.length === 0 && url && title) {
       const cleanTitle = title.replace(/[^\w\s-]/g, "").trim().slice(0, 80);
       const generatedId = `explored_${cleanTitle.toLowerCase().replace(/[\s-]+/g, "_")}`.slice(0, 95);
 
-      // Infer appropriate ML framework and algorithm family from title, URL, and search content
       let inferredFramework = "custom";
       let inferredAlgo = "Modern Discovered ML Architecture";
       if (/\blightgbm\b|\blgbm\b/i.test(combined)) {

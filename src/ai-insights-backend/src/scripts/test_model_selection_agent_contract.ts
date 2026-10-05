@@ -31,7 +31,6 @@ async function runTest() {
     }
   };
 
-  // 1. Fetch last run state from database or fallback JSON
   console.log("[Step 1] Fetching latest workflow state...");
   let state: any = null;
   const db = drizzle(pool, { schema: { ...connectorsSchema, ...modelSelectionSchema } });
@@ -73,7 +72,6 @@ async function runTest() {
     process.exit(1);
   }
 
-  // 2. Prepare upstream context for Model Selection
   console.log("\n[Step 2] Assembling upstream context from state...");
   const architect = state.featureArchitect || {};
   const architectDecision = architect.orchestrationDecision || architect.decision || {};
@@ -106,7 +104,6 @@ async function runTest() {
 
   const normalizedContext = ModelSelectionContextNormalizer.normalize(inputContext);
 
-  // 3. Execute Model Selection Agent
   console.log("\n[Step 3] Executing Model Selection LLM Service (Pure Agentic Flow)...");
   const llmService = new ModelSelectionLLMService();
   const registry = defaultModelCapabilityRegistry;
@@ -163,7 +160,6 @@ async function runTest() {
     `recommended_model is established ("${decision.recommended_model?.model_id}")`
   );
 
-  // Register discovered dynamic candidate models in registry before validator check (same as ModelSelectionService.analyze)
   if (Array.isArray(decision.candidates)) {
     for (const c of decision.candidates) {
       if (!registry.isModelSupported(c.model_id)) {
@@ -205,11 +201,9 @@ async function runTest() {
     });
   }
 
-  // Deterministic Validator Check
   const validation = ModelSelectionValidator.validate(decision, registry);
   assert(validation.isValid, "ModelSelectionValidator confirms decision is structurally valid", validation.errors);
 
-  // 4. Test Downstream Flow: Verify Training Configuration receives and binds these fields without fallbacks
   console.log("\n[Step 5] Testing Downstream Training Configuration Contract Binding...");
   const downstreamState: any = {
     ...state,

@@ -113,7 +113,7 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
   const pythonScriptDir = getPythonScriptDirectory(services, state.runTimestamp);
 
   try {
-    // 1. Invoke the compiled Feature Architect subgraph
+
     const architectGraph = createFeatureArchitectGraph();
     const graphResult = await architectGraph.invoke(
       {
@@ -171,17 +171,17 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
           summary: DEFAULT_STEP_SUMMARY,
         },
       ],
-      stageOutputs: { 
+      stageOutputs: {
         featureArchitect: finalOutput,
         featureValidator: featureValidatorOutput,
       },
-      stageStatuses: { 
+      stageStatuses: {
         featureArchitect: STATUS_COMPLETED,
         featureValidator: STATUS_COMPLETED,
       },
     };
   } finally {
-    // Clean up container session upon completing the entire Feature Engineering stage
+
     const projectId = services.projectId ?? "";
     const runTimestamp = state.runTimestamp ?? "";
     await cleanupRunContainer(projectId, runTimestamp);

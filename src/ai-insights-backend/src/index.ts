@@ -58,18 +58,16 @@ import { ModelValidationService } from "./services/ai/model-validation/modelVali
 import { ModelValidationController } from "./controllers/modelValidation.controller";
 import createModelValidationRouter from "./routes/modelValidation";
 
-
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT || 5000);
-const HOST = process.env.HOST || "0.0.0.0";
+const PORT = Number(process.env.PORT!);
+const HOST = process.env.HOST!;
 
-// Enable CORS for frontend workspace
 app.use(
   cors({
     origin: (origin, callback) => {
-      // Allow requests with no origin (like curl, postman) or from any localhost / 127.0.0.1 port
+
       if (!origin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
         callback(null, true);
       } else {
@@ -91,15 +89,14 @@ let connectionTester: ConnectionTesterService;
 let connectorRepository: PostgresConnectorRepository;
 let connectorService: ConnectorService;
 let connectorController: ConnectorController;
-// let agentController: AgentController;
+
 let ingestionAgentService: IngestionAgentService;
 let aiController: AIController;
 
 async function bootstrap() {
-  // 1. Wrap PG Pool with Drizzle ORM
+
   db = drizzle(pool, { schema });
 
-  // 3. Construct Dependencies (Dependency Injection)
   fileService = new LocalFileService();
   duckDBService = new DuckDBService(fileService);
   connectionTester = new ConnectionTesterService(fileService, duckDBService);
@@ -114,11 +111,10 @@ async function bootstrap() {
   connectorService = new ConnectorService(connectorRepository, fileService, connectionTester, duckDBService, workspaceRepository);
   const sourceRegistryService = new SourceRegistryService(connectorRepository, connectionTester, duckDBService, projectRepository);
   connectorController = new ConnectorController(connectorService, connectionTester, sourceRegistryService);
-  // agentController = new AgentController(connectorService);
+
   const queueService = new QueueService(db);
   ingestionAgentService = new IngestionAgentService(connectorService, connectionTester, fileService, projectService, agentThinkingService, queueService, duckDBService);
   aiController = new AIController(ingestionAgentService, agentThinkingService);
-
 
   const domainRepository = new PostgresDomainRepository();
   const domainService = new DomainService(domainRepository);
@@ -150,7 +146,6 @@ async function bootstrap() {
   const chatSuggestionService = new ChatSuggestionService(chatSuggestionRepository);
   const chatSuggestionController = new ChatSuggestionController(chatSuggestionService);
 
-  // 4. Mount Main routers
   app.get("/api/filter-options", connectorController.getFilterOptions);
   app.use("/api/connectors", createConnectorRouter(connectorController));
   app.use("/api/domains", createDomainRouter(domainController));
@@ -159,16 +154,12 @@ async function bootstrap() {
   app.use("/api/model-validation", createModelValidationRouter(modelValidationController));
   app.use("/api/chat-suggestions", createChatSuggestionRouter(chatSuggestionController));
 
-  // Agent Router
   const agentRouter = express.Router();
-  // agentRouter.post("/inspect", agentController.runInspector);
-  // app.use("/api/agents", agentRouter);
 
   app.use("/api/ai", createAIRouter(aiController));
   app.use("/api/workspaces", createWorkspaceRouter(workspaceController));
   app.use("/workspaces", express.static(getWorkspacesBasePath()));
 
-  // Health check endpoint
   app.get("/api/health", (req, res) => {
     res.json({ status: "healthy", timestamp: new Date().toISOString() });
   });
@@ -178,14 +169,12 @@ async function bootstrap() {
     console.log(`[Server] Health check available at http://${HOST}:${PORT}/api/health`);
   });
 
-  // 5. Run database initialization guard
   try {
     await checkAndCreateDatabase();
   } catch (err: any) {
     console.error("[DB] Database check failed:", err.message || err);
   }
 
-  // 6. Run programmatic Drizzle migrations
   await runMigrations(db);
 }
 

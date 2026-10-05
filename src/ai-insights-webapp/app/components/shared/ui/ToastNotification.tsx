@@ -105,19 +105,17 @@ const ToastCard = ({
       }}
     >
       <div className="flex items-center gap-3">
-        {/* Modern Icon Badge */}
+
         <div className={`p-1.5 rounded-lg shrink-0 flex items-center justify-center transition-transform hover:scale-105 ${style.iconBg}`}>
           {style.icon}
         </div>
 
-        {/* Content Body: Only the message, no explanation */}
         <div className="flex-1 min-w-0 pr-1">
           <p className="text-sm font-semibold text-foreground tracking-tight leading-snug break-words">
             {messageText}
           </p>
         </div>
 
-        {/* Dismiss Button */}
         <button
           onClick={() => onDismiss(toast.id)}
           className="rounded-lg p-1 text-muted-foreground hover:bg-background/80 hover:text-foreground transition-colors cursor-pointer shrink-0"
@@ -130,7 +128,6 @@ const ToastCard = ({
         </button>
       </div>
 
-      {/* Subtle Auto-Dismiss Progress Bar */}
       <div className="absolute bottom-0 left-0 right-0 h-[2.5px] bg-foreground/5 overflow-hidden">
         <div
           className={`h-full transition-all duration-75 ease-linear ${style.bar}`}

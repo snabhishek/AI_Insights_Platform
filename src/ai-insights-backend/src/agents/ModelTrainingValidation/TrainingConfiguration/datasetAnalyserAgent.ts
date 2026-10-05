@@ -8,17 +8,7 @@ import {
 import { createReadArtifactHeadersTool } from "./tools/readArtifactHeadersTool";
 
 export class DatasetAnalyserAgent {
-  /**
-   * Executes the Dataset Analyser Agent to inspect project artifacts and provide
-   * explanatory narrative answers to inquiries from the Training Configuration Agent.
-   *
-   * Constraints:
-   * - Natural language explanation format (NOT rigid JSON).
-   * - Shares artifact metadata while strictly omitting raw filesystem paths.
-   * - Bound to maxOutputTokens: 5000.
-   * - Uses conditional SummarizationMiddleware (trigger 100K, keep 25K).
-   * - Scoped MCP tools and zero-leak header reader.
-   */
+
   public static async execute(
     queryMessage: string,
     services: IngestionServices,
@@ -28,7 +18,6 @@ export class DatasetAnalyserAgent {
   ): Promise<string> {
     const model = getModel();
 
-    // 1. Prepare Tools
     const getTableColumnsTool = createGetTableColumnsAndProfileTool(
       parentState?.inspection || parentState?.inspector || {},
       parentState?.dataProfile || {}
@@ -47,7 +36,6 @@ export class DatasetAnalyserAgent {
       ...fsTools,
     ];
 
-    // 2. Build Explanatory System Prompt
     const systemPrompt = [
       "You are the senior Dataset Analyser Agent in an automated machine learning platform.",
       "Your role is to collaborate with the Training Configuration Agent by answering its technical questions regarding dataset characteristics, feature representations, temporal properties, and target variable behaviors.",
@@ -91,22 +79,18 @@ export class DatasetAnalyserAgent {
       }
     );
 
-    // Sanitize any accidental filesystem paths in the explanation
     return sanitizeOutputText(response);
   }
 }
 
-/**
- * Strips raw Windows or POSIX absolute paths from output text, replacing them with logical basenames.
- */
 function sanitizeOutputText(text: string): string {
   if (!text) return "";
-  // Strip Windows paths e.g. C:\AI Insights Platform\workspaces\... or D:\...
+
   let sanitized = text.replace(/[a-zA-Z]:\\[^\s"'`\(\)\]\}]+/g, (match) => {
     const parts = match.split(/[\/\\]/);
     return parts[parts.length - 1] || "artifact";
   });
-  // Strip POSIX workspace paths e.g. /workspace/...
+
   sanitized = sanitized.replace(/\/workspace\/[^\s"'`\(\)\]\}]+/g, (match) => {
     const parts = match.split("/");
     return parts[parts.length - 1] || "artifact";

@@ -17,7 +17,7 @@ interface WorkflowPipelineProps {
   onRunWorkflow: () => void;
   onReRunWorkflow?: () => void;
   onStopWorkflow?: () => void;
-  // onViewHistory: () => void;
+
   onSelectStage: (stepId: string) => void;
   onApprove: () => void;
   onRetry: (stepId: string) => void;
@@ -30,7 +30,6 @@ interface WorkflowPipelineProps {
   approvalNextStep?: string | null;
 }
 
-// Data-driven map associating internal stage/sub-step keys to top-level pipeline card IDs
 import { SUBSTEP_TO_PIPELINE_MAP } from "./pipelineFlowConfig";
 
 const MAIN_STEP_MAPPING = SUBSTEP_TO_PIPELINE_MAP;
@@ -47,17 +46,14 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
   const s2 = (pipelineStatuses["Data Profiling"] as PipelineStatus) ?? "Pending";
   const s3 = (pipelineStatuses["Schema Resolver"] as PipelineStatus) ?? "Pending";
 
-  // 1. Explicitly marked completed
   if (pipelineStatuses["Data Ingestion"] === "Completed") {
     return "Completed";
   }
 
-  // 2. All 3 substeps Completed, or terminal substep (Schema Resolver) Completed
   if ((s1 === "Completed" && s2 === "Completed" && s3 === "Completed") || s3 === "Completed") {
     return "Completed";
   }
 
-  // 3. Downstream phase is active, pending, or completed -> Data Ingestion MUST be Completed
   const isDownstreamActiveOrPending =
     pipelineStatuses["Feature Engineering"] === "Completed" ||
     pipelineStatuses["Feature Engineering"] === "In Progress" ||
@@ -82,7 +78,6 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
     return "Completed";
   }
 
-  // 4. In Progress if explicitly In Progress or any substep is actively In Progress
   if (
     pipelineStatuses["Data Ingestion"] === "In Progress" ||
     [s1, s2, s3].some((s) => s === "In Progress")
@@ -90,7 +85,6 @@ function calculateDataIngestionStatus(pipelineStatuses: PipelineStatuses): Pipel
     return "In Progress";
   }
 
-  // 5. If some are completed while others are Pending or pending, it's In Progress
   if ([s1, s2, s3].some((s) => s === "Completed")) {
     return "In Progress";
   }
@@ -114,12 +108,10 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
   const s3 = (pipelineStatuses["Feature Validator"] as PipelineStatus) ?? "Pending";
   const s4 = (pipelineStatuses["Exogenous Scout"] as PipelineStatus) ?? "Pending";
 
-  // 1. Explicitly marked completed
   if (pipelineStatuses["Feature Engineering"] === "Completed") {
     return "Completed";
   }
 
-  // 2. Downstream model phase is active, pending, or completed -> Feature Engineering MUST be Completed
   const isModelPhaseActiveOrCompleted =
     pipelineStatuses["Model Selection"] === "Completed" ||
     pipelineStatuses["Model Selection"] === "In Progress" ||
@@ -134,12 +126,10 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
     return "Completed";
   }
 
-  // 3. Completed if all core steps completed
   if (s1 === "Completed" && s2 === "Completed" && (s3 === "Completed" || s4 === "Completed")) {
     return "Completed";
   }
 
-  // 4. In Progress if explicitly In Progress or any substep is In Progress
   if (
     pipelineStatuses["Feature Engineering"] === "In Progress" ||
     [s1, s2, s3, s4].some((s) => s === "In Progress")
@@ -147,7 +137,6 @@ function calculateFeatureEngineeringStatus(pipelineStatuses: PipelineStatuses): 
     return "In Progress";
   }
 
-  // 5. In progress if partially completed
   if ([s1, s2, s3, s4].some((s) => s === "Completed")) {
     return "In Progress";
   }
@@ -201,16 +190,7 @@ export function getMainStepStatuses(
   requiresApproval?: boolean
 ): Record<string, PipelineStatus> {
   const result: Record<string, PipelineStatus> = {};
-  // if (runStatus === "Stopped" || runStatus === "Failed" || runStatus === "Idle") {
-  //   PIPELINE_STEPS.forEach((step) => {
-  //     if (step.step !== undefined) {
-  //       step.step.forEach((subStep) => {
-  //         result[subStep.id] = "None";
-  //       })
-  //     }
-  //   })
-  //   return result;
-  // }
+
   let foundActiveRunning = false;
 
   for (const step of PIPELINE_STEPS) {
@@ -242,7 +222,7 @@ export default function WorkflowPipeline({
   onRunWorkflow,
   onReRunWorkflow,
   onStopWorkflow,
-  // onViewHistory,
+
   onSelectStage,
   onApprove,
   onRetry,
@@ -257,7 +237,6 @@ export default function WorkflowPipeline({
   const currentStage = activeStage || "inspect";
   const mainSelectedStage = getMainStepId(currentStage);
 
-  // Compute top-level phase statuses and progress across the connections between them.
   const mainStatusMap = getMainStepStatuses(pipelineStatuses, runStatus, requiresApproval);
   const mainStatuses = PIPELINE_STEPS.map((step) => mainStatusMap[step.id]);
 
@@ -277,7 +256,7 @@ export default function WorkflowPipeline({
   };
 
   const getWorkflowStageStatus = (stage: string): PipelineStatus => {
-    // 1. Check if all substeps in this stage are completed and awaiting approval (Rule 1 & Rule 3)
+
     if (stage === "Data Ingestion") {
       const isIngestionDone =
         calculateDataIngestionStatus(pipelineStatuses) === "Completed" ||
@@ -326,7 +305,6 @@ export default function WorkflowPipeline({
       }
     }
 
-    // 2. Check if this stage has any substep waiting for approval / user input (Rule 2 & Rule 3)
     if (stage === "Model Training & Validation") {
       const hasModelSelection = Boolean(
         stageOutputs?.modelSelection ||
@@ -412,7 +390,7 @@ export default function WorkflowPipeline({
 
   return (
     <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-background border border-border rounded-lg p-6 shadow-soft">
-      {/* HITL Notification Pill */}
+
       {isAwaitingResponse && (
         <div className="mb-5 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-surface border border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-sm animate-fadeIn">
           <div className="flex items-center gap-2.5">
@@ -715,16 +693,6 @@ export default function WorkflowPipeline({
                         : "Idle"}
           </span>
 
-          {/* <button
-            onClick={onViewHistory}
-            className="inline-flex items-center gap-1.5 text-muted-foreground hover:text-primary transition-colors cursor-pointer"
-          >
-            <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <circle cx="12" cy="12" r="10" />
-              <polyline points="12 6 12 12 16 14" />
-            </svg>
-            View Run History
-          </button> */}
         </div>
       </div>
     </div>

@@ -47,9 +47,7 @@ interface RectifierResult extends Record<string, unknown> {
 }
 
 export class ModelTrainingAgent {
-  /**
-   * Helper to resolve project paths and contract configuration.
-   */
+
   private static getProjectContext(state: AgentStateType, services: IngestionServices) {
     const projectId = state.projectId || services?.projectId || "";
     const workspaceName = (state as any).workspaceName || services?.workspaceName || "FileStorage_Testing";
@@ -61,7 +59,6 @@ export class ModelTrainingAgent {
     const pythonProjectName = `${projectName}_model_training`;
     const modelTrainingDir = path.join(runDir, pythonProjectName);
 
-    // Read YAML Contract directly from schemas or trainingConfiguration
     let contractPath = (state.trainingConfiguration as any)?.contractPath;
     let contractData: any = (state.trainingConfiguration as any)?.configuration || {};
     if (!contractPath || !fs.existsSync(contractPath)) {
@@ -91,9 +88,6 @@ export class ModelTrainingAgent {
     };
   }
 
-  /**
-   * Helper to extract candidate models configured in the training contract or model selection.
-   */
   private static getCandidateModels(contractData: any, state: AgentStateType): CandidateModelItem[] {
     const rawCandidates =
       contractData?.model_selection?.models ||
@@ -128,11 +122,6 @@ export class ModelTrainingAgent {
     });
   }
 
-  /**
-   * Step 4A: Scaffolds the modular Python model training project (<projectName>_model_training)
-   * with the train split dates, configs, main.py, data_loader.py, and pipeline.py.
-   * Does NOT execute container training.
-   */
   public static async generateProjectCode(
     state: AgentStateType,
     services: IngestionServices
@@ -154,7 +143,6 @@ export class ModelTrainingAgent {
     const preFlight = state.preFlight || (state.stageOutputs as any)?.preFlight || {};
     const configuredCandidateModels = this.getCandidateModels(contractData, state);
 
-    // Extract PreFlight host hardware diagnostics
     const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlight || {}) as any;
     const sys = preFlightReport.system || {};
     const hostCpus = typeof sys.cpu_logical === "number" ? sys.cpu_logical : 4;
@@ -166,7 +154,6 @@ export class ModelTrainingAgent {
     const containerCpuStr = `${containerCpus}.0`;
     const containerRamStr = `${containerRamGb}G`;
 
-    // Ensure output directories exist on host
     fs.mkdirSync(modelTrainingDir, { recursive: true });
     fs.mkdirSync(path.join(modelTrainingDir, "configs"), { recursive: true });
     fs.mkdirSync(path.join(modelTrainingDir, "data"), { recursive: true });
@@ -175,7 +162,6 @@ export class ModelTrainingAgent {
     fs.mkdirSync(path.join(modelTrainingDir, "artifacts", "models"), { recursive: true });
     fs.mkdirSync(path.join(modelTrainingDir, "artifacts", "plots"), { recursive: true });
 
-    // Prepare Tools
     const fsTools = await getMcpFilesystemTools({ projectId, workspaceName, projectName, runTimestamp });
     const contractTool = createReadTrainingContractTool(state.trainingConfiguration || {}, projectId, runTimestamp, services);
     const preFlightTool = createGetPreFlightDetailsTool(preFlight);
@@ -200,11 +186,11 @@ export class ModelTrainingAgent {
 
     const timeColumn =
       contractData?.split?.time_column ||
-      // contractData?.model_selection?.prediction_grain?.time_column ||
+
       contractData?.time_column ||
       (state.featureArchitect as any)?.timeColumn ||
       (state.featureArchitect as any)?.orchestrationDecision?.timeColumn ||
-      // (state.schemaResolution as any)?.timeColumn ||
+
       "";
 
     const splitDateInstructions = effectiveSplitEndDate ? [
@@ -332,9 +318,6 @@ export class ModelTrainingAgent {
     };
   }
 
-  /**
-   * Step 4B: Executes the generated Python project inside the Docker sandbox for user-selected models.
-   */
   public static async executeContainerTraining(
     state: AgentStateType,
     services: IngestionServices,
@@ -346,7 +329,6 @@ export class ModelTrainingAgent {
 
     const configuredCandidateModels = this.getCandidateModels(contractData, state);
 
-    // Selected models to execute
     const effectiveSelectedModels: string[] = (
       Array.isArray(state.selectedModels) && state.selectedModels.length > 0
         ? state.selectedModels
@@ -514,7 +496,7 @@ export class ModelTrainingAgent {
       options?.maxRetries ?? 20,
       undefined,
       async (result: CodingAgentResult) => {
-        // Collect package requirements provided by the agent (no hardcoded manual packages)
+
         if (Array.isArray(result.requiredPackages)) {
           accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...result.requiredPackages]));
         }
@@ -534,10 +516,9 @@ export class ModelTrainingAgent {
           extraArgs.push(`--split-end-date "${effectiveSplitEndDate}"`);
         }
 
-        // Execute sequentially inside Docker container with PreFlight resource limits and model filters
         const execResult = await executePythonScript(
           relativeEntrypoint,
-          "", // code is already in file
+          "",
           projectId,
           runTimestamp,
           services,
@@ -567,7 +548,6 @@ export class ModelTrainingAgent {
           return { isValid: true };
         }
 
-        // Subagent Orchestration: Invoke Rectifier Advisor (READ-ONLY access)
         const missingDetails: string[] = [];
         if (!execResult.success) missingDetails.push("Container execution returned failure exit code.");
         if (!reportExists) missingDetails.push("model_training_report.json was not generated.");
@@ -610,7 +590,7 @@ export class ModelTrainingAgent {
             {
               systemPrompt: rectifierPrompt,
               traceLabel: "modelTraining:rectifierAdvisor",
-              tools: readOnlyFsTools, // Read-only tools only: NO edit, NO write, NO execute
+              tools: readOnlyFsTools,
               recursionLimit: 200,
             }
           );
@@ -643,7 +623,6 @@ export class ModelTrainingAgent {
 
     await cleanupRunContainer(projectId, runTimestamp);
 
-    // Read and parse output report from all potential locations
     const candidateReportPaths = [
       path.join(modelTrainingDir, "model_training_report.json"),
       path.join(runDir, "model_training_report.json"),
@@ -663,7 +642,6 @@ export class ModelTrainingAgent {
       }
     }
 
-    // Fallback: search runDir recursively if not found
     if (!report && fs.existsSync(runDir)) {
       try {
         const findReportRecursive = (dir: string): string | null => {
@@ -693,7 +671,6 @@ export class ModelTrainingAgent {
 
     const executionSuccess = lastExecResult.success && !!report;
 
-    // Extract runs from any standard report key (supporting model_results, arrays and dictionary objects)
     let rawRuns: any[] = [];
     if (Array.isArray(report)) {
       rawRuns = report;
@@ -858,7 +835,6 @@ export class ModelTrainingAgent {
         }
       }
 
-      // Duration extraction from fit_time_seconds, timing, training_metadata, or standard duration fields
       const durationSeconds =
         r.durationSeconds ??
         r.duration_seconds ??
@@ -1007,9 +983,6 @@ export class ModelTrainingAgent {
     };
   }
 
-  /**
-   * Universal executor entrypoint.
-   */
   public static async execute(
     state: AgentStateType,
     services: IngestionServices

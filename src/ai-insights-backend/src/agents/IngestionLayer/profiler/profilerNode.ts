@@ -10,8 +10,8 @@ import {
   createStatisticalProfileTool
 } from "../../tools/profiling";
 import {
-  getModel, 
-  getPromptFromFile, 
+  getModel,
+  getPromptFromFile,
   invokeAgentJson,
   mergeBatchedTableStates,
   buildBatchedTableState,
@@ -153,7 +153,6 @@ export async function profileData(connector: any, inspection: Record<string, unk
     );
     await logMilestoneThinking(services, "Data Profiling", `Data profiling successfully completed for ${tableNames.length} tables.`);
 
-    // Normalize output tables to guarantee clean schema across result sources
     const rawTables = Array.isArray(result?.tables) ? result.tables : fallback.tables;
     const normalizedTables = rawTables.map((t: any) => {
       const columns = Array.isArray(t?.contentProfile?.columns) ? t.contentProfile.columns : [];
@@ -226,12 +225,12 @@ export async function profilerNode(state: typeof AgentState.State, config?: Runn
     state.batchedTables,
     buildBatchedTableState(
       (state.batchedTables || []).map((table) => table.tableName),
-      "profileData",  
+      "profileData",
       "profiled",
       "Table data profile completed"
     )
   );
-  // Persist profiling results as JSON in project schemas directory
+
   try {
     if (services.projectService && services.projectId) {
       const pWs = await services.projectService.getProjectWithWorkspace(services.projectId);

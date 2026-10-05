@@ -17,7 +17,6 @@ async function runProjectIsolationTest() {
   const uploadsDir = path.join(process.cwd(), "uploads");
   if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-  // 1. Create Ecommerce CSV file
   const ecommerceCsv = path.join(uploadsDir, "test_ecommerce_products.csv");
   fs.writeFileSync(
     ecommerceCsv,
@@ -26,7 +25,6 @@ async function runProjectIsolationTest() {
     "p2,informatica_acessorios,RJ\n"
   );
 
-  // 2. Create Demand Forecasting CSV file
   const demandCsv = path.join(uploadsDir, "test_demand_forecasting.csv");
   fs.writeFileSync(
     demandCsv,
@@ -75,7 +73,6 @@ async function runProjectIsolationTest() {
 
   const sourceRegistry = new SourceRegistryService(mockConnectorRepo, connectionTester, duckDBService, mockProjectRepo);
 
-  // Ingest both projects into their respective project folders
   console.log("[Step 1] Ingesting Ecommerce project into Projects/Ecommerce/...");
   await duckDBService.ingestProjectSources("Ecommerce", [
     { type: "csv", config: { fileName: "test_ecommerce_products.csv" }, name: "products" },
@@ -86,7 +83,6 @@ async function runProjectIsolationTest() {
     { type: "csv", config: { fileName: "test_demand_forecasting.csv" }, name: "demand" },
   ]);
 
-  // Test 1: Query Demand Forecasting for "category" -> Must return ["Air Conditioners", "Furnaces", "Heat Pumps"]
   console.log("\n[Test 1] Querying category for Demand Forecasting project...");
   const demandCategoryResult = await sourceRegistry.fetchFilterOptions({
     sourceId: "conn-demand",
@@ -103,7 +99,6 @@ async function runProjectIsolationTest() {
     throw new Error("Test 1 Failed: Demand Forecasting returned wrong or cross-project leaked categories!");
   }
 
-  // Test 2: Query Ecommerce for "category" -> Must return ["beleza_saude", "informatica_acessorios"]
   console.log("\n[Test 2] Querying category for Ecommerce project...");
   const ecomCategoryResult = await sourceRegistry.fetchFilterOptions({
     sourceId: "conn-ecom",
@@ -120,7 +115,6 @@ async function runProjectIsolationTest() {
     throw new Error("Test 2 Failed: Ecommerce returned wrong or cross-project leaked categories!");
   }
 
-  // Test 3: Query field that ONLY exists in Ecommerce ("seller_state") while on Demand Forecasting project
   console.log("\n[Test 3] Querying 'seller_state' (Ecommerce column) while scoped to Demand Forecasting project...");
   const crossLeakResult = await sourceRegistry.fetchFilterOptions({
     sourceId: "conn-demand",
@@ -133,7 +127,6 @@ async function runProjectIsolationTest() {
     throw new Error("Test 3 Failed: Cross-project leakage detected! seller_state leaked into Demand Forecasting!");
   }
 
-  // Clean up
   await duckDBService.deleteProjectFolder("Ecommerce");
   await duckDBService.deleteProjectFolder("Demand Forecasting");
   try { fs.unlinkSync(ecommerceCsv); } catch {}

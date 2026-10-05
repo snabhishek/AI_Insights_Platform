@@ -53,9 +53,6 @@ export interface WorkerBatchInput {
   systemPrompt: string;
 }
 
-/**
- * Exogenous Scout LangGraph State Annotation Schema
- */
 export const ExogenousScoutAnnotation = Annotation.Root({
   batches: Annotation<string[][]>({
     reducer: (left, right) => right ?? left,

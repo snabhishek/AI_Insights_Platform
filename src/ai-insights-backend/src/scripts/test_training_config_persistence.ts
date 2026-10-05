@@ -35,7 +35,6 @@ async function runPersistenceTest() {
   });
   await ensureProjectRunFolder(workspaceName, projectName, runTimestamp);
 
-  // 1. Initial 6 candidate models from Model Selection
   const initialCandidates = [
     { model_id: "lightgbm_classifier", rank: 1, suitability_score: 0.96, framework: "lightgbm", algorithm: "LGBMClassifier" },
     { model_id: "xgboost_classifier", rank: 2, suitability_score: 0.94, framework: "xgboost", algorithm: "XGBClassifier" },
@@ -45,7 +44,6 @@ async function runPersistenceTest() {
     { model_id: "mlp_classifier", rank: 6, suitability_score: 0.78, framework: "sklearn", algorithm: "MLPClassifier" },
   ];
 
-  // User specifically selects 4 models: LightGBM, XGBoost, CatBoost, RandomForest
   const userSelected4 = ["lightgbm_classifier", "xgboost_classifier", "catboost_classifier", "random_forest_classifier"];
 
   console.log("--- TEST 1: User selects 4 models and saves contract ---");
@@ -58,7 +56,7 @@ async function runPersistenceTest() {
       confirmedAt: new Date().toISOString(),
     },
     selectedModelIds: userSelected4,
-    // Pass as string IDs to test string normalization in schemaHelper
+
     models: userSelected4,
   };
 
@@ -79,11 +77,11 @@ async function runPersistenceTest() {
   );
 
   console.log("\n--- TEST 2: LangGraph synthesis strictly enforces all 4 user models ---");
-  // Execute trainingConfigGraph with userSelectedIds and mock LLM returning fallback/fewer models
+
   const graph = createTrainingConfigGraph();
   const graphResult = await graph.invoke({
     messages: [],
-    turnCount: 1, // Turn 1 triggers synthesis node directly without re-asking dataset analyser
+    turnCount: 1,
     isComplete: false,
     datasetAnalysisExplanation: "Dataset contains 10,000 churn records with 15 numerical features and binary target 'Churn'.",
     configuration: {},

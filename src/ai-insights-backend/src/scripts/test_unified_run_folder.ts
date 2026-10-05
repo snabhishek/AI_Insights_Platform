@@ -30,7 +30,6 @@ async function testUnifiedRunFolder() {
   const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
   const parentProjectDir = path.resolve(projectFilesParent, parentFolderName);
 
-  // 1. Simulate Project Creation (creates domain schema in parent project dir)
   console.log("[Step 1] Creating project initial schema file...");
   await createProjectSchemaFile(workspaceName, {
     name: projectName,
@@ -39,13 +38,11 @@ async function testUnifiedRunFolder() {
     useCase: "Analyze customer orders and fulfillment trends",
   });
 
-  // 2. Initiate Run: Generate single runTimestamp and ensure run folder
   const runTimestamp = generateDateTimeStamp();
   console.log(`\n[Step 2] Initiating run with timestamp: ${runTimestamp}`);
   const runSchemasDir = await ensureProjectRunFolder(workspaceName, projectName, runTimestamp);
   console.log(`Created unified run schemas directory: ${runSchemasDir}`);
 
-  // 3. Save Data Ingestion schema with runTimestamp
   console.log("\n[Step 3] Saving Data Ingestion schema...");
   const diResult = await saveModularResolvedSchemas(
     workspaceName,
@@ -62,7 +59,6 @@ async function testUnifiedRunFolder() {
   );
   console.log(`Saved DI schema to: ${diResult.dataIngestionPath}`);
 
-  // 4. Save Relationship schema with runTimestamp
   console.log("\n[Step 4] Saving Relationship schema...");
   const relResult = await saveModularRelationshipSchema(
     workspaceName,
@@ -76,7 +72,6 @@ async function testUnifiedRunFolder() {
   );
   console.log(`Saved Relationship schema to: ${relResult.relationshipSchemaPath}`);
 
-  // 5. Save Form schema with runTimestamp
   console.log("\n[Step 5] Saving Form schema...");
   const formResult = await saveModularFormSchema(
     workspaceName,
@@ -89,7 +84,6 @@ async function testUnifiedRunFolder() {
   );
   console.log(`Saved Form schema to: ${formResult.formSchemaPath}`);
 
-  // 6. Save Training Job Contract schema with runTimestamp
   console.log("\n[Step 6] Saving Training Job Contract schema...");
   const contractResult = await saveModularTrainingJobContract(
     workspaceName,
@@ -105,7 +99,6 @@ async function testUnifiedRunFolder() {
   );
   console.log(`Saved Training Job Contract to: ${contractResult.trainingJobContractPath}`);
 
-  // 7. Verify that ALL schemas exist in the SAME run folder!
   const runFolderName = `${runSlug}-${runTimestamp}`;
   const expectedRunFolder = path.resolve(parentProjectDir, runFolderName, "Schemas");
   console.log(`\n[Step 7] Verifying all schemas in folder: ${expectedRunFolder}`);
@@ -125,7 +118,6 @@ async function testUnifiedRunFolder() {
     );
   }
 
-  // Verify only 1 run subfolder exists for this run timestamp
   const allSubEntries = fs.readdirSync(parentProjectDir);
   const matchingRunFolders = allSubEntries.filter((e) => e.startsWith(`${runSlug}-${runTimestamp}`));
   console.log(`Matching run folders in parent directory:`, matchingRunFolders);
@@ -133,7 +125,6 @@ async function testUnifiedRunFolder() {
     throw new Error(`Expected exactly 1 run folder, found ${matchingRunFolders.length}: ${matchingRunFolders.join(", ")}`);
   }
 
-  // Cleanup test artifacts
   try {
     fs.rmSync(parentProjectDir, { recursive: true, force: true });
   } catch {}

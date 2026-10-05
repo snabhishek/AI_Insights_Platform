@@ -31,8 +31,6 @@ export interface ModelTrainingStepOutputProps {
   isApproving?: boolean;
 }
 
-// ─── Inline Icons ─────────────────────────────────────────────────────────────
-
 function TrophyIcon({ className = "w-5 h-5" }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -151,11 +149,9 @@ export default function ModelTrainingStepOutput({
   const [copiedArtifact, setCopiedArtifact] = useState<string | null>(null);
   const [activePlotModal, setActivePlotModal] = useState<{ title: string; url: string } | null>(null);
 
-  // Dynamic Date Range from Dataset
   const [dateRangeInfo, setDateRangeInfo] = useState<DateRangeInfo | null>(null);
   const [isLoadingDateRange, setIsLoadingDateRange] = useState<boolean>(true);
 
-  // Extract candidate models with full support for all report schemas, snake_case and camelCase
   let reportCandidates: any[] = [];
   const rawReportPayload =
     modelTraining?.report?.model_results ||
@@ -235,7 +231,6 @@ export default function ModelTrainingStepOutput({
     );
     const status = c.status === "SUCCESS" || c.status === "Completed" ? "Completed" : c.status || (c.error ? "Failed" : "Completed");
 
-    // Extract metrics from validation_metrics, validationMetrics, metrics, test_metrics, etc.
     const validationMetrics = c.validationMetrics || c.validation_metrics || c.metrics || c.val_metrics || {};
     const testMetrics = c.testMetrics || c.test_metrics || {};
 
@@ -288,7 +283,6 @@ export default function ModelTrainingStepOutput({
       }
     }
 
-    // Extract duration seconds
     const durationSeconds =
       c.durationSeconds ??
       c.duration_seconds ??
@@ -319,7 +313,6 @@ export default function ModelTrainingStepOutput({
     };
   });
 
-  // Unique candidates by model_id
   const uniqueCandidateMap = new Map<string, CandidateModelItem>();
   for (const c of rawCandidateList) {
     if (!uniqueCandidateMap.has(c.model_id)) {
@@ -328,17 +321,14 @@ export default function ModelTrainingStepOutput({
   }
   const candidateModels = Array.from(uniqueCandidateMap.values());
 
-  // Model selection and Month/Year split state for HITL gate
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>(() => {
     return candidateModels.map((c) => c.model_id);
   });
 
-  // Selected models for Held-Out Model Validation
   const [selectedModelsForValidation, setSelectedModelsForValidation] = useState<string[]>(() => {
     return candidateModels.map((c) => c.model_id);
   });
 
-  // Keep validation selection updated when candidateModels arrive
   useEffect(() => {
     if (candidateModels.length > 0) {
       setSelectedModelsForValidation((prev) => (prev.length === 0 ? candidateModels.map((c) => c.model_id) : prev));
@@ -363,10 +353,9 @@ export default function ModelTrainingStepOutput({
         if (!isNaN(m)) return m;
       }
     }
-    return 9; // September default
+    return 9;
   });
 
-  // Fetch date range dynamically from project dataset and training config
   useEffect(() => {
     if (!projectId) {
       setIsLoadingDateRange(false);
@@ -386,7 +375,7 @@ export default function ModelTrainingStepOutput({
           const data: DateRangeInfo = json.data;
           setDateRangeInfo(data);
           if (data.hasTemporalData && data.minYear && data.maxYear) {
-            // Default to maxYear or 80% through available range
+
             const defaultY = data.maxYear;
             setSelectedYear((prev) => {
               if (prev >= data.minYear! && prev <= data.maxYear!) return prev;
@@ -430,14 +419,12 @@ export default function ModelTrainingStepOutput({
     setTimeout(() => setCopiedArtifact(null), 2000);
   };
 
-  // Compute available years list
   const minYearLimit = dateRangeInfo?.minYear ?? 2000;
   const maxYearLimit = dateRangeInfo?.maxYear ?? new Date().getFullYear();
   const availableYearsList = dateRangeInfo?.availableYears && dateRangeInfo.availableYears.length > 0
     ? dateRangeInfo.availableYears
     : Array.from({ length: maxYearLimit - minYearLimit + 1 }, (_, i) => minYearLimit + i);
 
-  // Filter months if at min/max year boundaries
   const availableMonthsList = MONTHS.filter((m) => {
     if (!dateRangeInfo?.hasTemporalData) return true;
     if (selectedYear === dateRangeInfo.minYear && dateRangeInfo.minMonth && m.value < dateRangeInfo.minMonth) {
@@ -452,7 +439,6 @@ export default function ModelTrainingStepOutput({
   const selectedMonthObj = MONTHS.find((m) => m.value === selectedMonth) || MONTHS[8];
   const formattedSplitCutoff = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
 
-  // Determine phase state
   const hasExecutionReport = Boolean(modelTraining?.report || modelTraining?.selectedModel || (modelTraining?.status === "Completed" && modelTraining?.validationMetrics));
   const hasCodeGenerated = Boolean(
     modelTraining?.projectDirectory ||
@@ -501,7 +487,6 @@ export default function ModelTrainingStepOutput({
     return isMinimize ? a.score - b.score : b.score - a.score;
   });
 
-  // Visual plots collection from report, modelTraining, and candidate plots
   const candidatePlots: Record<string, string> = {};
   for (const c of candidateModels) {
     if (c.plots && typeof c.plots === "object") {
@@ -525,7 +510,7 @@ export default function ModelTrainingStepOutput({
 
   return (
     <div className="p-6 space-y-6">
-      {/* ─── Header & Stage Summary ─── */}
+
       <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs transition-all">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="space-y-1">
@@ -574,7 +559,6 @@ export default function ModelTrainingStepOutput({
         )}
       </div>
 
-      {/* ─── Candidate Model Selection & Docker Execution Gate ─── */}
       {!hasExecutionReport && (
         <div className="rounded-2xl border-2 border-primary/30 bg-primary/5 dark:bg-primary/10 p-5 space-y-5 animate-fadeIn">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/80">
@@ -626,7 +610,7 @@ export default function ModelTrainingStepOutput({
                   <input
                     type="checkbox"
                     checked={isChecked}
-                    onChange={() => {}} // handled by parent div
+                    onChange={() => {}}
                     className="mt-0.5 w-4 h-4 rounded-md border-border text-primary focus:ring-0 cursor-pointer"
                   />
                   <div className="flex-1 min-w-0">
@@ -684,7 +668,6 @@ export default function ModelTrainingStepOutput({
         </div>
       )}
 
-      {/* ─── Champion Model Card ─── */}
       {hasExecutionReport && championCandidate && (
         <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-surface to-surface p-6 shadow-sm">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -707,7 +690,6 @@ export default function ModelTrainingStepOutput({
               </p>
             </div>
 
-            {/* Score Highlight Badge */}
             {typeof championCandidate.score === "number" && (
               <div className="p-4 rounded-xl bg-surface border border-emerald-500/30 text-center shrink-0 min-w-[140px]">
                 <span className="text-[10px] uppercase font-bold text-muted-foreground block tracking-wider">
@@ -720,7 +702,6 @@ export default function ModelTrainingStepOutput({
             )}
           </div>
 
-          {/* Validation Metrics Grid */}
           {(championCandidate.validationMetrics || championCandidate.testMetrics) && (
             <div className="mt-5 pt-4 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-3">
               {Object.entries(championCandidate.testMetrics && Object.keys(championCandidate.testMetrics).length > 0 ? championCandidate.testMetrics : championCandidate.validationMetrics || {}).map(
@@ -738,7 +719,6 @@ export default function ModelTrainingStepOutput({
             </div>
           )}
 
-          {/* Artifact File Banner */}
           {championArtifact && (
             <div className="mt-4 pt-3 border-t border-border/80 flex items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2 truncate text-muted-foreground">
@@ -762,7 +742,6 @@ export default function ModelTrainingStepOutput({
         </div>
       )}
 
-      {/* ─── Model Metrics Leaderboard Table ─── */}
       {hasExecutionReport && candidateModels.length > 0 && (
         <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-xs">
           <div className="p-4 border-b border-border flex items-center justify-between">
@@ -867,7 +846,6 @@ export default function ModelTrainingStepOutput({
         </div>
       )}
 
-      {/* ─── Model Training Completed — Next Step Notice ─── */}
       {hasExecutionReport && (
         <div className="rounded-2xl border border-emerald-500/30 bg-emerald-500/5 dark:bg-emerald-950/20 p-5 shadow-sm animate-fadeIn">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -901,51 +879,6 @@ export default function ModelTrainingStepOutput({
         </div>
       )}
 
-      {/* ─── Artifacts & Visualizations Gallery ─── */}
-      {/* {hasExecutionReport && Object.keys(plots).length > 0 && (
-        <div className="rounded-2xl border border-border bg-surface p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="text-sm font-bold text-foreground">Evaluation Plots & Artifact Visualizations</h4>
-              <p className="text-xs text-muted-foreground mt-0.5">
-                Diagnostic figures (ROC/PR curves, residuals, feature importance, cross-model comparison) generated during evaluation
-              </p>
-            </div>
-            <span className="text-xs font-mono px-2.5 py-1 rounded-lg bg-surface-muted text-muted-foreground border border-border">
-              {Object.keys(plots).length} Plot(s)
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-            {Object.entries(plots).map(([name, url]) => (
-              <div
-                key={name}
-                onClick={() => setActivePlotModal({ title: name, url })}
-                className="group relative rounded-xl border border-border bg-surface-muted/30 overflow-hidden hover:border-primary/50 transition-all cursor-pointer"
-              >
-                <div className="h-44 w-full bg-surface-muted flex items-center justify-center overflow-hidden">
-                  <img
-                    src={resolvePlotUrl(url)}
-                    alt={name}
-                    className="object-contain w-full h-full transition-transform group-hover:scale-105"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = "none";
-                    }}
-                  />
-                </div>
-                <div className="p-3 border-t border-border flex items-center justify-between bg-surface">
-                  <span className="text-xs font-bold text-foreground truncate capitalize">
-                    {name.replace(/_/g, " ")}
-                  </span>
-                  <MaximizeIcon className="w-3.5 h-3.5 text-muted-foreground group-hover:text-primary transition-colors" />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )} */}
-
-      {/* ─── Plot Preview Modal ─── */}
       {activePlotModal && (
         <div
           onClick={() => setActivePlotModal(null)}

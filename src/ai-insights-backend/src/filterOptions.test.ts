@@ -15,7 +15,6 @@ async function runFilterOptionsTests() {
     }
   }
 
-  // Mock connector repository and connection tester service
   const mockConnectorRepo: any = {
     getById: async (id: string) => {
       if (id === "test-source-1") {
@@ -45,7 +44,6 @@ async function runFilterOptionsTests() {
 
   const registry = new SourceRegistryService(mockConnectorRepo, mockConnectionTester);
 
-  // Test 1: Root-level field (zero parents) option retrieval
   try {
     const res1 = await registry.fetchFilterOptions({
       sourceId: "test-source-1",
@@ -60,7 +58,6 @@ async function runFilterOptionsTests() {
     assert(false, `Root-level field test threw error: ${err.message}`);
   }
 
-  // Test 2: Multi-parent field filtering when parents are supplied
   try {
     const res2 = await registry.fetchFilterOptions({
       sourceId: "test-source-1",
@@ -77,13 +74,12 @@ async function runFilterOptionsTests() {
     assert(false, `Multi-parent field test threw error: ${err.message}`);
   }
 
-  // Test 3: Fallback independent field options when parent fields have no values supplied
   try {
     const res3 = await registry.fetchFilterOptions({
       sourceId: "test-source-1",
       fieldId: "sku",
       parentFields: ["category", "segment"],
-      parentParams: {}, // No parent values supplied
+      parentParams: {},
       limit: 10,
     });
     assert(
@@ -94,7 +90,6 @@ async function runFilterOptionsTests() {
     assert(false, `Independent fallback test threw error: ${err.message}`);
   }
 
-  // Test 4: Search term filtering & limit capping
   try {
     const res4 = await registry.fetchFilterOptions({
       sourceId: "test-source-1",
@@ -110,7 +105,6 @@ async function runFilterOptionsTests() {
     assert(false, `Search term test threw error: ${err.message}`);
   }
 
-  // Test 5: date_range MIN/MAX bounds calculation
   try {
     const res5 = await registry.fetchFilterOptions({
       sourceId: "test-source-1",
@@ -126,7 +120,6 @@ async function runFilterOptionsTests() {
     assert(false, `Date range bounds test threw error: ${err.message}`);
   }
 
-  // Test 6: Empty result set handling for unmatched query
   try {
     const res6 = await registry.fetchFilterOptions({
       sourceId: "test-source-1",
@@ -142,7 +135,6 @@ async function runFilterOptionsTests() {
     assert(false, `Empty result set test threw error: ${err.message}`);
   }
 
-  // Test 7: Security validation of SQL identifiers
   try {
     let threwSecurityError = false;
     try {
@@ -159,7 +151,6 @@ async function runFilterOptionsTests() {
     assert(false, `Security validation test threw error: ${err.message}`);
   }
 
-  // Test 8: Valid field identifier containing slashes such as "SKU / Product ID"
   try {
     const res8 = await registry.fetchFilterOptions({
       sourceId: "test-source-1",

@@ -4,7 +4,6 @@ import React, { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { CandidateModelValidationRun } from "./ModelValidationStepOutput";
 
-// Dynamically import ReactApexChart with SSR disabled for Next.js
 const ReactApexChart = dynamic(() => import("react-apexcharts"), {
   ssr: false,
   loading: () => (
@@ -24,14 +23,14 @@ interface ModelValidationApexChartProps {
 }
 
 const PALETTE = [
-  "#38bdf8", // Sky Blue
-  "#f59e0b", // Amber / Gold (Champion)
-  "#818cf8", // Indigo
-  "#ec4899", // Pink
-  "#14b8a6", // Teal
-  "#a855f7", // Purple
-  "#fb923c", // Orange
-  "#06b6d4", // Cyan
+  "#38bdf8",
+  "#f59e0b",
+  "#818cf8",
+  "#ec4899",
+  "#14b8a6",
+  "#a855f7",
+  "#fb923c",
+  "#06b6d4",
 ];
 
 function formatNumber(val: number | null | undefined, decimals = 1): string {
@@ -41,9 +40,6 @@ function formatNumber(val: number | null | undefined, decimals = 1): string {
   return val.toLocaleString(undefined, { maximumFractionDigits: decimals });
 }
 
-/**
- * Parses ISO week string (e.g. "2025-W36" or "2025W36") into UTC timestamp of Monday of that week.
- */
 function parseIsoWeek(year: number, week: number): number {
   const simple = new Date(Date.UTC(year, 0, 4));
   const dayOfWeek = simple.getUTCDay() || 7;
@@ -51,27 +47,19 @@ function parseIsoWeek(year: number, week: number): number {
   return mondayWeek1.getTime() + (week - 1) * 7 * 86400000;
 }
 
-/**
- * Parses any date/period format (Monthly "2025-09-01", Weekly "2025-09-08", Yearly "2025",
- * ISO Week "2025-W36", Quarter "2025-Q1", etc.) into a UTC timestamp.
- * Returns null for non-date periods (e.g. "P1", "Period 1", "Index 0").
- */
 function parseDateToUtcTimestamp(dateStr: string): number | null {
   if (!dateStr || typeof dateStr !== "string") return null;
   const trimmed = dateStr.trim();
 
-  // If it's explicitly a period label like "P1", "Period 1", "Index 1", "T+1", "Step 1"
   if (/^(P\d+|Period\s*\d+|Index\s*\d+|T[+-]\d+|Step\s*\d+)$/i.test(trimmed)) {
     return null;
   }
 
-  // Yearly format: "2025" or "2026"
   if (/^\d{4}$/.test(trimmed)) {
     const y = parseInt(trimmed, 10);
     return Date.UTC(y, 0, 1);
   }
 
-  // ISO Week format: "2025-W36" or "2025W36"
   const weekMatch = trimmed.match(/^(\d{4})[-_]?W(\d{1,2})$/i);
   if (weekMatch) {
     const y = parseInt(weekMatch[1], 10);
@@ -79,7 +67,6 @@ function parseDateToUtcTimestamp(dateStr: string): number | null {
     return parseIsoWeek(y, w);
   }
 
-  // Quarter format: "2025-Q3", "2025/Q3", "Q3 2025", "Q3-2025"
   const qMatch1 = trimmed.match(/^(\d{4})[-_ /]?Q([1-4])$/i);
   if (qMatch1) {
     const y = parseInt(qMatch1[1], 10);
@@ -93,25 +80,19 @@ function parseDateToUtcTimestamp(dateStr: string): number | null {
     return Date.UTC(y, (q - 1) * 3, 1);
   }
 
-  // Year-Month format: "2025-09" or "2025/09"
   if (/^\d{4}[-/]\d{1,2}$/.test(trimmed)) {
     const parts = trimmed.split(/[-/]/);
     return Date.UTC(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, 1);
   }
 
-  // Standard Year-Month-Day: "2025-09-01" or ISO timestamp
   const isoStr = trimmed.includes("T") ? trimmed : `${trimmed}T00:00:00Z`;
   const parsed = Date.parse(isoStr);
   if (!isNaN(parsed)) return parsed;
 
-  // Generic fallback parsing (e.g. "01 Sep 2025", "Sep 2025")
   const fallbackParsed = Date.parse(trimmed);
   return isNaN(fallbackParsed) ? null : fallbackParsed;
 }
 
-/**
- * Normalizes or detects frequency based on explicit configuration or date sequence spacing.
- */
 function detectFrequency(
   dates: string[],
   explicitFreq?: string
@@ -128,16 +109,12 @@ function detectFrequency(
 
   if (!dates || dates.length < 2) return "monthly";
 
-  // Check if all dates are year strings
   if (dates.every((d) => /^\d{4}$/.test(d.trim()))) return "yearly";
 
-  // Check if dates contain ISO weeks
   if (dates.some((d) => /W\d{1,2}/i.test(d))) return "weekly";
 
-  // Check if dates contain quarters
   if (dates.some((d) => /Q[1-4]/i.test(d))) return "quarterly";
 
-  // Measure delta in days between first two parseable timestamps
   const ts1 = parseDateToUtcTimestamp(dates[0]);
   const ts2 = parseDateToUtcTimestamp(dates[1]);
   if (ts1 !== null && ts2 !== null) {
@@ -152,9 +129,6 @@ function detectFrequency(
   return "monthly";
 }
 
-/**
- * Formats a UTC timestamp according to the given frequency (for axis ticks and tooltips).
- */
 function formatTimestampByFrequency(
   timestamp: number,
   freq: "monthly" | "weekly" | "yearly" | "daily" | "quarterly" | "period",
@@ -174,16 +148,16 @@ function formatTimestampByFrequency(
     }
     case "monthly":
       return isTooltip
-        ? d.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" }) // e.g. "September 2025"
-        : d.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" }); // e.g. "Sep 2025"
+        ? d.toLocaleDateString("en-US", { month: "long", year: "numeric", timeZone: "UTC" })
+        : d.toLocaleDateString("en-US", { month: "short", year: "numeric", timeZone: "UTC" });
     case "weekly":
       return isTooltip
         ? `Week of ${d.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })}`
-        : d.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" }); // e.g. "01 Sep 2025"
+        : d.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
     case "daily":
       return isTooltip
         ? d.toLocaleDateString("en-US", { weekday: "short", day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" })
-        : d.toLocaleDateString("en-US", { day: "2-digit", month: "short", timeZone: "UTC" }); // e.g. "01 Sep"
+        : d.toLocaleDateString("en-US", { day: "2-digit", month: "short", timeZone: "UTC" });
     default:
       return d.toLocaleDateString("en-US", { day: "2-digit", month: "short", year: "numeric", timeZone: "UTC" });
   }
@@ -196,10 +170,9 @@ export default function ModelValidationApexChart({
   frequency = "Monthly",
   isClassification = false,
 }: ModelValidationApexChartProps) {
-  // View mode: 'single' (focused active model) or 'compare' (all candidate models overlaid)
+
   const [viewMode, setViewMode] = useState<"single" | "compare">("single");
 
-  // ─── Extract Raw Data & Build Zoomable Timeseries ──────────────────────────
   const processedData = useMemo(() => {
     const cand = activeCandidate || candidates[0];
     const raw =
@@ -235,14 +208,12 @@ export default function ModelValidationApexChart({
       };
     }
 
-    // Determine if dates are calendar dates or period labels
     const parsedTimestamps = rawDates.map(parseDateToUtcTimestamp);
     const allValidDates = parsedTimestamps.every((ts) => ts !== null);
     const uniqueTimestamps = new Set(parsedTimestamps.filter((ts): ts is number => ts !== null));
     const isDatetime = allValidDates && uniqueTimestamps.size === rawLength;
     const activeFreq = detectFrequency(rawDates, frequency);
 
-    // Build raw predictions map for all candidate models
     const candRawForecasts: Record<string, number[]> = {};
     candidates.forEach((c) => {
       const cId = c.model_id || (c as any).modelId;
@@ -260,7 +231,6 @@ export default function ModelValidationApexChart({
         [];
     });
 
-    // Populate series data points with UTC timestamps or sequential 1..N indices
     const actualSeriesData: Array<{ x: number; y: number | null }> = [];
     const forecastSeriesData: Array<{ x: number; y: number | null }> = [];
     const candSeriesDataMap: Record<string, Array<{ x: number; y: number | null }>> = {};
@@ -314,7 +284,6 @@ export default function ModelValidationApexChart({
       };
     }
 
-    // Compare All Models Mode
     const compareSeries = candidates.map((cand, idx) => {
       const candId = cand.model_id || (cand as any).modelId;
       const isChampion = candId === championModelId;
@@ -333,7 +302,6 @@ export default function ModelValidationApexChart({
     };
   }, [activeCandidate, candidates, championModelId, viewMode, frequency]);
 
-  // ─── ApexCharts Options Configuration ───────────────────────────────────────
   const chartOptions: ApexCharts.ApexOptions = useMemo(() => {
     const colors =
       viewMode === "single"
@@ -435,7 +403,6 @@ export default function ModelValidationApexChart({
               return val;
             }
 
-            // Numeric sequence mapping for Period / Step labels (e.g. "P1", "Period 1")
             const num = typeof val === "number" ? (val as unknown as number) : parseFloat(val);
             if (isNaN(num)) return typeof val === "string" ? val : "";
             const idx = Math.round(num) - 1;
@@ -469,7 +436,6 @@ export default function ModelValidationApexChart({
               return formatTimestampByFrequency(val, activeFreq, true);
             }
 
-            // Period / Record Index
             const idx = Math.round(val) - 1;
             if (rawDates[idx]) {
               const label = rawDates[idx];
@@ -507,15 +473,14 @@ export default function ModelValidationApexChart({
     );
   }
 
-  // Format capitalized frequency label for header badge (e.g. "Monthly", "Weekly", "Yearly", "Custom")
   const freqBadgeLabel =
     processedData.activeFreq.charAt(0).toUpperCase() + processedData.activeFreq.slice(1);
 
   return (
     <div className="space-y-3">
-      {/* ─── Top Control Toolbar: View Toggle & Record Info ─── */}
+
       <div className="flex flex-wrap items-center justify-between gap-3 pb-2.5 border-b border-border/60 text-xs">
-        {/* Left: View Mode Switcher */}
+
         <div className="flex items-center gap-1 p-1 bg-surface-raised border border-border rounded-xl">
           <button
             type="button"
@@ -543,7 +508,6 @@ export default function ModelValidationApexChart({
           )}
         </div>
 
-        {/* Right: Period/Frequency Info & Zoom Help Note */}
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span className="font-mono text-foreground font-semibold bg-surface-raised px-2.5 py-1 rounded-lg border border-border">
             {processedData.rawLength} {freqBadgeLabel} Periods
@@ -554,7 +518,6 @@ export default function ModelValidationApexChart({
         </div>
       </div>
 
-      {/* ─── ApexChart Zoomable Timeseries ─── */}
       <div className="w-full bg-surface-raised/40 rounded-xl p-3 border border-border/70 overflow-hidden">
         <ReactApexChart
           options={chartOptions}

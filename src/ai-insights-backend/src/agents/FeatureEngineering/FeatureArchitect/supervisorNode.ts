@@ -132,13 +132,11 @@ export async function supervisorNode(
 
   const historyWorkers = state.history.map((h) => h.worker);
 
-  // 1. Deterministic code execution routing to programRectifier
   const pendingWorker = findPendingExecutableWorker(state, historyWorkers);
   if (pendingWorker !== null) {
     return { nextWorker: pendingWorker };
   }
 
-  // 2. Otherwise, check state progression to call workers or finish
   if (services) {
     const historyText = historyWorkers.length > 0 ? historyWorkers.join(" -> ") : "none";
     await logMilestoneThinking(

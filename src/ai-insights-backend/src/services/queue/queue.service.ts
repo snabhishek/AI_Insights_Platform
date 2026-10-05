@@ -17,12 +17,12 @@ export class QueueService {
   private isCheckingMemory = false;
 
   constructor(private db: NodePgDatabase<any>) {
-    // Start standard interval to monitor memory and process queue
+
     setInterval(() => this.processQueue(), 2000);
   }
 
   async enqueue(jobId: string, projectId: string, connectorId: string[], userPrompt: string, runFn: () => Promise<any>): Promise<void> {
-    // 1. Save job with 'queued' status in database (upsert to handle approval & retry on same session)
+
     await this.db
       .insert(agentJobs)
       .values({
@@ -43,10 +43,8 @@ export class QueueService {
         },
       });
 
-    // 2. Add to local queue array
     this.pending.push({ jobId, projectId, runFn });
-    
-    // 3. Process immediately
+
     this.processQueue();
   }
 
@@ -56,17 +54,17 @@ export class QueueService {
 
     try {
       while (this.activeCount < this.maxConcurrency && this.pending.length > 0) {
-        // Check free memory
+
         const freeMemMb = os.freemem() / (1024 * 1024);
         if (freeMemMb < 500) {
           console.warn(`[QueueService] System free memory (${freeMemMb.toFixed(2)} MB) is below 500MB! Pausing queue...`);
-          // Notify the UI/Tauri frontend that execution is held back due to memory
+
           const oldestJob = this.pending[0];
           agentJobEvents.emit(`job:update:${oldestJob.jobId}`, {
             status: "queued",
             summary: `Waiting for resources (System free memory: ${freeMemMb.toFixed(0)} MB)`,
           });
-          break; // Stop taking jobs
+          break;
         }
 
         const task = this.pending.shift()!;
@@ -80,17 +78,15 @@ export class QueueService {
 
   private async runTask(task: QueueJobTask) {
     console.info(`[QueueService] Starting job ${task.jobId} (Active: ${this.activeCount}/${this.maxConcurrency})`);
-    
+
     try {
-      // 1. Update database status to 'running'
+
       await this.db.update(agentJobs)
         .set({ status: "running", updatedAt: new Date() })
         .where(eq(agentJobs.id, task.jobId));
 
-      // 2. Execute task
       await task.runFn();
 
-      // 3. Update database status to 'completed' only if not already marked stopped/paused/failed
       const currentJob = await this.db.select().from(agentJobs).where(eq(agentJobs.id, task.jobId)).limit(1);
       const curStatus = currentJob[0]?.status;
       if (curStatus !== "stopped" && curStatus !== "paused" && curStatus !== "failed") {
@@ -102,7 +98,6 @@ export class QueueService {
     } catch (err: any) {
       console.error(`[QueueService] Job ${task.jobId} failed:`, err.message || err);
 
-      // Update database status to 'failed' with error info
       await this.db.update(agentJobs)
         .set({ status: "failed", error: err.message || String(err), updatedAt: new Date() })
         .where(eq(agentJobs.id, task.jobId));

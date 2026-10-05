@@ -1,7 +1,3 @@
-/**
- * Constants for Feature Engineering & Feature Architect Pipeline Artifacts and Stages
- */
-
 export const ARTIFACT_FEATURE_CREATED = "feature_created.parquet";
 export const ARTIFACT_FEATURE_TRANSFORMATION = "feature_transformation.parquet";
 export const ARTIFACT_DATASET = "dataset.parquet";

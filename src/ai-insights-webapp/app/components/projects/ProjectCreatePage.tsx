@@ -13,8 +13,6 @@ import {
 import { DataSource, ConnectionConfig, BACKEND_URL, Project } from "../providers/AppContext";
 import ConnectionModal from "../connectors/ConnectionModal";
 
-// ─── Helper ───────────────────────────────────────────────────────────────────
-
 function renderDataSourceIcon(type: string) {
   switch (type) {
     case "postgres": return <PostgresqlIcon size={16} />;
@@ -41,8 +39,6 @@ function getSubtextCategory(subtext: string): string {
 }
 
 const ITEMS_PER_PAGE = 6;
-
-// ─── Custom Modern Dropdown Component ─────────────────────────────────────────
 
 interface CustomSelectOption {
   value: string;
@@ -148,8 +144,6 @@ function CustomSelect({
   );
 }
 
-// ─── Props ────────────────────────────────────────────────────────────────────
-
 interface ProjectCreatePageProps {
   dataSources: DataSource[];
   onCancel: () => void;
@@ -162,8 +156,6 @@ interface ProjectCreatePageProps {
   startInEditMode?: boolean;
   onEditModeChange?: (isEditing: boolean) => void;
 }
-
-// ─── Component ───────────────────────────────────────────────────────────────
 
 export default function ProjectCreatePage({
   dataSources,
@@ -190,11 +182,9 @@ export default function ProjectCreatePage({
   const [sourceTypeFilter, setSourceTypeFilter] = useState("All Types");
   const [currentPage, setCurrentPage] = useState(1);
 
-  // Form submission state
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Domain & Sub-domain state
   const [domainList, setDomainList] = useState<{ id: string; domain: string; subDomains: string[] }[]>([]);
   const [selectedDomain, setSelectedDomain] = useState(project?.domain || "");
   const [selectedSubDomain, setSelectedSubDomain] = useState(project?.subDomain || "");
@@ -206,7 +196,6 @@ export default function ProjectCreatePage({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // Sync state when project changes or startInEditMode changes
   useEffect(() => {
     if (project) {
       setProjectName(project.name || "");
@@ -227,7 +216,6 @@ export default function ProjectCreatePage({
       setSubmitError(null);
     }
   }, [project, startInEditMode]);
-
 
   useEffect(() => {
     fetch(`${BACKEND_URL}/domains`)
@@ -285,7 +273,6 @@ export default function ProjectCreatePage({
 
   const effectiveDomains = domainList.length > 0 ? domainList : defaultDomains;
 
-  // Always ensure 'Other' is at the very end of the domain dropdown list!
   const sortedDomains = [
     ...effectiveDomains.filter((d) => d.domain !== "Other"),
     ...effectiveDomains.filter((d) => d.domain === "Other"),
@@ -294,7 +281,6 @@ export default function ProjectCreatePage({
   const currentDomainObj = sortedDomains.find((d) => d.domain === selectedDomain);
   const activeSubDomainOptions = currentDomainObj ? currentDomainObj.subDomains : [];
 
-  // Options for CustomSelect components
   const domainSelectOptions = [
     { value: "", label: "-- Select Domain --" },
     ...sortedDomains.map((d) => ({ value: d.domain, label: d.domain })),
@@ -309,8 +295,6 @@ export default function ProjectCreatePage({
   const sourceTypeSelectOptions = ["All Types", "Database", "Data Warehouse", "API", "Cloud Storage", "File"].map(
     (t) => ({ value: t, label: t })
   );
-
-  // ── Helpers ──────────────────────────────────────────────────────────────
 
   const toggleSource = (id: string) =>
     setSelectedSources((prev) =>
@@ -373,8 +357,6 @@ export default function ProjectCreatePage({
     return html;
   };
 
-  // ── Filtered sources ──────────────────────────────────────────────────────
-
   const filteredSources = dataSources.filter((ds) => {
     const matchSearch = ds.name.toLowerCase().includes(sourceSearch.toLowerCase()) || ds.subtext.toLowerCase().includes(sourceSearch.toLowerCase());
     const cat = getSubtextCategory(ds.subtext);
@@ -385,8 +367,6 @@ export default function ProjectCreatePage({
   const paginatedSources = filteredSources.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE);
   const startIdx = filteredSources.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
   const endIdx = Math.min(currentPage * ITEMS_PER_PAGE, filteredSources.length);
-
-  // ── Submit / Update ───────────────────────────────────────────────────────
 
   const handleUpdateProject = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -458,11 +438,9 @@ export default function ProjectCreatePage({
     }
   };
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
   return (
     <div className="p-8 w-full flex flex-col min-h-full bg-background animate-fade-in">
-      {/* Header */}
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div className="flex flex-col gap-1.5">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
@@ -585,9 +563,8 @@ export default function ProjectCreatePage({
         </div>
       </div>
 
-      {/* Body Grid */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-8 items-start">
-        {/* Left: Project Details */}
+
         <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft flex flex-col">
           <div className="flex items-center justify-between mb-6">
             <h2 className="text-base font-bold text-foreground">Project Details</h2>
@@ -600,7 +577,6 @@ export default function ProjectCreatePage({
           </div>
           <div className="space-y-6">
 
-            {/* Inline Error Message */}
             {submitError && (
               <div className="p-3.5 rounded-xl border border-red-500/30 bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-semibold flex items-center justify-between animate-fade-in shadow-sm">
                 <div className="flex items-center gap-2.5">
@@ -613,7 +589,6 @@ export default function ProjectCreatePage({
               </div>
             )}
 
-            {/* Domain & Sub-domain Selection */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-foreground uppercase tracking-wider mb-2">
@@ -662,7 +637,6 @@ export default function ProjectCreatePage({
               </div>
             </div>
 
-            {/* Custom Sub Domain Text Field when "Other (Custom Sub Domain)" is selected */}
             {selectedDomain && selectedDomain !== "Other" && selectedSubDomain === "Other (Custom Sub Domain)" && (
               <div>
                 <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
@@ -679,7 +653,6 @@ export default function ProjectCreatePage({
               </div>
             )}
 
-            {/* Name */}
             <div>
               <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
                 Use Case Title <span className="text-red-500">*</span>
@@ -699,13 +672,12 @@ export default function ProjectCreatePage({
               </div>
             </div>
 
-            {/* Use Case Editor */}
             <div>
               <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
                 Use Case Information <span className="text-red-500">*</span>
               </label>
               <div className="flex flex-col border border-border rounded-xl bg-surface overflow-hidden transition-all">
-                {/* Toolbar */}
+
                 {isEditing && (
                   <div className="flex items-center justify-between border-b border-border bg-surface-muted/30 px-3 py-1.5 select-none">
                     <div className="flex flex-wrap items-center gap-1.5 text-muted-foreground">
@@ -747,7 +719,6 @@ export default function ProjectCreatePage({
                   </div>
                 )}
 
-                {/* Editor / Preview */}
                 <div className="relative">
                   {!previewMode && isEditing ? (
                     <textarea
@@ -766,7 +737,6 @@ export default function ProjectCreatePage({
                   )}
                 </div>
 
-                {/* Footer */}
                 <div className="flex items-center justify-between border-t border-border bg-surface-muted/30 px-4 py-2 select-none">
                   <span className="text-[10px] text-muted-foreground/80 font-medium">Markdown supported</span>
                   <span className="text-[10px] text-muted-foreground/80 font-medium">{wordCount} words</span>
@@ -777,11 +747,9 @@ export default function ProjectCreatePage({
           </div>
         </div>
 
-        {/* Right: Connect Data Sources */}
         <div className="bg-surface border border-border rounded-2xl p-6 shadow-soft flex flex-col">
           <h2 className="text-base font-bold text-foreground mb-3">Connect Sources</h2>
 
-          {/* Search & Filter */}
           <div className="flex items-center gap-3 mb-6">
             <div className="relative flex-1 min-w-0">
               <input
@@ -805,7 +773,6 @@ export default function ProjectCreatePage({
             </div>
           </div>
 
-          {/* Selected sources */}
           <div className="mb-6">
             <h3 className="text-xs font-bold text-foreground uppercase tracking-wider mb-2">
               Selected Sources ({selectedSources.length})
@@ -842,7 +809,6 @@ export default function ProjectCreatePage({
             )}
           </div>
 
-          {/* Available sources */}
           <div className="flex flex-col flex-1">
             <div className="flex items-center justify-between mb-2.5">
               <h3 className="text-xs font-bold text-foreground uppercase tracking-wider">Available Sources</h3>
@@ -900,7 +866,6 @@ export default function ProjectCreatePage({
               </div>
             )}
 
-            {/* Pagination */}
             {filteredSources.length > 0 && (
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 mt-6 pt-4 border-t border-border/80 select-none">
                 <span className="text-xs text-muted-foreground font-semibold">
@@ -925,8 +890,6 @@ export default function ProjectCreatePage({
         </div>
       </div>
 
-
-      {/* Connect New Library Modal */}
       {showConnectLibrary && (
         <div className="fixed inset-0 z-[105] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="relative w-full max-w-4xl rounded-2xl border border-border bg-surface p-6 shadow-2xl animate-fade-in flex flex-col max-h-[90vh]">
@@ -971,7 +934,6 @@ export default function ProjectCreatePage({
         </div>
       )}
 
-      {/* Connection Modal */}
       {activeConnectType && (
         <ConnectionModal
           type={activeConnectType}

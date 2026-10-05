@@ -21,12 +21,12 @@ const classifyDistribution = (skewness: number, kurtosis: number, distinctRatio:
 
 const profileNumericColumnPl = (colName: string, s: pl.Series) => {
   const nonNullS = s.filter(s.isNotNull());
-  
+
   let numericS: pl.Series;
   try {
     numericS = nonNullS.cast(pl.Float64).filter(nonNullS.isNotNull());
   } catch {
-    // If casting fails, filter elements manually or return empty stats
+
     return {
       name: colName,
       dataCategory: "numeric" as const,
@@ -93,7 +93,7 @@ const profileNumericColumnPl = (colName: string, s: pl.Series) => {
 
   const lowerBound = p25 - 1.5 * iqr;
   const upperBound = p75 + 1.5 * iqr;
-  
+
   const isOutlierArr = numericS.toArray().map((val: any) => val < lowerBound || val > upperBound);
   const isOutlier = pl.Series("is_outlier", isOutlierArr);
   const outlierS = numericS.filter(isOutlier);
@@ -152,7 +152,6 @@ const profileDateColumnPl = (colName: string, s: pl.Series) => {
   const rangeMs = maxDate.getTime() - minDate.getTime();
   const rangeInDays = Math.round(rangeMs / (1000 * 60 * 60 * 24));
 
-  // Gap detection: find gaps > 2x median gap
   const dayGaps: number[] = [];
   for (let i = 1; i < sorted.length; i++) {
     const gap = (sorted[i].getTime() - sorted[i - 1].getTime()) / (1000 * 60 * 60 * 24);
@@ -176,7 +175,6 @@ const profileDateColumnPl = (colName: string, s: pl.Series) => {
     });
   }
 
-  // Temporal patterns
   const patterns: string[] = [];
   const dayOfWeekCounts = new Array(7).fill(0);
   const monthCounts = new Array(12).fill(0);
@@ -289,7 +287,6 @@ export const createStatisticalProfileTool = (
           continue;
         }
 
-        // Auto-detect: try numeric first, then date
         let isNumeric = false;
         try {
           const numS = s.filter(s.isNotNull()).cast(pl.Float64);
@@ -299,7 +296,7 @@ export const createStatisticalProfileTool = (
             isNumeric = true;
           }
         } catch {
-          // Ignore casting failure
+
         }
 
         if (isNumeric) continue;
@@ -320,7 +317,7 @@ export const createStatisticalProfileTool = (
         numericColumns: numericProfiles,
         dateColumns: dateProfiles,
         skippedColumns,
-        // rows: sampleRows, // Retain fetched rows so the agent can extract PKs to sync child tables
+
       };
     },
     {

@@ -23,7 +23,6 @@ export default function Home() {
   )
 }
 
-// Helper component to render content based on active tab
 function TabContent({ useTab }: { useTab: <T>(tab: T) => any }) {
   const { activeTab } = useTab("projects");
 
@@ -39,4 +38,3 @@ function TabContent({ useTab }: { useTab: <T>(tab: T) => any }) {
       return <ProjectsPage />;
   }
 }
-

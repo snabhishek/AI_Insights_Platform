@@ -64,14 +64,12 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
     }
   };
 
-  // 1. Text Search Filter
   let filtered = dataSources.filter(
     (source) =>
       source.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       source.subtext.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  // 2. Tab Category Filter
   if (activeFilter !== "all") {
     if (activeFilter === "Warning") {
       filtered = filtered.filter((s) => s.health === "Warning" || s.health === "Error");
@@ -80,7 +78,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
     }
   }
 
-  // 3. Sort logic
   const sortedSources = [...filtered].sort((a, b) => {
     let comparison = 0;
     if (sortField === "name") {
@@ -97,7 +94,7 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
 
   return (
     <div className="flex flex-col rounded-2xl border border-border bg-surface p-6 shadow-soft hover:shadow-soft-hover transition-shadow duration-300">
-      {/* Top bar with Title & Search */}
+
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
         <div>
           <h3 className="text-base font-semibold text-foreground">
@@ -134,7 +131,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
         </div>
       </div>
 
-      {/* Modern Segmented Filter Control */}
       <div className="flex justify-between items-center mb-5 pb-4 border-b border-border">
         <div className="inline-flex p-1 rounded-xl bg-surface-muted border border-border/80 text-xs font-semibold gap-1">
           {(["all", "Connected", "Disconnected", "Warning"] as const).map((filter) => {
@@ -156,7 +152,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
         </div>
       </div>
 
-      {/* Table container */}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[800px] border-collapse text-left">
           <thead>
@@ -196,7 +191,7 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                   key={source.id}
                   className="group hover:bg-surface-muted/50 transition-colors"
                 >
-                  {/* Source Name */}
+
                   <td className="py-4 pr-4">
                     <div className="flex items-center gap-3">
                       <div className="flex items-center justify-center p-1.5 rounded-lg bg-surface-muted group-hover:bg-surface border border-border/20 transition-all">
@@ -213,7 +208,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                     </div>
                   </td>
 
-                  {/* Status */}
                   <td className="py-4 pr-4 align-middle">
                     {source.status === "Syncing" ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-500/10 text-blue-600 dark:text-blue-400">
@@ -233,7 +227,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                     )}
                   </td>
 
-                  {/* Data Health */}
                   <td className="py-4 pr-4 align-middle">
                     <div className="flex items-center gap-1.5 text-xs font-semibold">
                       <span
@@ -259,7 +252,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                     </div>
                   </td>
 
-                  {/* Last Sync */}
                   <td className="py-4 pr-4 align-middle">
                     <div className="flex flex-col">
                       <span className="text-sm font-semibold text-foreground">
@@ -271,10 +263,9 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                     </div>
                   </td>
 
-                  {/* Data Assets */}
                   <td className="py-4 pr-4 align-middle">
                     <div className="flex items-center gap-4 text-xs font-semibold text-foreground">
-                      {/* File types: only show 1 Table and row count info */}
+
                       {["excel", "csv", "tsv"].includes(source.type) && (
                         <div className="flex items-center gap-1.5 bg-surface-muted/60 px-2 py-1 rounded-md border border-border/40">
                           <TableIcon className="text-muted-foreground w-3.5 h-3.5" />
@@ -286,7 +277,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                         </div>
                       )}
 
-                      {/* REST API: show endpoint info */}
                       {source.type === "restapi" && (
                         <div className="flex items-center gap-1.5 bg-surface-muted/60 px-2 py-1 rounded-md border border-border/40">
                           <PipelineIcon className="text-muted-foreground w-3.5 h-3.5" />
@@ -297,7 +287,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                         </div>
                       )}
 
-                      {/* Databases: show Tables, and conditionally show Views / Pipelines if > 0 */}
                       {!["excel", "csv", "tsv", "restapi"].includes(source.type) && (
                         <>
                           <div className="flex items-center gap-1.5 bg-surface-muted/60 px-2 py-1 rounded-md border border-border/40">
@@ -332,10 +321,9 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                     </div>
                   </td>
 
-                  {/* Actions (3 inline icon square buttons) */}
                   <td className="py-4 align-middle text-right">
                     <div className="inline-flex items-center gap-2 justify-end">
-                      {/* Sync Button */}
+
                       <button
                         onClick={() => syncDataSource(source.id)}
                         disabled={source.status === "Syncing" || source.status === "Disconnected"}
@@ -358,7 +346,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                         </svg>
                       </button>
 
-                      {/* View details Button */}
                       <button
                         onClick={() => onViewDetails(source)}
                         title="View Details"
@@ -380,7 +367,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                         </svg>
                       </button>
 
-                      {/* Disconnect / Connect Toggle Button */}
                       {source.status === "Disconnected" ? (
                         <button
                           onClick={() => {
@@ -447,7 +433,6 @@ export default function ConnectedSources({ onViewDetails }: ConnectedSourcesProp
                         </button>
                       )}
 
-                      {/* Delete Button */}
                       <button
                         onClick={() => {
                           showConfirm({

@@ -25,7 +25,7 @@ export default function ProjectCard({
       className="group relative flex flex-col cursor-pointer rounded-2xl border border-border bg-surface shadow-soft hover:shadow-xl hover:border-primary/40 hover:-translate-y-1 transition-all duration-300"
     >
       <div className="flex flex-col flex-1 p-5">
-        {/* Top Row: Folder Icon & Delete Button */}
+
         <div className="flex items-center justify-between mb-3">
           <div className="w-9 h-9 rounded-lg bg-amber-500/15 dark:bg-amber-400/20 flex items-center justify-center group-hover:scale-105 transition-transform duration-300">
             <svg
@@ -41,7 +41,6 @@ export default function ProjectCard({
             </svg>
           </div>
 
-          {/* Delete Button */}
           <button
             type="button"
             onClick={(e) => {
@@ -68,7 +67,6 @@ export default function ProjectCard({
           </button>
         </div>
 
-        {/* Project Name */}
         <h3
           className="text-sm font-bold text-foreground tracking-tight mb-1 truncate group-hover:text-primary dark:group-hover:text-amber-400 transition-colors"
           title={project.name}
@@ -76,14 +74,12 @@ export default function ProjectCard({
           {project.name}
         </h3>
 
-        {/* Use Case Description */}
         <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-4">
           {project.useCase
             ? project.useCase.replace(/[#*`_[\]]/g, "")
             : "No description provided."}
         </p>
 
-        {/* Linked Connectors Footer */}
         <div className="mt-auto pt-3 border-t border-border flex items-center justify-between">
           <span className="text-[11px] font-medium text-muted-foreground">
             Connectors

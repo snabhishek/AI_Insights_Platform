@@ -269,7 +269,6 @@ export class IngestionAgentService implements IIngestionAgentService {
     return { active: false, projectId: null, sessionId: null, status: "idle" };
   }
 
-
   constructor(
     private connectorService: ConnectorService,
     private connectionTester: ConnectionTesterService,
@@ -279,7 +278,6 @@ export class IngestionAgentService implements IIngestionAgentService {
     private queueService: QueueService,
     private duckDBService?: any
   ) { }
-
 
   async *run(
     connectorId: string[],
@@ -313,7 +311,6 @@ export class IngestionAgentService implements IIngestionAgentService {
     try {
       const workflow = createAgentGraph(this.checkpointer);
 
-      // Resolve or create the thread ID
       const isNewRun = !options?.action;
       let threadId: string = options?.sessionId || (isNewRun ? `workflow-${Date.now()}-${Math.random().toString(36).slice(2, 8)}` : "");
       if (!threadId) {
@@ -385,7 +382,6 @@ export class IngestionAgentService implements IIngestionAgentService {
         }
       }
 
-      // Determine the single unified runTimestamp for this execution
       let activeRunTimestamp = "";
       const isContinuing =
         options?.action === "approve" ||
@@ -410,7 +406,6 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       latestGraphStateValues.runTimestamp = activeRunTimestamp;
 
-      // Ensure the unified project run folder exists before workflow execution begins
       if (pWs && pWs.project && pWs.workspaceName) {
         try {
           await ensureProjectRunFolder(pWs.workspaceName, pWs.project.name, activeRunTimestamp);
@@ -436,11 +431,10 @@ export class IngestionAgentService implements IIngestionAgentService {
       try {
         setMaxListeners(100, sessionAbortController.signal);
       } catch (listenerErr) {
-        // Defensive guard in case runtime environment lacks setMaxListeners on EventTarget
+
       }
       this.sessionAbortControllers.set(threadId, sessionAbortController);
 
-      // Populate services dependencies context to pass inside LangGraph config
       const services = {
         connectorService: this.connectorService,
         connectionTester: this.connectionTester,
@@ -663,7 +657,7 @@ export class IngestionAgentService implements IIngestionAgentService {
             hierarchyMapper: "In Progress",
           };
         } else {
-          // Model Training & Validation stage -> full stage retry from modelSelectionNode
+
           initialStageStatuses = {
             ...INITIAL_STAGE_STATUSES,
             inspect: "Completed",
@@ -861,7 +855,6 @@ export class IngestionAgentService implements IIngestionAgentService {
         }
       }
 
-      // 1. Push initial status to client immediately (<10ms) to unblock SSE connection
       queue.push({
         connectorId,
         status: "running",
@@ -888,7 +881,6 @@ export class IngestionAgentService implements IIngestionAgentService {
           : buildMessage([], "running", initialStageStatuses),
       });
 
-      // 2. Define the background task to be run inside the QueueService
       const executeWorkflowTask = async () => {
         try {
           const updateNodeStatuses = (nodeName: string, statuses: Record<string, string>): Record<string, string> => {
@@ -976,7 +968,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Training");
                 await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Validation");
               } else {
-                // Model Training & Validation stage -> retry entire stage from Model Selection
+
                 activeSubstep = "Model Selection";
                 await this.agentThinkingService.deleteThinking(projectId, pipeline, "Model Selection");
                 await this.agentThinkingService.deleteThinking(projectId, pipeline, "Training Configuration");
@@ -1083,8 +1075,6 @@ export class IngestionAgentService implements IIngestionAgentService {
               const isModelSubstep = activeSubstep === "Model Selection" || activeSubstep === "Training Configuration" || activeSubstep === "Pre Flight" || activeSubstep === "Model Training" || activeSubstep === "Model Validation" || activeSubstep === "Model Training & Validation";
               const isFESubstep = activeSubstep === "Hierarchy Mapper" || activeSubstep === "Feature Architect" || activeSubstep === "Feature Validator" || activeSubstep === "Exogenous Scout" || activeSubstep === "Feature Engineering";
 
-              // Only preserve database stageOutputs (such as user-confirmed modelSelection and trainingConfiguration)
-              // if we are actively executing or resuming within the model phase
               if (options?.projectId && isModelSubstep) {
                 try {
                   const project = await this.projectService.getById(options.projectId);
@@ -1271,7 +1261,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                   recursionLimit: 100,
                   signal: sessionAbortController.signal,
                 };
-                // Ensure state at checkpoint has clean stageStatuses and no stale downstream outputs
+
                 const cleanMemUpdate: any = {
                   status: "running",
                   requiresApproval: false,
@@ -1371,7 +1361,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                   const cleanStageStatuses = { ...(stateToRestore.stageStatuses || {}) };
                   const cleanStageOutputs = { ...(stateToRestore.stageOutputs || {}) };
 
-                  // Reset downstream and target stage outputs and statuses for entire stage
                   const stagesToReset: string[] = [];
                   if (targetNode === "modelSelectionNode" || targetNode === "modelSelection") {
                     stagesToReset.push(
@@ -1479,15 +1468,6 @@ export class IngestionAgentService implements IIngestionAgentService {
                     stateToRestore[key] = { __resetOutput: true };
                   }
 
-                  // for (const stage of stagesToReset) {
-                  //   delete cleanStageOutputs[stage];
-                  //   if (stage === "modelSelection" || stage === "modelSelectionNode" || stage === "hierarchyMapper" || stage === "hierarchyMapperNode" || stage === "inspect") {
-                  //     cleanStageStatuses[stage] = "In Progress";
-                  //   } else {
-                  //     cleanStageStatuses[stage] = "Pending";
-                  //   }
-                  // }
-
                   const restoredState = {
                     ...stateToRestore
                   };
@@ -1540,7 +1520,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 const savedAgentState = project?.agentState as any;
                 if (savedAgentState) {
                   if (hasState) {
-                    // Update in-memory graph checkpointer with latest DB state before resuming
+
                     const stateUpdates: Record<string, any> = {};
                     if (savedAgentState.modelSelection) {
                       stateUpdates.modelSelection = savedAgentState.modelSelection;
@@ -1875,10 +1855,6 @@ export class IngestionAgentService implements IIngestionAgentService {
               }
             }
 
-            // If the graph is currently halted at an approval gate (e.g. trainingConfigurationNode, hierarchyMapperNode, modelSelectionNode)
-            // and the user sent generic "resume" (not "approve"):
-            // We MUST NOT stream into the node (which advances execution past the approval gate).
-            // Instead, we maintain the paused/approval state and notify the client!
             const nextNode = Array.isArray(graphState?.next) ? graphState.next[0] : undefined;
             const approvalTarget = nextNode === "hierarchyMapperNode"
               ? "Feature Engineering"
@@ -1984,7 +1960,6 @@ export class IngestionAgentService implements IIngestionAgentService {
             );
           }
 
-          // Stream updates from initial execution segment
           for await (const chunk of stream) {
             if (this.stoppedSessions.has(threadId) || this.pausedSessions.has(threadId)) {
               console.info(`[Workflow] Initial stream loop interrupted for thread ${threadId} (paused: ${this.pausedSessions.has(threadId)}, stopped: ${this.stoppedSessions.has(threadId)})`);
@@ -2084,7 +2059,6 @@ export class IngestionAgentService implements IIngestionAgentService {
             return;
           }
 
-          // Check if workflow reached an approval gate between pipeline stages
           let graphState = await workflow.getState(config);
           if (graphState?.values) {
             latestGraphStateValues = {
@@ -2324,7 +2298,6 @@ export class IngestionAgentService implements IIngestionAgentService {
         }
       };
 
-      // 3. Setup listeners to feed queue events into the PushQueue for SSE response stream BEFORE enqueuing
       const onJobUpdate = (result: any) => {
         queue.push(result);
       };
@@ -2336,7 +2309,6 @@ export class IngestionAgentService implements IIngestionAgentService {
       agentJobEvents.on(`job:update:${threadId}`, onJobUpdate);
       agentJobEvents.once(`job:close:${threadId}`, onJobClose);
 
-      // 4. Register the task in the Concurrency/Memory QueueService
       this.queueService.enqueue(
         threadId,
         options?.projectId || "general",
@@ -2387,7 +2359,6 @@ export class IngestionAgentService implements IIngestionAgentService {
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
     const thinkingLogs: Array<{ time: string; text: string; done: boolean }> = [];
 
-    // Delete existing thinking for this substep first
     await this.agentThinkingService.deleteThinking(projectId, pipeline, substep);
 
     for (let i = 0; i < logs.length; i++) {
@@ -2399,35 +2370,28 @@ export class IngestionAgentService implements IIngestionAgentService {
       const now = new Date();
       const timeStr = now.toLocaleTimeString("en-US", { hour12: true, hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
-      // Mark previous logs as done
       for (const log of thinkingLogs) {
         log.done = true;
       }
 
-      // Add current log as not done
       thinkingLogs.push({
         time: timeStr,
         text: logs[i],
         done: false,
       });
 
-      // Save to database
       await this.agentThinkingService.saveThinking(projectId, pipeline, substep, thinkingLogs);
 
-      // Fetch all logs to pass down the full state
       const allThinking = await this.getAllProjectPipelineThinking(projectId, pipeline);
 
-      // Yield with updated thinking
       yield {
         ...baseResult,
         agentThinking: allThinking,
       };
 
-      // Small delay to simulate real-time thinking
       await new Promise((resolve) => setTimeout(resolve, 600));
     }
 
-    // Mark the last one as done and save
     if (thinkingLogs.length > 0) {
       thinkingLogs[thinkingLogs.length - 1].done = true;
       await this.agentThinkingService.saveThinking(projectId, pipeline, substep, thinkingLogs);
@@ -2445,7 +2409,6 @@ export class IngestionAgentService implements IIngestionAgentService {
       const allLogs = await this.agentThinkingService.getAllThinking(projectId);
       const map: Record<string, Array<{ time: string; text: string; done: boolean }>> = { ...allLogs };
 
-      // Ensure aliases between internal node names and canonical UI step titles
       const aliasPairs: [string, string][] = [
         ["inspect", "Data Inspection"],
         ["profileData", "Data Profiling"],
@@ -2478,7 +2441,6 @@ export class IngestionAgentService implements IIngestionAgentService {
         }
       }
 
-      // Aggregate sub-worker thinking logs into canonical "Feature Architect" step
       const faWorkers = [
         "featureSupervisor",
         "featureCreation",
@@ -2733,4 +2695,3 @@ export class IngestionAgentService implements IIngestionAgentService {
     }
   }
 }
-

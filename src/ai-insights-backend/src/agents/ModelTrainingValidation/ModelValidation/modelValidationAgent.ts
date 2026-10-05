@@ -54,9 +54,7 @@ interface ValidationRectifierResult extends Record<string, unknown> {
 }
 
 export class ModelValidationAgent {
-  /**
-   * Pure function to determine validation mode based on start date vs current server date.
-   */
+
   public static determineValidationMode(
     predictionStartDate: string,
     currentServerDate?: string
@@ -67,11 +65,6 @@ export class ModelValidationAgent {
     return cleanStart > today ? "future_prediction" : "backtesting";
   }
 
-  /**
-   * Resolves the calculative prediction start date:
-   * 1. Checks explicit predictionObjectiveStartDate from state or config
-   * 2. Otherwise advances from training cutoff date (splitEndDate or splitDate) to the next day/period
-   */
   public static resolvePredictionStartDate(
     state: AgentStateType,
     trainingConfig: any
@@ -111,15 +104,6 @@ export class ModelValidationAgent {
     return new Date().toISOString().slice(0, 10);
   }
 
-  /**
-   * Scaffolds the dedicated validation directory structure:
-   * <projectName>_model_validation/
-   * â”œâ”€â”€ artifacts/
-   * â”‚   â”œâ”€â”€ predictions/
-   * â”‚   â””â”€â”€ plots/
-   * â”œâ”€â”€ configs/
-   * â””â”€â”€ reports/
-   */
   public static setupValidationDirectory(validationDir: string): void {
     fs.mkdirSync(validationDir, { recursive: true });
     fs.mkdirSync(path.join(validationDir, "artifacts", "predictions"), { recursive: true });
@@ -128,10 +112,6 @@ export class ModelValidationAgent {
     fs.mkdirSync(path.join(validationDir, "reports"), { recursive: true });
   }
 
-  /**
-   * Validates whether a model validation report exists and contains at least
-   * one successfully evaluated candidate model with non-empty metrics.
-   */
   public static validateReport(reportPath: string): {
     success: boolean;
     reason?: string;
@@ -189,16 +169,12 @@ export class ModelValidationAgent {
     }
   }
 
-  /**
-   * Extracts the validated features array from training configuration contract,
-   * agent state, or feature validation report.
-   */
   public static extractValidatedFeatures(
     trainingConfig: any,
     state: AgentStateType,
     runDir?: string
   ): string[] {
-    // 1. From training configuration contract / file
+
     const configFeatures =
       trainingConfig?.upstream_artifacts?.validated_features ||
       trainingConfig?.upstream_artifacts?.validatedFeatures ||
@@ -213,7 +189,6 @@ export class ModelValidationAgent {
       return Array.from(new Set(configFeatures.map((f: any) => String(f).trim()).filter(Boolean)));
     }
 
-    // 2. From agent state (trainingConfiguration, featureValidator, etc.)
     const stateConfig = (state.trainingConfiguration as any)?.configuration || state.trainingConfiguration || {};
     const stateFeatures =
       stateConfig?.upstream_artifacts?.validated_features ||
@@ -232,7 +207,6 @@ export class ModelValidationAgent {
       return Array.from(new Set(stateFeatures.map((f: any) => String(f).trim()).filter(Boolean)));
     }
 
-    // 3. From feature_validation_report.json in python_script directory if present
     if (runDir) {
       const reportPath = path.join(runDir, "python_script", "feature_validation_report.json");
       if (fs.existsSync(reportPath)) {
@@ -253,9 +227,6 @@ export class ModelValidationAgent {
     return [];
   }
 
-  /**
-   * Resolves project directories and artifact locations.
-   */
   private static getProjectContext(state: AgentStateType, services: IngestionServices) {
     const projectId = state.projectId || services?.projectId || "default-project";
     let workspaceName = (state as any).workspaceName || services?.workspaceName || "";
@@ -274,7 +245,6 @@ export class ModelValidationAgent {
     let runDir = runTimestamp ? path.join(projectRootDir, runTimestamp) : projectRootDir;
     let datasetPath = path.join(runDir, "python_script", "dataset.parquet");
 
-    // Dynamic resolution: If datasetPath does not exist under workspaceName, search all workspaces
     if (!fs.existsSync(datasetPath) && fs.existsSync(workspacesBase)) {
       try {
         const wsEntries = fs.readdirSync(workspacesBase, { withFileTypes: true }).filter((d) => d.isDirectory());
@@ -301,7 +271,6 @@ export class ModelValidationAgent {
       throw new Error(`[ModelValidationAgent] Finalized dataset artifact was not found at ${datasetPath}. 'dataset.parquet' is required.`);
     }
 
-    // Read training config (STRICT - NO FALLBACKS)
     let trainingConfig: any = {};
     const configCandidates = [
       path.join(modelTrainingDir, "configs", "training_config.yaml"),
@@ -335,7 +304,6 @@ export class ModelValidationAgent {
       trainingConfig = (state.trainingConfiguration as any)?.configuration || {};
     }
 
-    // Merge upstream contract from schemas if trainingConfig lacks validated_features
     if (!trainingConfig?.upstream_artifacts?.validated_features && !trainingConfig?.validated_features) {
       if (fs.existsSync(schemasDir)) {
         try {
@@ -354,7 +322,6 @@ export class ModelValidationAgent {
       }
     }
 
-    // Extract validated features array from training configuration or state (STRICT - NO FALLBACKS)
     const validatedFeatures = this.extractValidatedFeatures(trainingConfig, state, runDir);
     if (!validatedFeatures || validatedFeatures.length === 0) {
       throw new Error(
@@ -362,7 +329,6 @@ export class ModelValidationAgent {
       );
     }
 
-    // Read training report (STRICT - NO FALLBACKS)
     let trainingReport: any = {};
     const reportCandidates = [
       path.join(modelTrainingDir, "reports", "model_training_report.json"),
@@ -400,12 +366,6 @@ export class ModelValidationAgent {
     };
   }
 
-
-  /**
-   * Main agentic execution flow for Model Validation.
-   * Prompts the Model Validation Coding Agent with active context, artifacts, and tools,
-   * then executes and validates the generated pipeline inside the Docker environment.
-   */
   public static async execute(
     state: AgentStateType,
     services: IngestionServices,
@@ -435,10 +395,8 @@ export class ModelValidationAgent {
       validatedFeatures,
     } = ctx;
 
-    // Scaffolds the dedicated validation directory
     this.setupValidationDirectory(modelValidationDir);
 
-    // Resolve Parameters strictly from user options or explicit state
     const horizon = options?.predictionHorizon ?? (state as any).predictionHorizon;
     if (!horizon || typeof horizon !== "number" || horizon <= 0) {
       throw new Error("[ModelValidationAgent] Prediction horizon is required and must be an integer greater than 0.");
@@ -463,7 +421,6 @@ export class ModelValidationAgent {
 
     const mode = this.determineValidationMode(predictionStartDate);
 
-    // Read feature engineering metadata.yaml if available for physical dataset column bindings
     let featureMetadata: any = {};
     const metadataYamlPath = path.join(runDir, "python_script", "metadata.yaml");
     if (fs.existsSync(metadataYamlPath)) {
@@ -574,7 +531,6 @@ export class ModelValidationAgent {
       `Model Validation Agent initializing in ${mode} mode for project '${projectName}' (${horizon} ${frequency} periods starting ${predictionStartDate})...`
     );
 
-    // Persist initial validation_config.yaml with validated features and objective specs
     try {
       const initialValConfig = {
         project_id: projectId,
@@ -600,7 +556,6 @@ export class ModelValidationAgent {
       console.warn("[ModelValidationAgent] Failed to write initial validation_config.yaml:", confWriteErr?.message || confWriteErr);
     }
 
-    // 1. Prepare Tools for the Agent
     const fsTools = await getMcpFilesystemTools({ projectId, workspaceName, projectName, runTimestamp });
     const trainingReportTool = createReadTrainingReportTool(projectId, runTimestamp, projectName, workspaceName);
     const trainedModelsTool = createReadTrainedModelsMetadataTool(modelsDir);
@@ -617,7 +572,6 @@ export class ModelValidationAgent {
       extractUrlContentTool,
     ];
 
-    // 2. Prepare System Prompt & User Prompt
     const model = getModel();
     const systemPrompt = await getPromptFromFile(
       "ModelValidation/modelValidation.md",
@@ -677,7 +631,6 @@ export class ModelValidationAgent {
       files: ["validation_runner.py", "configs/validation_config.yaml"],
     };
 
-    // 3. Agentic Code Generation
     const agentMessages: BaseMessage[] = [];
     const rectifierMessages: BaseMessage[] = [];
 
@@ -714,7 +667,6 @@ export class ModelValidationAgent {
     const baseValidationPackages = ["pandas", "numpy", "scikit-learn", "pyarrow", "pyyaml", "joblib", "lightgbm"];
     let accumulatedPackages: string[] = [...baseValidationPackages];
 
-    // Inherit packages from model training requirements.txt if present
     const trainingReqPath = path.join(modelTrainingDir, "requirements.txt");
     if (fs.existsSync(trainingReqPath)) {
       try {
@@ -733,7 +685,6 @@ export class ModelValidationAgent {
       accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...codingResult.requiredPackages]));
     }
 
-    // If the agent failed to produce validation_runner.py, retry the coding agent
     const maxCodeGenRetries = options?.maxRetries ?? 20;
     let codeGenAttempt = 0;
     while (!fs.existsSync(relativeValidationRunner) && codeGenAttempt < maxCodeGenRetries) {
@@ -794,7 +745,6 @@ export class ModelValidationAgent {
       };
     }
 
-    // Ensure initial requirements.txt exists in modelValidationDir
     try {
       const valReqPath = path.join(modelValidationDir, "requirements.txt");
       fs.writeFileSync(valReqPath, accumulatedPackages.join("\n"), "utf-8");
@@ -802,7 +752,6 @@ export class ModelValidationAgent {
       console.warn("[ModelValidationAgent] Failed to write initial requirements.txt:", writeErr?.message || writeErr);
     }
 
-    // 4. Execution in Container Sandbox
     const extraArgs = [
       `--dataset-path "/workspace/${relDatasetPath}"`,
       `--models-dir "/workspace/${relModelsDir}"`,
@@ -839,7 +788,6 @@ export class ModelValidationAgent {
       extraArgs
     );
 
-    // 5. Self-Healing Rectification Loop if Container Execution Fails or all candidate models failed
     const maxRetries = options?.maxRetries ?? 20;
     let attempts = 0;
 
@@ -926,7 +874,7 @@ export class ModelValidationAgent {
           const targetFile = path.join(modelValidationDir, path.basename(diagnostic.failingFile));
           fs.writeFileSync(targetFile, diagnostic.recommendedCodeSnippet, "utf-8");
         } else {
-          // Rectifier did not provide a code fix — re-invoke the coding agent
+
           console.warn("[ModelValidationAgent] Rectifier did not provide code snippet. Re-invoking coding agent...");
           await logMilestoneThinking(
             services,
@@ -973,7 +921,7 @@ export class ModelValidationAgent {
         }
       } catch (rectErr: any) {
         console.warn("[ModelValidationAgent] Rectifier invocation warning:", rectErr?.message || rectErr);
-        // Rectifier itself failed — re-invoke the coding agent with error context
+
         await logMilestoneThinking(
           services,
           "Model Validation",
@@ -1032,7 +980,6 @@ export class ModelValidationAgent {
       validationHealth = ModelValidationAgent.validateReport(reportPath);
     }
 
-    // 6. Parse Output Report and Normalize
     if (!fs.existsSync(reportPath)) {
       throw new Error(
         `[ModelValidationAgent] Validation execution failed: 'model_validation_report.json' was not generated at ${reportPath}.`
@@ -1050,7 +997,6 @@ export class ModelValidationAgent {
       throw new Error(`[ModelValidationAgent] Validation report at ${reportPath} is empty or not a valid JSON object.`);
     }
 
-    // Extract candidate models strictly from model_results (matching Model Training schema)
     const rawModelResults = rawReport?.model_results;
     if (!rawModelResults || typeof rawModelResults !== "object") {
       throw new Error(`[ModelValidationAgent] Validation report at ${reportPath} is missing required 'model_results'.`);
@@ -1069,10 +1015,8 @@ export class ModelValidationAgent {
     const effectiveProblemType = rawReport?.problem_type || problemType;
     const isClassification = effectiveProblemType.toLowerCase().includes("class");
 
-    // Comprehensive framework lookup across all pipeline sources and artifacts
     const frameworkMap = new Map<string, string>();
 
-    // 1. From training config (training_config.yaml -> candidate_models: { [id]: { model_id, framework } })
     if (trainingConfig?.candidate_models && typeof trainingConfig.candidate_models === "object") {
       const cands = Array.isArray(trainingConfig.candidate_models)
         ? trainingConfig.candidate_models
@@ -1084,7 +1028,6 @@ export class ModelValidationAgent {
       }
     }
 
-    // 2. From training config contract schema (model_selection.models / candidates)
     const contractModels = [
       ...(trainingConfig?.model_selection?.models || []),
       ...(trainingConfig?.model_selection?.candidates || []),
@@ -1095,7 +1038,6 @@ export class ModelValidationAgent {
       if (id && fw) frameworkMap.set(String(id).toLowerCase().trim(), String(fw));
     }
 
-    // 3. From training report (models_evaluated, candidate_models_evaluated, results, model_results, runs, candidate_models)
     const reportResults =
       trainingReport?.models_evaluated ||
       trainingReport?.candidate_models_evaluated ||
@@ -1112,7 +1054,6 @@ export class ModelValidationAgent {
       }
     }
 
-    // 4. From state (modelSelection, modelTraining, trainingConfiguration)
     const stateCandidates = [
       ...((state.modelSelection as any)?.candidates || []),
       ...((state.modelSelection as any)?.models || []),
@@ -1129,7 +1070,6 @@ export class ModelValidationAgent {
       if (id && fw) frameworkMap.set(String(id).toLowerCase().trim(), String(fw));
     }
 
-    // 5. From validation report's own model_results dictionary
     if (rawReport?.model_results && typeof rawReport.model_results === "object") {
       const resultsObj = Array.isArray(rawReport.model_results)
         ? Object.fromEntries(rawReport.model_results.map((m: any) => [m?.model_id, m]))
@@ -1143,7 +1083,6 @@ export class ModelValidationAgent {
       }
     }
 
-    // Helper to safely extract a numeric metric value from either number or object format
     const extractMetricNum = (val: any): number | null => {
       if (val === null || val === undefined) return null;
       if (typeof val === "number") return isNaN(val) ? null : val;
@@ -1161,7 +1100,6 @@ export class ModelValidationAgent {
         throw new Error("[ModelValidationAgent] Candidate model entry in validation report is missing 'model_id'.");
       }
 
-      // Merge candidate with full details object strictly from rawReport.model_results
       let detailedModel: any = {};
       if (rawReport?.model_results && typeof rawReport.model_results === "object") {
         if (!Array.isArray(rawReport.model_results)) {
@@ -1184,7 +1122,6 @@ export class ModelValidationAgent {
       }
       const status = m.status || detailedModel.status || "Completed";
 
-      // Normalize metrics dictionary
       const rawMetrics: Record<string, any> = m.metrics && typeof m.metrics === "object" ? m.metrics : {};
       const metrics: Record<string, any> = {};
       for (const [k, v] of Object.entries(rawMetrics)) {
@@ -1197,7 +1134,6 @@ export class ModelValidationAgent {
         };
       }
 
-      // Determine score and primary metric name
       let score: number | undefined = typeof m.score === "number" && !isNaN(m.score) ? m.score : undefined;
       let primaryMetricName = m.primaryMetricName;
 
@@ -1247,7 +1183,6 @@ export class ModelValidationAgent {
       };
     });
 
-    // Rank candidates by performance strictly according to direction
     const isMinimize = direction.toLowerCase() === "minimize";
     const rankedCandidates = [...normalizedCandidates].sort((a, b) => {
       const scoreA = a.score ?? (isMinimize ? 999999 : -999999);
@@ -1299,7 +1234,6 @@ export class ModelValidationAgent {
       created_at: rawReport?.timestamp || rawReport?.created_at || new Date().toISOString(),
     };
 
-    // Save enriched report back to disk so file consumers get the normalized format
     if (fs.existsSync(path.dirname(reportPath))) {
       try {
         fs.writeFileSync(reportPath, JSON.stringify(report, null, 2), "utf-8");

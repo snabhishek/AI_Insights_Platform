@@ -3,10 +3,7 @@ import { logMilestoneThinking } from "../../utils/agentUtils";
 import { createTrainingConfigGraph } from "./trainingConfigGraph";
 
 export class TrainingConfigurationAgent {
-  /**
-   * Executes the multi-agent conversational Training Configuration workflow
-   * orchestrated via LangGraph StateGraph (TrainingConfigurationAgent <-> DatasetAnalyserAgent).
-   */
+
   public static async execute(
     state: typeof AgentState.State,
     services: IngestionServices,
@@ -58,7 +55,6 @@ export class TrainingConfigurationAgent {
       )
     );
 
-    // Discover candidate models strictly from modelSelection
     let allCandidates: Array<{ model_id: string; rank?: number; score?: number; framework?: string; algorithm?: string; isDynamic?: boolean }> = [];
 
     if (!Array.isArray(modelSelection.candidates) || modelSelection.candidates.length === 0) {
@@ -87,7 +83,6 @@ export class TrainingConfigurationAgent {
       };
     });
 
-    // Execute the LangGraph StateGraph
     const graph = createTrainingConfigGraph();
     const result = await graph.invoke({
       messages: [],

@@ -303,17 +303,15 @@ export function parseJsonObject<T extends Record<string, unknown>>(rawText: stri
     return fallback;
   }
 
-  // 1. Direct JSON parse
   try {
     const parsed = JSON.parse(trimmed);
     if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
       return parsed as T;
     }
   } catch {
-    // Continue to next extraction method
+
   }
 
-  // 2. Code block extraction ```json ... ```
   const codeBlockMatch = trimmed.match(/```(?:json|yaml|yml)?\s*([\s\S]*?)\s*```/i);
   if (codeBlockMatch && codeBlockMatch[1]) {
     const blockContent = codeBlockMatch[1].trim();
@@ -329,12 +327,11 @@ export function parseJsonObject<T extends Record<string, unknown>>(rawText: stri
           return yamlParsed as T;
         }
       } catch {
-        // Continue to next extraction method
+
       }
     }
   }
 
-  // 3. Outermost JSON object extraction { ... }
   const firstBrace = trimmed.indexOf("{");
   const lastBrace = trimmed.lastIndexOf("}");
   if (firstBrace !== -1 && lastBrace > firstBrace) {
@@ -351,19 +348,18 @@ export function parseJsonObject<T extends Record<string, unknown>>(rawText: stri
           return yamlParsed as T;
         }
       } catch {
-        // Continue to next extraction method
+
       }
     }
   }
 
-  // 4. YAML parse fallback
   try {
     const yamlParsed = yaml.load(trimmed);
     if (yamlParsed && typeof yamlParsed === "object" && !Array.isArray(yamlParsed)) {
       return yamlParsed as T;
     }
   } catch {
-    // Ignore error
+
   }
 
   return fallback;
@@ -605,14 +601,6 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
       return parsed;
     }
 
-    // console.warn(`[Workflow] Node [${stepName}] parseJsonObject failed for raw response text:\n${rawText ? rawText.slice(0, 500) : "[empty]"}`);
-
-    // const toolResult = getLastToolResult(finalResult);
-    // if (toolResult && typeof toolResult === "object" && !Array.isArray(toolResult) && Object.keys(toolResult).length > 0) {
-    //   console.info(`[Workflow] Node [${stepName}] extracted result from tool output fallback`);
-    //   return toolResult as T;
-    // }
-
     return {
       ...parsed,
       rawText
@@ -737,7 +725,6 @@ export function resolvePromptFilePath(filename: string): string {
     path.resolve(__dirname, "../../../src/agents/prompts"),
   ];
 
-  // 1. Direct path check
   for (const baseDir of baseDirs) {
     const candidate = path.resolve(baseDir, filename);
     if (fsSync.existsSync(candidate)) {
@@ -745,7 +732,6 @@ export function resolvePromptFilePath(filename: string): string {
     }
   }
 
-  // 2. Subfolder check matching basename
   const basename = path.basename(filename);
   for (const baseDir of baseDirs) {
     if (fsSync.existsSync(baseDir)) {
@@ -958,7 +944,6 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
   const isRunningOrDone = (v?: string) => v === "Completed" || v === "In Progress" || v === "Running";
   const isRunning = (v?: string) => v === "In Progress" || v === "Running";
 
-  // If a node is actively running, prioritize that node
   for (const node of [
     "modelValidationNode",
     "modelValidation",
@@ -974,7 +959,6 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     if (isRunning(stageStatuses[node])) return node;
   }
 
-  // If paused before model validation, current completed stage is model training
   if (
     (nextNodes.includes("modelValidationNode") || nextNodes.includes("modelValidation")) &&
     (stageStatuses.modelTraining === "Completed" || stageStatuses.modelTrainingExecNode === "Completed") &&
@@ -984,7 +968,6 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     return "modelTrainingExecNode";
   }
 
-  // If paused before model training, current completed stage is preFlight
   if (
     (nextNodes.includes("modelTrainingCodeNode") || nextNodes.includes("modelTrainingNode") || nextNodes.includes("modelTraining")) &&
     (stageStatuses.preFlight === "Completed" || stageStatuses.preFlightNode === "Completed") &&
@@ -994,7 +977,6 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     return "preFlightNode";
   }
 
-  // If paused before training configuration, current completed stage is model selection
   if (
     (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration")) &&
     (stageStatuses.modelSelection === "Completed" || stageStatuses.modelSelectionNode === "Completed") &&
@@ -1004,7 +986,6 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     return "modelSelectionNode";
   }
 
-  // If paused before model selection, current completed stage is exogenousScout
   if (
     (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) &&
     (stageStatuses.exogenousScout === "Completed" || stageStatuses.exogenous === "Completed") &&
@@ -1014,7 +995,6 @@ export function determineCurrentStage(nextNodes: string[], stageStatuses: Record
     return "exogenousScout";
   }
 
-  // If paused before hierarchy mapper, current completed stage is resolveSchema
   if (
     nextNodes.includes("hierarchyMapperNode") &&
     stageStatuses.resolveSchema === "Completed" &&
@@ -1098,13 +1078,11 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
     return "Discovering dimensional hierarchies and entity relationships...";
   }
 
-  // Feature Engineering completed check
   const isFEComplete = isCompleted(stageStatuses?.exogenousScout) || isCompleted(stageStatuses?.exogenous);
   if (isFEComplete) {
     return "Feature Engineering completed successfully. Approve to proceed to Model Training & Validation.";
   }
 
-  // Feature Engineering started check
   const isFEStarted = (stageStatuses?.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending") ||
     (stageStatuses?.featureArchitect && stageStatuses.featureArchitect !== "Pending") ||
     (stageStatuses?.featureValidator && stageStatuses.featureValidator !== "Pending");
@@ -1199,7 +1177,6 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
   if (!step) return "modelSelectionNode";
   const s = step.toLowerCase().trim();
 
-  // Data Ingestion stage -> always retry entire stage from inspect
   if (
     s === "inspect" ||
     s === "data inspection" ||
@@ -1212,7 +1189,6 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     return "inspect";
   }
 
-  // Feature Engineering stage -> always retry entire stage from hierarchyMapperNode
   if (
     s === "hierarchymapper" ||
     s === "hierarchymappernode" ||
@@ -1231,8 +1207,6 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
     return "hierarchyMapperNode";
   }
 
-  // Model Training & Validation stage -> always retry entire stage from modelSelectionNode
-  // Covers modelSelection, trainingConfiguration, preFlight, modelTrainingCode, modelTrainingExec, modelValidation, etc.
   return "modelSelectionNode";
 }
 
@@ -1250,7 +1224,6 @@ export async function logMilestoneThinking(
     const existing = await agentThinkingService.getThinking(projectId, pipeline, substep);
     const thinkingLogs = existing ? [...existing.thinking] : [];
 
-    // Check for duplicates
     if (thinkingLogs.some((l: any) => l.text === text)) {
       return;
     }

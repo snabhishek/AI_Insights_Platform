@@ -30,7 +30,6 @@ export default function ChatMessageList({
 }: ChatMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Check if there are real conversation messages from user
   const hasUserMessages = messages.some((m) => m.role === "user");
   const conversationMessages = messages.filter((m) => m.id !== "msg-welcome-1");
 
@@ -41,22 +40,20 @@ export default function ChatMessageList({
   return (
     <div className="flex-1 bg-surface overflow-y-auto relative px-4 sm:px-6 py-6 space-y-4 flex flex-col">
       {!hasUserMessages ? (
-        /* ─── Contained Center-Center Welcome Text ─── */
+
         <div className="flex-1 flex flex-col items-center justify-center my-auto min-h-[420px] p-4 text-center animate-fade-in select-none">
           <div className="w-full max-w-xl mx-auto rounded-3xl border border-border/80 bg-surface-muted/30 dark:bg-zinc-900/60 backdrop-blur-md p-6 sm:p-8 space-y-5 shadow-sm text-center">
-            {/* Persona Avatar / Icon */}
+
             <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center text-3xl shadow-sm mx-auto">
               <span>{activePersona.avatar || "🧠"}</span>
             </div>
 
-            {/* Title & Introduction */}
             <div className="space-y-2">
               <h2 className="text-lg sm:text-xl font-bold text-foreground tracking-tight">
                 Welcome to the AI Agent Chat Copilot!
               </h2>
             </div>
 
-            {/* Contained Capabilities Box */}
             <div className="text-left bg-surface/80 border border-border/70 rounded-2xl p-4 space-y-2.5 shadow-2xs">
               <span className="text-[11px] font-bold text-foreground uppercase tracking-wider block">
                 What I can help you with:
@@ -89,7 +86,6 @@ export default function ChatMessageList({
               </ul>
             </div>
 
-            {/* Scope / Status Notification Badge */}
             <div className="pt-1">
               {selectedProject ? (
                 <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold shadow-2xs">
@@ -106,7 +102,7 @@ export default function ChatMessageList({
           </div>
         </div>
       ) : (
-        /* Conversation Message Items */
+
         conversationMessages.map((msg) => (
           <ChatMessageItem
             key={msg.id}
@@ -118,7 +114,6 @@ export default function ChatMessageList({
         ))
       )}
 
-      {/* Generating Spinner Pill */}
       {isGenerating && (
         <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-primary/30 text-primary text-xs font-semibold w-fit animate-pulse shadow-sm">
           <span className="inline-block w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />

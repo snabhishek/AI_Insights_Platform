@@ -28,14 +28,8 @@ const schema = {
   ...modelSelectionSchema,
 };
 
-// Load environment variables from .env if present
 dotenv.config();
 
-/**
- * Graph node name mapping.
- * When resuming at a target node, LangGraph needs the state set as if the
- * **preceding** node produced it. This map resolves target -> predecessor.
- */
 const NODE_ORDER = [
   "inspect",
   "profileData",
@@ -133,7 +127,6 @@ async function runFromLastState() {
     ? path.resolve(process.argv[2])
     : defaultPath;
 
-  // 1. Fetch latest workflow state from PostgreSQL DB or fallback JSON
   console.log("📡 Querying database for latest workflow run state...");
   const dbState = await fetchLatestWorkflowStateFromDB(db);
 
@@ -151,15 +144,12 @@ async function runFromLastState() {
     process.exit(1);
   }
 
-  // Ensure baseline project metadata is populated
   savedState.projectName = (savedState as any).projectName || "carrier";
   savedState.workspaceName = (savedState as any).workspaceName || "FileStorage_Testing";
   savedState.runTimestamp = savedState.runTimestamp || "20260918-185832";
-  // Reset status to "running" so nodes do not skip execution on previous paused/failed status
+
   savedState.status = "running";
 
-  // 2. Determine target node to execute
-  // Default to modelTrainingNode to start directly at Model Training
   let targetNode: string = "modelTrainingNode";
   if (process.argv[2] && !process.argv[2].endsWith(".json")) {
     targetNode = process.argv[2];
@@ -168,7 +158,6 @@ async function runFromLastState() {
   }
   targetNode = normalizeGraphNode(targetNode);
 
-  // Verify or initialize trainingConfiguration from available contract YAML if missing
   if (!savedState.trainingConfiguration || Object.keys(savedState.trainingConfiguration).length === 0) {
     console.log("ℹ️  Checking for existing Training Job Contract YAML in workspace/logs...");
     const possibleYamls = [
@@ -197,7 +186,6 @@ async function runFromLastState() {
     }
   }
 
-  // Ensure preFlight state is marked approved so model training proceeds seamlessly
   if (!savedState.preFlight || Object.keys(savedState.preFlight).length === 0 || savedState.preFlight.status === "paused") {
     savedState.preFlight = {
       decision: "APPROVED",
@@ -216,7 +204,6 @@ async function runFromLastState() {
     }`
   );
 
-  // 3. Determine predecessor node
   const predecessorNode = getPredecessorNode(targetNode);
   if (!predecessorNode) {
     console.error(`❌ Cannot determine predecessor for target node "${targetNode}". Is it the first node?`);
@@ -224,7 +211,6 @@ async function runFromLastState() {
   }
   console.log(`   Predecessor node (asNode): "${predecessorNode}"\n`);
 
-  // 4. Setup real services for node execution
   const fileService = new LocalFileService();
   const duckDBService = new DuckDBService(fileService);
   const connectorRepo = new PostgresConnectorRepository(db);
@@ -265,7 +251,6 @@ async function runFromLastState() {
     },
   };
 
-  // 5. Initialize LangGraph workflow with MemorySaver checkpointer
   const checkpointer = new MemorySaver();
   const workflow = createAgentGraph(checkpointer);
 
@@ -277,7 +262,6 @@ async function runFromLastState() {
     },
   };
 
-  // 6. Assign state to LangGraph checkpoint using the predecessor node
   console.log(`⚙️  Assigning saved state to LangGraph checkpointer as node "${predecessorNode}"...`);
   await workflow.updateState(config, savedState, predecessorNode);
 
@@ -289,7 +273,6 @@ async function runFromLastState() {
     process.exit(1);
   }
 
-  // 7. Stream workflow execution from target node (e.g. preFlightNode)
   console.log(`\n🚀 Resuming workflow — executing "${targetNode}"...\n`);
 
   try {
@@ -306,7 +289,6 @@ async function runFromLastState() {
       }
     }
 
-    // If preFlight completed and the workflow paused before modelTrainingNode, continue execution to modelTrainingNode
     const midGraphState = await workflow.getState(config);
     if (midGraphState.next && midGraphState.next.includes("modelTrainingNode")) {
       console.log(`\n=================================================`);
@@ -327,14 +309,12 @@ async function runFromLastState() {
       }
     }
 
-    // 8. Output final state after execution & save back to JSON file
     const finalGraphState = await workflow.getState(config);
     console.log("\n=================================================");
     console.log(" Workflow Execution Completed Successfully ");
     console.log("=================================================");
     console.log(`Next Nodes: [${finalGraphState.next.join(", ")}]`);
 
-    // Prepare updated state payload combining original saved state with new state values
     const updatedState = {
       ...savedState,
       ...finalGraphState.values,
@@ -344,7 +324,6 @@ async function runFromLastState() {
           : finalGraphState.next[0] || targetNode,
     };
 
-    // Save updated state to a new JSON file in the logs directory
     const outputJsonPath = path.resolve(
       path.dirname(jsonPath),
       `agent_state_${targetNode}_run.json`
@@ -352,7 +331,6 @@ async function runFromLastState() {
     fs.writeFileSync(outputJsonPath, JSON.stringify(updatedState, null, 2), "utf8");
     console.log(`\n💾 Saved updated agent state to: ${outputJsonPath}`);
 
-    // Pre-Flight Results Summary
     if (finalGraphState.values.preFlight) {
       console.log("\n📋 Pre-Flight Assessment Results:");
       const pf = finalGraphState.values.preFlight as any;
@@ -373,7 +351,6 @@ async function runFromLastState() {
       }
     }
 
-    // Model Training Results Summary
     if (finalGraphState.values.modelTraining) {
       console.log("\n🚀 Model Training Results:");
       const mt = finalGraphState.values.modelTraining as any;
@@ -402,5 +379,4 @@ async function runFromLastState() {
   }
 }
 
-// Execute runner
 runFromLastState();

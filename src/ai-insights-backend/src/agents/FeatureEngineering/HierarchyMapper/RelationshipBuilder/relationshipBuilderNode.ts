@@ -9,11 +9,6 @@ import { saveModularRelationshipSchema } from "../../../tools/helpers";
 import { getProjectSchemasDir } from "../../../../config/fileServer.config";
 import { RelationshipSchemaOutput } from "./state";
 
-/**
- * Relationship Builder Agent Node (Agent 1 of Hierarchy Mapper)
- * Analyzes Data Ingestion Schema and Domain Knowledge to discover functional dependencies and entity hierarchies.
- * Invokes LLM Agent using system prompt relationshipBuilder.md and statistical queries via GenericDataConnector.
- */
 export async function relationshipBuilderNode(state: typeof AgentState.State, config?: RunnableConfig) {
   const services = config?.configurable?.services as IngestionServices;
 
@@ -33,7 +28,6 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
     tableNames = state.batchedTables.map((t: BatchedTableState) => t.tableName).filter(Boolean);
   }
 
-  // Instantiate GenericDataConnector using duckDBService if available
   let connector: GenericDataConnector | undefined;
   if (services?.duckDBService) {
     connector = new GenericDataConnector(
@@ -44,7 +38,6 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
     );
   }
 
-  // 1. Calculate statistical dependencies and preliminary candidate structures via Data Connector
   const fallbackResult: RelationshipSchemaOutput = await analyzeFunctionalDependenciesTool({
     connector,
     projectId: services?.projectId || (state.projectId as string),
@@ -55,7 +48,6 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
     connectorType: "database",
   });
 
-  // 2. Assemble prompt for LLM Agent
   const prompt = [
     systemPrompt,
     "## Upstream Context",
@@ -73,7 +65,6 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
     "Executing LLM reasoning for 7-step Relationship Schema construction (scoping, alias merging, entity grouping, dependency testing, temporal, conformed, business labeling)..."
   );
 
-  // 3. Invoke LLM Agent with AI trace logging
   const agentResult = await invokeAgentJson<any>(
     "relationshipBuilder",
     model,
@@ -94,10 +85,8 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
     conformedGroups: Array.isArray(agentResult?.conformedGroups) ? agentResult.conformedGroups : fallbackResult.conformedGroups,
   };
 
-  // Enforce deterministic purity threshold rules (e.g. 0.90 - 0.98 -> needs_review), verify sampleValues against data connector tool calls, and compute accurate summary counts
   const finalResult = enforceRelationshipStatusByPurity(mergedResult, fallbackResult);
 
-  // 4. Save Relationship Schema into Project Folder with timestamped filename
   const effectiveRunTimestamp = state.runTimestamp || (services as any)?.runTimestamp;
   if (services?.projectService && services?.projectId) {
     try {
@@ -105,7 +94,6 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
       if (proj && proj.project) {
         await saveModularRelationshipSchema(proj.workspaceName || "DefaultWorkspace", proj.project.name, finalResult, effectiveRunTimestamp);
 
-        // Also save as JSON file in schemas folder for Dataset Analyser Agent access
         const workspaceName = proj.workspaceName || "DefaultWorkspace";
         const projectName = proj.project.name;
         const schemasDir = getProjectSchemasDir(workspaceName, projectName, effectiveRunTimestamp);

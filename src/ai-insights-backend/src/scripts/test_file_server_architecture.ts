@@ -19,7 +19,6 @@ async function runFileServerArchitectureTest() {
   console.log(" FILE_SERVER_PATH & Multi-Workspace Architecture Verification ");
   console.log("==================================================================\n");
 
-  // 1. Verify Configuration & Directory Initializer
   ensureFileServerDirectories();
   const fileServerBase = getFileServerBasePath();
   console.log(`[Config] Base Storage Path: ${fileServerBase}`);
@@ -30,7 +29,6 @@ async function runFileServerArchitectureTest() {
   if (!fs.existsSync(getWorkspacesBasePath())) throw new Error("Workspaces base directory missing");
   console.log("✓ Core storage directories verified.\n");
 
-  // 2. Verify Workspace-Scoped Datasource File Saving & Isolation
   const fileService = new LocalFileService();
   const workspaceA = "Global Retail Workspace";
   const dsNameA = "Retail Orders 2026";
@@ -46,7 +44,6 @@ async function runFileServerArchitectureTest() {
     throw new Error(`Saved path mismatch: expected ${expectedPathA}, got ${savedPathA}`);
   }
 
-  // Workspace B with same file name but different content
   const workspaceB = "Enterprise EMEA Workspace";
   const dsNameB = "Retail Orders 2026";
   const fileNameB = "orders_q1.csv";
@@ -66,7 +63,6 @@ async function runFileServerArchitectureTest() {
   }
   console.log("✓ Workspace-scoped datasource files saved, isolated, and retrieved accurately across distinct workspaces.\n");
 
-  // 3. Verify Multi-Workspace Project Path Computation & Creation
   const projectName = "Order Analytics & Demand Planning";
   const relativeFolderPath = computeProjectRelativePath(workspaceA, projectName);
   const absoluteProjectPath = resolveStoragePath(relativeFolderPath);
@@ -78,7 +74,6 @@ async function runFileServerArchitectureTest() {
   if (!fs.existsSync(absoluteProjectPath)) throw new Error("Project designated folder was not created");
   console.log("✓ Project designated folder created under multi-workspace hierarchy.\n");
 
-  // 4. Verify DuckDB Ingestion into Project-Scoped Folder
   const duckdbService = new DuckDBService(fileService);
   const masterDbPath = await duckdbService.ingestProjectSources(
     projectName,
@@ -105,7 +100,6 @@ async function runFileServerArchitectureTest() {
   if (sampleRows.length !== 2) throw new Error("Unexpected row count from DuckDB sample query");
   console.log("✓ DuckDB ingestion and queries verified inside project folder.\n");
 
-  // 5. Verify Project Folder Directory and Python Script Subfolder
   const projectDir = getProjectDirectory({
     projectName,
     workspaceName: workspaceA,
@@ -130,7 +124,6 @@ async function runFileServerArchitectureTest() {
     throw new Error(`Python script dir (${pythonScriptDir}) does not match expected (${expectedPythonScriptDir})`);
   }
 
-  // 6. Verify MCP Filesystem Server Scoped to Project Folder
   const tools = await getMcpFilesystemTools({
     projectName,
     workspaceName: workspaceA,

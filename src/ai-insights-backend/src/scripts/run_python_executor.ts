@@ -15,7 +15,6 @@ import { ProjectService } from "../services/project/project.service";
 
 dotenv.config();
 
-// Set these values for the Python script execution you want to run.
 const scriptName = "aggregated_feature_pipeline.py";
 const pythonCode = `
 # Aggregated feature engineering script: aggregated_feature_pipeline.py

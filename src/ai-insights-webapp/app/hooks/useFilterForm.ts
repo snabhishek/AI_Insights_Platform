@@ -50,7 +50,6 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
   const selectedValuesRef = useRef(selectedValues);
   const searchTermsRef = useRef(searchTerms);
 
-  // Extract all fields and build parent-child dependency graph
   const allFields = useRef<FormField[]>([]);
   const directChildrenMap = useRef<Map<string, Set<string>>>(new Map());
 
@@ -74,7 +73,6 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
     directChildrenMap.current = childMap;
   }, [schema]);
 
-  // Find all transitive descendant field IDs for a given parent fieldId
   const getTransitiveDescendants = useCallback((fieldId: string): Set<string> => {
     const descendants = new Set<string>();
     const stack = [fieldId];
@@ -94,13 +92,11 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
     return descendants;
   }, []);
 
-  // Fetch options for a field from backend or fallback to inline schema choices
   const fetchOptions = useCallback(
     async (field: FormField, currentValues: Record<string, any>, searchOverride?: string) => {
       const fieldId = field.fieldId;
       const sourceId = (field as any).sourceId || schema?.sourceId || "default_source";
 
-      // Abort previous in-flight request for this fieldId (Race Safety)
       if (abortControllersRef.current.has(fieldId)) {
         abortControllersRef.current.get(fieldId)!.abort();
       }
@@ -143,7 +139,7 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
           queryParams.set("search", activeSearch.trim());
         }
 
-        const resolvedApiBase = (apiBaseUrl || "http://127.0.0.1:5000").replace(/\/api\/?$/, "");
+        const resolvedApiBase = (apiBaseUrl || DEFAULT_API_BASE).replace(/\/api\/?$/, "");
         const url = `${resolvedApiBase}/api/filter-options?${queryParams.toString()}`;
         const response = await fetch(url, { signal: controller.signal });
 
@@ -154,8 +150,7 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
           if (data.dateRange) {
             setDateRanges((prev) => ({ ...prev, [fieldId]: data.dateRange }));
           }
-          // An empty array is a valid search result and must not be replaced by
-          // the field's static fallback choices.
+
           const resolvedValues = Array.isArray(data.values) ? data.values : (field.options || []);
           setOptionsMap((prev) => ({ ...prev, [fieldId]: resolvedValues }));
           setFallbackMap((prev) => ({
@@ -185,7 +180,6 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
     [schema?.sourceId, schema?.projectId, schema?.projectName, apiBaseUrl]
   );
 
-  // Initial fetch for all fields when schema mounts or updates
   useEffect(() => {
     if (!schema) return;
     const groups = schema.filterGroups || schema.forms || [];
@@ -196,8 +190,6 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
     });
   }, [schema, fetchOptions]);
 
-  // Cancel outstanding work when the form is unmounted. Field-specific aborts
-  // inside fetchOptions continue to handle replacement requests while mounted.
   useEffect(() => {
     const controllers = abortControllersRef.current;
     const timers = searchDebounceTimersRef.current;
@@ -210,12 +202,10 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
     };
   }, []);
 
-  // Handle value change with Transitive Reset (Cascade Clear)
   const setFieldValue = useCallback(
     (fieldId: string, value: any) => {
       const next = { ...selectedValuesRef.current, [fieldId]: value };
 
-      // Transitive cascade reset: clear descendant values and stale choices.
       const descendants = getTransitiveDescendants(fieldId);
       descendants.forEach((childId) => {
         delete next[childId];
@@ -242,7 +232,6 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
         });
       }
 
-      // Only direct children can be resolved from the new parent value.
       const children = directChildrenMap.current.get(fieldId);
       children?.forEach((childId) => {
         const childField = allFields.current.find((f) => f.fieldId === childId);
@@ -252,7 +241,6 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
     [getTransitiveDescendants, fetchOptions]
   );
 
-  // Handle debounced search for searchable_dropdown controls (~250ms)
   const handleSearchChange = useCallback(
     (fieldId: string, term: string) => {
       setSearchTerms((prev) => {

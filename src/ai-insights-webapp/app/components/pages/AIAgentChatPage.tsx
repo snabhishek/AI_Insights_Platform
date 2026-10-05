@@ -39,7 +39,6 @@ export default function AIAgentChatPage() {
 
   const abortGenerationRef = useRef<boolean>(false);
 
-  // Load chat suggestions from database on mount
   useEffect(() => {
     let isMounted = true;
     fetchChatSuggestions()
@@ -56,7 +55,6 @@ export default function AIAgentChatPage() {
     };
   }, []);
 
-  // Hydrate saved sessions on mount
   useEffect(() => {
     const loadedSessions = loadSavedChatSessions();
     setSessions(loadedSessions);
@@ -76,14 +74,12 @@ export default function AIAgentChatPage() {
     }
   }, []);
 
-  // Save sessions to localStorage when updated
   useEffect(() => {
     if (sessions.length > 0) {
       saveChatSessions(sessions);
     }
   }, [sessions]);
 
-  // Save active session ID
   useEffect(() => {
     if (activeSessionId) {
       saveActiveSessionId(activeSessionId);
@@ -94,7 +90,6 @@ export default function AIAgentChatPage() {
   const activePersona = AGENT_PERSONAS[selectedPersonaId] || AGENT_PERSONAS.orchestrator;
   const currentScopedProject = projects.find((p) => p.id === selectedProjectId) || null;
 
-  // Extract candidate trained models for selected project
   const trainedModels = useMemo<TrainedModelOption[]>(() => {
     const defaultOption: TrainedModelOption = {
       id: "any",
@@ -153,7 +148,6 @@ export default function AIAgentChatPage() {
     return [defaultOption, ...unique];
   }, [currentScopedProject]);
 
-  // Handler: Create New Session
   const handleNewSession = () => {
     if (!selectedProjectId) {
       showAlert({
@@ -180,7 +174,6 @@ export default function AIAgentChatPage() {
     setActiveSessionId(newSessionId);
   };
 
-  // Handler: Delete Session
   const handleDeleteSession = (id: string) => {
     showConfirm({
       title: "Delete Conversation",
@@ -205,14 +198,12 @@ export default function AIAgentChatPage() {
     });
   };
 
-  // Handler: Toggle Pin Session
   const handleTogglePinSession = (id: string) => {
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, pinned: !s.pinned } : s))
     );
   };
 
-  // Handler: Select Session
   const handleSelectSession = (id: string) => {
     const session = sessions.find((s) => s.id === id);
     if (session) {
@@ -222,9 +213,6 @@ export default function AIAgentChatPage() {
     }
   };
 
-
-
-  // Handler: Send Message & Process Agent AI Response
   const handleSendMessage = async (
     text: string,
     options?: { modelId?: string; attachments?: File[] }
@@ -273,7 +261,6 @@ export default function AIAgentChatPage() {
       status: "sending",
     };
 
-    // Update active session with user message and placeholder assistant message
     setSessions((prev) =>
       prev.map((s) => {
         if (s.id === activeSessionId) {
@@ -303,7 +290,7 @@ export default function AIAgentChatPage() {
         projects,
         dataSources,
         (updatedThinking) => {
-          // Live stream thinking steps
+
           setSessions((prev) =>
             prev.map((s) => {
               if (s.id === activeSessionId) {
@@ -325,7 +312,6 @@ export default function AIAgentChatPage() {
         return;
       }
 
-      // Finalize assistant message
       setSessions((prev) =>
         prev.map((s) => {
           if (s.id === activeSessionId) {
@@ -373,13 +359,11 @@ export default function AIAgentChatPage() {
     }
   };
 
-  // Handler: Stop Generating
   const handleStopGenerating = () => {
     abortGenerationRef.current = true;
     setIsGenerating(false);
   };
 
-  // Handler: Feedback
   const handleFeedback = (messageId: string, type: "like" | "dislike") => {
     setSessions((prev) =>
       prev.map((s) => {
@@ -407,7 +391,6 @@ export default function AIAgentChatPage() {
     });
   };
 
-  // Handler: Select Template
   const handleSelectTemplate = (template: PromptTemplate) => {
     setSelectedPersonaId(template.recommendedPersona);
     setIsTemplatesModalOpen(false);
@@ -416,7 +399,7 @@ export default function AIAgentChatPage() {
 
   return (
     <div className="w-full flex flex-col lg:flex-row h-[calc(100vh-57px)] bg-surface overflow-hidden animate-fade-in">
-      {/* Left Session & Persona Drawer */}
+
       <ChatSidebar
         sessions={sessions}
         activeSessionId={activeSessionId}
@@ -450,11 +433,8 @@ export default function AIAgentChatPage() {
         }}
       />
 
-      {/* Main Chat Area */}
       <div className="flex-1 flex flex-col h-full min-w-0 relative overflow-hidden px-4 sm:px-10">
 
-
-        {/* Message Stream Area */}
         <ChatMessageList
           messages={activeSession?.messages || []}
           activePersona={activePersona}
@@ -472,7 +452,6 @@ export default function AIAgentChatPage() {
           onSelectSuggestedQuestion={(q) => handleSendMessage(q)}
         />
 
-        {/* Chat Bottom Input Area */}
         <ChatInputArea
           onSendMessage={(text, opts) => handleSendMessage(text, opts)}
           isGenerating={isGenerating}
@@ -487,30 +466,6 @@ export default function AIAgentChatPage() {
         />
       </div>
 
-      {/* Persona Selection Modal */}
-      {/* <ChatAgentPersonaModal
-        isOpen={isPersonaModalOpen}
-        selectedPersonaId={selectedPersonaId}
-        onSelectPersona={(pId) => {
-          setSelectedPersonaId(pId);
-          if (activeSession) {
-            setSessions((prev) =>
-              prev.map((s) => (s.id === activeSession.id ? { ...s, agentPersona: pId } : s))
-            );
-          }
-        }}
-        onClose={() => setIsPersonaModalOpen(false)}
-      /> */}
-
-      {/* Prompt Templates Library Modal */}
-      {/* {isTemplatesModalOpen && (
-        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in select-none">
-          <ChatPromptTemplates
-            onSelectTemplate={handleSelectTemplate}
-            onClose={() => setIsTemplatesModalOpen(false)}
-          />
-        </div>
-      )} */}
     </div>
   );
 }

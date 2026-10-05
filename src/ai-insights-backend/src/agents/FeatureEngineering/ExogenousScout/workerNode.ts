@@ -18,10 +18,6 @@ import {
   EXOGENOUS_BATCH_USER_PROMPT_TEMPLATE,
 } from "./utils";
 
-/**
- * Worker Subagent Node in LangGraph
- * Processes a single batch of tables using websearch tool and extractUrlContent tool.
- */
 export async function exogenousWorkerNode(
   input: WorkerBatchInput,
   config?: RunnableConfig
@@ -105,10 +101,6 @@ export async function exogenousWorkerNode(
   }
 }
 
-/**
- * Aggregator / Fan-In Node in LangGraph
- * Aggregates all worker results and generates the final exogenous scout payload.
- */
 export async function exogenousAggregatorNode(
   state: typeof ExogenousScoutAnnotation.State,
   config?: RunnableConfig

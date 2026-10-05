@@ -13,7 +13,6 @@ async function runTest() {
   const projectName = "Test_Olist_Project";
   const runTimestamp = "20260916-150000";
 
-  // 1. Simulate Phase 3.1 Model Selection contract initialization with multiple & dynamic candidate models
   const modelSelectionDecision = {
     target_entity: {
       name: "late_delivery_risk",
@@ -88,7 +87,6 @@ async function runTest() {
   );
   console.log("-> Initialized Contract at:", initContractRes.trainingJobContractPath);
 
-  // Write mock profiling_report.json and relationship_schema.json in project schemas folder
   const testSchemasDir = getProjectSchemasDir(workspaceName, projectName, runTimestamp);
   await fs.promises.mkdir(testSchemasDir, { recursive: true });
   await fs.promises.writeFile(
@@ -114,7 +112,6 @@ async function runTest() {
     "utf-8"
   );
 
-  // 2. Prepare simulated state and mock services for Phase 3.2 Training Configuration
   const mockState: any = {
     projectId: "test-proj-id",
     runTimestamp,
@@ -184,7 +181,6 @@ async function runTest() {
   console.log("-> Stage Status:", nodeResult.stageStatuses?.trainingConfiguration);
   console.log("-> Contract Path:", nodeResult.trainingConfiguration?.contractPath);
 
-  // 3. Inspect generated YAML file on disk
   const contractPath = nodeResult.trainingConfiguration?.contractPath;
   if (contractPath && fs.existsSync(contractPath)) {
     const content = fs.readFileSync(contractPath, "utf-8");
@@ -205,7 +201,6 @@ async function runTest() {
     console.log("✓ preserved model_selection candidate count:", parsed.model_selection?.candidates?.length);
     console.log("✓ preserved recommended model:", parsed.model_selection?.recommended_model?.model_id);
 
-    // Verify all candidate models are present in search_space or model_selection
     const candidateIds = (parsed.model_selection?.candidates || []).map((c: any) => c.model_id);
     console.log("✓ Candidate Model IDs in Contract:", candidateIds);
 

@@ -152,8 +152,7 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
 
   for (const [batchIndex, batchTableNames] of batches.entries()) {
     await logMilestoneThinking(services, "Data Inspection", `Extracting table schema metadata for batch ${batchIndex + 1}/${batches.length}: [${batchTableNames.join(", ")}]...`);
-    
-    // 1. Direct fast schema & constraint extraction from DB/file (~100ms)
+
     let directBatchInspection: InspectionPayload;
     try {
       directBatchInspection = await inspectTool.invoke({
@@ -175,7 +174,6 @@ export async function runInspectorWithTools(connector: any, services: IngestionS
 
     let parsedBatchPayload: InspectionPayload = directBatchInspection;
 
-    // 2. Single-pass LLM metadata enrichment for semantic descriptions & business meaning (~500ms)
     if (model && directBatchInspection && Array.isArray(directBatchInspection.tables) && directBatchInspection.tables.length > 0) {
       try {
         const userMessage = buildInspectionBatchUserMessage({

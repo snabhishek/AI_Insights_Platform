@@ -155,7 +155,7 @@ export class WorkspaceService {
 
     const created = await this.projectRepository.createProject(newProject);
     if (created) {
-      // Ingest connected data sources into DuckDB under designated project folder
+
       if (this.duckDBService && this.connectorRepository && dataSources.length > 0) {
         try {
           const projectSourceInputs: ProjectSourceInput[] = [];
@@ -291,7 +291,7 @@ export class WorkspaceService {
     }
 
     const runs = await this.projectRepository.getProjectRuns(projectId);
-    // 1. Check all runs for this project in descending order
+
     for (const run of runs) {
       const state = (run.agentState as any) || {};
       const candidates = [
@@ -328,7 +328,6 @@ export class WorkspaceService {
       }
     }
 
-    // 2. Check disk for YAML schema file if not in DB runs
     try {
       const projectWithWs = await this.projectRepository.getProjectWithWorkspace(projectId);
       const wsName = projectWithWs?.workspaceName;

@@ -1,9 +1,5 @@
 import { query } from "../db";
 
-/**
- * One-time administrative reset script to clear all legacy or hardcoded models from the database,
- * starting the dynamic model registry data store from scratch per requirements.
- */
 async function resetDynamicModelRegistry() {
   console.log("[ResetScript] Starting one-time dynamic model registry database reset...");
   try {

@@ -8,7 +8,7 @@ interface SchemaResolverStepOutputProps {
 }
 
 export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolverStepOutputProps) {
-  // Extract resolution source details. Keep robust to support array format or object format
+
   const rawSources = resolveSchema?.sources;
   const sources = Array.isArray(rawSources)
     ? rawSources
@@ -38,7 +38,7 @@ export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolv
 
   return (
     <div className="space-y-6 select-none">
-      {/* Schema Resolution Success Banner */}
+
       <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5 shadow-sm font-semibold select-none">
         <span className="text-sm">✓</span>
         <div>
@@ -58,7 +58,7 @@ export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolv
 
         return (
           <div key={srcIdx} className="space-y-6 select-text">
-            {/* Metadata & Strategy Card */}
+
             <div className="border border-border bg-surface/50 p-5 space-y-4 shadow-soft">
               <div className="flex items-center justify-between border-b border-border/40 pb-2.5 select-none">
                 <span className="text-xs font-black text-foreground">Schema Configuration</span>
@@ -70,7 +70,7 @@ export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolv
                   <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground block select-none">Alignment Strategy</span>
                   <p className="text-xs text-foreground/90 leading-relaxed font-semibold">{strategy}</p>
                 </div>
-                
+
                 {resolvedTables.length > 0 && (
                   <div className="space-y-1">
                     <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground block select-none">Resolved Entity Tables</span>
@@ -95,7 +95,6 @@ export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolv
               )}
             </div>
 
-            {/* Mappings Table */}
             <div className="space-y-3">
               <SectionHeader title="Resolved Schema Mappings" subtitle="Semantic alignment of dataset columns to analytical structures" badgeText={`${mappings.length} Fields Mapped`} />
 
@@ -106,7 +105,6 @@ export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolv
               )}
             </div>
 
-            {/* Unmapped Fields Panel */}
             {unmapped.length > 0 && (
               <div className="p-4 border border-rose-500/10 bg-rose-500/[0.01] space-y-3">
                 <span className="text-[10px] font-black uppercase tracking-wider text-rose-500 block select-none">Unmapped Dataset Fields</span>

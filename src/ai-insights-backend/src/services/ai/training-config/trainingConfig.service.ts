@@ -41,7 +41,6 @@ export class TrainingConfigService implements ITrainingConfigService {
     let contractPath: string | null = null;
     let filename = `${useCaseSlug}_training_job_contract_${effectiveTs}.yaml`;
 
-    // 1. Try finding contract file in run schemas dir
     if (fsSync.existsSync(runSchemasDir)) {
       const files = await fs.readdir(runSchemasDir);
       const matched = files.find(
@@ -53,7 +52,6 @@ export class TrainingConfigService implements ITrainingConfigService {
       }
     }
 
-    // 2. Try finding contract file in un-timestamped project schemas dir
     if (!contractPath) {
       const globalSchemasDir = getProjectSchemasDir(workspaceName, projectName);
       if (fsSync.existsSync(globalSchemasDir)) {
@@ -68,7 +66,6 @@ export class TrainingConfigService implements ITrainingConfigService {
       }
     }
 
-    // 3. If file exists, read and return
     if (contractPath && fsSync.existsSync(contractPath)) {
       const content = await fs.readFile(contractPath, "utf-8");
       let parsed: Record<string, any> = {};
@@ -85,7 +82,6 @@ export class TrainingConfigService implements ITrainingConfigService {
       };
     }
 
-    // 4. Fallback to base template schema
     const packagesDir = getPackagesDir();
     const templatePath = path.resolve(packagesDir, "Schemas/TrainingJobContract.yaml");
     if (fsSync.existsSync(templatePath)) {
@@ -114,7 +110,6 @@ export class TrainingConfigService implements ITrainingConfigService {
       throw new Error("YAML content cannot be empty");
     }
 
-    // Validate YAML syntax
     let parsed: Record<string, any>;
     try {
       parsed = yaml.load(yamlContent) as Record<string, any>;
@@ -151,7 +146,6 @@ export class TrainingConfigService implements ITrainingConfigService {
     await fs.writeFile(filePath, yamlContent, "utf-8");
     console.info(`[TrainingConfigService] Successfully saved YAML contract to file server at: ${filePath}`);
 
-    // Update project agentState so frontend and runtime stay synchronized
     try {
       const splitFromParsed =
         parsed.split?.split_date ||
@@ -205,4 +199,3 @@ export class TrainingConfigService implements ITrainingConfigService {
     return await extractDatasetDateRange(workspaceName, projectName, timestamp, existingAgentState);
   }
 }
-

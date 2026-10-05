@@ -46,7 +46,7 @@ export class ConnectorController {
     }
 
     try {
-      // Check for name & type duplicates in the same workspace
+
       const existing = await this.connectorService.getAll(workspaceId);
       const isDuplicate = existing.some(
         (c) => c.name.toLowerCase() === name.trim().toLowerCase() && c.type === type
@@ -59,7 +59,6 @@ export class ConnectorController {
         return;
       }
 
-      // Perform one final connection validation before saving
       const test = await this.connectionTester.testConnection(type, config || {});
       if (!test.success) {
         res.status(400).json({ success: false, message: `Validation failed: ${test.message}` });
@@ -117,13 +116,11 @@ export class ConnectorController {
         return;
       }
 
-      // Set to syncing state
       await this.connectorService.updateStatus(id, "Syncing");
 
-      // Simulate parsing tables/metadata in background
       setTimeout(async () => {
         try {
-          // Re-run health validation
+
           const test = await this.connectionTester.healthCheck(connector.type, connector.connectionConfig);
           await this.connectorService.updateStatus(id, "Connected");
           await this.connectorService.updateHealth(id, test.success ? "Healthy" : "Warning");
@@ -295,7 +292,7 @@ export class ConnectorController {
         try {
           parentParams = JSON.parse(req.query.parents);
         } catch {
-          // ignore invalid json
+
         }
       }
 
@@ -310,7 +307,6 @@ export class ConnectorController {
         parentFields = req.query.parentFields as string[];
       }
 
-      // Also collect any dynamic query parameters that match parent parameters directly (e.g. ?category=Heat+Pumps)
       const reservedKeys = new Set([
         "sourceId",
         "projectId",

@@ -11,4 +11,3 @@ export interface IProjectRepository {
   createProject(project: Project): Promise<Project>;
   deleteProject(id: string): Promise<boolean>;
 }
-

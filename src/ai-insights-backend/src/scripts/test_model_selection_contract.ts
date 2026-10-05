@@ -29,7 +29,6 @@ async function testModelSelectionContractPersistence() {
   const parentFolderName = resolveProjectFolderName(projectFilesParent, projectName, workspaceName);
   const parentProjectDir = path.resolve(projectFilesParent, parentFolderName);
 
-  // 1. Create project schema files
   console.log("[Step 1] Creating project initial schema file...");
   await createProjectSchemaFile(workspaceName, {
     name: projectName,
@@ -38,13 +37,11 @@ async function testModelSelectionContractPersistence() {
     useCase: "Forecast store SKU inventory depletion",
   });
 
-  // 2. Initiate run with timestamp
   const runTimestamp = generateDateTimeStamp();
   console.log(`\n[Step 2] Initiating run with timestamp: ${runTimestamp}`);
   const runSchemasDir = await ensureProjectRunFolder(workspaceName, projectName, runTimestamp);
   console.log(`Created run schemas directory: ${runSchemasDir}`);
 
-  // 3. Prepare Model Selection decision payload from agent
   const agentDecisionPayload = {
     target_entity: {
       name: "UnitsSold",
@@ -149,7 +146,6 @@ async function testModelSelectionContractPersistence() {
     ],
   };
 
-  // 4. Save Training Job Contract schema
   console.log("\n[Step 3] Saving Training Job Contract schema...");
   const saveResult = await saveModularTrainingJobContract(
     workspaceName,
@@ -159,21 +155,17 @@ async function testModelSelectionContractPersistence() {
   );
   console.log(`Saved contract to: ${saveResult.trainingJobContractPath}`);
 
-  // 5. Verification 1: File name follows convention <usecasetitle>_training_job_contract_<timestamp>.yaml
   const expectedFileName = `${useCaseSlug}_training_job_contract_${runTimestamp}.yaml`;
   if (!saveResult.trainingJobContractPath.endsWith(expectedFileName)) {
     throw new Error(`File name mismatch! Expected to end with "${expectedFileName}", got: "${saveResult.trainingJobContractPath}"`);
   }
 
-  // Verification 2: File exists in target run folder
   if (!fs.existsSync(saveResult.trainingJobContractPath)) {
     throw new Error(`Contract file not found at ${saveResult.trainingJobContractPath}`);
   }
 
-  // Verification 3: File content checks
   const contractContent = fs.readFileSync(saveResult.trainingJobContractPath, "utf-8");
 
-  // A. Other sections and comments are preserved untouched
   const requiredSectionsAndComments = [
     "TRAINING JOB CONTRACT — AutoML Platform",
     "x-primary-metric-name: &primary_metric_name",
@@ -200,7 +192,6 @@ async function testModelSelectionContractPersistence() {
     }
   }
 
-  // B. ONLY model_selection contains the agent response fields
   if (!contractContent.includes("model_selection:")) {
     throw new Error("model_selection section missing from Training Job Contract YAML!");
   }
@@ -214,7 +205,6 @@ async function testModelSelectionContractPersistence() {
     throw new Error("Target description missing from model_selection!");
   }
 
-  // C. Verify valid YAML parsing
   const parsedYaml: any = yaml.load(contractContent);
   if (!parsedYaml || !parsedYaml.model_selection) {
     throw new Error("Parsed YAML missing model_selection block!");
@@ -226,7 +216,6 @@ async function testModelSelectionContractPersistence() {
     throw new Error(`Unexpected recommended_model: ${parsedYaml.model_selection.recommended_model.model_id}`);
   }
 
-  // 6. Verification 4: Simulate User Selection update (e.g. user selects only lightgbm and xgboost)
   console.log("\n[Step 4] Simulating user selection update (disabling random_forest)...");
   const userUpdatedDecision = {
     ...agentDecisionPayload,
@@ -255,7 +244,6 @@ async function testModelSelectionContractPersistence() {
     throw new Error("Expected lightgbm to have enabled=true after user selection!");
   }
 
-  // Ensure other sections are STILL preserved after the second update
   for (const token of requiredSectionsAndComments) {
     if (!updatedContractContent.includes(token)) {
       throw new Error(`After update, expected section/comment "${token}" missing from Training Job Contract YAML!`);

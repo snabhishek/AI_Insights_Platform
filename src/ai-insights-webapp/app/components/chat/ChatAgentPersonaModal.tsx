@@ -24,7 +24,7 @@ export default function ChatAgentPersonaModal({
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in select-none">
       <div className="relative w-full max-w-2xl bg-surface border border-border rounded-2xl shadow-2xl p-6 space-y-5 animate-scale-up max-h-[90vh] flex flex-col">
-        {/* Header */}
+
         <div className="flex items-center justify-between border-b border-border pb-3 shrink-0">
           <div>
             <h2 className="text-base font-bold text-foreground flex items-center gap-2">
@@ -44,7 +44,6 @@ export default function ChatAgentPersonaModal({
           </button>
         </div>
 
-        {/* Persona Cards Grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 overflow-y-auto p-1">
           {personas.map((persona) => {
             const isSelected = persona.id === selectedPersonaId;

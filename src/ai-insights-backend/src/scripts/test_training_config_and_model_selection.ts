@@ -28,7 +28,6 @@ async function runVerificationTests() {
     }
   };
 
-  // Test 1: Verify Graph Interrupt Gates
   console.log("\n--- TEST 1: LangGraph Interrupt Gates ---");
   const checkpointer = new MemorySaver();
   const graph = createAgentGraph(checkpointer);
@@ -59,8 +58,6 @@ async function runVerificationTests() {
     "preFlightNode is included in interruptBefore (pauses after Training Configuration for YAML review/approval before Preflight runs)"
   );
 
-
-  // Test 2: Model Selection Confirmation & Only Selected Models in Contract
   console.log("\n--- TEST 2: Only Selected Models Saved to Contract on File Server ---");
   const workspaceName = "TestTrainingConfigWS";
   const projectName = "Churn Prediction Pipeline";
@@ -78,7 +75,6 @@ async function runVerificationTests() {
 
   await ensureProjectRunFolder(workspaceName, projectName, runTimestamp);
 
-  // Initial Model Selection recommendation with 3 candidates
   const initialDecision = {
     target_entity: {
       name: "churn_flag",
@@ -97,10 +93,8 @@ async function runVerificationTests() {
     ],
   };
 
-  // Save initial decision
   await saveModularTrainingJobContract(workspaceName, projectName, initialDecision, runTimestamp);
 
-  // User confirms ONLY 2 models: lightgbm_classifier and xgboost_classifier
   const selectedModelIds = ["lightgbm_classifier", "xgboost_classifier"];
   const userConfirmedDecision = {
     ...initialDecision,
@@ -118,7 +112,6 @@ async function runVerificationTests() {
   const saveRes = await saveModularTrainingJobContract(workspaceName, projectName, userConfirmedDecision, runTimestamp);
   console.log(`Saved contract to: ${saveRes.contractPath}`);
 
-  // Inspect the written YAML on disk
   const writtenContent = fs.readFileSync(saveRes.contractPath, "utf-8");
   const parsedYaml: any = yaml.load(writtenContent);
 
@@ -139,7 +132,6 @@ async function runVerificationTests() {
     "Unselected logistic_regression is NOT included in models"
   );
 
-  // Test 3: TrainingConfigService File Server Read & Write
   console.log("\n--- TEST 3: TrainingConfigService Read and Edit Persistence ---");
   const mockProjectService: any = {
     getProjectWithWorkspace: async (_id: string) => ({
@@ -155,12 +147,10 @@ async function runVerificationTests() {
 
   const trainingConfigService = new TrainingConfigService(mockProjectService);
 
-  // Read contract
   const contractRes = await trainingConfigService.getContract("mock-proj-123", runTimestamp);
   assert(Boolean(contractRes.yamlContent), "Contract YAML content successfully read from file server");
   assert(contractRes.filename.includes("_training_job_contract_"), `Filename matches convention: ${contractRes.filename}`);
 
-  // Modify contract YAML (e.g. update max_trials to 77 and train_ratio to 0.80)
   const modifiedYaml = contractRes.yamlContent
     .replace(/max_trials:\s*\d+/g, "max_trials: 77")
     .replace(/train_ratio:\s*[\d.]+/g, "train_ratio: 0.80");
@@ -168,7 +158,6 @@ async function runVerificationTests() {
   const saveEditedRes = await trainingConfigService.saveContract("mock-proj-123", modifiedYaml, runTimestamp);
   assert(saveEditedRes.success === true, "saveContract returned success");
 
-  // Re-read file directly from disk to ensure persistence
   const reReadDiskContent = fs.readFileSync(saveEditedRes.filePath, "utf-8");
   const reParsed: any = yaml.load(reReadDiskContent);
 
@@ -181,7 +170,6 @@ async function runVerificationTests() {
     "Edited train_ratio (0.80) correctly persisted to file server"
   );
 
-  // Test 4: Invalid YAML Rejection
   console.log("\n--- TEST 4: Invalid YAML Syntax Rejection ---");
   const badYaml = "task:\n  task_type: [unclosed bracket";
   let rejected = false;
@@ -201,7 +189,6 @@ async function runVerificationTests() {
   }
   console.log("==================================================================");
 
-  // Clean up test folder
   try {
     const schemasDir = getProjectSchemasDir(workspaceName, projectName, runTimestamp);
     fs.rmSync(path.dirname(schemasDir), { recursive: true, force: true });

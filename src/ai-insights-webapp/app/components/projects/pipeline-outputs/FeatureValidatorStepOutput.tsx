@@ -44,7 +44,7 @@ export default function FeatureValidatorStepOutput({
 
   return (
     <div className="space-y-6 select-none">
-      {/* Banner */}
+
       <div
         className={`p-4 border text-xs flex items-start gap-2.5 shadow-sm font-semibold select-none ${
           hasLeakage
@@ -68,7 +68,6 @@ export default function FeatureValidatorStepOutput({
         </div>
       </div>
 
-      {/* KPI Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="p-3 bg-surface-muted border border-border rounded">
           <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Validated Kept</div>
@@ -96,7 +95,6 @@ export default function FeatureValidatorStepOutput({
         </div>
       </div>
 
-      {/* Tabs */}
       <div className="flex border-b border-border gap-4 text-xs font-semibold overflow-x-auto">
         <button
           onClick={() => setActiveTab("importance")}
@@ -150,7 +148,6 @@ export default function FeatureValidatorStepOutput({
         </button>
       </div>
 
-      {/* Tab: Importance Ranking */}
       {activeTab === "importance" && (
         <div className="space-y-4 select-text">
           <SectionHeader
@@ -204,7 +201,6 @@ export default function FeatureValidatorStepOutput({
         </div>
       )}
 
-      {/* Tab: Leakage Audit */}
       {activeTab === "leakage" && (
         <div className="space-y-4 select-text">
           <SectionHeader
@@ -249,10 +245,9 @@ export default function FeatureValidatorStepOutput({
         </div>
       )}
 
-      {/* Tab: Multicollinearity */}
       {activeTab === "multicollinearity" && (
         <div className="space-y-6 select-text">
-          {/* High VIF */}
+
           <div className="space-y-3">
             <SectionHeader
               title="Variance Inflation Factor (VIF)"
@@ -293,7 +288,6 @@ export default function FeatureValidatorStepOutput({
             )}
           </div>
 
-          {/* High Correlation Pairs */}
           <div className="space-y-3">
             <SectionHeader
               title="Pairwise High Correlation Resolution"
@@ -339,7 +333,6 @@ export default function FeatureValidatorStepOutput({
         </div>
       )}
 
-      {/* Tab: Feature Drift */}
       {activeTab === "drift" && (
         <div className="space-y-4 select-text">
           <SectionHeader
@@ -386,7 +379,6 @@ export default function FeatureValidatorStepOutput({
         </div>
       )}
 
-      {/* Tab: Validated Feature Set */}
       {activeTab === "featureSet" && (
         <div className="space-y-6 select-text">
           <div className="space-y-3">

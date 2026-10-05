@@ -133,15 +133,6 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
         <section className="bg-surface/60">
           {selectedTable ? (
             <div className="space-y-5">
-              {/* <div className="flex items-center justify-between gap-4">
-                <div>
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Table details</div>
-                  <h3 className="mt-2 text-sm font-extrabold text-foreground">{selectedTableName}</h3>
-                </div>
-                <span className="rounded-full border border-border px-2 py-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  {Array.isArray(selectedTable.columns) ? selectedTable.columns.length : 0} columns
-                </span>
-              </div> */}
 
               <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
                 {selectedTable.summary && (

@@ -22,9 +22,6 @@ export interface McpFilesystemOptions {
   allowedDirectories?: string[];
 }
 
-/**
- * Helper to strip any trailing python_script subfolder and return the base project directory.
- */
 function toBaseProjectDir(dirPath: string): string {
   const norm = dirPath.replace(/\\/g, "/").replace(/\/+$/, "");
   if (norm.endsWith("/python_script") || norm.endsWith("/python script")) {
@@ -42,20 +39,12 @@ interface ProjectMeta {
 
 const projectMetadataCache = new Map<string, ProjectMeta>();
 
-/**
- * Registers project metadata so that any component passing only a projectId string
- * can resolve to the correct project name and folder path.
- */
 export function registerProjectMetadata(projectId: string, meta: ProjectMeta): void {
   if (projectId && meta) {
     projectMetadataCache.set(projectId, meta);
   }
 }
 
-/**
- * Resolves the designated base project directory path.
- * Resolves to `<FILE_SERVER_PATH>/workspaces/<workspace>/projects/<projectName>`.
- */
 export function getProjectDirectory(
   optionsOrProjectId?: string | McpFilesystemOptions,
   runTimestamp?: string
@@ -74,13 +63,11 @@ export function getProjectDirectory(
     folderPath = optionsOrProjectId.folderPath;
   }
 
-  // 1. If explicit relative folderPath was provided (from DB)
   if (folderPath) {
     const absPath = resolveStoragePath(folderPath);
     return toBaseProjectDir(absPath);
   }
 
-  // 2. Check metadata cache if projectId is provided
   if (projectId && (!projectName || !folderPath)) {
     const cached = projectMetadataCache.get(projectId);
     if (cached) {
@@ -94,7 +81,6 @@ export function getProjectDirectory(
     }
   }
 
-  // 3. If projectName is provided
   if (projectName) {
     if (workspaceName) {
       return getProjectDir(workspaceName, projectName);
@@ -117,7 +103,6 @@ export function getProjectDirectory(
     return toBaseProjectDir(absPath);
   }
 
-  // 4. If only projectId is provided without projectName
   if (projectId) {
     const workspacesBase = getWorkspacesBasePath();
 
@@ -137,7 +122,6 @@ export function getProjectDirectory(
       } catch {}
     }
 
-    // Check legacy uploads/projects/<projectId>/runs/<runTimestamp>
     const legacyPath = path.resolve(
       process.cwd(),
       "uploads",
@@ -149,17 +133,11 @@ export function getProjectDirectory(
     if (fs.existsSync(legacyPath)) return legacyPath;
   }
 
-  // 5. Default project directory
   const defaultRelative = computeProjectRelativePath(workspaceName || "Default_Workspace", "default");
   const defaultAbs = resolveStoragePath(defaultRelative);
   return toBaseProjectDir(defaultAbs);
 }
 
-/**
- * Resolves the designated project python_script directory path.
- * Resolves to `<FILE_SERVER_PATH>/workspaces/<workspace>/projects/<projectName>/<timestamp>/python_script`
- * (or resolves the latest timestamped folder).
- */
 export function getPythonScriptDirectory(
   optionsOrProjectId?: string | McpFilesystemOptions,
   runTimestamp?: string
@@ -200,10 +178,6 @@ export function getPythonScriptDirectory(
   return ensureDirectoryExists(path.join(projectDir, "python_script"));
 }
 
-/**
- * Resolves the designated project sandbox directory path.
- * Retained for backwards compatibility; points to the python_script directory.
- */
 export function getSandboxDirectory(
   optionsOrProjectId?: string | McpFilesystemOptions,
   runTimestamp?: string
@@ -211,9 +185,6 @@ export function getSandboxDirectory(
   return getPythonScriptDirectory(optionsOrProjectId, runTimestamp);
 }
 
-/**
- * Resolves the entrypoint script for @modelcontextprotocol/server-filesystem.
- */
 export function resolveMcpServerFilesystemPath(): string {
   const possiblePaths = [
     path.resolve(process.cwd(), "node_modules", "@modelcontextprotocol", "server-filesystem", "dist", "index.js"),
@@ -235,24 +206,15 @@ export function resolveMcpServerFilesystemPath(): string {
   }
 }
 
-/**
- * Cache for active MultiServerMCPClient instances keyed by allowed directory list.
- */
 const clientCache = new Map<string, MultiServerMCPClient>();
 
-/**
- * Creates or retrieves an existing MultiServerMCPClient instance configured with allowed directories.
- * Strictly scopes filesystem access to the project root directory.
- */
 export function getMcpFilesystemClient(options: McpFilesystemOptions = {}): MultiServerMCPClient {
   const projectDir = getProjectDirectory(options);
 
-  // Strictly isolate MCP filesystem server to the project folder
   const directories = options.allowedDirectories && options.allowedDirectories.length > 0
     ? options.allowedDirectories
     : [projectDir];
 
-  // Ensure all directories exist and are normalized
   const normalizedDirs = directories.map((dir) => {
     const resolved = path.resolve(dir);
     if (!fs.existsSync(resolved)) {
@@ -282,9 +244,6 @@ export function getMcpFilesystemClient(options: McpFilesystemOptions = {}): Mult
   return client;
 }
 
-/**
- * Retrieves all LangChain tools from the MCP filesystem server for the given project options.
- */
 export async function getMcpFilesystemTools(
   options: McpFilesystemOptions = {}
 ): Promise<DynamicStructuredTool[]> {
@@ -293,9 +252,6 @@ export async function getMcpFilesystemTools(
   return tools;
 }
 
-/**
- * Closes an MCP client for a specific directory.
- */
 export async function closeMcpClientForDirectory(dirPath: string): Promise<void> {
   const normalized = path.resolve(dirPath);
   for (const [key, client] of clientCache.entries()) {
@@ -310,9 +266,6 @@ export async function closeMcpClientForDirectory(dirPath: string): Promise<void>
   }
 }
 
-/**
- * Closes all cached MCP clients.
- */
 export async function closeAllMcpClients(): Promise<void> {
   for (const [key, client] of clientCache.entries()) {
     try {

@@ -39,7 +39,6 @@ function ModernSelect({
   const containerRef = useRef<HTMLDivElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
-  // Close on outside click
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
@@ -67,7 +66,6 @@ function ModernSelect({
     }
   };
 
-  // Filter options locally based on search
   const filteredOptions = options.filter((opt) => {
     if (!searchTerm.trim()) return true;
     const optLabel = typeof opt === "object" ? opt.label || opt.name || opt.value || opt.id : String(opt);
@@ -87,7 +85,7 @@ function ModernSelect({
 
   return (
     <div className="relative w-full" ref={containerRef}>
-      {/* Dropdown Trigger Box */}
+
       <button
         type="button"
         onClick={handleToggle}
@@ -135,10 +133,9 @@ function ModernSelect({
         </div>
       </button>
 
-      {/* Modern Popover Dropdown Menu */}
       {isOpen && (
         <div className="absolute left-0 right-0 top-[calc(100%+6px)] z-[100] rounded-2xl border border-border/80 bg-surface dark:bg-[#161a23] shadow-2xl ring-1 ring-black/10 overflow-hidden flex flex-col max-h-72 animate-in fade-in zoom-in-95 duration-150">
-          {/* Embedded Search Input inside Dropdown */}
+
           <div className="p-2.5 border-b border-border/60 bg-surface-muted/60 shrink-0">
             <div className="relative flex items-center">
               <svg
@@ -170,9 +167,8 @@ function ModernSelect({
             </div>
           </div>
 
-          {/* Options Scroll List */}
           <div className="overflow-y-auto flex-1 p-1.5 space-y-0.5 text-xs custom-scrollbar">
-            {/* Clear / All Option */}
+
             <div
               onClick={() => {
                 onChange("");
@@ -231,7 +227,6 @@ function ModernSelect({
             )}
           </div>
 
-          {/* Bottom Option Footer Count */}
           <div className="px-3.5 py-2 bg-surface-muted/40 border-t border-border/60 text-[11px] text-muted-foreground flex justify-between items-center shrink-0">
             <span>
               {filteredOptions.length} of {options.length} choices
@@ -332,7 +327,6 @@ export default function FilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE, onFi
       );
     }
 
-    // Modern custom searchable dropdown with on-demand refresh
     return (
       <ModernSelect
         field={field}
@@ -406,7 +400,7 @@ export default function FilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE, onFi
 
   return (
     <div className="space-y-6 w-full">
-      {/* Header controls & summary */}
+
       <div className="flex items-center justify-between px-1">
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -442,7 +436,6 @@ export default function FilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE, onFi
         </button>
       </div>
 
-      {/* Render Groups */}
       <div className="space-y-5 w-full">
         {groups.map((group, idx) => renderGroup(group, idx))}
       </div>

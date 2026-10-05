@@ -14,17 +14,11 @@ import {
   resolveStoragePath,
 } from "../../config/fileServer.config";
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const duckdb = require("duckdb");
 
 export class DuckDBService implements IDuckDBService {
   private dbStorageDir: string;
 
-  /**
-   * Database pool caching open duckdb.Database instances per file path.
-   * Concurrency safety: Connections are opened per query (`db.connect()`)
-   * and closed immediately in `finally` blocks.
-   */
   private pool = new Map<
     string,
     { db: any; refCount: number; idleTimer: ReturnType<typeof setTimeout> | null; openPromise?: Promise<any> | null }
@@ -46,8 +40,6 @@ export class DuckDBService implements IDuckDBService {
     ensureDirectoryExists(this.dbStorageDir);
   }
 
-  // ─── path and identifier helpers ───────────────────────────────────
-
   public sanitizeFileName(fileName: string): string {
     return fileName.replace(/[^a-zA-Z0-9_-]/g, "_");
   }
@@ -61,9 +53,6 @@ export class DuckDBService implements IDuckDBService {
     return base.replace(/[^a-zA-Z0-9_]/g, "_");
   }
 
-  /**
-   * Resolves project directory path inside workspaces or relative folder path on demand.
-   */
   public getProjectPath(projectName: string, workspaceName?: string, folderPath?: string): string {
     if (workspaceName && projectName) {
       const dir = getProjectDir(workspaceName, projectName);
@@ -77,7 +66,6 @@ export class DuckDBService implements IDuckDBService {
     }
     const safeProject = this.sanitizeFileName(projectName || "default_project");
 
-    // 1. Search existing projects under workspaces/
     const workspacesBase = getWorkspacesBasePath();
     if (fs.existsSync(workspacesBase)) {
       try {
@@ -89,25 +77,18 @@ export class DuckDBService implements IDuckDBService {
       } catch {}
     }
 
-    // 2. Construct standard path under requested or default workspace
     const relative = computeProjectRelativePath(workspaceName || "Default_Workspace", projectName || "default_project");
     const resolved = resolveStoragePath(relative);
     ensureDirectoryExists(resolved);
     return resolved;
   }
 
-  /**
-   * Resolves the master DuckDB database path for a project.
-   */
   public getProjectDuckDbPath(projectName: string, workspaceName?: string, folderPath?: string): string {
     const safeProject = this.sanitizeFileName(projectName);
     const projectDir = this.getProjectPath(projectName, workspaceName, folderPath);
     return path.join(projectDir, `${safeProject}.duckdb`);
   }
 
-  /**
-   * Resolves the primary DuckDB path for a file, sheet, or project.
-   */
   getDuckDbPath(fileName: string, sheetName?: string, projectName?: string, workspaceName?: string, folderPath?: string): string {
     if (!fileName) {
       return path.join(getFileServerBasePath(), "default.duckdb");
@@ -127,7 +108,6 @@ export class DuckDBService implements IDuckDBService {
       if (fs.existsSync(masterDb)) return masterDb;
     }
 
-    // Check across all subdirectories in workspaces/
     const workspacesBase = getWorkspacesBasePath();
     if (fs.existsSync(workspacesBase)) {
       try {
@@ -157,7 +137,6 @@ export class DuckDBService implements IDuckDBService {
       } catch {}
     }
 
-    // Check legacy Projects/ directory
     const legacyProjects = path.join(process.cwd(), "Projects");
     if (fs.existsSync(legacyProjects)) {
       try {
@@ -170,7 +149,6 @@ export class DuckDBService implements IDuckDBService {
       } catch {}
     }
 
-    // Check legacy uploads/duckdb directory
     const uploadsDuckDb = path.join(process.cwd(), "uploads", "duckdb");
     if (fs.existsSync(uploadsDuckDb)) {
       try {
@@ -182,9 +160,6 @@ export class DuckDBService implements IDuckDBService {
     return path.join(this.getProjectPath(projectName || "default", workspaceName, folderPath), `${safeFile}.duckdb`);
   }
 
-  /**
-   * Resolves the target database path for a given table name and file name.
-   */
   private getDbPathForTarget(fileName: string, tableName?: string, projectName?: string): string {
     if (projectName) {
       const projMaster = this.getProjectDuckDbPath(projectName);
@@ -197,7 +172,6 @@ export class DuckDBService implements IDuckDBService {
           return directSheetDb;
         }
 
-        // Case-insensitive search for sheet .duckdb
         try {
           const files = fs.readdirSync(projectDir).filter((f) => f.endsWith(".duckdb"));
           const match = files.find(
@@ -211,24 +185,19 @@ export class DuckDBService implements IDuckDBService {
         } catch {}
       }
 
-      // Check master db
       const masterPath = path.join(projectDir, "_master.duckdb");
       if (fs.existsSync(masterPath)) {
         return masterPath;
       }
 
-      // Return first sheet db
       const sheetFiles = fs.readdirSync(projectDir).filter((f) => f.endsWith(".duckdb"));
       if (sheetFiles.length > 0) {
         return path.join(projectDir, sheetFiles[0]);
       }
     }
 
-    // Default to single file database
     return this.getDuckDbPath(fileName);
   }
-
-  // ─── cross-database column location discovery ─────────────────────
 
   async findColumnLocation(
     fieldId: string,
@@ -244,7 +213,6 @@ export class DuckDBService implements IDuckDBService {
 
     const candidates = this.schemaCache?.columns.get(clean) || [];
 
-    // 1. If exact / normalized column matches exist
     if (candidates.length > 0) {
       if (cleanPreferred) {
         const preferredMatch = candidates.find((c) => {
@@ -257,7 +225,6 @@ export class DuckDBService implements IDuckDBService {
       return candidates[0];
     }
 
-    // 2. Fuzzy search across all indexed columns
     if (this.schemaCache) {
       for (const [colKey, list] of this.schemaCache.columns.entries()) {
         const isFuzzy =
@@ -278,7 +245,6 @@ export class DuckDBService implements IDuckDBService {
         }
       }
 
-      // 3. If preferredTable exists in indexed tables, find the table and corresponding column
       if (cleanPreferred && this.schemaCache.tables.has(cleanPreferred)) {
         const tableList = this.schemaCache.tables.get(cleanPreferred)!;
         const tbl = tableList[0];
@@ -286,7 +252,6 @@ export class DuckDBService implements IDuckDBService {
         return { dbPath: tbl.dbPath, tableName: tbl.tableName, columnName: dateCol, colNames: tbl.colNames };
       }
 
-      // 4. Fuzzy table match on preferredTable
       if (cleanPreferred) {
         for (const [tblKey, list] of this.schemaCache.tables.entries()) {
           if (tblKey.includes(cleanPreferred) || cleanPreferred.includes(tblKey)) {
@@ -297,7 +262,6 @@ export class DuckDBService implements IDuckDBService {
         }
       }
 
-      // 5. If fieldId is a temporal derivative (year, quarter, month), locate any table with a date column
       const isTemporal = /year|quarter|month|week|day/i.test(fieldId);
       if (isTemporal) {
         for (const [_, list] of this.schemaCache.tables.entries()) {
@@ -370,8 +334,6 @@ export class DuckDBService implements IDuckDBService {
     this.schemaCache = { timestamp: Date.now(), columns: colMap, tables: tableMap };
   }
 
-  // ─── pooled database management (Isolated Connections) ─────────────
-
   private async acquireConnection(dbPath: string, readOnly = true): Promise<{ db: any; conn: any }> {
     let entry = this.pool.get(dbPath);
     if (entry) {
@@ -402,7 +364,6 @@ export class DuckDBService implements IDuckDBService {
     } = { db: null as any, refCount: 1, idleTimer: null, openPromise };
     this.pool.set(dbPath, newEntry);
 
-    // Retry loop for Windows file lock transient errors
     let lastErr: any = null;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
@@ -481,8 +442,6 @@ export class DuckDBService implements IDuckDBService {
     });
   }
 
-  // ─── low-level SQL helpers ─────────────────────────────────────────
-
   private async query<T = any>(conn: any, sql: string, params: any[] = []): Promise<T[]> {
     return new Promise((resolve, reject) => {
       conn.all(sql, ...params, (err: Error | null, rows: T[]) => {
@@ -500,8 +459,6 @@ export class DuckDBService implements IDuckDBService {
       });
     });
   }
-
-  // ─── public query API & connection execution ─────────────────────
 
   private async withConnection<R>(dbPath: string, fn: (conn: any) => Promise<R>, readOnly = true): Promise<R> {
     const { conn } = await this.acquireConnection(dbPath, readOnly);
@@ -572,10 +529,6 @@ export class DuckDBService implements IDuckDBService {
     return null;
   }
 
-  /**
-   * Smart table name resolver that resolves requested table name against
-   * the database's actual tables in main schema.
-   */
   private async resolveTableName(conn: any, tableName?: string, fileName?: string): Promise<string> {
     const tablesRes = await this.query<{ table_name: string }>(
       conn,
@@ -591,24 +544,20 @@ export class DuckDBService implements IDuckDBService {
     const fileBase = fileName ? path.basename(fileName, path.extname(fileName)).trim() : "";
     const fullFileName = fileName ? path.basename(fileName).trim() : "";
 
-    // 1. Exact match with requested tableName
     if (candidate && existingTables.includes(candidate)) {
       return candidate;
     }
 
-    // 2. Sanitized match
     if (candidate && existingTables.includes(this.sanitizeIdentifier(candidate))) {
       return this.sanitizeIdentifier(candidate);
     }
 
-    // 3. Case-insensitive match on tableName
     if (candidate) {
       const lower = candidate.toLowerCase();
       const match = existingTables.find((t) => t.toLowerCase() === lower);
       if (match) return match;
     }
 
-    // 4. Match on file base name
     if (fileBase) {
       const match = existingTables.find(
         (t) => t.toLowerCase() === fileBase.toLowerCase() || this.sanitizeIdentifier(t).toLowerCase() === fileBase.toLowerCase()
@@ -616,7 +565,6 @@ export class DuckDBService implements IDuckDBService {
       if (match) return match;
     }
 
-    // 5. Match on full file name
     if (fullFileName) {
       const match = existingTables.find(
         (t) => t.toLowerCase() === fullFileName.toLowerCase() || this.sanitizeIdentifier(t).toLowerCase() === fullFileName.toLowerCase()
@@ -624,13 +572,9 @@ export class DuckDBService implements IDuckDBService {
       if (match) return match;
     }
 
-    // 6. Default to first table in main schema
     return existingTables[0];
   }
 
-  /**
-   * Resolves column names against the table schema, handling whitespace, case, and formatting.
-   */
   private async resolveColumnName(conn: any, tableName: string, colName: string): Promise<string> {
     if (!colName) return colName;
     try {
@@ -642,15 +586,12 @@ export class DuckDBService implements IDuckDBService {
       const cols = (colsRes || []).map((c) => c.column_name);
       if (cols.length === 0) return colName;
 
-      // 1. Exact match
       if (cols.includes(colName)) return colName;
 
-      // 2. Case-insensitive match
       const lower = colName.toLowerCase().trim();
       const caseMatch = cols.find((c) => c.toLowerCase().trim() === lower);
       if (caseMatch) return caseMatch;
 
-      // 3. Normalized alphanumeric match
       const norm = lower.replace(/[^a-z0-9]/g, "_");
       const normMatch = cols.find((c) => c.toLowerCase().replace(/[^a-z0-9]/g, "_") === norm);
       if (normMatch) return normMatch;
@@ -661,9 +602,6 @@ export class DuckDBService implements IDuckDBService {
     }
   }
 
-  /**
-   * Sanitizes header line and returns cleaned CSV string for ultra-fast DuckDB read_csv_auto ingestion.
-   */
   private sanitizeCsvHeaders(rawCsv: string): string {
     const firstBreak = rawCsv.indexOf("\n");
     if (firstBreak === -1) return rawCsv;
@@ -709,11 +647,6 @@ export class DuckDBService implements IDuckDBService {
     return `${cleanHeaders.join(",")}\n${body}`;
   }
 
-  // ─── Data Ingestion Methods (Project-Scoped Storage) ───────────────
-
-  /**
-   * Ingests a single file source into DuckDB (optionally within a project folder).
-   */
   async ingestFileSource(
     type: ConnectorType,
     config: ConnectionConfig,
@@ -810,9 +743,6 @@ export class DuckDBService implements IDuckDBService {
     return dbPath;
   }
 
-  /**
-   * Ingests multiple data sources into a dedicated project directory and creates a unified project database.
-   */
   async ingestProjectSources(projectName: string, sources: ProjectSourceInput[], workspaceName?: string, folderPath?: string): Promise<string> {
     const key = `${workspaceName || "default"}::${projectName}`.toLowerCase().trim();
     const existingPromise = this.ingestionPromises.get(key);
@@ -856,7 +786,6 @@ export class DuckDBService implements IDuckDBService {
               `CREATE TABLE "${primaryTableName}" AS SELECT * FROM read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true)`
             );
 
-            // Also save isolated DuckDB file inside project folder
             const separateDbPath = path.join(projectDir, `${this.sanitizeFileName(fileName)}.duckdb`);
             await this.withConnection(separateDbPath, async (sepConn) => {
               await this.exec(sepConn, `DROP TABLE IF EXISTS "${primaryTableName}"`);
@@ -899,7 +828,6 @@ export class DuckDBService implements IDuckDBService {
               }
             }
 
-            // Also create individual excel duckdb file in project folder
             await this.ingestFileSource(source.type, source.config, projectName, workspaceName, folderPath);
           }
         } else if (source.type === "restapi") {
@@ -918,9 +846,6 @@ export class DuckDBService implements IDuckDBService {
     return masterDbPath;
   }
 
-  /**
-   * Deletes the DuckDB folder and files for a project.
-   */
   async deleteProjectFolder(projectName: string, workspaceName?: string, folderPath?: string): Promise<void> {
     const projectDir = this.getProjectPath(projectName, workspaceName, folderPath);
     const masterDbPath = this.getProjectDuckDbPath(projectName, workspaceName, folderPath);
@@ -928,7 +853,6 @@ export class DuckDBService implements IDuckDBService {
     const normProjDir = path.resolve(projectDir).toLowerCase();
     const normMaster = path.resolve(masterDbPath).toLowerCase();
 
-    // Evict all pool handles associated with this project directory
     for (const [key, entry] of Array.from(this.pool.entries())) {
       const normKey = path.resolve(key).toLowerCase();
       if (normKey.startsWith(normProjDir) || normKey === normMaster) {
@@ -955,8 +879,6 @@ export class DuckDBService implements IDuckDBService {
     }
   }
 
-  // ─── Query & Inspection Methods ────────────────────────────────────
-
   async getSchema(
     type: ConnectorType,
     config: ConnectionConfig,
@@ -964,7 +886,6 @@ export class DuckDBService implements IDuckDBService {
   ): Promise<{ success: boolean; type: string; tables: any[] }> {
     const fileName = config.fileName;
 
-    // 1. If project is provided, inspect project database
     if (projectName) {
       const projDbPath = this.getProjectDuckDbPath(projectName);
       if (fs.existsSync(projDbPath)) {
@@ -988,7 +909,6 @@ export class DuckDBService implements IDuckDBService {
       }
     }
 
-    // 2. If inspecting raw uploaded file directly (without writing .duckdb files to uploads)
     if (fileName && ["csv", "tsv"].includes(type)) {
       const filePath = this.resolveFilePath(fileName);
       if (filePath) {
@@ -1047,7 +967,6 @@ export class DuckDBService implements IDuckDBService {
   ): Promise<{ success: boolean; headers: string[]; rows: any[] }> {
     const fileName = config.fileName;
 
-    // 1. If project database exists, query from project database
     if (projectName) {
       const projDbPath = this.getProjectDuckDbPath(projectName);
       if (fs.existsSync(projDbPath)) {
@@ -1060,7 +979,6 @@ export class DuckDBService implements IDuckDBService {
       }
     }
 
-    // 2. Query directly from raw upload file in-memory
     if (fileName && ["csv", "tsv"].includes(type)) {
       const filePath = this.resolveFilePath(fileName);
       if (filePath) {
@@ -1233,7 +1151,7 @@ export class DuckDBService implements IDuckDBService {
     }
 
     if (fileName && type === "excel") {
-      // 1. Resolve or ingest Excel into isolated DuckDB in the project folder
+
       let dbPath = this.getDuckDbPath(fileName, tableName, projectName, workspaceName, folderPath);
       if (!fs.existsSync(dbPath)) {
         try {
@@ -1243,7 +1161,6 @@ export class DuckDBService implements IDuckDBService {
         }
       }
 
-      // 2. Query data using the converted DuckDB in the project folder
       if (dbPath && fs.existsSync(dbPath)) {
         return this.withConnection(dbPath, async (conn) => {
           try {

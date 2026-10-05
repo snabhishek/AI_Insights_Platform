@@ -5,13 +5,12 @@ import dotenv from "dotenv";
 
 dotenv.config();
 
-const dbHost = process.env.DB_HOST || "localhost";
-const dbPort = parseInt(process.env.DB_PORT || "5434", 10);
-const dbUser = process.env.DB_USER || "postgres";
-const dbPass = process.env.DB_PASS || "";
-const dbName = process.env.DB_NAME || "AIInsightsApp";
+const dbHost = process.env.DB_HOST!;
+const dbPort = parseInt(process.env.DB_PORT!, 10);
+const dbUser = process.env.DB_USER!;
+const dbPass = process.env.DB_PASS!;
+const dbName = process.env.DB_NAME!;
 
-// Export single shared Pool instance and query function
 export const pool = new Pool({
   host: dbHost,
   port: dbPort,
@@ -25,8 +24,7 @@ export const query = (text: string, params?: any[]) => pool.query(text, params);
 export async function initializeDatabaseSchemas() {
   try {
     console.log("[DB] Initializing database tables and migrations...");
-    
-    // 1. Workspaces table
+
     await query(`
       CREATE TABLE IF NOT EXISTS workspaces (
         id VARCHAR(50) PRIMARY KEY,
@@ -36,14 +34,12 @@ export async function initializeDatabaseSchemas() {
       );
     `);
 
-    // 2. Seed the default workspace if it doesn't exist
     await query(`
       INSERT INTO workspaces (id, name, is_default, created_at)
       VALUES ('default', 'Default Workspace', TRUE, NOW())
       ON CONFLICT (id) DO NOTHING;
     `);
 
-    // 3. Projects table (scoped to workspace)
     await query(`
       CREATE TABLE IF NOT EXISTS projects (
         id VARCHAR(50) PRIMARY KEY,
@@ -58,7 +54,6 @@ export async function initializeDatabaseSchemas() {
       );
     `);
 
-    // Add use_case, domain, sub_domain, folder_path, status columns to existing projects table if they don't exist (migration)
     await query(`
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS use_case TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS domain VARCHAR(255);
@@ -67,7 +62,6 @@ export async function initializeDatabaseSchemas() {
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'idle';
     `);
 
-    // 3b. Domains table
     await query(`
       CREATE TABLE IF NOT EXISTS domains (
         id VARCHAR(50) PRIMARY KEY,
@@ -77,7 +71,6 @@ export async function initializeDatabaseSchemas() {
       );
     `);
 
-    // 4. Connectors table (with workspace scoping)
     await query(`
       CREATE TABLE IF NOT EXISTS connectors (
         id VARCHAR(50) PRIMARY KEY,
@@ -95,17 +88,14 @@ export async function initializeDatabaseSchemas() {
       );
     `);
 
-    // 5. Add workspace_id to existing connectors table if it doesn't exist (migration)
     await query(`
       ALTER TABLE connectors ADD COLUMN IF NOT EXISTS workspace_id VARCHAR(50) REFERENCES workspaces(id) ON DELETE CASCADE;
     `);
 
-    // 6. Assign legacy connectors (without workspace_id) to the default workspace
     await query(`
       UPDATE connectors SET workspace_id = 'default' WHERE workspace_id IS NULL;
     `);
 
-    // Index optimizations for workspace scoping
     await query(`
       CREATE INDEX IF NOT EXISTS projects_workspace_id_idx ON projects (workspace_id);
     `);
@@ -113,7 +103,6 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS connectors_workspace_id_idx ON connectors (workspace_id);
     `);
 
-    // 7. Project Runs table
     await query(`
       CREATE TABLE IF NOT EXISTS project_runs (
         id VARCHAR(50) PRIMARY KEY,
@@ -132,7 +121,6 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS project_runs_status_idx ON project_runs (status);
     `);
 
-    // Startup sanitization: any workflow left in 'running' state from previous process crash/restart is marked 'stopped'
     try {
       await query(`
         UPDATE projects SET status = 'stopped' WHERE status = 'running';
@@ -142,7 +130,6 @@ export async function initializeDatabaseSchemas() {
       console.warn("[DB] Startup sanitization warning:", cleanErr?.message || cleanErr);
     }
 
-    // 8. Agent Thinking table
     await query(`
       CREATE TABLE IF NOT EXISTS agent_thinking (
         id VARCHAR(50) PRIMARY KEY,
@@ -161,7 +148,6 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS agent_thinking_proj_pipe_sub_idx ON agent_thinking (project_id, pipeline, substep);
     `);
 
-    // 9. Agent Jobs table
     await query(`
       CREATE TABLE IF NOT EXISTS agent_jobs (
         id VARCHAR(50) PRIMARY KEY,
@@ -178,7 +164,6 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS agent_jobs_project_id_idx ON agent_jobs (project_id);
     `);
 
-    // 10. Model Validation Runs table
     await query(`
       CREATE TABLE IF NOT EXISTS model_validation_runs (
         id VARCHAR(50) PRIMARY KEY,
@@ -208,7 +193,6 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS model_validation_runs_mode_idx ON model_validation_runs (evaluation_mode);
     `);
 
-    // 11. Model Validation Results table
     await query(`
       CREATE TABLE IF NOT EXISTS model_validation_results (
         id VARCHAR(50) PRIMARY KEY,
@@ -238,13 +222,11 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS model_validation_results_model_id_idx ON model_validation_results (model_id);
     `);
 
-
-    // 7. Seed 18 mock data sources if connectors table is empty
     const connCheck = await query("SELECT COUNT(*) FROM connectors");
     const count = parseInt(connCheck.rows[0].count, 10);
     if (count === 0) {
       console.log("[DB] Seeding 18 mock connectors for high-fidelity demonstration...");
-      
+
       const seedConnectors = [
         {
           id: "conn-1",
@@ -474,7 +456,6 @@ export async function initializeDatabaseSchemas() {
       console.log("[DB] Seeding mock connectors completed successfully.");
     }
 
-    // 8. Seed standard business domains if domains table is empty
     const domCheck = await query("SELECT COUNT(*) FROM domains");
     const domCount = parseInt(domCheck.rows[0].count, 10);
     if (domCount === 0) {
@@ -575,7 +556,6 @@ export async function initializeDatabaseSchemas() {
       console.log("[DB] Seeding business domains completed successfully.");
     }
 
-    // Model Selection Decisions table
     await query(`
       CREATE TABLE IF NOT EXISTS model_selection_decisions (
         id VARCHAR(50) PRIMARY KEY,
@@ -603,7 +583,6 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS model_selection_decisions_status_idx ON model_selection_decisions(status);
     `);
 
-    // Lookup tables for Model Sources & Providers
     await query(`
       CREATE TABLE IF NOT EXISTS model_source_types (
         id VARCHAR(50) PRIMARY KEY,
@@ -613,7 +592,7 @@ export async function initializeDatabaseSchemas() {
       );
 
       INSERT INTO model_source_types (id, name, description)
-      VALUES 
+      VALUES
         ('builtin', 'Built-in Model', 'Platform native algorithms and baseline implementations'),
         ('external', 'External Model Source', 'Models discovered dynamically from external web and repository sources')
       ON CONFLICT (id) DO NOTHING;
@@ -629,7 +608,6 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS model_source_providers_source_type_id_idx ON model_source_providers(source_type_id);
     `);
 
-    // Dynamic Model Registry table for explored models with foreign keys
     await query(`
       CREATE TABLE IF NOT EXISTS dynamic_model_registry (
         model_id VARCHAR(100) PRIMARY KEY,
@@ -670,7 +648,6 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS dynamic_model_registry_source_provider_idx ON dynamic_model_registry(source_provider_id);
     `);
 
-    // Chat Suggestions Lookup Table
     await query(`
       CREATE TABLE IF NOT EXISTS chat_suggestions (
         id VARCHAR(50) PRIMARY KEY,
@@ -685,7 +662,6 @@ export async function initializeDatabaseSchemas() {
       CREATE INDEX IF NOT EXISTS chat_suggestions_is_active_idx ON chat_suggestions(is_active);
     `);
 
-    // Post-deployment script during backend initialization to seed lookup suggestions
     const seedChatSuggestions = [
       {
         id: "sugg-1",
@@ -734,7 +710,7 @@ export async function initializeDatabaseSchemas() {
 }
 
 export async function checkAndCreateDatabase() {
-  // Connect to the default 'postgres' database
+
   const client = new Client({
     host: dbHost,
     port: dbPort,
@@ -748,7 +724,6 @@ export async function checkAndCreateDatabase() {
   try {
     await client.connect();
 
-    // Check if the target database already exists
     const checkRes = await client.query(
       "SELECT 1 FROM pg_database WHERE datname = $1",
       [dbName]
@@ -756,14 +731,13 @@ export async function checkAndCreateDatabase() {
 
     if (checkRes.rows.length === 0) {
       console.log(`[DB] Database "${dbName}" does not exist. Creating database...`);
-      // CREATE DATABASE must run outside of transactions and cannot accept bind parameters
+
       await client.query(`CREATE DATABASE "${dbName}"`);
       console.log(`[DB] Database "${dbName}" created successfully.`);
     } else {
       console.log(`[DB] Database "${dbName}" verified successfully.`);
     }
 
-    // Now run schema creation queries and migrations
     await initializeDatabaseSchemas();
   } catch (err: any) {
     console.error("[DB] Database verification/creation guard failed:", err.message || err);
@@ -787,4 +761,3 @@ export async function runMigrations(db: NodePgDatabase<any>) {
     }
   }
 }
-

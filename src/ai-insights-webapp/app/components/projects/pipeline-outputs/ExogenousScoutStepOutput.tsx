@@ -23,7 +23,6 @@ interface ExogenousSource {
   expectedImpact?: string;
   feasibility?: string;
 
-  // Backward compatibility with old schema
   variableName?: string;
   name?: string;
   predictivePower?: "HIGH" | "MEDIUM" | "LOW" | string;
@@ -89,7 +88,7 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
 
   return (
     <div className="space-y-6 select-none">
-      {/* Execution Success Banner */}
+
       <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/60 text-xs text-indigo-900 dark:text-indigo-300 flex items-start gap-3 shadow-sm font-semibold select-none rounded-lg">
         <span className="text-base leading-none">🌐</span>
         <div>
@@ -102,7 +101,6 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
         </div>
       </div>
 
-      {/* Executed Search Queries Pill Bar */}
       {searchQueries.length > 0 && (
         <div className="p-4 border border-border bg-surface/50 rounded-lg space-y-2 select-text">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
@@ -121,9 +119,8 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
         </div>
       )}
 
-      {/* Tables & Recommendations Detail Panel */}
       <div className="space-y-4">
-        {/* Table Selector */}
+
         {tables.length > 1 && (
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground uppercase">Target Table:</span>
@@ -165,7 +162,6 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
             </div>
           )}
 
-          {/* Table-level Feature Opportunities */}
           {Array.isArray(selectedTable.featureOpportunities) && selectedTable.featureOpportunities.length > 0 && (
             <div className="p-4 bg-amber-500/[0.02] border border-amber-500/10 rounded-md text-xs space-y-2">
               <span className="text-[9px] font-bold uppercase tracking-wider text-amber-600 dark:text-amber-400 block">
@@ -179,7 +175,6 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
             </div>
           )}
 
-          {/* Recommendations Cards List */}
           <div className="space-y-3">
             <SectionHeader
               title="Recommended Exogenous Variables"
@@ -273,7 +268,6 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
                         </div>
                       )}
 
-                      {/* Feature Opportunities from each data source */}
                       {Array.isArray(rec.featuresToExtract) && rec.featuresToExtract.length > 0 && (
                         <div className="text-xs bg-indigo-500/[0.02] border border-indigo-500/10 rounded p-2.5 space-y-1.5">
                           <strong className="text-indigo-600 dark:text-indigo-400 block text-[10px] uppercase font-bold tracking-wider flex items-center gap-1">

@@ -4,9 +4,6 @@ import { executePythonScript, ensureRequirementsTxt, ensureDockerfile, ensureDoc
 import * as path from "path";
 import * as fs from "fs";
 
-/**
- * Tool to read all table names from the batchedTables state.
- */
 export const createGetTableNamesTool = (batchedTables: Array<{ tableName: string }>) =>
   tool(
     async () => {
@@ -23,10 +20,6 @@ export const createGetTableNamesTool = (batchedTables: Array<{ tableName: string
     }
   );
 
-/**
- * Tool to aggregate and retrieve schema columns, constraints, relationships,
- * and profiling statistics for a specific table.
- */
 export const createGetTableColumnsAndProfileTool = (
   inspectorState: Record<string, any>,
   dataProfileState: Record<string, any>
@@ -40,7 +33,6 @@ export const createGetTableColumnsAndProfileTool = (
         };
       }
 
-      // 1. Extract schema schema/inspection details
       const sources = Array.isArray(inspectorState?.sources) ? inspectorState.sources : [];
       let tableSchema: any = null;
       for (const source of sources) {
@@ -51,7 +43,6 @@ export const createGetTableColumnsAndProfileTool = (
         if (tableSchema) break;
       }
 
-      // 2. Extract profile details
       const profileTables = Array.isArray(dataProfileState?.tables) ? dataProfileState.tables : [];
       const tableProfile = profileTables.find(
         (t: any) => (t.tableName || "").toLowerCase() === tableName.toLowerCase()
@@ -86,9 +77,6 @@ export const createGetTableColumnsAndProfileTool = (
     }
   );
 
-/**
- * Tool to run a Python script in a sandboxed container environment.
- */
 export const createRunPythonScriptTool = (
   projectId: string,
   workspaceName: string,
@@ -132,9 +120,6 @@ export const createRunPythonScriptTool = (
     }
   );
 
-/**
- * Tool to retrieve split boundaries, entity keys, time columns, and leakage definitions.
- */
 export const createGetSplitBoundariesTool = (
   orchestrationDecision: Record<string, any>,
   dataProfileState?: Record<string, any>
@@ -162,10 +147,6 @@ export const createGetSplitBoundariesTool = (
     }
   );
 
-/**
- * Ensures that the Feature Engineering directory contains requirements.txt,
- * Dockerfile, and docker-compose.yml.
- */
 export function ensureFeatureEngineeringEnvironment(
   targetDir: string,
   requiredPackages?: string[]
@@ -174,4 +155,3 @@ export function ensureFeatureEngineeringEnvironment(
   ensureDockerfile(targetDir);
   ensureDockerCompose(targetDir, "feature-engineering");
 }
-

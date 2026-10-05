@@ -5,7 +5,6 @@ import { TrainingConfigValidator } from "../agents/ModelTrainingValidation/Train
 import { ModelSelectionDecision } from "../models/modelSelection.types";
 import { ModelSelectionLLMService } from "../services/ai/model-selection/modelSelectionLLM.service";
 
-// ANSI color helpers
 const colors = {
   green: (text: string) => `\x1b[32m${text}\x1b[0m`,
   red: (text: string) => `\x1b[31m${text}\x1b[0m`,
@@ -32,9 +31,6 @@ console.log(colors.bold("\n=====================================================
 console.log(colors.bold(" Pipeline Required Fields & Fallback Elimination Tests "));
 console.log(colors.bold("========================================================\n"));
 
-// ---------------------------------------------------------
-// 1. MODEL SELECTION PHASE TESTS
-// ---------------------------------------------------------
 console.log(colors.cyan(colors.bold("--- 1. Model Selection Required Fields & Fallback Checks ---")));
 
 const registry = new ModelCapabilityRegistry();
@@ -215,7 +211,7 @@ runTest("ModelSelection: Resolves framework from registry for dynamically explor
       {
         ...validModelSelectionPayload.candidates[0],
         model_id: "explored_gradient_boosting_a_silver_bullet_in_forecasting",
-        framework: undefined, // missing from LLM response
+        framework: undefined,
       },
     ],
     recommended_model: {
@@ -269,9 +265,6 @@ runTest("ModelSelection: Throws when confidence score is missing", () => {
   }, /confidence.*is required/);
 });
 
-// ---------------------------------------------------------
-// 2. TRAINING CONFIGURATION PHASE TESTS
-// ---------------------------------------------------------
 console.log(colors.cyan(colors.bold("\n--- 2. Training Configuration Required Fields & Contract Validation ---")));
 
 const validContract = {
@@ -368,7 +361,7 @@ runTest("TrainingConfigValidator: Rejects split ratios not summing to 1.0", () =
       strategy: "random",
       train_ratio: 0.8,
       validation_ratio: 0.1,
-      test_ratio: 0.05, // sums to 0.95
+      test_ratio: 0.05,
     },
   };
   const res = TrainingConfigValidator.validate(invalid);
@@ -406,12 +399,8 @@ runTest("TrainingConfigValidator: Rejects missing 'search_space'", () => {
   assert.ok(res.errors.some((e) => e.includes("search_space")));
 });
 
-// ---------------------------------------------------------
-// 3. MODEL TRAINING PHASE TESTS
-// ---------------------------------------------------------
 console.log(colors.cyan(colors.bold("\n--- 3. Model Training Report & Execution Validation ---")));
 
-// Simulate report parsing logic as in ModelTrainingAgent
 function parseTrainingReport(report: any, direction: "minimize" | "maximize", configuredCandidates?: any[]) {
   if (!report || typeof report !== "object") {
     throw new Error("[ModelTrainingAgent] Training execution failed: 'model_training_report.json' was not generated.");
@@ -625,9 +614,6 @@ runTest("ModelTraining: Throws when best model cannot be identified and no candi
   }, /missing a best\/champion model identifier/);
 });
 
-// ---------------------------------------------------------
-// 4. MODEL VALIDATION PHASE TESTS
-// ---------------------------------------------------------
 console.log(colors.cyan(colors.bold("\n--- 4. Model Validation Direction & Model Normalization Checks ---")));
 
 function rankValidationCandidates(candidates: any[], direction: "minimize" | "maximize") {
@@ -665,7 +651,7 @@ runTest("ModelValidation: Direction 'maximize' ranks higher scores first", () =>
 
 runTest("ModelValidation: Throws when candidate in report is missing framework (no guessing)", () => {
   const rawValidationRun = { model_id: "chronos_custom", score: 0.45 };
-  const frameworkMap = new Map<string, string>(); // empty - not found in upstream
+  const frameworkMap = new Map<string, string>();
   assert.throws(() => {
     const framework = (rawValidationRun as any).framework || frameworkMap.get(rawValidationRun.model_id.toLowerCase());
     if (!framework) {

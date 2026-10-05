@@ -45,10 +45,6 @@ export class TrainingConfigValidator {
     "hyperband",
   ];
 
-  /**
-   * Validates an arbitrary configuration object against TrainingJobContract rules.
-   * Acts as both gatekeeper and feedback generator for validateWithRetry.
-   */
   public static validate(config: any): ValidationResult {
     const errors: string[] = [];
     if (!config || typeof config !== "object") {
@@ -57,7 +53,6 @@ export class TrainingConfigValidator {
 
     const conf = config.configuration || config;
 
-    // 1. Check primary metric name & definition
     const metricName = conf["x-primary-metric-name"] || conf.primary_metric_name;
     if (!metricName || typeof metricName !== "string" || metricName.trim().length === 0) {
       errors.push("Missing required 'x-primary-metric-name'");
@@ -67,15 +62,12 @@ export class TrainingConfigValidator {
     if (!metricDef || typeof metricDef !== "object") {
       errors.push("Missing required 'x-primary-metric-def' section");
     } else {
-      // if (!metricDef.direction || !["maximize", "minimize"].includes(String(metricDef.direction).toLowerCase())) {
-      //   errors.push("Missing or invalid 'x-primary-metric-def.direction' ('maximize' or 'minimize')");
-      // }
+
       if (metricDef.value && metricName && metricDef.value.toLowerCase() !== metricName.toLowerCase()) {
         errors.push(`'x-primary-metric-def.value' ("${metricDef.value}") must match 'x-primary-metric-name' ("${metricName}")`);
       }
     }
 
-    // 2. Check task definition
     if (!conf.task || typeof conf.task !== "object") {
       errors.push("Missing required 'task' section");
     } else {
@@ -87,7 +79,6 @@ export class TrainingConfigValidator {
       }
     }
 
-    // 3. Check split configuration and ratios
     if (!conf.split || typeof conf.split !== "object") {
       errors.push("Missing required 'split' section");
     } else {
@@ -108,7 +99,6 @@ export class TrainingConfigValidator {
       }
     }
 
-    // 4. Check objective section
     if (!conf.objective || typeof conf.objective !== "object") {
       errors.push("Missing required 'objective' section");
     } else {
@@ -120,7 +110,6 @@ export class TrainingConfigValidator {
       }
     }
 
-    // 5. Check evaluation section
     if (!conf.evaluation || typeof conf.evaluation !== "object") {
       errors.push("Missing required 'evaluation' section");
     } else {
@@ -129,7 +118,6 @@ export class TrainingConfigValidator {
       }
     }
 
-    // 6. Check model_selection section
     if (!conf.model_selection || typeof conf.model_selection !== "object") {
       errors.push("Missing required 'model_selection' section");
     } else {
@@ -150,7 +138,6 @@ export class TrainingConfigValidator {
       }
     }
 
-    // 7. Check hyperparameter optimization
     if (!conf.hyperparameter_optimization || typeof conf.hyperparameter_optimization !== "object") {
       errors.push("Missing required 'hyperparameter_optimization' section");
     } else {
@@ -159,7 +146,6 @@ export class TrainingConfigValidator {
       }
     }
 
-    // 8. Check search space
     if (!conf.search_space || typeof conf.search_space !== "object" || Object.keys(conf.search_space).length === 0) {
       errors.push("Missing required 'search_space' hyperparameter distributions");
     }

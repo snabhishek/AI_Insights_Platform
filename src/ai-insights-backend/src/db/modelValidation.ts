@@ -9,7 +9,7 @@ export const modelValidationRuns = pgTable(
     projectId: varchar("project_id", { length: 50 })
       .notNull()
       .references(() => projects.id, { onDelete: "cascade" }),
-    evaluationMode: varchar("evaluation_mode", { length: 50 }).notNull(), // "backtesting" | "future_prediction"
+    evaluationMode: varchar("evaluation_mode", { length: 50 }).notNull(),
     predictionObjectiveStartDate: varchar("prediction_objective_start_date", { length: 50 }),
     predictionObjectiveHorizon: integer("prediction_objective_horizon").notNull().default(12),
     predictionObjectiveFrequency: varchar("prediction_objective_frequency", { length: 50 }).notNull().default("Weekly"),

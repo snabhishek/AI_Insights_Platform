@@ -43,9 +43,9 @@ export default function ChatSidebar({
 
   return (
     <div className="w-full sm:w-[270px] lg:w-[300px] border-r border-border bg-surface flex flex-col h-full shrink-0 select-none">
-      {/* Top Action: Project Selector & New Chat Button */}
+
       <div className="p-4 border-b border-border/80 space-y-3 shrink-0">
-        {/* Project Selector Dropdown above New Conversation button */}
+
         <div className="space-y-1.5">
           <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
             Project Scope <span className="text-destructive">*</span>
@@ -80,7 +80,6 @@ export default function ChatSidebar({
           )}
         </div>
 
-        {/* New Conversation Button */}
         <button
           type="button"
           onClick={onNewSession}
@@ -96,7 +95,6 @@ export default function ChatSidebar({
           <span>New AI Conversation</span>
         </button>
 
-        {/* Search input */}
         <div className="relative">
           <input
             type="text"
@@ -118,9 +116,8 @@ export default function ChatSidebar({
         </div>
       </div>
 
-      {/* Session List */}
       <div className="flex-1 overflow-y-auto p-3 space-y-4">
-        {/* Pinned Section */}
+
         {pinnedSessions.length > 0 && (
           <div className="space-y-1">
             <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2">
@@ -141,7 +138,6 @@ export default function ChatSidebar({
           </div>
         )}
 
-        {/* Recent Conversations */}
         <div className="space-y-1">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2">
             💬 Recent Sessions
@@ -167,31 +163,6 @@ export default function ChatSidebar({
         </div>
       </div>
 
-      {/* <div className="p-3 border-t border-border bg-surface-muted/30 shrink-0 space-y-2">
-        <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground px-1">
-          Select Active Persona:
-        </span>
-        <div className="grid grid-cols-6 gap-1">
-          {Object.values(AGENT_PERSONAS).map((p) => {
-            const isSelected = p.id === selectedPersonaId;
-            return (
-              <button
-                key={p.id}
-                type="button"
-                onClick={() => onSelectPersona(p.id)}
-                title={`${p.name} - ${p.role}`}
-                className={`w-9 h-9 rounded-xl flex items-center justify-center text-sm transition-all cursor-pointer ${
-                  isSelected
-                    ? "bg-primary text-primary-foreground shadow-sm ring-2 ring-primary/30 scale-105"
-                    : "bg-surface border border-border/80 text-foreground hover:bg-surface-muted"
-                }`}
-              >
-                {p.avatar}
-              </button>
-            );
-          })}
-        </div>
-      </div> */}
     </div>
   );
 }

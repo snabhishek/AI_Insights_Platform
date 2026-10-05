@@ -99,12 +99,6 @@ export interface ModelTrainingSteps {
   execution_notes?: string;
 }
 
-/**
- * Node 1: Training Configuration Agent Node
- * Inspects state and decides whether it needs information from DatasetAnalyserAgent
- * (returns Mode 1: NEEDS_DATASET_ANALYSIS) or synthesizes the Training Job Contract
- * researching candidate execution steps via web search (Mode 2: CONFIG_SYNTHESIZED).
- */
 async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
   const { services, projectId, runTimestamp, modelSelection, allCandidates, userSelectedIds, feedbackPrompt, parentState } = state;
 
@@ -135,7 +129,6 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     );
   }
 
-  // Tools for Training Configuration Agent: profile introspection, web search, URL reader, MCP filesystem
   const getTableColumnsTool = createGetTableColumnsAndProfileTool(
     parentState?.inspection || parentState?.inspector || {},
     parentState?.dataProfile || {}
@@ -233,7 +226,6 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     throw new Error(`[TrainingConfigGraph] Training Configuration Agent invocation failed: ${err?.message || err}`);
   }
 
-  // Check if agent decided to request information from Dataset Analyser Agent
   const isNeedsAnalysis =
     rawConfig?.status === "NEEDS_DATASET_ANALYSIS" ||
     (typeof rawConfig?.inquiry === "string" &&
@@ -263,7 +255,6 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     };
   }
 
-  // Agent synthesized the contract!
   await logMilestoneThinking(
     services,
     "Training Configuration",
@@ -286,7 +277,6 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     }
   }
 
-  // Strictly validate the synthesized contract against TrainingJobContract rules (NO SYNTHETIC FALLBACKS)
   const validationRes = TrainingConfigValidator.validate(finalConfig);
   if (!validationRes.isValid) {
     throw new Error(
@@ -321,7 +311,6 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     if (id) existingModelMap.set(String(id).toLowerCase().trim(), typeof m === "string" ? { model_id: m } : m);
   }
 
-  // Strictly enforce user-selected models without fallback dummy objects
   const effectiveUserSelectedIds = (Array.isArray(userSelectedIds) && userSelectedIds.length > 0)
     ? userSelectedIds
     : (Array.isArray(modelSelection?.userSelection?.selectedModelIds) && modelSelection.userSelection.selectedModelIds.length > 0)
@@ -365,7 +354,6 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     };
   }
 
-  // Persist Contract to YAML
   let contractPath = "";
   if (services.projectService && projectId) {
     try {
@@ -409,10 +397,6 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
   };
 }
 
-/**
- * Node 2: Dataset Analyser Agent Node
- * Answers inquiries using scoped tools and returns narrative explanation without raw file paths.
- */
 async function datasetAnalyserAgentNode(state: TrainingConfigGraphStateType) {
   const { services, runTimestamp, messages, datasetInquiry } = state;
 
@@ -450,15 +434,9 @@ async function datasetAnalyserAgentNode(state: TrainingConfigGraphStateType) {
   };
 }
 
-/**
- * Conditional router for the conversation graph.
- * Routing is strictly driven by the Training Configuration Agent's decision:
- * - If the agent decided it needs dataset analysis ("ask_dataset_analyser"), routes to datasetAnalyserNode.
- * - Otherwise (or when synthesis is complete or max loop safety reached), routes to END.
- */
 function routeTrainingConfig(state: TrainingConfigGraphStateType) {
   if (state.decision === "ask_dataset_analyser") {
-    // Safety guard to prevent unbounded cycling if an LLM repeatedly inquires
+
     if (state.turnCount >= 6) {
       return END;
     }
@@ -467,9 +445,6 @@ function routeTrainingConfig(state: TrainingConfigGraphStateType) {
   return END;
 }
 
-/**
- * Compiles and returns the multi-agent conversational StateGraph
- */
 export function createTrainingConfigGraph() {
   const workflow = new StateGraph(TrainingConfigGraphAnnotation)
     .addNode("trainingConfigNode", trainingConfigAgentNode)
