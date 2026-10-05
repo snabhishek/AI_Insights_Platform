@@ -42,6 +42,96 @@ export interface IngestionServices {
   prediction_target_column?: string;
 }
 
+export type StageStatusKey =
+  | "inspect"
+  | "profileData"
+  | "resolveSchema"
+  | "hierarchyMapper"
+  | "featureArchitect"
+  | "featureValidator"
+  | "exogenousScout"
+  | "modelSelection"
+  | "trainingConfiguration"
+  | "preFlight"
+  | "modelTrainingCode"
+  | "modelTrainingExec"
+  | "modelTraining"
+  | "modelEvaluation"
+  | "modelValidation"
+  | "dataProfile"
+  | "schemaResolution"
+  | "relationshipBuilder"
+  | "formBuilder"
+  | "exogenous"
+  | "modelSelectionNode"
+  | "preFlightNode"
+  | "modelTrainingNode"
+  | "modelTrainingExecNode"
+  | "modelTrainingCodeNode"
+  | "modelEvaluationNode"
+  | "modelValidationNode"
+  | "trainingConfigurationNode"
+  | "hierarchyMapperNode"
+  | "featureArchitectNode"
+  | "featureValidatorNode";
+
+export type StageStatusValue =
+  | "Pending"
+  | "In Progress"
+  | "Running"
+  | "Completed"
+  | "Success"
+  | "Failed"
+  | "Retrying"
+  | "Paused"
+  | "Skipped";
+
+export const INITIAL_STAGE_STATUSES: Record<StageStatusKey, StageStatusValue> = {
+  inspect: "Pending",
+  profileData: "Pending",
+  resolveSchema: "Pending",
+  hierarchyMapper: "Pending",
+  featureArchitect: "Pending",
+  featureValidator: "Pending",
+  exogenousScout: "Pending",
+  modelSelection: "Pending",
+  trainingConfiguration: "Pending",
+  preFlight: "Pending",
+  modelTrainingCode: "Pending",
+  modelTrainingExec: "Pending",
+  modelTraining: "Pending",
+  modelEvaluation: "Pending",
+  modelValidation: "Pending",
+  dataProfile: "Pending",
+  schemaResolution: "Pending",
+  relationshipBuilder: "Pending",
+  formBuilder: "Pending",
+  exogenous: "Pending",
+  modelSelectionNode: "Pending",
+  preFlightNode: "Pending",
+  modelTrainingNode: "Pending",
+  modelTrainingExecNode: "Pending",
+  modelTrainingCodeNode: "Pending",
+  modelEvaluationNode: "Pending",
+  modelValidationNode: "Pending",
+  trainingConfigurationNode: "Pending",
+  hierarchyMapperNode: "Pending",
+  featureArchitectNode: "Pending",
+  featureValidatorNode: "Pending",
+};
+
+const OUTPUT_RESET_MARKER = "__resetOutput";
+
+const mergeOutputOrReset = (
+  left: Record<string, unknown> = {},
+  right: Record<string, unknown> = {}
+): Record<string, unknown> => {
+  if (right?.[OUTPUT_RESET_MARKER] === true) {
+    return Object.fromEntries(Object.entries(right).filter(([key]) => key !== OUTPUT_RESET_MARKER));
+  }
+  return { ...left, ...right };
+};
+
 export const AgentState = Annotation.Root({
   connectorId: Annotation<string[]>,
   projectId: Annotation<string>({
@@ -106,21 +196,21 @@ export const AgentState = Annotation.Root({
     reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
     default: () => "",
   }),
-  inspection: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  schemaResolution: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  dataProfile: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  hierarchyMapper: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  relationshipBuilder: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  formBuilder: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  exogenousScout: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  featureArchitect: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  featureValidator: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  trainingConfiguration: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  preFlight: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  modelTraining: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  modelEvaluation: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  modelValidation: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
-  modelSelection: Annotation<Record<string, unknown>>({ reducer: (left, right) => ({ ...left, ...right }), default: () => ({}) }),
+  inspection: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  schemaResolution: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  dataProfile: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  hierarchyMapper: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  relationshipBuilder: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  formBuilder: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  exogenousScout: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  featureArchitect: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  featureValidator: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  trainingConfiguration: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  preFlight: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  modelTraining: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  modelEvaluation: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  modelValidation: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  modelSelection: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
   batchedTables: Annotation<BatchedTableState[]>({
     reducer: (left = [], right = []) => {
       if (Array.isArray(right) && right.length === 0) {
@@ -161,6 +251,9 @@ export const AgentState = Annotation.Root({
   }),
   stageOutputs: Annotation<Record<string, unknown>>({
     reducer: (left, right) => {
+      if (right?.__replaceStageOutputs === true) {
+        return Object.fromEntries(Object.entries(right).filter(([key]) => key !== "__replaceStageOutputs"));
+      }
       if (right && Object.keys(right).length === 0) {
         return left || {};
       }
@@ -168,41 +261,16 @@ export const AgentState = Annotation.Root({
     },
     default: () => ({}),
   }),
-  stageStatuses: Annotation<Record<string, string>>({
+  stageStatuses: Annotation<Partial<Record<StageStatusKey, StageStatusValue>>>({
     reducer: (left, right) => {
       if (right && Object.keys(right).length === 0) {
-        return {
-          inspect: "Pending",
-          profileData: "Pending",
-          resolveSchema: "Pending",
-          hierarchyMapper: "Pending",
-          featureArchitect: "Pending",
-          featureValidator: "Pending",
-          exogenousScout: "Pending",
-          modelSelection: "Pending",
-          trainingConfiguration: "Pending",
-          modelTraining: "Pending",
-          modelEvaluation: "Pending",
-          modelValidation: "Pending",
-        };
+        return { ...INITIAL_STAGE_STATUSES };
       }
       return { ...left, ...right };
     },
-    default: () => ({
-      inspect: "Pending",
-      profileData: "Pending",
-      resolveSchema: "Pending",
-      hierarchyMapper: "Pending",
-      featureArchitect: "Pending",
-      featureValidator: "Pending",
-      exogenousScout: "Pending",
-      modelSelection: "Pending",
-      trainingConfiguration: "Pending",
-      modelTraining: "Pending",
-      modelEvaluation: "Pending",
-      modelValidation: "Pending",
-    }),
+    default: () => ({ ...INITIAL_STAGE_STATUSES }),
   }),
 });
 
+export type StageStatuses = Partial<Record<StageStatusKey, StageStatusValue>>;
 export type AgentStateType = typeof AgentState.State;

@@ -12,13 +12,97 @@ import {
   buildResultFromGraphState,
   mapRetryStepToInterruptNode
 } from "../../../agents/utils/agentUtils";
-import { WorkflowSessionMeta } from "../../../agents/state";
+import { WorkflowSessionMeta, INITIAL_STAGE_STATUSES } from "../../../agents/state";
 import { IAgentThinkingService } from "../agent-thinking/agentThinking.service.interface";
 import { QueueService } from "../../queue/queue.service";
 import { agentJobEvents } from "../../queue/queueEvents";
 import { generateDateTimeStamp, ensureProjectRunFolder, getLatestProjectRunTimestamp, createProjectSchemaFile } from "../../../agents/tools/helpers";
 import { registerProjectMetadata } from "../../../agents/tools/filesystem/mcpFilesystemClient";
 import { getPipelineForSubstep, resolveSafePredecessorNode, getApprovalGateForNode, getStageRuleByNode } from "../../../agents/pipelineFlowConfig";
+
+const MODEL_RETRY_OUTPUT_KEYS = [
+  "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode", "modelTrainingExec",
+  "modelTraining", "modelEvaluation", "modelValidation", "modelSelectionNode", "trainingConfigurationNode",
+  "preFlightNode", "modelTrainingCodeNode", "modelTrainingExecNode", "modelTrainingNode", "modelEvaluationNode",
+  "modelValidationNode",
+];
+
+const FEATURE_RETRY_OUTPUT_KEYS = [
+  "hierarchyMapper", "hierarchyMapperNode", "formBuilder", "relationshipBuilder", "featureArchitect",
+  "featureArchitectNode", "featureValidator", "featureValidatorNode", "exogenousScout", "exogenous",
+  ...MODEL_RETRY_OUTPUT_KEYS,
+];
+
+const MODEL_RETRY_STATE_KEYS = [
+  "modelSelection", "trainingConfiguration", "preFlight", "modelTrainingCode",
+  "modelTrainingExec", "modelTraining", "modelEvaluation", "modelValidation",
+];
+
+const FEATURE_RETRY_STATE_KEYS = [
+  "hierarchyMapper", "relationshipBuilder", "formBuilder", "featureArchitect",
+  "featureValidator", "exogenousScout", ...MODEL_RETRY_STATE_KEYS,
+];
+
+const INGESTION_RETRY_STATE_KEYS = [
+  "inspection", "dataProfile", "schemaResolution", ...FEATURE_RETRY_STATE_KEYS,
+];
+
+function clearRetryStageOutputs(
+  stageOutputs: unknown,
+  targetNode?: string,
+  replaceGraphValue = false
+): Record<string, unknown> {
+  const outputs = stageOutputs && typeof stageOutputs === "object" && !Array.isArray(stageOutputs)
+    ? stageOutputs as Record<string, unknown>
+    : {};
+  const keysToClear = targetNode === "inspect"
+    ? new Set(Object.keys(outputs))
+    : new Set(targetNode === "hierarchyMapperNode" ? FEATURE_RETRY_OUTPUT_KEYS : MODEL_RETRY_OUTPUT_KEYS);
+  const cleared = Object.fromEntries(Object.entries(outputs).filter(([key]) => !keysToClear.has(key)));
+  return replaceGraphValue ? { ...cleared, __replaceStageOutputs: true } : cleared;
+}
+
+function getRetryStateOutputKeys(targetNode?: string): string[] {
+  if (targetNode === "inspect") return INGESTION_RETRY_STATE_KEYS;
+  if (targetNode === "hierarchyMapperNode") return FEATURE_RETRY_STATE_KEYS;
+  return MODEL_RETRY_STATE_KEYS;
+}
+
+const STAGE_STATUS_ALIAS_GROUPS = [
+  ["profileData", "dataProfile"],
+  ["resolveSchema", "schemaResolution"],
+  ["hierarchyMapper", "hierarchyMapperNode"],
+  ["featureArchitect", "featureArchitectNode"],
+  ["featureValidator", "featureValidatorNode"],
+  ["exogenousScout", "exogenous"],
+  ["modelSelection", "modelSelectionNode"],
+  ["trainingConfiguration", "trainingConfigurationNode"],
+  ["preFlight", "preFlightNode"],
+  ["modelTrainingCode", "modelTrainingCodeNode"],
+  ["modelTrainingExec", "modelTrainingExecNode"],
+  ["modelTraining", "modelTrainingNode"],
+  ["modelEvaluation", "modelEvaluationNode"],
+  ["modelValidation", "modelValidationNode"],
+];
+
+function synchronizeStageStatusAliases(stageStatuses: Record<string, string>): Record<string, string> {
+  const synchronized = { ...stageStatuses };
+  for (const [canonicalKey, ...aliasKeys] of STAGE_STATUS_ALIAS_GROUPS) {
+    const canonicalStatus = synchronized[canonicalKey];
+    const aliasStatus = aliasKeys
+      .map((key) => synchronized[key])
+      .find((status) => status && status !== "Pending");
+    const status = canonicalStatus && canonicalStatus !== "Pending"
+      ? canonicalStatus
+      : aliasStatus || canonicalStatus;
+
+    if (status) {
+      synchronized[canonicalKey] = status;
+      for (const aliasKey of aliasKeys) synchronized[aliasKey] = status;
+    }
+  }
+  return synchronized;
+}
 
 const SUBSTEP_THINKING_TEMPLATES: Record<string, string[]> = {
   "Data Ingestion": [
@@ -271,7 +355,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         batchedTables: [],
         steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
         stageOutputs: {},
-        stageStatuses: { inspect: "In Progress", profileData: "Pending", resolveSchema: "Pending" }
+        stageStatuses: { ...INITIAL_STAGE_STATUSES, inspect: "In Progress" }
       };
 
       let savedAgentState: any = null;
@@ -455,6 +539,19 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentStage = "preFlightNode";
               currentStageStatuses.trainingConfiguration = "Completed";
               currentStageStatuses.preFlight = "In Progress";
+            } else if (substep === "Model Training Code Generation" || substep === "modelTrainingCode" || substep === "modelTrainingCodeNode") {
+              currentNode = "modelTrainingCodeNode";
+              currentStage = "modelTrainingCodeNode";
+              currentStageStatuses.preFlight = "Completed";
+              currentStageStatuses.modelTrainingCode = "In Progress";
+              currentStageStatuses.modelTraining = "In Progress";
+            } else if (substep === "Model Training Execution" || substep === "modelTrainingExec" || substep === "modelTrainingExecNode") {
+              currentNode = "modelTrainingExecNode";
+              currentStage = "modelTrainingExecNode";
+              currentStageStatuses.preFlight = "Completed";
+              currentStageStatuses.modelTrainingCode = "Completed";
+              currentStageStatuses.modelTrainingExec = "In Progress";
+              currentStageStatuses.modelTraining = "In Progress";
             } else if (substep === "Model Training" || substep === "modelTraining" || substep === "modelTrainingNode") {
               currentNode = "modelTrainingNode";
               currentStage = "modelTrainingNode";
@@ -464,12 +561,13 @@ export class IngestionAgentService implements IIngestionAgentService {
               currentNode = "modelValidationNode";
               currentStage = "modelValidationNode";
               currentStageStatuses.modelTraining = "Completed";
+              currentStageStatuses.modelTrainingExec = "Completed";
               currentStageStatuses.modelValidation = "In Progress";
             }
 
             const mergedValues = {
               ...latestGraphStateValues,
-              stageStatuses: currentStageStatuses,
+              stageStatuses: synchronizeStageStatusAliases(currentStageStatuses),
             };
 
             const resVal = buildResultFromGraphState(
@@ -554,39 +652,21 @@ export class IngestionAgentService implements IIngestionAgentService {
         const retryTarget = mapRetryStepToInterruptNode(options.step);
         if (retryTarget === "inspect") {
           initialStageStatuses = {
+            ...INITIAL_STAGE_STATUSES,
             inspect: "In Progress",
-            profileData: "Pending",
-            resolveSchema: "Pending",
-            hierarchyMapper: "Pending",
-            featureArchitect: "Pending",
-            featureValidator: "Pending",
-            exogenousScout: "Pending",
-            modelSelection: "Pending",
-            trainingConfiguration: "Pending",
-            preFlight: "Pending",
-            modelTrainingCode: "Pending",
-            modelTraining: "Pending",
-            modelValidation: "Pending",
           };
         } else if (retryTarget === "hierarchyMapperNode") {
           initialStageStatuses = {
+            ...INITIAL_STAGE_STATUSES,
             inspect: "Completed",
             profileData: "Completed",
             resolveSchema: "Completed",
             hierarchyMapper: "In Progress",
-            featureArchitect: "Pending",
-            featureValidator: "Pending",
-            exogenousScout: "Pending",
-            modelSelection: "Pending",
-            trainingConfiguration: "Pending",
-            preFlight: "Pending",
-            modelTrainingCode: "Pending",
-            modelTraining: "Pending",
-            modelValidation: "Pending",
           };
         } else {
           // Model Training & Validation stage -> full stage retry from modelSelectionNode
           initialStageStatuses = {
+            ...INITIAL_STAGE_STATUSES,
             inspect: "Completed",
             profileData: "Completed",
             resolveSchema: "Completed",
@@ -595,17 +675,13 @@ export class IngestionAgentService implements IIngestionAgentService {
             featureValidator: "Completed",
             exogenousScout: "Completed",
             modelSelection: "In Progress",
-            trainingConfiguration: "Pending",
-            preFlight: "Pending",
-            modelTrainingCode: "Pending",
-            modelTraining: "Pending",
-            modelValidation: "Pending",
           };
         }
       } else if (options?.action === "resume" && savedAgentState?.stageStatuses) {
-        initialStageStatuses = { ...savedAgentState.stageStatuses, [options.step || "inspect"]: "In Progress" };
+        initialStageStatuses = { ...INITIAL_STAGE_STATUSES, ...savedAgentState.stageStatuses, [options.step || "inspect"]: "In Progress" };
       } else if (isApprovingModelValidation) {
         initialStageStatuses = {
+          ...INITIAL_STAGE_STATUSES,
           inspect: "Completed",
           profileData: "Completed",
           resolveSchema: "Completed",
@@ -622,6 +698,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         };
       } else if (isApprovingPreFlight) {
         initialStageStatuses = {
+          ...INITIAL_STAGE_STATUSES,
           inspect: "Completed",
           profileData: "Completed",
           resolveSchema: "Completed",
@@ -632,12 +709,10 @@ export class IngestionAgentService implements IIngestionAgentService {
           modelSelection: "Completed",
           trainingConfiguration: "Completed",
           preFlight: "In Progress",
-          modelTrainingCode: "Pending",
-          modelTraining: "Pending",
-          modelValidation: "Pending",
         };
       } else if (isApprovingModelTrainingCode || isApprovingModelTrainingExec) {
         initialStageStatuses = {
+          ...INITIAL_STAGE_STATUSES,
           inspect: "Completed",
           profileData: "Completed",
           resolveSchema: "Completed",
@@ -650,10 +725,10 @@ export class IngestionAgentService implements IIngestionAgentService {
           preFlight: "Completed",
           modelTrainingCode: isApprovingModelTrainingCode ? "In Progress" : "Completed",
           modelTraining: "In Progress",
-          modelValidation: "Pending",
         };
       } else if (isApprovingTrainingConfig) {
         initialStageStatuses = {
+          ...INITIAL_STAGE_STATUSES,
           inspect: "Completed",
           profileData: "Completed",
           resolveSchema: "Completed",
@@ -663,10 +738,6 @@ export class IngestionAgentService implements IIngestionAgentService {
           exogenousScout: "Completed",
           modelSelection: "Completed",
           trainingConfiguration: "In Progress",
-          preFlight: "Pending",
-          modelTrainingCode: "Pending",
-          modelTraining: "Pending",
-          modelValidation: "Pending",
         };
       } else if (isApprovingModel) {
         const hasExistingSelection = Boolean(
@@ -675,6 +746,7 @@ export class IngestionAgentService implements IIngestionAgentService {
           savedAgentState?.trainingConfiguration?.models?.length
         );
         initialStageStatuses = {
+          ...INITIAL_STAGE_STATUSES,
           inspect: "Completed",
           profileData: "Completed",
           resolveSchema: "Completed",
@@ -684,44 +756,23 @@ export class IngestionAgentService implements IIngestionAgentService {
           exogenousScout: "Completed",
           modelSelection: hasExistingSelection ? "Completed" : "In Progress",
           trainingConfiguration: hasExistingSelection ? "In Progress" : "Pending",
-          preFlight: "Pending",
-          modelTrainingCode: "Pending",
-          modelTraining: "Pending",
-          modelValidation: "Pending",
         };
       } else if (options?.action === "approve") {
         initialStageStatuses = {
+          ...INITIAL_STAGE_STATUSES,
           inspect: "Completed",
           profileData: "Completed",
           resolveSchema: "Completed",
           hierarchyMapper: "In Progress",
-          featureArchitect: "Pending",
-          featureValidator: "Pending",
-          exogenousScout: "Pending",
-          modelSelection: "Pending",
-          trainingConfiguration: "Pending",
-          preFlight: "Pending",
-          modelTrainingCode: "Pending",
-          modelTraining: "Pending",
-          modelValidation: "Pending",
         };
       } else {
         initialStageStatuses = {
+          ...INITIAL_STAGE_STATUSES,
           inspect: "In Progress",
-          profileData: "Pending",
-          resolveSchema: "Pending",
-          hierarchyMapper: "Pending",
-          featureArchitect: "Pending",
-          featureValidator: "Pending",
-          exogenousScout: "Pending",
-          modelSelection: "Pending",
-          trainingConfiguration: "Pending",
-          preFlight: "Pending",
-          modelTrainingCode: "Pending",
-          modelTraining: "Pending",
-          modelValidation: "Pending",
         };
       }
+
+      initialStageStatuses = synchronizeStageStatusAliases(initialStageStatuses);
 
       const approveMessage = isApprovingModelValidation
         ? "Advancing workflow to Model Validation stage..."
@@ -813,7 +864,9 @@ export class IngestionAgentService implements IIngestionAgentService {
         inspection: savedAgentState?.inspection || {},
         schemaResolution: savedAgentState?.schemaResolution || {},
         dataProfile: savedAgentState?.dataProfile || {},
-        stageOutputs: options?.action ? (savedAgentState?.stageOutputs || {}) : {},
+        stageOutputs: options?.action === "retry"
+          ? clearRetryStageOutputs(savedAgentState?.stageOutputs, mapRetryStepToInterruptNode(options.step))
+          : options?.action ? (savedAgentState?.stageOutputs || {}) : {},
         message: options?.action === "approve"
           ? approveMessage
           : buildMessage([], "running", initialStageStatuses),
@@ -996,22 +1049,12 @@ export class IngestionAgentService implements IIngestionAgentService {
                 steps: [{ name: "Data Inspection", status: "running", summary: "Data Inspection node running..." }],
                 stageOutputs: {},
                 stageStatuses: {
+                  ...INITIAL_STAGE_STATUSES,
                   inspect: "In Progress",
-                  profileData: "Pending",
-                  resolveSchema: "Pending",
-                  hierarchyMapper: "Pending",
-                  featureArchitect: "Pending",
-                  featureValidator: "Pending",
-                  exogenousScout: "Pending",
-                  modelSelection: "Pending",
-                  trainingConfiguration: "Pending",
-                  preFlight: "Pending",
-                  modelTraining: "Pending",
-                  modelValidation: "Pending"
                 }
               };
               try {
-                await this.projectService.updateAgentState(options.projectId, cleanInitialState, userPrompt);
+                await this.projectService.updateAgentState(options.projectId, cleanInitialState, userPrompt, true);
               } catch (e) {
                 console.warn("[Workflow] Failed to reset project agent state on new run:", e);
               }
@@ -1133,6 +1176,44 @@ export class IngestionAgentService implements IIngestionAgentService {
               if (options?.projectId) {
                 await this.agentThinkingService.clearProjectPipelineThinking(options.projectId, pipeline);
               }
+              if (options?.projectId) {
+                const retryState = {
+                  ...(savedAgentState || {}),
+                  connectorId,
+                  projectId: options.projectId,
+                  userPrompt: savedAgentState?.userPrompt ?? userPrompt ?? "",
+                  runTimestamp: activeRunTimestamp,
+                  status: "running",
+                  summary: "Retrying from inspect",
+                  message: "Retrying workflow from Data Inspection.",
+                  requiresApproval: false,
+                  nextStep: undefined,
+                  currentNode: "inspect",
+                  currentStage: "inspect",
+                  inspection: {},
+                  dataProfile: {},
+                  schemaResolution: {},
+                  hierarchyMapper: {},
+                  relationshipBuilder: {},
+                  formBuilder: {},
+                  featureArchitect: {},
+                  featureValidator: {},
+                  exogenousScout: {},
+                  modelSelection: {},
+                  trainingConfiguration: {},
+                  preFlight: {},
+                  modelTrainingCode: {},
+                  modelTrainingExec: {},
+                  modelTraining: {},
+                  modelEvaluation: {},
+                  modelValidation: {},
+                  batchedTables: [],
+                  steps: [],
+                  stageOutputs: {},
+                  stageStatuses: { ...INITIAL_STAGE_STATUSES, inspect: "In Progress" },
+                };
+                await this.projectService.updateAgentState(options.projectId, retryState, undefined, true);
+              }
               stream = await workflow.stream(
                 {
                   connectorId,
@@ -1146,7 +1227,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                   batchedTables: [],
                   steps: [],
                   stageOutputs: {},
-                  stageStatuses: { inspect: "Pending", profileData: "Pending", resolveSchema: "Pending" }
+                  stageStatuses: { ...INITIAL_STAGE_STATUSES, inspect: "Pending" }
                 },
                 freshConfig
               );
@@ -1182,8 +1263,18 @@ export class IngestionAgentService implements IIngestionAgentService {
                   nextStep: undefined,
                   summary: `Retrying stage (${targetNode})`,
                 };
+                const checkpointState = await workflow.getState(retryConfig).catch(() => null);
+                cleanMemUpdate.stageOutputs = clearRetryStageOutputs(
+                  checkpointState?.values?.stageOutputs,
+                  targetNode,
+                  true
+                );
+                for (const key of getRetryStateOutputKeys(targetNode)) {
+                  cleanMemUpdate[key] = { __resetOutput: true };
+                }
                 if (targetNode === "modelSelectionNode") {
                   cleanMemUpdate.stageStatuses = {
+                    ...INITIAL_STAGE_STATUSES,
                     inspect: "Completed",
                     profileData: "Completed",
                     resolveSchema: "Completed",
@@ -1192,41 +1283,28 @@ export class IngestionAgentService implements IIngestionAgentService {
                     featureValidator: "Completed",
                     exogenousScout: "Completed",
                     modelSelection: "In Progress",
-                    trainingConfiguration: "Pending",
-                    preFlight: "Pending",
-                    modelTrainingCode: "Pending",
-                    modelTraining: "Pending",
-                    modelValidation: "Pending",
                   };
-                  delete cleanMemUpdate.modelSelection;
-                  delete cleanMemUpdate.trainingConfiguration;
-                  delete cleanMemUpdate.preFlight;
-                  delete cleanMemUpdate.modelTrainingCode;
-                  delete cleanMemUpdate.modelTrainingExec;
-                  delete cleanMemUpdate.modelTraining;
-                  delete cleanMemUpdate.modelValidation;
                 } else if (targetNode === "hierarchyMapperNode") {
                   cleanMemUpdate.stageStatuses = {
+                    ...INITIAL_STAGE_STATUSES,
                     inspect: "Completed",
                     profileData: "Completed",
                     resolveSchema: "Completed",
                     hierarchyMapper: "In Progress",
-                    featureArchitect: "Pending",
-                    featureValidator: "Pending",
-                    exogenousScout: "Pending",
-                    modelSelection: "Pending",
-                    trainingConfiguration: "Pending",
-                    preFlight: "Pending",
-                    modelTrainingCode: "Pending",
-                    modelTraining: "Pending",
-                    modelValidation: "Pending",
                   };
-                  delete cleanMemUpdate.hierarchyMapper;
-                  delete cleanMemUpdate.featureArchitect;
-                  delete cleanMemUpdate.featureValidator;
-                  delete cleanMemUpdate.exogenousScout;
                 }
                 await workflow.updateState(retryConfig, cleanMemUpdate);
+                if (options?.projectId) {
+                  const cleanedCheckpoint = await workflow.getState(retryConfig).catch(() => null);
+                  if (cleanedCheckpoint?.values) {
+                    await this.projectService.updateAgentState(
+                      options.projectId,
+                      cleanedCheckpoint.values as Record<string, unknown>,
+                      undefined,
+                      true
+                    );
+                  }
+                }
                 stream = await workflow.stream(null, retryConfig);
               } else {
                 console.info(`[Workflow] No in-memory checkpoint found for retry target "${targetNode}". Restoring state from database for thread ${threadId}`);
@@ -1316,7 +1394,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                     stateToRestore.stageStatuses.modelTrainingExec = 'Pending';
                     stateToRestore.stageStatuses.modelTraining = 'Pending';
                     stateToRestore.stageStatuses.modelEvaluation = 'Pending';
-                    delete stateToRestore.stageStatuses?.modelValidation; 
+                    stateToRestore.stageStatuses.modelValidation = 'Pending';
                   } else if (targetNode === "hierarchyMapperNode" || targetNode === "hierarchyMapper") {
                     stagesToReset.push(
                       "hierarchyMapper", "hierarchyMapperNode",
@@ -1370,13 +1448,20 @@ export class IngestionAgentService implements IIngestionAgentService {
                   } else if (targetNode === "resolveSchema") {
                     stagesToReset.push("resolveSchema", "hierarchyMapper", "featureArchitect", "featureValidator", "exogenousScout", "modelSelection");
                     stateToRestore.schemaResolution = {};
+                    stateToRestore.stageStatuses.resolveSchema = 'Pending';
                     stateToRestore.stageStatuses.schemaResolution = 'Pending';
                     stateToRestore.stageOutputs.schemaResolution = {};
                   } else if (targetNode === "profileData") {
                     stagesToReset.push("profileData", "resolveSchema", "hierarchyMapper");
                     stateToRestore.dataProfile = {};
+                    stateToRestore.stageStatuses.profileData = 'Pending';
                     stateToRestore.stageStatuses.dataProfile = 'Pending';
                     stateToRestore.stageOutputs.dataProfile = {};
+                  }
+
+                  stateToRestore.stageOutputs = clearRetryStageOutputs(stateToRestore.stageOutputs, targetNode, true);
+                  for (const key of getRetryStateOutputKeys(targetNode)) {
+                    stateToRestore[key] = { __resetOutput: true };
                   }
 
                   // for (const stage of stagesToReset) {
@@ -1393,10 +1478,15 @@ export class IngestionAgentService implements IIngestionAgentService {
                   };
 
                   await workflow.updateState(config, restoredState, predecessorNode);
-                  if (options?.projectId) {
-                    await this.projectService.updateAgentState(options.projectId, restoredState);
-                  }
                   const graphState = await workflow.getState(config).catch(() => null);
+                  if (options?.projectId && graphState?.values) {
+                    await this.projectService.updateAgentState(
+                      options.projectId,
+                      graphState.values as Record<string, unknown>,
+                      undefined,
+                      true
+                    );
+                  }
                   console.info(`[Workflow] Restored graph state for retry. Next node to execute: [${graphState?.next?.join(", ")}]`);
 
                   stream = await workflow.stream(null, config);
@@ -1416,7 +1506,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                       batchedTables: [],
                       steps: [],
                       stageOutputs: {},
-                      stageStatuses: { inspect: "Pending", profileData: "Pending", resolveSchema: "Pending" }
+                      stageStatuses: { ...INITIAL_STAGE_STATUSES, inspect: "Pending" }
                     },
                     config
                   );
@@ -1794,7 +1884,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                   batchedTables: savedAgentState?.batchedTables || [],
                   steps: savedAgentState?.steps || [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
                   stageOutputs: savedAgentState?.stageOutputs || {},
-                  stageStatuses: { inspect: "In Progress", profileData: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
+                  stageStatuses: { ...INITIAL_STAGE_STATUSES, ...(savedAgentState?.stageStatuses || {}), inspect: "In Progress" }
                 },
                 config
               );
@@ -1821,7 +1911,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 batchedTables: [],
                 steps: [{ name: "Data Ingestion", status: "running", summary: "Data Ingestion node running..." }],
                 stageOutputs: {},
-                stageStatuses: { inspect: "Pending", profileData: "Pending", resolveSchema: "Pending", exogenousScout: "Pending", featureArchitect: "Pending" }
+                stageStatuses: { ...INITIAL_STAGE_STATUSES, inspect: "Pending" }
               },
               config
             );
@@ -1840,6 +1930,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               console.info(`[Workflow] Node [${nodeName}] completed`);
               currentStatuses = updateNodeStatuses(nodeName, currentStatuses);
             }
+            currentStatuses = synchronizeStageStatusAliases(currentStatuses);
 
             const graphState = await workflow.getState(config);
             if (graphState?.values) {

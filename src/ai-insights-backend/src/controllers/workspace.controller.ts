@@ -108,7 +108,7 @@ export class WorkspaceController {
 
   updateProject = async (req: Request, res: Response): Promise<void> => {
     const pid = req.params.pid as string;
-    const { name, useCase, dataSources, status, agentState } = req.body;
+    const { name, useCase, dataSources, status, agentState, replaceAgentState } = req.body;
 
     try {
       const result = await this.workspaceService.updateProject(pid, {
@@ -117,6 +117,7 @@ export class WorkspaceController {
         dataSources,
         status,
         agentState,
+        replaceAgentState,
       });
 
       if (!result.success) {

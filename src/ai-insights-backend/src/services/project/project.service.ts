@@ -17,8 +17,8 @@ export class ProjectService {
     return this.repository.getProjectWithWorkspace(id);
   }
 
-  async updateAgentState(id: string, agentState: Record<string, unknown>, useCase?: string): Promise<Project | undefined> {
-    return this.repository.updateAgentState(id, agentState, useCase);
+  async updateAgentState(id: string, agentState: Record<string, unknown>, useCase?: string, replaceState?: boolean): Promise<Project | undefined> {
+    return this.repository.updateAgentState(id, agentState, useCase, replaceState);
   }
 
   async updateProject(id: string, updates: Partial<Project>): Promise<Project | undefined> {

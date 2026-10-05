@@ -1,13 +1,11 @@
 import { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { eq, desc } from "drizzle-orm";
+import { eq, desc, ne, and } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import * as schema from "../db/connectors";
 import { agentThinking } from "../db/agentThinking";
 import { IProjectRepository } from "./project.repository.interface";
 import { Project, ProjectRun, ProjectWithWorkspace } from "../models/project.types";
 import { AgentStateType } from "../agents/state";
-import { Agent } from "http";
-import { raw } from "mysql2";
 
 export class PostgresProjectRepository implements IProjectRepository {
   constructor(private db: NodePgDatabase<typeof schema>) { }
@@ -140,7 +138,7 @@ export class PostgresProjectRepository implements IProjectRepository {
 
     const latestRuns = await this.db.select()
       .from(schema.projectRuns)
-      .where(eq(schema.projectRuns.projectId, id))
+      .where(and(eq(schema.projectRuns.projectId, id), ne(schema.projectRuns.status, "completed"), ne(schema.projectRuns.status, "stopped")))
       .orderBy(desc(schema.projectRuns.createdAt))
       .limit(1);
 
@@ -196,13 +194,13 @@ export class PostgresProjectRepository implements IProjectRepository {
     };
   }
 
-  async updateAgentState(id: string, agentState: Record<string, unknown>, useCase?: string): Promise<Project | undefined> {
+  async updateAgentState(id: string, agentState: Record<string, unknown>, useCase?: string, replaceState = false): Promise<Project | undefined> {
     const currentProj = await this.getById(id);
     const effectiveUseCase = useCase ?? currentProj?.useCase;
     const effectiveStatus = (agentState?.status as string) || currentProj?.status || "idle";
 
     // Merge previous agentState with new agentState so that fields like stageOutputs, modelSelection, etc. are NOT lost
-    const existingState = (currentProj?.agentState as Record<string, unknown>) || {};
+    const existingState = replaceState ? {} : ((currentProj?.agentState as Record<string, unknown>) || {});
     const existingOutputs = (existingState?.stageOutputs as Record<string, unknown>) || {};
     const incomingOutputs = (agentState?.stageOutputs as Record<string, unknown>) || {};
 
