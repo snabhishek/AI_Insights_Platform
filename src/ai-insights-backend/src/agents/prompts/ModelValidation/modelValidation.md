@@ -196,7 +196,8 @@ def unwrap_model(obj):
 
         return est, feats, cfg, disp_name
 
-    feats = getattr(obj, "feature_names_in\_", None) or []
+    raw_feats = getattr(obj, "feature_names_in_", None)
+    feats = list(raw_feats) if raw_feats is not None else []
 
     return obj, list(feats), {}, None
 

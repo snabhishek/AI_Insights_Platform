@@ -49,6 +49,9 @@ import createModelSelectionRouter from "./routes/modelSelection";
 import { TrainingConfigService } from "./services/ai/training-config/trainingConfig.service";
 import { TrainingConfigController } from "./controllers/trainingConfig.controller";
 import createTrainingConfigRouter from "./routes/trainingConfig";
+import { ModelValidationService } from "./services/ai/model-validation/modelValidation.service";
+import { ModelValidationController } from "./controllers/modelValidation.controller";
+import createModelValidationRouter from "./routes/modelValidation";
 
 
 dotenv.config();
@@ -130,6 +133,13 @@ async function bootstrap() {
   const trainingConfigService = new TrainingConfigService(projectService);
   const trainingConfigController = new TrainingConfigController(trainingConfigService);
   const modelValidationRepository = new PostgresModelValidationRepository(db);
+  const modelValidationService = new ModelValidationService(
+    projectService,
+    workspaceService,
+    modelValidationRepository,
+    agentThinkingService
+  );
+  const modelValidationController = new ModelValidationController(modelValidationService);
 
   // 4. Mount Main routers
   app.get("/api/filter-options", connectorController.getFilterOptions);
@@ -137,6 +147,7 @@ async function bootstrap() {
   app.use("/api/domains", createDomainRouter(domainController));
   app.use("/api/model-selection", createModelSelectionRouter(modelSelectionController));
   app.use("/api/training-config", createTrainingConfigRouter(trainingConfigController));
+  app.use("/api/model-validation", createModelValidationRouter(modelValidationController));
 
   // Agent Router
   const agentRouter = express.Router();

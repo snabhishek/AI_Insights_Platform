@@ -209,17 +209,38 @@ export const createReadValidationConfigTool = (
 
         // Check for existing validation config
         let existingValidationConfig: Record<string, any> | null = null;
-        const existingValConfigPath = path.join(
-          runDir,
-          "model_validation",
-          "configs",
-          "validation_config.yaml"
-        );
-        if (fs.existsSync(existingValConfigPath)) {
-          const raw = fs.readFileSync(existingValConfigPath, "utf-8");
-          existingValidationConfig =
-            (yaml.load(raw) as Record<string, any>) || null;
+        const candidateValConfigPaths = [
+          path.join(
+            runDir,
+            `${path.basename(modelTrainingDir).replace(/_model_training$/, "_model_validation")}`,
+            "configs",
+            "validation_config.yaml"
+          ),
+          path.join(runDir, "model_validation", "configs", "validation_config.yaml"),
+        ];
+        for (const vp of candidateValConfigPaths) {
+          if (fs.existsSync(vp)) {
+            const raw = fs.readFileSync(vp, "utf-8");
+            existingValidationConfig = (yaml.load(raw) as Record<string, any>) || null;
+            if (existingValidationConfig) break;
+          }
         }
+
+        // Extract validated features array from training or validation config
+        const rawValidatedFeatures =
+          existingValidationConfig?.validated_features ||
+          trainingConfig?.upstream_artifacts?.validated_features ||
+          trainingConfig?.upstream_artifacts?.validatedFeatures ||
+          trainingConfig?.validated_features ||
+          trainingConfig?.validatedFeatures ||
+          trainingConfig?.features ||
+          trainingConfig?.features_list ||
+          trainingConfig?.feature_list ||
+          [];
+
+        const validatedFeatures: string[] = Array.isArray(rawValidatedFeatures)
+          ? rawValidatedFeatures.map((f: any) => String(f).trim()).filter(Boolean)
+          : [];
 
         // Extract key schema info
         const schema = {
@@ -247,6 +268,7 @@ export const createReadValidationConfigTool = (
             trainingConfig?.split?.group_by ||
             trainingConfig?.group_by ||
             null,
+          validatedFeatures,
         };
 
         return {
@@ -268,7 +290,7 @@ export const createReadValidationConfigTool = (
     {
       name: "readValidationConfig",
       description:
-        "Reads training_config.yaml and any existing validation configuration. Returns dataset schema details including target column, time column, split dates, problem type, and grouping column.",
+        "Reads training_config.yaml and any existing validation configuration. Returns dataset schema details including target column, time column, split dates, problem type, grouping column, and validated features array.",
       schema: z.object({}),
     }
   );
