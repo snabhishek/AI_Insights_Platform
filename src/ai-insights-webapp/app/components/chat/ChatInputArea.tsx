@@ -1,6 +1,17 @@
 "use client";
 
 import React, { useState, useRef, useEffect } from "react";
+import {
+  Paperclip,
+  X,
+  Sparkles,
+  Cpu,
+  ChevronDown,
+  Check,
+  Mic,
+  Send,
+  Square,
+} from "lucide-react";
 import { Project } from "../providers/AppContext";
 import { AgentPersona, TrainedModelOption } from "./types";
 
@@ -197,7 +208,6 @@ export default function ChatInputArea({
 
   return (
     <div className="w-full bg-surface border-t border-border/40 px-4 sm:px-6 pt-2 pb-4 space-y-2.5 shrink-0 select-none">
-
       {suggestions.length > 0 && (
         <div className="w-full flex items-center gap-2 overflow-x-auto py-1 scrollbar-none no-scrollbar">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0 pl-0.5">
@@ -215,7 +225,7 @@ export default function ChatInputArea({
                   : "border-border/40 bg-surface-muted/30 text-muted-foreground/60 cursor-not-allowed opacity-60"
               }`}
             >
-              <span className="text-amber-500">💡</span>
+              <Sparkles className="w-3 h-3 text-amber-500 group-hover:scale-110 transition-transform shrink-0" />
               <span className="group-hover:text-primary transition-colors">
                 {suggestion}
               </span>
@@ -231,7 +241,6 @@ export default function ChatInputArea({
             : "border-border/40 bg-surface-muted/30 opacity-70 cursor-not-allowed"
         }`}
       >
-
         {attachedFiles.length > 0 && (
           <div className="flex flex-wrap gap-2 pb-1">
             {attachedFiles.map((file, idx) => (
@@ -239,7 +248,7 @@ export default function ChatInputArea({
                 key={idx}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-surface border border-border/80 text-[11px] font-medium text-foreground shadow-2xs"
               >
-                <span>📎</span>
+                <Paperclip className="w-3 h-3 text-muted-foreground shrink-0" />
                 <span className="truncate max-w-[140px]">{file.name}</span>
                 <span className="text-[10px] text-muted-foreground">
                   ({(file.size / 1024).toFixed(0)} KB)
@@ -247,10 +256,10 @@ export default function ChatInputArea({
                 <button
                   type="button"
                   onClick={() => handleRemoveFile(idx)}
-                  className="ml-1 text-muted-foreground hover:text-destructive cursor-pointer"
+                  className="ml-1 text-muted-foreground hover:text-destructive cursor-pointer transition-colors p-0.5 rounded-full"
                   title="Remove attachment"
                 >
-                  ✕
+                  <X className="w-3 h-3" />
                 </button>
               </div>
             ))}
@@ -278,9 +287,7 @@ export default function ChatInputArea({
         />
 
         <div className="flex items-center justify-between gap-2 pt-1">
-
           <div className="flex items-center gap-2">
-
             <input
               type="file"
               ref={fileInputRef}
@@ -289,25 +296,22 @@ export default function ChatInputArea({
               className="hidden"
             />
 
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={!isChatEnabled}
-              className={`p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-surface transition-colors flex items-center justify-center ${
-                isChatEnabled ? "cursor-pointer" : "cursor-not-allowed opacity-50"
-              }`}
-              title={isChatEnabled ? "Attach documents (.csv, .parquet, .json, .txt, .pdf)" : "Select a project to enable"}
-            >
-              <svg
-                className="w-4 h-4"
-                fill="none"
-                viewBox="0 0 24 24"
-                stroke="currentColor"
-                strokeWidth="2.5"
+            <div className="relative group/attach flex items-center">
+              <button
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={!isChatEnabled}
+                className={`p-2 rounded-xl text-muted-foreground hover:text-foreground hover:bg-surface transition-colors flex items-center justify-center ${
+                  isChatEnabled ? "cursor-pointer" : "cursor-not-allowed opacity-50"
+                }`}
+                aria-label="Add Attachments"
               >
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-            </button>
+                <Paperclip className="w-4 h-4" />
+              </button>
+              <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 hidden group-hover/attach:flex items-center px-2.5 py-1 rounded-full bg-zinc-900 text-white text-[11px] font-medium tracking-tight shadow-md whitespace-nowrap z-50 animate-in fade-in zoom-in-95 duration-150 border border-zinc-700/60">
+                Add Attachments
+              </div>
+            </div>
 
             <div className="relative" ref={modelDropdownRef}>
               <button
@@ -319,10 +323,14 @@ export default function ChatInputArea({
                     ? "border-border/80 bg-surface/80 hover:bg-surface hover:border-primary/40 text-foreground cursor-pointer shadow-2xs"
                     : "border-border/40 bg-surface-muted text-muted-foreground/50 cursor-not-allowed"
                 }`}
-                title="Select model for inference (Default: Any)"
+                title="Select model for inference"
               >
                 <span className="text-primary font-bold">
-                  {selectedModelOption.id === "any" ? "✨" : "🤖"}
+                  {selectedModelOption.id === "any" ? (
+                    <Sparkles className="w-3.5 h-3.5" />
+                  ) : (
+                    <Cpu className="w-3.5 h-3.5" />
+                  )}
                 </span>
                 <span className="truncate max-w-[120px] sm:max-w-[170px]">
                   {selectedModelOption.displayName}
@@ -332,21 +340,15 @@ export default function ChatInputArea({
                     Champ
                   </span>
                 )}
-                <svg
+                <ChevronDown
                   className={`w-3.5 h-3.5 text-muted-foreground transition-transform duration-200 ${
                     isModelDropdownOpen ? "rotate-180 text-primary" : ""
                   }`}
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                </svg>
+                />
               </button>
 
               {isModelDropdownOpen && isChatEnabled && (
-                <div className="absolute left-0 bottom-full mb-2 w-72 max-h-64 overflow-y-auto rounded-2xl border border-border/80 bg-surface shadow-2xl p-1.5 space-y-1 z-[150] animate-scale-up">
+                <div className="absolute left-0 bottom-full mb-2 w-72 max-h-64 overflow-y-auto rounded-2xl border border-border/90 bg-surface/98 dark:bg-zinc-900/98 backdrop-blur-md shadow-2xl p-1.5 space-y-1 z-[150] animate-scale-up">
                   <div className="px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground border-b border-border/60">
                     Inference Model Selection
                   </div>
@@ -364,15 +366,21 @@ export default function ChatInputArea({
                   >
                     <div>
                       <div className="flex items-center gap-1.5">
-                        <span>✨</span>
+                        <Sparkles className="w-3.5 h-3.5 shrink-0" />
                         <span className="font-bold">Any (Auto Selection)</span>
                       </div>
-                      <p className={`text-[10px] mt-0.5 ${selectedModelId === "any" ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                      <p
+                        className={`text-[10px] mt-0.5 ${
+                          selectedModelId === "any"
+                            ? "text-primary-foreground/80"
+                            : "text-muted-foreground"
+                        }`}
+                      >
                         Agent automatically routes to best-suited model
                       </p>
                     </div>
                     {selectedModelId === "any" && (
-                      <span className="font-bold text-sm">✓</span>
+                      <Check className="w-3.5 h-3.5 shrink-0 font-bold ml-1" />
                     )}
                   </div>
 
@@ -395,6 +403,7 @@ export default function ChatInputArea({
                         >
                           <div className="min-w-0 pr-2">
                             <div className="flex items-center gap-1.5">
+                              <Cpu className="w-3.5 h-3.5 shrink-0 text-primary" />
                               <span className="font-bold truncate">{m.displayName}</span>
                               {m.isChampion && (
                                 <span className="text-[9px] px-1 py-0.2 rounded bg-amber-500 text-white font-black uppercase shrink-0">
@@ -403,12 +412,20 @@ export default function ChatInputArea({
                               )}
                             </div>
                             {m.framework && (
-                              <span className={`text-[10px] font-mono block ${isSelected ? "text-primary-foreground/80" : "text-muted-foreground"}`}>
+                              <span
+                                className={`text-[10px] font-mono block ${
+                                  isSelected
+                                    ? "text-primary-foreground/80"
+                                    : "text-muted-foreground"
+                                }`}
+                              >
                                 {m.framework}
                               </span>
                             )}
                           </div>
-                          {isSelected && <span className="font-bold text-sm">✓</span>}
+                          {isSelected && (
+                            <Check className="w-3.5 h-3.5 shrink-0 font-bold ml-1" />
+                          )}
                         </div>
                       );
                     })}
@@ -424,7 +441,6 @@ export default function ChatInputArea({
           </div>
 
           <div className="flex items-center gap-2">
-
             <button
               type="button"
               onClick={handleToggleVoice}
@@ -444,29 +460,17 @@ export default function ChatInputArea({
                   : "Select a project to enable voice typing"
               }
             >
-              <svg
-                className="w-4 h-4"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" x2="12" y1="19" y2="22" />
-              </svg>
+              <Mic className="w-4 h-4" />
             </button>
 
             {isGenerating ? (
               <button
                 type="button"
                 onClick={onStopGenerating}
-                className="w-8 h-8 rounded-full bg-rose-500 hover:bg-rose-600 text-white text-xs font-bold transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center"
+                className="w-8 h-8 rounded-full bg-rose-500 hover:bg-rose-600 text-white transition-all shadow-md active:scale-95 cursor-pointer flex items-center justify-center"
                 title="Stop generating"
               >
-                <span className="w-2.5 h-2.5 bg-white rounded-xs" />
+                <Square className="w-3.5 h-3.5 fill-current" />
               </button>
             ) : (
               <button
@@ -486,18 +490,7 @@ export default function ChatInputArea({
                     : "Type a query to send"
                 }
               >
-                <svg
-                  className="w-4 h-4"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                  <polyline points="12 5 19 12 12 19" />
-                </svg>
+                <Send className="w-3.5 h-3.5" />
               </button>
             )}
           </div>

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import { Badge, DataTypeIcon, SectionHeader, DynamicTable } from "./utils";
+import ModernSelect from "../../shared/ui/ModernSelect";
 
 interface IngestionStepOutputProps {
   inspectOutput: any;
@@ -68,23 +69,20 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
             <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 block mb-0.5">Data Ingestion Source</span>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               {sources.length > 1 ? (
-                <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+                <div className="flex flex-col gap-1 text-sm font-medium text-foreground">
                   <span className="text-xs uppercase text-muted-foreground tracking-wide">Select source</span>
-                  <select
-                    value={selectedSourceIndex}
-                    onChange={(event) => setSelectedSourceIndex(Number(event.target.value))}
-                    className="rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  >
-                    {sources.map((src: any, srcIdx: number) => {
-                      const name = src.connectorName || src.connectorId || `Data Connector #${srcIdx + 1}`;
-                      return (
-                        <option key={srcIdx} value={srcIdx}>
-                          {name}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
+                  <div className="w-60">
+                    <ModernSelect
+                      value={String(selectedSourceIndex)}
+                      onChange={(val) => setSelectedSourceIndex(Number(val))}
+                      options={sources.map((src: any, srcIdx: number) => ({
+                        value: String(srcIdx),
+                        label: src.connectorName || src.connectorId || `Data Connector #${srcIdx + 1}`,
+                      }))}
+                      triggerClassName="h-9 text-xs"
+                    />
+                  </div>
+                </div>
               ) : (
                 <span className="text-sm font-extrabold text-foreground">{srcName}</span>
               )}

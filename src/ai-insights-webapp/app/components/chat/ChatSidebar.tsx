@@ -1,9 +1,11 @@
 "use client";
 
 import React, { useState } from "react";
+import { Plus, Search, Pin, Trash2, MessageSquare, Folder } from "lucide-react";
 import { ChatSession, AgentPersonaId } from "./types";
-import { AGENT_PERSONAS } from "./constants";
 import { Project } from "../providers/AppContext";
+import ModernSelect from "../shared/ui/ModernSelect";
+import PersonaIcon from "./PersonaIcon";
 
 interface ChatSidebarProps {
   sessions: ChatSession[];
@@ -13,7 +15,7 @@ interface ChatSidebarProps {
   onDeleteSession: (id: string) => void;
   onTogglePinSession: (id: string) => void;
   selectedPersonaId: AgentPersonaId;
-  onSelectPersona: (personaId: AgentPersonaId) => void;
+  onSelectPersona: (id: AgentPersonaId) => void;
   projects?: Project[];
   selectedProjectId?: string;
   onSelectProject?: (projectId: string) => void;
@@ -26,53 +28,43 @@ export default function ChatSidebar({
   onNewSession,
   onDeleteSession,
   onTogglePinSession,
-  selectedPersonaId,
-  onSelectPersona,
   projects = [],
   selectedProjectId = "",
   onSelectProject,
 }: ChatSidebarProps) {
   const [searchQuery, setSearchQuery] = useState("");
 
-  const filteredSessions = sessions.filter((s) =>
-    s.title.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  const filteredSessions = sessions.filter((s) => {
+    const matchesSearch =
+      s.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      s.messages.some((m) => m.content.toLowerCase().includes(searchQuery.toLowerCase()));
+    return matchesSearch;
+  });
 
   const pinnedSessions = filteredSessions.filter((s) => s.pinned);
   const recentSessions = filteredSessions.filter((s) => !s.pinned);
 
+  const projectOptions = projects.map((p) => ({
+    value: p.id,
+    label: p.name,
+    icon: <Folder className="w-3.5 h-3.5 text-primary" />,
+    description: p.useCase || p.status,
+  }));
+
   return (
     <div className="w-full sm:w-[270px] lg:w-[300px] border-r border-border bg-surface flex flex-col h-full shrink-0 select-none">
-
       <div className="p-4 border-b border-border/80 space-y-3 shrink-0">
-
         <div className="space-y-1.5">
           <label className="block text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
             Project Scope <span className="text-destructive">*</span>
           </label>
-          <div className="relative">
-            <select
-              value={selectedProjectId}
-              onChange={(e) => onSelectProject?.(e.target.value)}
-              className={`w-full h-9 pl-3 pr-8 rounded-xl border text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-primary/40 transition cursor-pointer appearance-none ${
-                selectedProjectId
-                  ? "border-border bg-surface-muted/60 text-foreground"
-                  : "border-amber-500/60 bg-amber-500/5 text-foreground"
-              }`}
-            >
-              <option value="">-- Choose a project --</option>
-              {projects.map((p) => (
-                <option key={p.id} value={p.id}>
-                  📊 {p.name}
-                </option>
-              ))}
-            </select>
-            <div className="absolute right-2.5 top-2.5 pointer-events-none text-muted-foreground">
-              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2.5">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-              </svg>
-            </div>
-          </div>
+          <ModernSelect
+            value={selectedProjectId}
+            onChange={(val) => onSelectProject?.(val)}
+            options={projectOptions}
+            placeholder="Select a project"
+            icon={<Folder className="w-3.5 h-3.5" />}
+          />
           {!selectedProjectId && (
             <p className="text-[10px] text-amber-500 font-medium">
               Choose a project to enable chat & load models.
@@ -91,7 +83,7 @@ export default function ChatSidebar({
           }`}
           title={!selectedProjectId ? "Please choose a project first" : "Start a new conversation"}
         >
-          <span className="text-base font-extrabold">+</span>
+          <Plus className="w-4 h-4" />
           <span>New AI Conversation</span>
         </button>
 
@@ -103,25 +95,16 @@ export default function ChatSidebar({
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full pl-8 pr-3 py-1.5 rounded-lg border border-border/80 bg-surface-muted/50 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-primary"
           />
-          <svg
-            className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground pointer-events-none"
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-            strokeWidth="2.5"
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
+          <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-muted-foreground pointer-events-none" />
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-3 space-y-4">
-
+      <div className="flex-1 overflow-y-auto p-2 space-y-4">
         {pinnedSessions.length > 0 && (
           <div className="space-y-1">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2">
-              📌 Pinned Inquiries
+            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2 flex items-center gap-1.5">
+              <Pin className="w-3 h-3 text-amber-500" />
+              <span>Pinned</span>
             </span>
             <div className="space-y-1">
               {pinnedSessions.map((session) => (
@@ -139,8 +122,9 @@ export default function ChatSidebar({
         )}
 
         <div className="space-y-1">
-          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2">
-            💬 Recent Sessions
+          <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground px-2 flex items-center gap-1.5">
+            <MessageSquare className="w-3 h-3 text-primary" />
+            <span>Recent Sessions</span>
           </span>
           {recentSessions.length === 0 && pinnedSessions.length === 0 ? (
             <div className="text-center py-8 text-xs text-muted-foreground">
@@ -162,7 +146,6 @@ export default function ChatSidebar({
           )}
         </div>
       </div>
-
     </div>
   );
 }
@@ -180,8 +163,6 @@ function SessionItem({
   onDelete: () => void;
   onTogglePin: () => void;
 }) {
-  const persona = AGENT_PERSONAS[session.agentPersona] || AGENT_PERSONAS.orchestrator;
-
   return (
     <div
       onClick={onSelect}
@@ -191,13 +172,16 @@ function SessionItem({
           : "hover:bg-surface-muted/60 text-foreground/80 border border-transparent"
       }`}
     >
-      <div className="flex items-center gap-2 min-w-0 flex-1">
-        <span className="text-sm shrink-0">{persona.avatar}</span>
+      <div className="flex items-center gap-2.5 min-w-0 flex-1">
+        <div className="w-6 h-6 rounded-lg bg-primary/10 border border-primary/20 flex items-center justify-center shrink-0 text-primary">
+          <PersonaIcon id={session.agentPersona} className="w-3.5 h-3.5" />
+        </div>
         <div className="min-w-0 flex-1">
           <p className="text-xs truncate leading-snug">{session.title}</p>
           {session.projectName && (
-            <span className="text-[9px] text-muted-foreground block truncate">
-              📁 {session.projectName}
+            <span className="text-[9px] text-muted-foreground flex items-center gap-1 truncate mt-0.5">
+              <Folder className="w-2.5 h-2.5 shrink-0" />
+              <span className="truncate">{session.projectName}</span>
             </span>
           )}
         </div>
@@ -210,10 +194,12 @@ function SessionItem({
             e.stopPropagation();
             onTogglePin();
           }}
-          className="p-1 hover:bg-surface rounded text-muted-foreground hover:text-foreground text-[10px]"
+          className={`p-1.5 hover:bg-surface rounded-lg transition-colors ${
+            session.pinned ? "text-amber-500" : "text-muted-foreground hover:text-foreground"
+          }`}
           title={session.pinned ? "Unpin session" : "Pin session"}
         >
-          {session.pinned ? "📌" : "📍"}
+          <Pin className="w-3 h-3" />
         </button>
         <button
           type="button"
@@ -221,10 +207,10 @@ function SessionItem({
             e.stopPropagation();
             onDelete();
           }}
-          className="p-1 hover:bg-rose-500/10 hover:text-rose-500 rounded text-muted-foreground text-[10px]"
-          title="Delete conversation"
+          className="p-1.5 hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 rounded-lg transition-colors"
+          title="Delete session"
         >
-          ✕
+          <Trash2 className="w-3 h-3" />
         </button>
       </div>
     </div>

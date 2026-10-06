@@ -10,6 +10,7 @@ import {
   VALIDATION_UI_STRINGS,
   VALIDATION_API_ENDPOINTS,
 } from "../projects/validationConstants";
+import ModernSelect from "../shared/ui/ModernSelect";
 
 interface ModernProjectSelectProps {
   projects: Array<{ id: string; name: string }>;
@@ -628,18 +629,13 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
               <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
                 {VALIDATION_UI_STRINGS.FREQUENCY_LABEL}
               </label>
-              <select
+              <ModernSelect
                 value={frequency}
-                onChange={(e) => setFrequency(e.target.value)}
-                className="w-full h-10 px-3.5 rounded-xl border border-border bg-background text-xs font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition cursor-pointer"
-              >
-                <option value="">{VALIDATION_UI_STRINGS.FREQUENCY_PLACEHOLDER}</option>
-                {VALIDATION_FREQUENCY_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setFrequency(val)}
+                options={VALIDATION_FREQUENCY_OPTIONS}
+                placeholder={VALIDATION_UI_STRINGS.FREQUENCY_PLACEHOLDER}
+                triggerClassName="h-10 text-xs font-medium"
+              />
             </div>
           </div>
 
