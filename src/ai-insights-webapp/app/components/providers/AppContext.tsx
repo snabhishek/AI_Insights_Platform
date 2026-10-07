@@ -365,7 +365,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const addProject = async (projectName: string, name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string): Promise<Project | null> => {
+  // ─── Projects ───────────────────────────────────────────────────────────────
+  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string): Promise<Project | null> => {
     const initials = userProfile.name
       .split(" ")
       .map((n) => n[0])

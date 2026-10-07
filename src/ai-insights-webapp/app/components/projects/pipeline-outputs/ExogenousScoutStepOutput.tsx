@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
+import { Search } from "lucide-react";
 import { Badge, SectionHeader } from "./utils";
+import ModernSelect from "../../shared/ui/ModernSelect";
 
 interface ExogenousSource {
   sourceName?: string;
@@ -110,9 +112,10 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
             {searchQueries.map((q, idx) => (
               <span
                 key={idx}
-                className="px-2.5 py-1 bg-surface-muted border border-border text-[11px] font-mono font-medium text-foreground rounded-md"
+                className="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-muted border border-border text-[11px] font-mono font-medium text-foreground rounded-md"
               >
-                🔍 {q}
+                <Search className="w-3 h-3 text-muted-foreground shrink-0" />
+                <span>{q}</span>
               </span>
             ))}
           </div>
@@ -120,21 +123,20 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
       )}
 
       <div className="space-y-4">
-
         {tables.length > 1 && (
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground uppercase">Target Table:</span>
-            <select
-              value={selectedTableIndex}
-              onChange={(e) => setSelectedTableIndex(Number(e.target.value))}
-              className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-bold text-foreground focus:border-indigo-500 focus:ring-indigo-500"
-            >
-              {tables.map((t, idx) => (
-                <option key={idx} value={idx}>
-                  {t.tableName || t.name || `Table #${idx + 1}`}
-                </option>
-              ))}
-            </select>
+            <div className="w-52">
+              <ModernSelect
+                value={String(selectedTableIndex)}
+                onChange={(val) => setSelectedTableIndex(Number(val))}
+                options={tables.map((t, idx) => ({
+                  value: String(idx),
+                  label: t.tableName || t.name || `Table #${idx + 1}`,
+                }))}
+                triggerClassName="h-8 text-xs font-bold"
+              />
+            </div>
           </div>
         )}
 

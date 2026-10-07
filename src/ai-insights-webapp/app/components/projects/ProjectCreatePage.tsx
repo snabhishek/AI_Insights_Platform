@@ -661,25 +661,6 @@ export default function ProjectCreatePage({
 
             <div>
               <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
-                Project Name <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                maxLength={100}
-                required
-                disabled={!isEditing}
-                placeholder="e.g., Q4 Retail Analysis, Customer Risk Model..."
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
-              />
-              <div className="flex justify-end mt-1 text-[10px] text-muted-foreground font-semibold">
-                {displayName.length}/100
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
                 Use Case Title <span className="text-red-500">*</span>
               </label>
               <input

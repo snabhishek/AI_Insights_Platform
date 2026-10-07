@@ -74,12 +74,6 @@ export default function ProjectCard({
           {project.projectName || project.name}
         </h3>
 
-        {project.projectName && (
-          <p className="text-[11px] text-muted-foreground font-medium truncate mb-1">
-            {project.name}
-          </p>
-        )}
-
         <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-4">
           {project.useCase
             ? project.useCase.replace(/[#*`_[\]]/g, "")
