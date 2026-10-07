@@ -2,6 +2,7 @@ import { AgentStateType } from "../agents/state";
 
 export interface Project {
   id: string;
+  projectName?: string;
   name: string;
   role: "OWNER" | "MEMBER";
   dataSources: string[];

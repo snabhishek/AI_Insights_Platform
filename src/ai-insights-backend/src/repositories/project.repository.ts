@@ -14,6 +14,7 @@ export class PostgresProjectRepository implements IProjectRepository {
     const rawAgentState = row.agent_state ?? row.agentState ?? {};
     return {
       id: row.id,
+      projectName: row.project_name ?? row.projectName ?? undefined,
       name: row.name,
       role: row.role as "OWNER" | "MEMBER",
       dataSources: Array.isArray(row.data_sources) ? row.data_sources : row.dataSources || [],
@@ -196,7 +197,10 @@ export class PostgresProjectRepository implements IProjectRepository {
 
   async updateProject(id: string, updates: Partial<Project>): Promise<Project | undefined> {
     const updatePayload: Record<string, any> = {};
+    if (updates.projectName !== undefined) updatePayload.projectName = updates.projectName;
     if (updates.name !== undefined) updatePayload.name = updates.name;
+    if (updates.domain !== undefined) updatePayload.domain = updates.domain;
+    if (updates.subDomain !== undefined) updatePayload.subDomain = updates.subDomain;
     if (updates.useCase !== undefined) updatePayload.useCase = updates.useCase;
     if (updates.dataSources !== undefined) updatePayload.dataSources = updates.dataSources;
     if (updates.folderPath !== undefined) updatePayload.folderPath = updates.folderPath;
@@ -252,6 +256,7 @@ export class PostgresProjectRepository implements IProjectRepository {
     const now = new Date(project.createdAt);
     await this.db.insert(schema.projects).values({
       id: project.id,
+      projectName: project.projectName || null,
       name: project.name,
       role: project.role,
       dataSources: project.dataSources,

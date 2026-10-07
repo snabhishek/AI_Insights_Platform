@@ -287,7 +287,7 @@ export default function ChatInputArea({
         />
 
         <div className="flex items-center justify-between gap-2 pt-1">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 min-w-0 flex-wrap">
             <input
               type="file"
               ref={fileInputRef}
@@ -438,6 +438,18 @@ export default function ChatInputArea({
                 </div>
               )}
             </div>
+
+            {selectedProject && (
+              <div
+                className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold border border-emerald-500/20 select-none max-w-[200px] sm:max-w-[280px] md:max-w-[340px] shrink-0"
+                title={`Scoped to project: ${selectedProject.projectName || selectedProject.name}`}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+                <span className="truncate">
+                  Scoped to project: {selectedProject.projectName || selectedProject.name}
+                </span>
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2">

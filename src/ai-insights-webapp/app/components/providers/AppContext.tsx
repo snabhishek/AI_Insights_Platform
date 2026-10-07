@@ -40,8 +40,42 @@ export interface Connector {
 
 export type DataSource = Connector;
 
+export function getDataSourceCategory(ds: DataSource | null | undefined): string {
+  if (!ds) return "";
+
+  const type = ds.type ? ds.type.toLowerCase() : "";
+  if (type === "postgres" || type === "mysql" || type === "sqlserver" || type === "mongodb") {
+    return "Database";
+  }
+  if (type === "snowflake") {
+    return "Data Warehouse";
+  }
+  if (type === "restapi") {
+    return "API";
+  }
+  if (type === "excel" || type === "csv" || type === "tsv") {
+    const sub = ds.subtext ? ds.subtext.toLowerCase() : "";
+    const name = ds.name ? ds.name.toLowerCase() : "";
+    if (sub.includes("cloud") || sub.includes("storage") || name.includes("cloud storage") || name.includes("s3")) {
+      return "Cloud Storage";
+    }
+    return "File";
+  }
+
+  const sub = ds.subtext ? ds.subtext.toLowerCase() : "";
+  const name = ds.name ? ds.name.toLowerCase() : "";
+  if (sub.includes("warehouse") || name.includes("warehouse")) return "Data Warehouse";
+  if (sub.includes("database") || name.includes("database")) return "Database";
+  if (sub.includes("api") || name.includes("api")) return "API";
+  if (sub.includes("cloud") || sub.includes("storage") || name.includes("cloud") || name.includes("storage")) return "Cloud Storage";
+  if (sub.includes("file") || sub.endsWith(".csv") || sub.endsWith(".xlsx") || sub.endsWith(".xls") || sub.endsWith(".tsv")) return "File";
+
+  return ds.type || ds.subtext || "";
+}
+
 export interface Project {
   id: string;
+  projectName?: string;
   name: string;
   role: "OWNER" | "MEMBER";
   dataSources: string[];
@@ -81,7 +115,7 @@ interface AppContextType {
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   refreshProjects: () => Promise<void>;
-  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string) => Promise<Project | null>;
+  addProject: (projectName: string, name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string) => Promise<Project | null>;
   updateProject: (id: string, updates: Partial<Project> & { replaceAgentState?: boolean }) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   connectors: Connector[];
@@ -364,7 +398,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string): Promise<Project | null> => {
+  const addProject = async (projectName: string, name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string): Promise<Project | null> => {
     const initials = userProfile.name
       .split(" ")
       .map((n) => n[0])
@@ -377,7 +411,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, role, dataSources: dsSources, initials, useCase, domain, subDomain, splitDate }),
+        body: JSON.stringify({ projectName, name, role, dataSources: dsSources, initials, useCase, domain, subDomain, splitDate }),
       });
       if (res.ok) {
         const newProject = await res.json();
@@ -385,7 +419,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return newProject;
       } else {
         const err = await res.json();
-        showAlert({ title: err.message || "A project with this title already exists", type: "error" });
+        showAlert({ title: err.message || "A project with this name already exists", type: "error" });
         return null;
       }
     } catch (err: any) {

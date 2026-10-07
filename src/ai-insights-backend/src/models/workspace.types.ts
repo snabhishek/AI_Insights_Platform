@@ -10,6 +10,7 @@ export interface CreateWorkspaceDto {
 }
 
 export interface CreateProjectDto {
+  projectName?: string;
   name: string;
   role?: "OWNER" | "MEMBER";
   dataSources?: string[];
@@ -21,9 +22,12 @@ export interface CreateProjectDto {
 }
 
 export interface UpdateProjectDto {
+  projectName?: string;
   name?: string;
   useCase?: string;
   dataSources?: string[];
+  domain?: string;
+  subDomain?: string;
   status?: string;
   agentState?: Record<string, unknown>;
   replaceAgentState?: boolean;

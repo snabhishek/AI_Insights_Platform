@@ -21,6 +21,7 @@ interface ProjectWorkspaceProps {
   onTabChange?: (tab: ProjectTabType) => void;
   onGoToList: () => void;
   onSaveProject: (
+    projectName: string,
     name: string,
     useCase: string,
     sources: string[],
