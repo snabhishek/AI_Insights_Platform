@@ -9,7 +9,6 @@ import {
   ArrowRight,
   ArrowDown,
   ArrowLeft,
-  Sparkles,
 } from "lucide-react";
 import { ChatMessage, AgentPersona } from "./types";
 import { Project } from "../providers/AppContext";
@@ -157,20 +156,6 @@ export default function ChatMessageList({
                   </p>
                 </div>
               </div>
-            </div>
-
-            <div className="pt-0.5">
-              {selectedProject ? (
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                  <span>Scoped to project: {selectedProject.name}</span>
-                </div>
-              ) : (
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-muted/50 hover:bg-surface-muted/70 text-foreground text-[10px] font-bold tracking-wider uppercase transition-colors">
-                  <Sparkles className="w-3 h-3 text-primary shrink-0" />
-                  <span>SELECT A PROJECT TO BEGIN</span>
-                </div>
-              )}
             </div>
           </div>
         </div>

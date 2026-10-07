@@ -43,6 +43,7 @@ export async function initializeDatabaseSchemas() {
     await query(`
       CREATE TABLE IF NOT EXISTS projects (
         id VARCHAR(50) PRIMARY KEY,
+        project_name VARCHAR(255),
         name VARCHAR(255) NOT NULL,
         role VARCHAR(50) NOT NULL DEFAULT 'OWNER',
         data_sources TEXT[] NOT NULL DEFAULT '{}',
@@ -55,6 +56,7 @@ export async function initializeDatabaseSchemas() {
     `);
 
     await query(`
+      ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_name VARCHAR(255);
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS use_case TEXT;
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS domain VARCHAR(255);
       ALTER TABLE projects ADD COLUMN IF NOT EXISTS sub_domain VARCHAR(255);
@@ -152,6 +154,7 @@ export async function initializeDatabaseSchemas() {
       CREATE TABLE IF NOT EXISTS agent_jobs (
         id VARCHAR(50) PRIMARY KEY,
         project_id VARCHAR(50) REFERENCES projects(id) ON DELETE CASCADE,
+        project_name VARCHAR(255),
         connector_id TEXT[] NOT NULL,
         user_prompt TEXT,
         status VARCHAR(50) NOT NULL DEFAULT 'queued',
@@ -159,6 +162,9 @@ export async function initializeDatabaseSchemas() {
         created_at TIMESTAMP NOT NULL DEFAULT NOW(),
         updated_at TIMESTAMP NOT NULL DEFAULT NOW()
       );
+    `);
+    await query(`
+      ALTER TABLE agent_jobs ADD COLUMN IF NOT EXISTS project_name VARCHAR(255);
     `);
     await query(`
       CREATE INDEX IF NOT EXISTS agent_jobs_project_id_idx ON agent_jobs (project_id);

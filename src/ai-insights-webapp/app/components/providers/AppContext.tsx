@@ -40,6 +40,39 @@ export interface Connector {
 
 export type DataSource = Connector;
 
+export function getDataSourceCategory(ds: DataSource | null | undefined): string {
+  if (!ds) return "";
+
+  const type = ds.type ? ds.type.toLowerCase() : "";
+  if (type === "postgres" || type === "mysql" || type === "sqlserver" || type === "mongodb") {
+    return "Database";
+  }
+  if (type === "snowflake") {
+    return "Data Warehouse";
+  }
+  if (type === "restapi") {
+    return "API";
+  }
+  if (type === "excel" || type === "csv" || type === "tsv") {
+    const sub = ds.subtext ? ds.subtext.toLowerCase() : "";
+    const name = ds.name ? ds.name.toLowerCase() : "";
+    if (sub.includes("cloud") || sub.includes("storage") || name.includes("cloud storage") || name.includes("s3")) {
+      return "Cloud Storage";
+    }
+    return "File";
+  }
+
+  const sub = ds.subtext ? ds.subtext.toLowerCase() : "";
+  const name = ds.name ? ds.name.toLowerCase() : "";
+  if (sub.includes("warehouse") || name.includes("warehouse")) return "Data Warehouse";
+  if (sub.includes("database") || name.includes("database")) return "Database";
+  if (sub.includes("api") || name.includes("api")) return "API";
+  if (sub.includes("cloud") || sub.includes("storage") || name.includes("cloud") || name.includes("storage")) return "Cloud Storage";
+  if (sub.includes("file") || sub.endsWith(".csv") || sub.endsWith(".xlsx") || sub.endsWith(".xls") || sub.endsWith(".tsv")) return "File";
+
+  return ds.type || ds.subtext || "";
+}
+
 export interface Project {
   id: string;
   projectName?: string;
@@ -386,7 +419,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return newProject;
       } else {
         const err = await res.json();
-        showAlert({ title: err.message || "A project with this title already exists", type: "error" });
+        showAlert({ title: err.message || "A project with this name already exists", type: "error" });
         return null;
       }
     } catch (err: any) {

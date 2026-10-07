@@ -50,7 +50,7 @@ export async function generateAgentChatResponse(
 ): Promise<Partial<ChatMessage>> {
   const persona = AGENT_PERSONAS[personaId] || AGENT_PERSONAS.orchestrator;
   const qLower = userQuery.toLowerCase();
-  const projectName = selectedProject?.name || "Global Workspace Scope";
+  const projectName = selectedProject?.projectName || selectedProject?.name || "Global Workspace Scope";
 
   const steps: ThinkingStep[] = [
     { time: "00:01", text: `Analyzing query intent and activating ${persona.name}...`, done: false },
@@ -62,7 +62,7 @@ export async function generateAgentChatResponse(
   steps.push({
     time: "00:02",
     text: selectedProject
-      ? `Inspecting project '${selectedProject.name}' (Use case: ${selectedProject.useCase || "Time-series forecasting"})...`
+      ? `Inspecting project '${selectedProject.projectName || selectedProject.name}' (Use case: ${selectedProject.name || selectedProject.useCase || "Time-series forecasting"})...`
       : `Scanning ${allProjects.length} projects and ${allDataSources.length} data sources across workspace...`,
     done: false,
   });

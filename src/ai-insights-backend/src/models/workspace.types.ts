@@ -26,6 +26,8 @@ export interface UpdateProjectDto {
   name?: string;
   useCase?: string;
   dataSources?: string[];
+  domain?: string;
+  subDomain?: string;
   status?: string;
   agentState?: Record<string, unknown>;
   replaceAgentState?: boolean;

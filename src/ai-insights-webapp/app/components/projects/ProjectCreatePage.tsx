@@ -10,7 +10,7 @@ import {
   MongodbIcon,
   RestApiIcon,
 } from "../connectors/Icons";
-import { DataSource, ConnectionConfig, BACKEND_URL, Project } from "../providers/AppContext";
+import { DataSource, ConnectionConfig, BACKEND_URL, Project, getDataSourceCategory } from "../providers/AppContext";
 import ConnectionModal from "../connectors/ConnectionModal";
 
 function renderDataSourceIcon(type: string) {
@@ -28,15 +28,6 @@ function renderDataSourceIcon(type: string) {
   }
 }
 
-function getSubtextCategory(subtext: string): string {
-  const s = subtext.toLowerCase();
-  if (s.includes("warehouse")) return "Data Warehouse";
-  if (s.includes("database")) return "Database";
-  if (s.includes("api")) return "API";
-  if (s.includes("cloud") || s.includes("storage")) return "Cloud Storage";
-  if (s.includes("file")) return "File";
-  return "Database";
-}
 
 const ITEMS_PER_PAGE = 6;
 
@@ -198,19 +189,43 @@ export default function ProjectCreatePage({
 
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const applyProjectDomain = (proj: Project, domains: { id: string; domain: string; subDomains: string[] }[]) => {
+    const storedDomain = proj.domain || "";
+    if (storedDomain) {
+      const foundDomain = domains.find((d) => d.domain === storedDomain && d.domain !== "Other" && d.domain !== "Others");
+      if (foundDomain) {
+        setSelectedDomain(storedDomain);
+        setCustomDomain("");
+        const storedSub = proj.subDomain || "";
+        const isStandardSub = foundDomain.subDomains?.includes(storedSub);
+        if (storedSub && !isStandardSub) {
+          setSelectedSubDomain("Other (Custom Sub Domain)");
+          setCustomSubDomain(storedSub);
+        } else {
+          setSelectedSubDomain(storedSub);
+          setCustomSubDomain("");
+        }
+      } else {
+        setSelectedDomain("Other");
+        setCustomDomain(storedDomain);
+        setSelectedSubDomain("Other (Custom Sub Domain)");
+        setCustomSubDomain(proj.subDomain || "");
+      }
+    } else {
+      setSelectedDomain("");
+      setCustomDomain("");
+      setSelectedSubDomain("");
+      setCustomSubDomain("");
+    }
+  };
+
   useEffect(() => {
     if (project) {
       setDisplayName(project.projectName || "");
       setProjectName(project.name || "");
       setUseCaseInfo(project.useCase || "");
       setSelectedSources(project.dataSources || []);
-      // If the stored domain is "Other" or not a known standard domain, treat as custom
-      const knownDomains = ["Retail & E-Commerce", "Finance & Banking", "Healthcare & Life Sciences", "Supply Chain & Logistics", "Manufacturing", "Energy & Utilities", "Telecommunications", "Other"];
-      const storedDomain = project.domain || "";
-      const isOtherDomain = storedDomain !== "" && !knownDomains.includes(storedDomain);
-      setSelectedDomain(isOtherDomain ? "Other" : storedDomain);
-      setCustomDomain(isOtherDomain ? storedDomain : "");
-      setSelectedSubDomain(project.subDomain || "");
+      applyProjectDomain(project, domainList);
       setIsEditing(Boolean(startInEditMode));
       setSubmitError(null);
     } else {
@@ -225,86 +240,57 @@ export default function ProjectCreatePage({
       setIsEditing(true);
       setSubmitError(null);
     }
-  }, [project, startInEditMode]);
+  }, [project, domainList, startInEditMode]);
 
   useEffect(() => {
     fetch(`${BACKEND_URL}/domains`)
-      .then((res) => (res.ok ? res.json() : []))
+      .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
-        if (Array.isArray(data) && data.length > 0) {
-          setDomainList(data);
+        if (data) {
+          const list = Array.isArray(data) ? data : Array.isArray(data.value) ? data.value : [];
+          if (list.length > 0) {
+            setDomainList(list);
+          }
         }
       })
       .catch((err) => console.warn("[ProjectCreatePage] Could not fetch domains from API:", err));
   }, []);
 
-  const defaultDomains = [
-    {
-      id: "dom-1",
-      domain: "Retail & E-Commerce",
-      subDomains: ["Order Management", "Inventory & Stock Control", "Customer & Loyalty Analytics", "Pricing & Promotions", "E-Commerce Fulfillment"],
-    },
-    {
-      id: "dom-2",
-      domain: "Finance & Banking",
-      subDomains: ["Risk Management", "Fraud Detection", "Credit & Loan Origination", "Wealth Management", "Transaction Auditing"],
-    },
-    {
-      id: "dom-3",
-      domain: "Healthcare & Life Sciences",
-      subDomains: ["Patient Health Records", "Clinical Trial Analytics", "Hospital Operations", "Medical Billing & Claims", "Pharmaceutical Supply"],
-    },
-    {
-      id: "dom-4",
-      domain: "Supply Chain & Logistics",
-      subDomains: ["Demand Forecasting & Planning", "Warehouse Operations", "Freight & Transportation", "Supplier Performance", "Procurement & Sourcing"],
-    },
-    {
-      id: "dom-5",
-      domain: "Manufacturing",
-      subDomains: ["Quality Assurance & Control", "Equipment Predictive Maintenance", "Production Line Optimization", "Material Requirements Planning", "Safety & Compliance"],
-    },
-    {
-      id: "dom-6",
-      domain: "Energy & Utilities",
-      subDomains: ["Smart Grid Analytics", "Asset Performance Management", "Energy Consumption Forecasting", "Environmental Monitoring"],
-    },
-    {
-      id: "dom-7",
-      domain: "Telecommunications",
-      subDomains: ["Network Performance Monitoring", "Subscriber Churn Prediction", "Billing & Rating Systems", "Customer Experience Analytics"],
-    },
-    {
-      id: "dom-8",
-      domain: "Other",
-      subDomains: ["General Business Analytics"],
-    },
-  ];
-
-  const effectiveDomains = domainList.length > 0 ? domainList : defaultDomains;
-
   const sortedDomains = [
-    ...effectiveDomains.filter((d) => d.domain !== "Other"),
-    ...effectiveDomains.filter((d) => d.domain === "Other"),
+    ...domainList.filter((d) => d.domain !== "Other" && d.domain !== "Others"),
   ];
 
   const currentDomainObj = sortedDomains.find((d) => d.domain === selectedDomain);
-  const activeSubDomainOptions = currentDomainObj ? currentDomainObj.subDomains : [];
+  const activeSubDomainOptions = (currentDomainObj && selectedDomain !== "Other" && selectedDomain !== "Others")
+    ? currentDomainObj.subDomains
+    : [];
 
   const domainSelectOptions = [
     { value: "", label: "-- Select Domain --" },
     ...sortedDomains.map((d) => ({ value: d.domain, label: d.domain })),
+    { value: "Other", label: "Others" },
   ];
 
-  const subDomainSelectOptions = [
-    { value: "", label: selectedDomain ? "-- Select Sub Domain --" : "Select a domain first" },
-    ...activeSubDomainOptions.map((sub) => ({ value: sub, label: sub })),
-    ...(selectedDomain ? [{ value: "Other (Custom Sub Domain)", label: "Other (Custom Sub Domain)" }] : []),
-  ];
+  const subDomainSelectOptions = selectedDomain === "Other"
+    ? [{ value: "Other (Custom Sub Domain)", label: "Others (Custom Sub Domain)" }]
+    : [
+        { value: "", label: selectedDomain ? "-- Select Sub Domain --" : "Select a domain first" },
+        ...activeSubDomainOptions.map((sub) => ({ value: sub, label: sub })),
+        ...(selectedDomain ? [{ value: "Other (Custom Sub Domain)", label: "Others (Custom Sub Domain)" }] : []),
+      ];
 
-  const sourceTypeSelectOptions = ["All Types", "Database", "Data Warehouse", "API", "Cloud Storage", "File"].map(
-    (t) => ({ value: t, label: t })
-  );
+  const availableCategories = Array.from(
+    new Set(
+      dataSources
+        .map((ds) => getDataSourceCategory(ds))
+        .filter((cat): cat is string => Boolean(cat && cat.trim()))
+    )
+  ).sort();
+
+  const sourceTypeSelectOptions = [
+    { value: "All Types", label: "All Types" },
+    ...availableCategories.map((cat) => ({ value: cat, label: cat })),
+  ];
 
   const toggleSource = (id: string) =>
     setSelectedSources((prev) =>
@@ -368,8 +354,13 @@ export default function ProjectCreatePage({
   };
 
   const filteredSources = dataSources.filter((ds) => {
-    const matchSearch = ds.name.toLowerCase().includes(sourceSearch.toLowerCase()) || ds.subtext.toLowerCase().includes(sourceSearch.toLowerCase());
-    const cat = getSubtextCategory(ds.subtext);
+    const cat = getDataSourceCategory(ds);
+    const searchLower = sourceSearch.toLowerCase().trim();
+    const matchSearch =
+      !searchLower ||
+      ds.name.toLowerCase().includes(searchLower) ||
+      ds.subtext.toLowerCase().includes(searchLower) ||
+      cat.toLowerCase().includes(searchLower);
     return matchSearch && (sourceTypeFilter === "All Types" || cat === sourceTypeFilter);
   });
 
@@ -378,9 +369,22 @@ export default function ProjectCreatePage({
   const startIdx = filteredSources.length === 0 ? 0 : (currentPage - 1) * ITEMS_PER_PAGE + 1;
   const endIdx = Math.min(currentPage * ITEMS_PER_PAGE, filteredSources.length);
 
+  const isDomainCustomMissing = selectedDomain === "Other" && (!customDomain.trim() || !customSubDomain.trim());
+  const isSubDomainCustomMissing = selectedDomain !== "Other" && selectedSubDomain === "Other (Custom Sub Domain)" && !customSubDomain.trim();
+  const isFormInvalid = !displayName.trim() || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isDomainCustomMissing || isSubDomainCustomMissing || isSubmitting;
+
   const handleUpdateProject = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!project || !displayName.trim() || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting) return;
+
+    if (selectedDomain === "Other" && !customDomain.trim()) {
+      setSubmitError("Please enter a custom domain name.");
+      return;
+    }
+    if ((selectedDomain === "Other" || selectedSubDomain === "Other (Custom Sub Domain)") && !customSubDomain.trim()) {
+      setSubmitError("Please enter a custom sub domain name.");
+      return;
+    }
 
     setSubmitError(null);
     setIsSubmitting(true);
@@ -419,6 +423,15 @@ export default function ProjectCreatePage({
     e.preventDefault();
     if (!displayName.trim() || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting) return;
 
+    if (selectedDomain === "Other" && !customDomain.trim()) {
+      setSubmitError("Please enter a custom domain name.");
+      return;
+    }
+    if ((selectedDomain === "Other" || selectedSubDomain === "Other (Custom Sub Domain)") && !customSubDomain.trim()) {
+      setSubmitError("Please enter a custom sub domain name.");
+      return;
+    }
+
     setSubmitError(null);
     setIsSubmitting(true);
 
@@ -443,10 +456,10 @@ export default function ProjectCreatePage({
       );
 
       if (res === false) {
-        setSubmitError(`A project named "${displayName.trim()}" with similar configuration already exists. Please update the title to continue.`);
+        setSubmitError(`A project named "${displayName.trim()}" with similar configuration already exists. Please update the project name to continue.`);
       }
     } catch (err: any) {
-      setSubmitError(err.message || `A project named "${displayName.trim()}" already exists. Please update the title.`);
+      setSubmitError(err.message || `A project named "${displayName.trim()}" already exists. Please update the project name.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -518,15 +531,9 @@ export default function ProjectCreatePage({
                     if (project) {
                       setDisplayName(project.projectName || "");
                       setProjectName(project.name || "");
-                      const knownDomains = ["Retail & E-Commerce", "Finance & Banking", "Healthcare & Life Sciences", "Supply Chain & Logistics", "Manufacturing", "Energy & Utilities", "Telecommunications", "Other"];
-                      const storedDomain = project.domain || "";
-                      const isOtherDomain = storedDomain !== "" && !knownDomains.includes(storedDomain);
-                      setSelectedDomain(isOtherDomain ? "Other" : storedDomain);
-                      setCustomDomain(isOtherDomain ? storedDomain : "");
                       setUseCaseInfo(project.useCase || "");
                       setSelectedSources(project.dataSources || []);
-                      setSelectedDomain(project.domain || "");
-                      setSelectedSubDomain(project.subDomain || "");
+                      applyProjectDomain(project, domainList);
                     }
                     setIsEditing(false);
                     onEditModeChange?.(false);
@@ -539,7 +546,7 @@ export default function ProjectCreatePage({
                 <button
                   type="button"
                   onClick={handleUpdateProject}
-                  disabled={!displayName.trim() || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
+                  disabled={isFormInvalid}
                   className="px-6 py-2 bg-primary text-white hover:bg-primary/95 rounded-xl text-sm font-semibold cursor-pointer transition-all shadow-md hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed focus:outline-none focus:ring-0 flex items-center gap-2"
                 >
                   {isSubmitting ? (
@@ -565,7 +572,7 @@ export default function ProjectCreatePage({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={!displayName.trim() || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
+                disabled={isFormInvalid}
                 title={selectedSources.length === 0 ? "Please connect at least one data source to save" : undefined}
                 className="px-6 py-2 bg-primary text-white hover:bg-primary/95 rounded-xl text-sm font-semibold cursor-pointer transition-all shadow-md hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed focus:outline-none focus:ring-0 flex items-center gap-2"
               >
@@ -609,6 +616,48 @@ export default function ProjectCreatePage({
               </div>
             )}
 
+            {/* Row 1: Project Name & Use Case Title */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
+                  Project Name <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={100}
+                  required
+                  disabled={!isEditing}
+                  placeholder="e.g., Q4 Retail Analysis, Customer Risk Model..."
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+                <div className="flex justify-end mt-1 text-[10px] text-muted-foreground font-semibold">
+                  {displayName.length}/100
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
+                  Use Case Title <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  maxLength={150}
+                  required
+                  disabled={!isEditing}
+                  placeholder="e.g., Demand Forecasting, Predictive Maintenance, Customer Churn Analytics..."
+                  value={projectName}
+                  onChange={(e) => setProjectName(e.target.value)}
+                  className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+                <div className="flex justify-end mt-1 text-[10px] text-muted-foreground font-semibold">
+                  {projectName.length}/150
+                </div>
+              </div>
+            </div>
+
+            {/* Row 2: Company Domain & Sub Domain */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-xs font-bold text-foreground uppercase tracking-wider mb-2">
@@ -620,7 +669,11 @@ export default function ProjectCreatePage({
                   value={selectedDomain}
                   onChange={(val) => {
                     setSelectedDomain(val);
-                    setSelectedSubDomain("");
+                    if (val === "Other") {
+                      setSelectedSubDomain("Other (Custom Sub Domain)");
+                    } else {
+                      setSelectedSubDomain("");
+                    }
                     setCustomDomain("");
                     setCustomSubDomain("");
                   }}
@@ -632,55 +685,68 @@ export default function ProjectCreatePage({
                 <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
                   Sub Domain
                 </label>
-                {selectedDomain === "Other" ? (
+                <CustomSelect
+                  disabled={!isEditing || !selectedDomain || selectedDomain === "Other"}
+                  options={subDomainSelectOptions}
+                  value={selectedSubDomain}
+                  onChange={(val) => {
+                    setSelectedSubDomain(val);
+                    if (val !== "Other (Custom Sub Domain)") {
+                      setCustomSubDomain("");
+                    }
+                  }}
+                  placeholder={
+                    selectedDomain === "Other"
+                      ? "Others (Custom Sub Domain)"
+                      : selectedDomain
+                      ? "-- Select Sub Domain --"
+                      : "Select a domain first"
+                  }
+                />
+              </div>
+            </div>
+
+            {/* Row 2.5: Free-form custom inputs for Domain / Sub Domain */}
+            {selectedDomain === "Other" ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
+                    Custom Domain Name <span className="text-red-500">*</span>
+                  </label>
                   <input
                     type="text"
+                    maxLength={100}
                     disabled={!isEditing}
-                    placeholder="Enter company sub domain..."
+                    placeholder="Enter your custom domain..."
+                    value={customDomain}
+                    onChange={(e) => setCustomDomain(e.target.value)}
+                    className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
+                    Custom Sub Domain <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={100}
+                    disabled={!isEditing}
+                    placeholder="Enter custom sub domain..."
                     value={customSubDomain}
                     onChange={(e) => setCustomSubDomain(e.target.value)}
                     className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                   />
-                ) : (
-                  <CustomSelect
-                    disabled={!isEditing || !selectedDomain}
-                    options={subDomainSelectOptions}
-                    value={selectedSubDomain}
-                    onChange={(val) => {
-                      setSelectedSubDomain(val);
-                      if (val !== "Other (Custom Sub Domain)") {
-                        setCustomSubDomain("");
-                      }
-                    }}
-                    placeholder={selectedDomain ? "-- Select Sub Domain --" : "Select a domain first"}
-                  />
-                )}
+                </div>
               </div>
-            </div>
-
-            {selectedDomain === "Other" && (
+            ) : selectedSubDomain === "Other (Custom Sub Domain)" ? (
               <div>
                 <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
-                  Custom Domain
+                  Custom Sub Domain <span className="text-red-500">*</span>
                 </label>
                 <input
                   type="text"
-                  disabled={!isEditing}
-                  placeholder="Enter your company domain..."
-                  value={customDomain}
-                  onChange={(e) => setCustomDomain(e.target.value)}
-                  className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
-                />
-              </div>
-            )}
-
-            {selectedDomain && selectedDomain !== "Other" && selectedSubDomain === "Other (Custom Sub Domain)" && (
-              <div>
-                <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
-                  Custom Sub Domain
-                </label>
-                <input
-                  type="text"
+                  maxLength={100}
                   disabled={!isEditing}
                   placeholder="Enter custom sub domain..."
                   value={customSubDomain}
@@ -688,30 +754,12 @@ export default function ProjectCreatePage({
                   className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
                 />
               </div>
-            )}
+            ) : null}
 
+            {/* Row 3: Use Case Description */}
             <div>
               <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
-                Use Case Title <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                maxLength={150}
-                required
-                disabled={!isEditing}
-                placeholder="e.g., Demand Forecasting, Predictive Maintenance, Customer Churn Analytics..."
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-                className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
-              />
-              <div className="flex justify-end mt-1 text-[10px] text-muted-foreground font-semibold">
-                {projectName.length}/150
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
-                Use Case Information <span className="text-red-500">*</span>
+                Use Case Description <span className="text-red-500">*</span>
               </label>
               <div className="flex flex-col border border-border rounded-xl bg-surface overflow-hidden transition-all">
 
@@ -831,7 +879,7 @@ export default function ProjectCreatePage({
                   return (
                     <div key={id} className="flex items-center justify-between p-2.5 rounded-xl border border-primary/40 bg-surface shadow-sm transition-all hover:scale-[1.01]">
                       <div className="flex items-center gap-2 overflow-hidden">
-                        <span className="shrink-0 text-primary scale-90">{renderDataSourceIcon(ds?.type ?? "postgres")}</span>
+                        <span className="shrink-0 text-primary scale-90">{ds?.type ? renderDataSourceIcon(ds.type) : null}</span>
                         <span className="text-sm font-bold text-foreground truncate">{ds?.name ?? id}</span>
                       </div>
                       {isEditing && (
@@ -880,7 +928,7 @@ export default function ProjectCreatePage({
                           <span className="text-sm font-bold text-foreground truncate">{ds.name}</span>
                           <span className="text-xs text-muted-foreground font-semibold mt-0.5 flex items-center gap-1.5">
                             <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                            {getSubtextCategory(ds.subtext)}
+                            {getDataSourceCategory(ds)}
                           </span>
                         </div>
                       </div>

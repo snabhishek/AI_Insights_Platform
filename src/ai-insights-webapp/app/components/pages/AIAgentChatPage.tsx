@@ -165,7 +165,7 @@ export default function AIAgentChatPage() {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
       projectId: selectedProjectId,
-      projectName: currentScopedProject?.name,
+      projectName: currentScopedProject?.projectName || currentScopedProject?.name,
       agentPersona: selectedPersonaId,
       messages: [],
     };
@@ -425,7 +425,7 @@ export default function AIAgentChatPage() {
             setSessions((prev) =>
               prev.map((s) =>
                 s.id === activeSession.id
-                  ? { ...s, projectId: pId || undefined, projectName: proj?.name }
+                  ? { ...s, projectId: pId || undefined, projectName: proj?.projectName || proj?.name }
                   : s
               )
             );

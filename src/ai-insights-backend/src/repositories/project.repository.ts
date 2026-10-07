@@ -199,6 +199,8 @@ export class PostgresProjectRepository implements IProjectRepository {
     const updatePayload: Record<string, any> = {};
     if (updates.projectName !== undefined) updatePayload.projectName = updates.projectName;
     if (updates.name !== undefined) updatePayload.name = updates.name;
+    if (updates.domain !== undefined) updatePayload.domain = updates.domain;
+    if (updates.subDomain !== undefined) updatePayload.subDomain = updates.subDomain;
     if (updates.useCase !== undefined) updatePayload.useCase = updates.useCase;
     if (updates.dataSources !== undefined) updatePayload.dataSources = updates.dataSources;
     if (updates.folderPath !== undefined) updatePayload.folderPath = updates.folderPath;
