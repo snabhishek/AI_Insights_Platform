@@ -46,9 +46,9 @@ export default function ChatSidebar({
 
   const projectOptions = projects.map((p) => ({
     value: p.id,
-    label: p.name,
+    label: p.projectName || p.name,
     icon: <Folder className="w-3.5 h-3.5 text-primary" />,
-    description: p.useCase || p.status,
+    description: p.projectName && p.projectName !== p.name ? p.name : (p.useCase || p.status),
   }));
 
   return (

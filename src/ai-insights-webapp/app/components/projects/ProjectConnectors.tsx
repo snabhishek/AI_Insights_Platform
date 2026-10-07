@@ -1,22 +1,12 @@
 "use client";
 
 import React from "react";
-import { DataSource } from "../providers/AppContext";
+import { DataSource, getDataSourceCategory } from "../providers/AppContext";
 
 interface ProjectConnectorsProps {
   displaySources: DataSource[];
   onManage: () => void;
   onViewDetails?: (ds: DataSource) => void;
-}
-
-function getSubtextCategory(subtext: string): string {
-  const s = subtext.toLowerCase();
-  if (s.includes("warehouse")) return "Data Warehouse";
-  if (s.includes("database")) return "Database";
-  if (s.includes("api")) return "API";
-  if (s.includes("cloud") || s.includes("storage")) return "Cloud Storage";
-  if (s.includes("file")) return "File";
-  return "Database";
 }
 
 export default function ProjectConnectors({
@@ -37,10 +27,10 @@ export default function ProjectConnectors({
 
       <div className="space-y-3 mb-5 flex-1">
         {displaySources.map((ds) => {
-          const category = getSubtextCategory(ds.subtext);
+          const category = getDataSourceCategory(ds);
           const detail = ds.connectionConfig?.host
-            ? `${ds.connectionConfig.database ?? "Database"} · ${ds.connectionConfig.host}${ds.connectionConfig.port ? `:${ds.connectionConfig.port}` : ""}`
-            : ds.connectionConfig?.fileName ?? category;
+            ? `${ds.connectionConfig.database ? `${ds.connectionConfig.database} · ` : ""}${ds.connectionConfig.host}${ds.connectionConfig.port ? `:${ds.connectionConfig.port}` : ""}`
+            : ds.connectionConfig?.fileName || category;
 
           return (
             <div

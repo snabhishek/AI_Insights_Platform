@@ -77,10 +77,12 @@ export class WorkspaceController {
       return;
     }
 
+    const effectiveProjectName = (projectName && projectName.trim()) || name.trim();
+
     try {
       const result = await this.workspaceService.createProject(workspaceId, {
-        projectName,
-        name,
+        projectName: effectiveProjectName,
+        name: name.trim(),
         role,
         dataSources,
         initials,
@@ -109,7 +111,7 @@ export class WorkspaceController {
 
   updateProject = async (req: Request, res: Response): Promise<void> => {
     const pid = req.params.pid as string;
-    const { projectName, name, useCase, dataSources, status, agentState, replaceAgentState } = req.body;
+    const { projectName, name, useCase, dataSources, status, agentState, replaceAgentState, domain, subDomain } = req.body;
 
     try {
       const result = await this.workspaceService.updateProject(pid, {
@@ -117,6 +119,8 @@ export class WorkspaceController {
         name,
         useCase,
         dataSources,
+        domain,
+        subDomain,
         status,
         agentState,
         replaceAgentState,

@@ -1777,7 +1777,7 @@ export default function ProjectsPage() {
             showAlert({ title: "Project saved successfully", type: "success" });
             return created;
           } else if (created) {
-            const found = projects.find((p) => p.name === name);
+            const found = projects.find((p) => (p.projectName || p.name) === projectName || p.name === name);
             if (found) setSelectedProjectId(found.id);
             showAlert({ title: "Project saved successfully", type: "success" });
             return true;
