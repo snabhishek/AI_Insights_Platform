@@ -12,6 +12,7 @@ export const workspaces = pgTable("workspaces", {
 
 export const projects = pgTable("projects", {
   id: varchar("id", { length: 50 }).primaryKey(),
+  projectName: varchar("project_name", { length: 255 }),
   name: varchar("name", { length: 255 }).notNull(),
   role: varchar("role", { length: 50 }).notNull().default("OWNER"),
   dataSources: text("data_sources").array().notNull().default(sql`'{}'::text[]`),

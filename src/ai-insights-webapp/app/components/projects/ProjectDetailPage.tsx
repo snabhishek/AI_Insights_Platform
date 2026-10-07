@@ -138,8 +138,14 @@ export default function ProjectDetailPage({
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2 flex-wrap">
               <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
-                {project.name}
+                {project.projectName || project.name}
               </h1>
+
+              {project.projectName && (
+                <span className="text-sm text-muted-foreground font-medium">
+                  {project.name}
+                </span>
+              )}
 
               {(project.domain || project.subDomain) && (
                 <div className="flex items-center gap-2 flex-wrap mt-1.5">

@@ -142,6 +142,7 @@ export class WorkspaceService {
 
     const newProject: Project = {
       id: projectId,
+      projectName: projectData.projectName?.trim() || "",
       name,
       role: projectData.role || "OWNER",
       dataSources,
@@ -189,6 +190,10 @@ export class WorkspaceService {
       return { success: false, reason: "NOT_FOUND", message: "Project not found." };
     }
 
+    const updatedProjectName =
+      typeof updateData.projectName === "string"
+        ? updateData.projectName.trim()
+        : existing.projectName;
     const updatedName =
       typeof updateData.name === "string" && updateData.name.trim()
         ? updateData.name.trim()
@@ -200,6 +205,7 @@ export class WorkspaceService {
       : existing.dataSources;
 
     await this.projectRepository.updateProject(pid, {
+      projectName: updatedProjectName,
       name: updatedName,
       useCase: updatedUseCase,
       dataSources: updatedSources,

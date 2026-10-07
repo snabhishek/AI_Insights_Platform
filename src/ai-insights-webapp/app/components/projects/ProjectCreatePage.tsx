@@ -147,7 +147,7 @@ function CustomSelect({
 interface ProjectCreatePageProps {
   dataSources: DataSource[];
   onCancel: () => void;
-  onSubmit: (name: string, useCase: string, selectedSources: string[], domain?: string, subDomain?: string, splitDate?: string) => Promise<boolean | Project | null | void> | void;
+  onSubmit: (projectName: string, name: string, useCase: string, selectedSources: string[], domain?: string, subDomain?: string, splitDate?: string) => Promise<boolean | Project | null | void> | void;
   onAddDataSource: (name: string, type: DataSource["type"], subtext: string, config: ConnectionConfig) => void;
   project?: Project | null;
   onUpdate?: (id: string, updates: Partial<Project>) => Promise<void> | void;
@@ -172,6 +172,7 @@ export default function ProjectCreatePage({
   const isSaved = Boolean(project);
   const [isEditing, setIsEditing] = useState(!project || Boolean(startInEditMode));
 
+  const [displayName, setDisplayName] = useState(project?.projectName || "");
   const [projectName, setProjectName] = useState(project?.name || "");
   const [useCaseInfo, setUseCaseInfo] = useState(project?.useCase || "");
   const [selectedSources, setSelectedSources] = useState<string[]>(project?.dataSources || []);
@@ -198,6 +199,7 @@ export default function ProjectCreatePage({
 
   useEffect(() => {
     if (project) {
+      setDisplayName(project.projectName || "");
       setProjectName(project.name || "");
       setUseCaseInfo(project.useCase || "");
       setSelectedSources(project.dataSources || []);
@@ -206,6 +208,7 @@ export default function ProjectCreatePage({
       setIsEditing(Boolean(startInEditMode));
       setSubmitError(null);
     } else {
+      setDisplayName("");
       setProjectName("");
       setUseCaseInfo("");
       setSelectedSources([]);
@@ -370,7 +373,7 @@ export default function ProjectCreatePage({
 
   const handleUpdateProject = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!project || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting) return;
+    if (!project || !displayName.trim() || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting) return;
 
     setSubmitError(null);
     setIsSubmitting(true);
@@ -387,6 +390,7 @@ export default function ProjectCreatePage({
 
       if (onUpdate) {
         await onUpdate(project.id, {
+          projectName: displayName.trim(),
           name: projectName.trim(),
           useCase: useCaseInfo.trim(),
           dataSources: selectedSources,
@@ -405,7 +409,7 @@ export default function ProjectCreatePage({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting) return;
+    if (!displayName.trim() || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting) return;
 
     setSubmitError(null);
     setIsSubmitting(true);
@@ -421,6 +425,7 @@ export default function ProjectCreatePage({
       }
 
       const res = await onSubmit(
+        displayName.trim(),
         projectName.trim(),
         useCaseInfo.trim(),
         selectedSources,
@@ -429,10 +434,10 @@ export default function ProjectCreatePage({
       );
 
       if (res === false) {
-        setSubmitError(`A project named "${projectName.trim()}" with similar configuration already exists. Please update the title to continue.`);
+        setSubmitError(`A project named "${displayName.trim()}" with similar configuration already exists. Please update the title to continue.`);
       }
     } catch (err: any) {
-      setSubmitError(err.message || `A project named "${projectName.trim()}" already exists. Please update the title.`);
+      setSubmitError(err.message || `A project named "${displayName.trim()}" already exists. Please update the title.`);
     } finally {
       setIsSubmitting(false);
     }
@@ -444,7 +449,7 @@ export default function ProjectCreatePage({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
         <div className="flex flex-col gap-1.5">
           <h1 className="text-2xl font-bold tracking-tight text-foreground">
-            {isSaved ? projectName || project?.name || "Project Details" : "Create New Project"}
+            {isSaved ? displayName || project?.projectName || project?.name || "Project Details" : "Create New Project"}
           </h1>
           <p className="text-sm text-muted-foreground">
             {isSaved
@@ -502,6 +507,7 @@ export default function ProjectCreatePage({
                   type="button"
                   onClick={() => {
                     if (project) {
+                      setDisplayName(project.projectName || "");
                       setProjectName(project.name || "");
                       setUseCaseInfo(project.useCase || "");
                       setSelectedSources(project.dataSources || []);
@@ -519,7 +525,7 @@ export default function ProjectCreatePage({
                 <button
                   type="button"
                   onClick={handleUpdateProject}
-                  disabled={!projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
+                  disabled={!displayName.trim() || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
                   className="px-6 py-2 bg-primary text-white hover:bg-primary/95 rounded-xl text-sm font-semibold cursor-pointer transition-all shadow-md hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed focus:outline-none focus:ring-0 flex items-center gap-2"
                 >
                   {isSubmitting ? (
@@ -545,7 +551,7 @@ export default function ProjectCreatePage({
               <button
                 type="button"
                 onClick={handleSubmit}
-                disabled={!projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
+                disabled={!displayName.trim() || !projectName.trim() || !useCaseInfo.trim() || selectedSources.length === 0 || isSubmitting}
                 title={selectedSources.length === 0 ? "Please connect at least one data source to save" : undefined}
                 className="px-6 py-2 bg-primary text-white hover:bg-primary/95 rounded-xl text-sm font-semibold cursor-pointer transition-all shadow-md hover:scale-105 active:scale-95 disabled:opacity-50 disabled:scale-100 disabled:cursor-not-allowed focus:outline-none focus:ring-0 flex items-center gap-2"
               >
@@ -652,6 +658,25 @@ export default function ProjectCreatePage({
                 />
               </div>
             )}
+
+            <div>
+              <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
+                Project Name <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="text"
+                maxLength={100}
+                required
+                disabled={!isEditing}
+                placeholder="e.g., Q4 Retail Analysis, Customer Risk Model..."
+                value={displayName}
+                onChange={(e) => setDisplayName(e.target.value)}
+                className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+              />
+              <div className="flex justify-end mt-1 text-[10px] text-muted-foreground font-semibold">
+                {displayName.length}/100
+              </div>
+            </div>
 
             <div>
               <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
