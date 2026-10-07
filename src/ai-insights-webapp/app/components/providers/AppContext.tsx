@@ -108,7 +108,7 @@ interface AppContextType {
   showToast: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
   showNotification: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
   showAlert: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; logs?: string; isModal?: boolean }) => void;
-  showConfirm: (config: { title: string; message: string; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
+  showConfirm: (config: { title: string; message: React.ReactNode; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
   openCreateWorkspace: () => void;
 }
 
@@ -205,7 +205,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmConfig, setConfirmConfig] = useState<{
     title: string;
-    message: string;
+    message: React.ReactNode;
     confirmText?: string;
     cancelText?: string;
     onConfirm: () => void;

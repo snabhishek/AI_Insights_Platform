@@ -13,6 +13,7 @@ interface WorkspaceSwitcherProps {
   selectedId: string;
   onSelect: (id: string) => void;
   onCreate: () => void;
+  onDelete: (id: string) => void;
 }
 
 const ChevronIcon = ({ open }: { open: boolean }) => (
@@ -58,6 +59,15 @@ const PlusIcon = (
   </svg>
 );
 
+const TrashIcon = (
+  <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24"
+    fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"
+    className="shrink-0">
+    <polyline points="3 6 5 6 21 6" />
+    <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+  </svg>
+);
+
 interface WorkspaceSwitcherInternalProps extends WorkspaceSwitcherProps {
   open: boolean;
   setOpen: (v: boolean) => void;
@@ -68,6 +78,7 @@ export function WorkspaceSwitcherDropdown({
   selectedId,
   onSelect,
   onCreate,
+  onDelete,
   open,
   setOpen,
 }: WorkspaceSwitcherInternalProps) {
@@ -129,34 +140,51 @@ export function WorkspaceSwitcherDropdown({
 
           {workspaces.map((workspace) => {
             const isActive = workspace.id === selectedId;
+            const isDeletable = !workspace.isDefault && !isActive;
             return (
-              <button
-                key={workspace.id}
-                type="button"
-                role="option"
-                aria-selected={isActive}
-                onClick={() => handleSelect(workspace.id)}
-                className={`flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
-                  isActive
-                    ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white font-semibold"
-                    : "text-foreground hover:bg-background dark:hover:bg-white/5"
-                }`}
-              >
-                <span className="flex items-center gap-2 truncate min-w-0">
-                  {workspace.isDefault && (
-                    <span className="text-muted-foreground shrink-0">{LockIcon}</span>
+              <div key={workspace.id} className="flex items-center rounded-lg group">
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={isActive}
+                  onClick={() => handleSelect(workspace.id)}
+                  className={`flex flex-1 min-w-0 items-center justify-between gap-2 rounded-lg px-3 py-2.5 text-left text-sm transition-colors ${
+                    isActive
+                      ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white font-semibold"
+                      : "text-foreground hover:bg-background dark:hover:bg-white/5"
+                  }`}
+                >
+                  <span className="flex items-center gap-2 truncate min-w-0">
+                    {workspace.isDefault && (
+                      <span className="text-muted-foreground shrink-0">{LockIcon}</span>
+                    )}
+                    <span className="truncate">{workspace.name}</span>
+                    {workspace.isDefault && (
+                      <span className="ml-1 text-[10px] font-semibold text-muted-foreground bg-surface-muted border border-border rounded px-1 py-0.5 shrink-0">
+                        Default
+                      </span>
+                    )}
+                  </span>
+                  {isActive && (
+                    <span className="text-primary dark:text-white shrink-0">{CheckIcon}</span>
                   )}
-                  <span className="truncate">{workspace.name}</span>
-                  {workspace.isDefault && (
-                    <span className="ml-1 text-[10px] font-semibold text-muted-foreground bg-surface-muted border border-border rounded px-1 py-0.5 shrink-0">
-                      Default
-                    </span>
-                  )}
-                </span>
-                {isActive && (
-                  <span className="text-primary dark:text-white shrink-0">{CheckIcon}</span>
+                </button>
+
+                {isDeletable && (
+                  <button
+                    type="button"
+                    title={`Delete ${workspace.name}`}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setOpen(false);
+                      onDelete(workspace.id);
+                    }}
+                    className="ml-1 mr-1 w-7 h-7 flex items-center justify-center rounded-lg text-muted-foreground opacity-0 group-hover:opacity-100 hover:bg-red-500/10 hover:text-red-500 transition-all duration-150 shrink-0 focus:outline-none"
+                  >
+                    {TrashIcon}
+                  </button>
                 )}
-              </button>
+              </div>
             );
           })}
 
