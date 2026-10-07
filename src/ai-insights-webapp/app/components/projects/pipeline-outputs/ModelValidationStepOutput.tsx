@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { Badge } from "./utils";
 import { BACKEND_URL } from "../../providers/AppContext";
 import ModelValidationApexChart from "./ModelValidationApexChart";
+import ModernSelect from "../../shared/ui/ModernSelect";
 
 export interface MetricDetail {
   value: number | null;
@@ -558,15 +559,16 @@ export default function ModelValidationStepOutput({
             <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
               Frequency
             </label>
-            <select
+            <ModernSelect
               value={frequencyInput}
-              onChange={(e) => setFrequencyInput(e.target.value as any)}
-              className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition cursor-pointer"
-            >
-              <option value="Weekly">Weekly</option>
-              <option value="Monthly">Monthly</option>
-              <option value="Yearly">Yearly</option>
-            </select>
+              onChange={(val) => setFrequencyInput(val as any)}
+              options={[
+                { value: "Weekly", label: "Weekly" },
+                { value: "Monthly", label: "Monthly" },
+                { value: "Yearly", label: "Yearly" },
+              ]}
+              triggerClassName="h-9 text-xs"
+            />
           </div>
 
           <div>

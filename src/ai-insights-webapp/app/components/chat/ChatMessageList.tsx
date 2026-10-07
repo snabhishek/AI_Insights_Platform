@@ -1,6 +1,16 @@
 "use client";
 
 import React, { useRef, useEffect } from "react";
+import {
+  Search,
+  Cpu,
+  TrendingUp,
+  BarChart3,
+  ArrowRight,
+  ArrowDown,
+  ArrowLeft,
+  Sparkles,
+} from "lucide-react";
 import { ChatMessage, AgentPersona } from "./types";
 import { Project } from "../providers/AppContext";
 import ChatMessageItem from "./ChatMessageItem";
@@ -24,9 +34,7 @@ export default function ChatMessageList({
   onSelectAction,
   onRetry,
   onFeedback,
-  onSelectSuggestedQuestion,
   selectedProject,
-  isChatEnabled = true,
 }: ChatMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -38,71 +46,135 @@ export default function ChatMessageList({
   }, [messages, isGenerating]);
 
   return (
-    <div className="flex-1 bg-surface overflow-y-auto relative px-4 sm:px-6 py-6 space-y-4 flex flex-col">
+    <div className="flex-1 bg-surface overflow-y-auto relative px-4 sm:px-6 py-4 space-y-4 flex flex-col">
       {!hasUserMessages ? (
-
-        <div className="flex-1 flex flex-col items-center justify-center my-auto min-h-[420px] p-4 text-center animate-fade-in select-none">
-          <div className="w-full max-w-xl mx-auto rounded-3xl border border-border/80 bg-surface-muted/30 dark:bg-zinc-900/60 backdrop-blur-md p-6 sm:p-8 space-y-5 shadow-sm text-center">
-
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 border border-primary/20 text-primary flex items-center justify-center text-3xl shadow-sm mx-auto">
-              <span>{activePersona.avatar || "🧠"}</span>
+        <div className="flex-1 flex flex-col items-center justify-center my-auto p-2 sm:p-4 text-center animate-fade-in select-none">
+          <div className="w-full max-w-md mx-auto space-y-3 sm:space-y-3.5 text-center">
+            <div className="space-y-0.5">
+              <h1 className="text-xl sm:text-2xl font-black text-foreground tracking-tight">
+                SPARROW
+              </h1>
+              <p className="text-[10px] sm:text-xs font-bold uppercase tracking-[0.2em] text-primary">
+                AI FOR YOUR DATA
+              </p>
+              <div className="text-[11px] sm:text-xs text-muted-foreground font-medium leading-snug pt-0.5 space-y-0.5">
+                <p>Turn data into models.</p>
+                <p>Turn models into decisions.</p>
+              </div>
             </div>
 
-            <div className="space-y-2">
-              <h2 className="text-lg sm:text-xl font-bold text-foreground tracking-tight">
-                Welcome to the AI Agent Chat Copilot!
-              </h2>
+            <div className="max-w-md mx-auto">
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-2.5">
+                <div className="p-2.5 sm:p-3 rounded-xl border border-border/80 dark:border-zinc-700/80 bg-surface dark:bg-zinc-900/90 shadow-soft hover:border-primary/40 transition-all duration-200 text-left group">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-[9px] font-bold text-muted-foreground/70 group-hover:text-primary transition-colors">
+                      01
+                    </span>
+                    <div className="w-5 h-5 rounded-md bg-surface-muted border border-border/80 dark:border-zinc-700/80 flex items-center justify-center text-muted-foreground group-hover:text-primary transition-all">
+                      <Search className="w-2.5 h-2.5" />
+                    </div>
+                  </div>
+                  <h3 className="text-xs font-bold text-foreground tracking-wide uppercase group-hover:text-primary transition-colors">
+                    DISCOVER
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                    Understand your data
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-center px-0.5">
+                  <div className="w-5 h-5 flex items-center justify-center text-primary/70">
+                    <ArrowRight className="w-3 h-3" />
+                  </div>
+                </div>
+
+                <div className="p-2.5 sm:p-3 rounded-xl border border-border/80 dark:border-zinc-700/80 bg-surface dark:bg-zinc-900/90 shadow-soft hover:border-primary/40 transition-all duration-200 text-left group">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-[9px] font-bold text-muted-foreground/70 group-hover:text-primary transition-colors">
+                      02
+                    </span>
+                    <div className="w-5 h-5 rounded-md bg-surface-muted border border-border/80 dark:border-zinc-700/80 flex items-center justify-center text-muted-foreground group-hover:text-primary transition-all">
+                      <Cpu className="w-2.5 h-2.5" />
+                    </div>
+                  </div>
+                  <h3 className="text-xs font-bold text-foreground tracking-wide uppercase group-hover:text-primary transition-colors">
+                    ENGINEER
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                    Build better features
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-2.5 py-0.5">
+                <div />
+                <div />
+                <div className="flex items-center justify-center">
+                  <div className="w-5 h-5 flex items-center justify-center text-primary/70">
+                    <ArrowDown className="w-3 h-3" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 sm:gap-2.5">
+                <div className="p-2.5 sm:p-3 rounded-xl border border-border/80 dark:border-zinc-700/80 bg-surface dark:bg-zinc-900/90 shadow-soft hover:border-primary/40 transition-all duration-200 text-left group">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-[9px] font-bold text-muted-foreground/70 group-hover:text-primary transition-colors">
+                      04
+                    </span>
+                    <div className="w-5 h-5 rounded-md bg-surface-muted border border-border/80 dark:border-zinc-700/80 flex items-center justify-center text-muted-foreground group-hover:text-primary transition-all">
+                      <BarChart3 className="w-2.5 h-2.5" />
+                    </div>
+                  </div>
+                  <h3 className="text-xs font-bold text-foreground tracking-wide uppercase group-hover:text-primary transition-colors">
+                    INSIGHT
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                    Explain &amp; simulate
+                  </p>
+                </div>
+
+                <div className="flex items-center justify-center px-0.5">
+                  <div className="w-5 h-5 flex items-center justify-center text-primary/70">
+                    <ArrowLeft className="w-3 h-3" />
+                  </div>
+                </div>
+
+                <div className="p-2.5 sm:p-3 rounded-xl border border-border/80 dark:border-zinc-700/80 bg-surface dark:bg-zinc-900/90 shadow-soft hover:border-primary/40 transition-all duration-200 text-left group">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-[9px] font-bold text-muted-foreground/70 group-hover:text-primary transition-colors">
+                      03
+                    </span>
+                    <div className="w-5 h-5 rounded-md bg-surface-muted border border-border/80 dark:border-zinc-700/80 flex items-center justify-center text-muted-foreground group-hover:text-primary transition-all">
+                      <TrendingUp className="w-2.5 h-2.5" />
+                    </div>
+                  </div>
+                  <h3 className="text-xs font-bold text-foreground tracking-wide uppercase group-hover:text-primary transition-colors">
+                    PREDICT
+                  </h3>
+                  <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">
+                    Train &amp; validate
+                  </p>
+                </div>
+              </div>
             </div>
 
-            <div className="text-left bg-surface/80 border border-border/70 rounded-2xl p-4 space-y-2.5 shadow-2xs">
-              <span className="text-[11px] font-bold text-foreground uppercase tracking-wider block">
-                What I can help you with:
-              </span>
-              <ul className="space-y-2 text-xs text-foreground/80 leading-snug">
-                <li className="flex items-start gap-2">
-                  <span className="shrink-0 text-sm">📊</span>
-                  <div>
-                    <strong className="text-foreground">End-to-End Insights:</strong> Synthesize multi-stage pipeline outputs and project health.
-                  </div>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="shrink-0 text-sm">⚡</span>
-                  <div>
-                    <strong className="text-foreground">Feature Engineering:</strong> Formulate rolling lags, seasonal transformations, and scout exogenous regressors.
-                  </div>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="shrink-0 text-sm">🔬</span>
-                  <div>
-                    <strong className="text-foreground">Model Diagnostics:</strong> Compare LightGBM, XGBoost, and Prophet models with SHAP explainability.
-                  </div>
-                </li>
-                <li className="flex items-start gap-2">
-                  <span className="shrink-0 text-sm">🛠️</span>
-                  <div>
-                    <strong className="text-foreground">Data Engineering:</strong> Inspect schema integrity, cardinality, and SQL query optimizations.
-                  </div>
-                </li>
-              </ul>
-            </div>
-
-            <div className="pt-1">
+            <div className="pt-0.5">
               {selectedProject ? (
-                <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 text-xs font-semibold shadow-2xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 text-[11px] font-semibold">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
                   <span>Scoped to project: {selectedProject.name}</span>
                 </div>
               ) : (
-                <div className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 text-xs font-semibold shadow-2xs">
-                  <span>⚠️</span>
-                  <span>Select a project from the sidebar dropdown above to enable chat</span>
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-surface-muted/50 hover:bg-surface-muted/70 text-foreground text-[10px] font-bold tracking-wider uppercase transition-colors">
+                  <Sparkles className="w-3 h-3 text-primary shrink-0" />
+                  <span>SELECT A PROJECT TO BEGIN</span>
                 </div>
               )}
             </div>
           </div>
         </div>
       ) : (
-
         conversationMessages.map((msg) => (
           <ChatMessageItem
             key={msg.id}
@@ -112,13 +184,6 @@ export default function ChatMessageList({
             onFeedback={onFeedback}
           />
         ))
-      )}
-
-      {isGenerating && (
-        <div className="flex items-center gap-2 px-4 py-2 rounded-xl bg-surface border border-primary/30 text-primary text-xs font-semibold w-fit animate-pulse shadow-sm">
-          <span className="inline-block w-3 h-3 rounded-full border-2 border-primary border-t-transparent animate-spin" />
-          <span>Generating AI response & executing pipeline tools...</span>
-        </div>
       )}
 
       <div ref={bottomRef} />

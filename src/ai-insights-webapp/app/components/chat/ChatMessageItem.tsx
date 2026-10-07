@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { BarChart3, Copy, Check, Sparkles, ThumbsUp, ThumbsDown } from "lucide-react";
 import { ChatMessage } from "./types";
 import ChatThinkingAccordion from "./ChatThinkingAccordion";
 import MarkdownRenderer from "../shared/MarkdownRenderer";
@@ -15,7 +16,6 @@ interface ChatMessageItemProps {
 export default function ChatMessageItem({
   message,
   onSelectAction,
-  onRetry,
   onFeedback,
 }: ChatMessageItemProps) {
   const [copied, setCopied] = useState(false);
@@ -42,16 +42,14 @@ export default function ChatMessageItem({
           : "bg-surface-muted/20"
       }`}
     >
-
       <div className="flex-1 min-w-0 space-y-3">
-
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-foreground">
-              {isUser ? "You" : message.agentName || "AI Insights Copilot"}
+              {isUser ? "You" : message.agentName || "Sparrow"}
             </span>
             {!isUser && message.agentBadge && (
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
                 {message.agentBadge}
               </span>
             )}
@@ -140,7 +138,7 @@ export default function ChatMessageItem({
         {message.chart && (
           <div className="p-3.5 rounded-xl border border-border/80 bg-surface/60 space-y-2 pt-2">
             <span className="text-xs font-bold text-foreground flex items-center gap-1.5">
-              <span>📊</span>
+              <BarChart3 className="w-3.5 h-3.5 text-primary" />
               <span>{message.chart.title}</span>
             </span>
             <div className="space-y-1.5 pt-1">
@@ -156,7 +154,7 @@ export default function ChatMessageItem({
                     </div>
                     <div className="w-full h-2 rounded-full bg-surface-muted overflow-hidden">
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-indigo-500 to-primary transition-all duration-500"
+                        className="h-full rounded-full bg-gradient-to-r from-primary/80 to-primary transition-all duration-500"
                         style={{ width: `${pct}%` }}
                       />
                     </div>
@@ -174,16 +172,16 @@ export default function ChatMessageItem({
               <button
                 type="button"
                 onClick={() => handleCopyCode(message.codeSnippet!.code)}
-                className="hover:text-white transition-colors flex items-center gap-1 cursor-pointer"
+                className="hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer"
               >
                 {codeCopied ? (
                   <>
-                    <span className="text-emerald-400">✓</span>
-                    <span className="text-emerald-400">Copied</span>
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span className="text-emerald-400 font-semibold">Copied</span>
                   </>
                 ) : (
                   <>
-                    <span>📋</span>
+                    <Copy className="w-3 h-3" />
                     <span>Copy code</span>
                   </>
                 )}
@@ -204,7 +202,7 @@ export default function ChatMessageItem({
                 onClick={() => onSelectAction?.(action)}
                 className="px-2.5 py-1 rounded-lg border border-primary/20 bg-primary/5 hover:bg-primary/15 text-primary text-[11px] font-medium transition-colors cursor-pointer text-left flex items-center gap-1.5 group active:scale-95"
               >
-                <span>💡</span>
+                <Sparkles className="w-3 h-3 text-primary shrink-0" />
                 <span className="group-hover:underline">{action}</span>
               </button>
             ))}
@@ -219,27 +217,38 @@ export default function ChatMessageItem({
               className="hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
               title="Copy message text"
             >
-              {copied ? <span className="text-emerald-500 font-bold">✓ Copied</span> : <span>📋 Copy</span>}
+              {copied ? (
+                <>
+                  <Check className="w-3 h-3 text-emerald-500" />
+                  <span className="text-emerald-500 font-bold">Copied</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3 h-3" />
+                  <span>Copy</span>
+                </>
+              )}
             </button>
             <button
               type="button"
               onClick={() => onFeedback?.(message.id, "like")}
-              className={`hover:text-foreground transition-colors cursor-pointer ${
+              className={`hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer ${
                 message.userLiked ? "text-emerald-500 font-bold" : ""
               }`}
               title="Helpful"
             >
-              👍 Helpful
+              <ThumbsUp className="w-3 h-3" />
+              <span>Helpful</span>
             </button>
             <button
               type="button"
               onClick={() => onFeedback?.(message.id, "dislike")}
-              className={`hover:text-foreground transition-colors cursor-pointer ${
+              className={`hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer ${
                 message.userDisliked ? "text-rose-500 font-bold" : ""
               }`}
               title="Not helpful"
             >
-              👎
+              <ThumbsDown className="w-3 h-3" />
             </button>
           </div>
         )}

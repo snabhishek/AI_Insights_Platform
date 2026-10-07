@@ -3,12 +3,12 @@ import { AgentPersona, PromptTemplate, ChatSession } from "./types";
 export const AGENT_PERSONAS: Record<string, AgentPersona> = {
   orchestrator: {
     id: "orchestrator",
-    name: "Insights Maestro",
+    name: "Sparrow",
     role: "Full-Cycle AI Workflow Orchestrator",
-    avatar: "🧠",
+    avatar: "orchestrator",
     badge: "Master Agent",
     description: "Oversees end-to-end analytics, pipeline execution, stage handoffs, and overarching business insights.",
-    systemPrompt: "You are the primary AI Workflow Orchestrator for the AI Insights Platform.",
+    systemPrompt: "You are Sparrow, the primary AI Workflow Orchestrator for the AI Insights Platform.",
     capabilities: [
       "Pipeline orchestration & stage tracking",
       "Multi-agent synthesis & report aggregation",
@@ -26,7 +26,7 @@ export const AGENT_PERSONAS: Record<string, AgentPersona> = {
     id: "data-engineer",
     name: "Schema & Hygiene Specialist",
     role: "Data Ingestion & Profiling Engineer",
-    avatar: "🛠️",
+    avatar: "data-engineer",
     badge: "Ingestion Agent",
     description: "Inspects raw connectors, identifies null anomalies, resolves primary/foreign schemas, and checks data quality.",
     systemPrompt: "You are the Data Engineering Agent specialized in data quality, schema resolution, and connector health.",
@@ -47,7 +47,7 @@ export const AGENT_PERSONAS: Record<string, AgentPersona> = {
     id: "feature-architect",
     name: "Feature Architect",
     role: "Feature Engineering & Exogenous Scout",
-    avatar: "⚡",
+    avatar: "feature-architect",
     badge: "Feature Agent",
     description: "Constructs rolling lags, temporal encodings, seasonal indexes, and scouts external economic/weather signals.",
     systemPrompt: "You are the Feature Architect Agent specializing in time series feature creation and exogenous data scouting.",
@@ -68,7 +68,7 @@ export const AGENT_PERSONAS: Record<string, AgentPersona> = {
     id: "ml-scientist",
     name: "ML Science Copilot",
     role: "Model Training & Hyperparameter Architect",
-    avatar: "🔬",
+    avatar: "ml-scientist",
     badge: "Model Agent",
     description: "Recommends model architectures (LightGBM, XGBoost, Prophet, NeuralProphet, TFT), tunes hyperparameters, and builds ensembles.",
     systemPrompt: "You are the ML Scientist Agent specializing in model selection, hyperparameter optimization, and training configurations.",
@@ -89,7 +89,7 @@ export const AGENT_PERSONAS: Record<string, AgentPersona> = {
     id: "validation-analyst",
     name: "Validation & Metrics Auditor",
     role: "Backtesting & Metric Verification Specialist",
-    avatar: "📊",
+    avatar: "validation-analyst",
     badge: "Validation Agent",
     description: "Evaluates WAPE, RMSE, MAPE, out-of-fold backtests, residual distributions, and confidence interval coverage.",
     systemPrompt: "You are the Validation and Metrics Auditor Agent specializing in rigorous model evaluation and backtesting.",
@@ -110,7 +110,7 @@ export const AGENT_PERSONAS: Record<string, AgentPersona> = {
     id: "hierarchy-expert",
     name: "Hierarchy & Form Designer",
     role: "Dimensional Drill-Down & UI Architect",
-    avatar: "📐",
+    avatar: "hierarchy-expert",
     badge: "Hierarchy Agent",
     description: "Designs interactive business filter forms, categorical hierarchies (Region > Store > SKU), and dashboard layouts.",
     systemPrompt: "You are the Hierarchy and Form Designer Agent specializing in dimensional relationships and interactive filters.",
@@ -136,7 +136,7 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
     title: "Inspect Data Quality & Null Ratios",
     prompt: "Perform a comprehensive data quality check on the active project's dataset. Identify missing values, cardinality issues, duplicate records, and recommend data cleaning steps.",
     recommendedPersona: "data-engineer",
-    icon: "🧹",
+    icon: "data-engineer",
   },
   {
     id: "feature-recommendation",
@@ -144,7 +144,7 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
     title: "Suggest High-Impact Features",
     prompt: "Analyze the dataset schema and target variable. Suggest the top 5 engineered features (e.g. exponential moving averages, cyclical month encodings, price elasticities) to improve forecast accuracy.",
     recommendedPersona: "feature-architect",
-    icon: "✨",
+    icon: "feature-architect",
   },
   {
     id: "model-comparison",
@@ -152,7 +152,7 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
     title: "Compare Best Performing Models",
     prompt: "Compare the performance of candidate models (LightGBM, XGBoost, CatBoost, Prophet). Explain the tradeoffs in latency, memory, interpretability, and validation metrics.",
     recommendedPersona: "ml-scientist",
-    icon: "🏆",
+    icon: "ml-scientist",
   },
   {
     id: "validation-deepdive",
@@ -160,7 +160,7 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
     title: "Diagnose Validation Error Spikes",
     prompt: "Review the validation residual plots. Are there specific dates or segments where forecast errors spike? Provide root-cause insights and remediation suggestions.",
     recommendedPersona: "validation-analyst",
-    icon: "📈",
+    icon: "validation-analyst",
   },
   {
     id: "pipeline-summary",
@@ -168,7 +168,7 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
     title: "Executive Workflow Executive Summary",
     prompt: "Provide an executive summary of the entire end-to-end pipeline run: data ingestion status, key features created, chosen model, and predicted business impact.",
     recommendedPersona: "orchestrator",
-    icon: "📋",
+    icon: "orchestrator",
   },
   {
     id: "hierarchy-filters",
@@ -176,14 +176,14 @@ export const PROMPT_TEMPLATES: PromptTemplate[] = [
     title: "Review Hierarchy & Filter Forms",
     prompt: "Examine the dimensional hierarchy and generated filter forms. How are parent-child cascading dropdowns mapped, and how can business users filter predictions?",
     recommendedPersona: "hierarchy-expert",
-    icon: "🗂️",
+    icon: "hierarchy-expert",
   },
 ];
 
 export const INITIAL_CHAT_SESSIONS: ChatSession[] = [
   {
     id: "session-welcome",
-    title: "Welcome to AI Insights Copilot",
+    title: "Welcome to Sparrow Copilot",
     createdAt: new Date(Date.now() - 3600000).toISOString(),
     updatedAt: new Date().toISOString(),
     agentPersona: "orchestrator",

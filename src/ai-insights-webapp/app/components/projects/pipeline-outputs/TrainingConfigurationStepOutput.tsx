@@ -4,6 +4,7 @@ import React, { useState, useEffect, useCallback, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { Badge } from "./utils";
 import { BACKEND_URL } from "../../providers/AppContext";
+import ModernSelect from "../../shared/ui/ModernSelect";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -1095,13 +1096,11 @@ export default function TrainingConfigurationStepOutput({
                 <label className="block text-xs font-semibold text-foreground mb-1.5">
                   Split End Month
                 </label>
-                <select
-                  value={selectedMonth}
-                  onChange={(e) => setSelectedMonth(parseInt(e.target.value, 10))}
+                <ModernSelect
+                  value={String(selectedMonth)}
+                  onChange={(val) => setSelectedMonth(parseInt(val, 10))}
                   disabled={isLoadingDates}
-                  className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl bg-surface border border-border text-foreground shadow-xs focus:ring-2 focus:ring-primary/30 focus:border-primary cursor-pointer disabled:opacity-50"
-                >
-                  {MONTH_NAMES.map((name, idx) => {
+                  options={MONTH_NAMES.map((name, idx) => {
                     const monthNum = idx + 1;
                     const isMinYear = dateRangeInfo?.minYear != null && selectedYear === dateRangeInfo.minYear;
                     const isMaxYear = dateRangeInfo?.maxYear != null && selectedYear === dateRangeInfo.maxYear;
@@ -1109,34 +1108,33 @@ export default function TrainingConfigurationStepOutput({
                     const isAfterMax = isMaxYear && dateRangeInfo?.maxMonth != null && monthNum > dateRangeInfo.maxMonth;
                     const disabled = isBeforeMin || isAfterMax;
 
-                    return (
-                      <option key={monthNum} value={monthNum} disabled={disabled}>
-                        {name} ({String(monthNum).padStart(2, "0")})
-                      </option>
-                    );
+                    return {
+                      value: String(monthNum),
+                      label: `${name} (${String(monthNum).padStart(2, "0")})`,
+                      disabled,
+                    };
                   })}
-                </select>
+                  triggerClassName="h-10 text-xs font-medium"
+                />
               </div>
 
               <div>
                 <label className="block text-xs font-semibold text-foreground mb-1.5">
                   Split End Year
                 </label>
-                <select
-                  value={selectedYear}
-                  onChange={(e) => setSelectedYear(parseInt(e.target.value, 10))}
+                <ModernSelect
+                  value={String(selectedYear)}
+                  onChange={(val) => setSelectedYear(parseInt(val, 10))}
                   disabled={isLoadingDates}
-                  className="w-full text-xs font-medium px-3.5 py-2.5 rounded-xl bg-surface border border-border text-foreground shadow-xs focus:ring-2 focus:ring-primary/30 focus:border-primary cursor-pointer disabled:opacity-50"
-                >
-                  {(dateRangeInfo?.availableYears && dateRangeInfo.availableYears.length > 0
+                  options={(dateRangeInfo?.availableYears && dateRangeInfo.availableYears.length > 0
                     ? dateRangeInfo.availableYears
                     : [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
-                  ).map((yr) => (
-                    <option key={yr} value={yr}>
-                      {yr}
-                    </option>
-                  ))}
-                </select>
+                  ).map((yr) => ({
+                    value: String(yr),
+                    label: String(yr),
+                  }))}
+                  triggerClassName="h-10 text-xs font-medium"
+                />
               </div>
             </div>
 
