@@ -189,6 +189,7 @@ export default function ProjectCreatePage({
   const [domainList, setDomainList] = useState<{ id: string; domain: string; subDomains: string[] }[]>([]);
   const [selectedDomain, setSelectedDomain] = useState(project?.domain || "");
   const [selectedSubDomain, setSelectedSubDomain] = useState(project?.subDomain || "");
+  const [customDomain, setCustomDomain] = useState("");
   const [customSubDomain, setCustomSubDomain] = useState("");
 
   const [showConnectLibrary, setShowConnectLibrary] = useState(false);
@@ -203,7 +204,12 @@ export default function ProjectCreatePage({
       setProjectName(project.name || "");
       setUseCaseInfo(project.useCase || "");
       setSelectedSources(project.dataSources || []);
-      setSelectedDomain(project.domain || "");
+      // If the stored domain is "Other" or not a known standard domain, treat as custom
+      const knownDomains = ["Retail & E-Commerce", "Finance & Banking", "Healthcare & Life Sciences", "Supply Chain & Logistics", "Manufacturing", "Energy & Utilities", "Telecommunications", "Other"];
+      const storedDomain = project.domain || "";
+      const isOtherDomain = storedDomain !== "" && !knownDomains.includes(storedDomain);
+      setSelectedDomain(isOtherDomain ? "Other" : storedDomain);
+      setCustomDomain(isOtherDomain ? storedDomain : "");
       setSelectedSubDomain(project.subDomain || "");
       setIsEditing(Boolean(startInEditMode));
       setSubmitError(null);
@@ -213,6 +219,7 @@ export default function ProjectCreatePage({
       setUseCaseInfo("");
       setSelectedSources([]);
       setSelectedDomain("");
+      setCustomDomain("");
       setSelectedSubDomain("");
       setCustomSubDomain("");
       setIsEditing(true);
@@ -379,6 +386,7 @@ export default function ProjectCreatePage({
     setIsSubmitting(true);
 
     try {
+      let finalDomain = selectedDomain === "Other" ? customDomain.trim() : selectedDomain;
       let finalSubDomain = selectedSubDomain;
       if (
         selectedDomain === "Other" ||
@@ -394,7 +402,7 @@ export default function ProjectCreatePage({
           name: projectName.trim(),
           useCase: useCaseInfo.trim(),
           dataSources: selectedSources,
-          domain: selectedDomain,
+          domain: finalDomain,
           subDomain: finalSubDomain,
         });
       }
@@ -415,6 +423,7 @@ export default function ProjectCreatePage({
     setIsSubmitting(true);
 
     try {
+      let finalDomain = selectedDomain === "Other" ? customDomain.trim() : selectedDomain;
       let finalSubDomain = selectedSubDomain;
       if (
         selectedDomain === "Other" ||
@@ -429,7 +438,7 @@ export default function ProjectCreatePage({
         projectName.trim(),
         useCaseInfo.trim(),
         selectedSources,
-        selectedDomain,
+        finalDomain,
         finalSubDomain
       );
 
@@ -509,6 +518,11 @@ export default function ProjectCreatePage({
                     if (project) {
                       setDisplayName(project.projectName || "");
                       setProjectName(project.name || "");
+                      const knownDomains = ["Retail & E-Commerce", "Finance & Banking", "Healthcare & Life Sciences", "Supply Chain & Logistics", "Manufacturing", "Energy & Utilities", "Telecommunications", "Other"];
+                      const storedDomain = project.domain || "";
+                      const isOtherDomain = storedDomain !== "" && !knownDomains.includes(storedDomain);
+                      setSelectedDomain(isOtherDomain ? "Other" : storedDomain);
+                      setCustomDomain(isOtherDomain ? storedDomain : "");
                       setUseCaseInfo(project.useCase || "");
                       setSelectedSources(project.dataSources || []);
                       setSelectedDomain(project.domain || "");
@@ -607,6 +621,7 @@ export default function ProjectCreatePage({
                   onChange={(val) => {
                     setSelectedDomain(val);
                     setSelectedSubDomain("");
+                    setCustomDomain("");
                     setCustomSubDomain("");
                   }}
                   placeholder="-- Select Domain --"
@@ -642,6 +657,22 @@ export default function ProjectCreatePage({
                 )}
               </div>
             </div>
+
+            {selectedDomain === "Other" && (
+              <div>
+                <label className="block text-xs font-semibold text-foreground uppercase tracking-wider mb-2">
+                  Custom Domain
+                </label>
+                <input
+                  type="text"
+                  disabled={!isEditing}
+                  placeholder="Enter your company domain..."
+                  value={customDomain}
+                  onChange={(e) => setCustomDomain(e.target.value)}
+                  className="w-full h-11 px-4 rounded-xl border border-border bg-surface text-base font-normal text-foreground focus:outline-none focus:ring-0 focus:border-border transition-all placeholder:text-muted-foreground/60 shadow-sm disabled:opacity-60 disabled:cursor-not-allowed"
+                />
+              </div>
+            )}
 
             {selectedDomain && selectedDomain !== "Other" && selectedSubDomain === "Other (Custom Sub Domain)" && (
               <div>
