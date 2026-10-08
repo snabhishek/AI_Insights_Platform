@@ -8,7 +8,7 @@ import { basename, dirname, join, resolve } from "path";
 import { Pool } from "pg";
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import duckdb from "duckdb";
-import { migrateSparrow } from "../db/migrations/sparrow";
+import { runMigrations } from "../db";
 import { PostgresSparrowIntentRepository } from "../repositories/sparrowIntent.repository";
 import { SparrowOrchestrator } from "../agents/sparrow/sparrowOrchestrator";
 
@@ -34,7 +34,7 @@ test("live Sparrow answers a mixed greeting/analysis and a contextual follow-up 
       ('2026-09-01', 'North', 150), ('2026-09-01', 'South', 180)`);
     await admin.query(`CREATE SCHEMA "${schema}"`);
     scoped = new Pool({ ...options, options: `-c search_path=${schema}` });
-    await migrateSparrow(scoped);
+    await runMigrations(scoped, schema);
     const checkpointer = new PostgresSaver(scoped, undefined, { schema });
     await checkpointer.setup();
     const project = { id: "sparrow-fixture", name: "Sparrow Test Retail", domain: "Retail", agentState: { targetColumn: "revenue" } };

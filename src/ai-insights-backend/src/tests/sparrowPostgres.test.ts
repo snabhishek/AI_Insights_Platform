@@ -6,7 +6,7 @@ import { Pool } from "pg";
 import { Command } from "@langchain/langgraph";
 import { PostgresSaver } from "@langchain/langgraph-checkpoint-postgres";
 import { z } from "zod";
-import { migrateSparrow } from "../db/migrations/sparrow";
+import { runMigrations } from "../db";
 import { PostgresSparrowIntentRepository } from "../repositories/sparrowIntent.repository";
 import { createSparrowGraph } from "../agents/sparrow/graph";
 
@@ -23,9 +23,9 @@ test("startup migration preserves edits and PostgreSQL restores Sparrow interrup
   try {
     await admin.query(`CREATE SCHEMA "${schema}"`);
     scoped = new Pool({ ...options, options: `-c search_path=${schema}` });
-    await migrateSparrow(scoped);
+    await runMigrations(scoped, schema);
     await scoped.query("UPDATE sparrow_intents SET description = $1 WHERE code = 'ANALYZE'", ["Edited by operator"]);
-    await migrateSparrow(scoped);
+    await runMigrations(scoped, schema);
     const repository = new PostgresSparrowIntentRepository(scoped);
     const intents = await repository.getActiveIntents();
     assert.equal(intents.length, 13);

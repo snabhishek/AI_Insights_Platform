@@ -20,7 +20,7 @@ import { ConnectorService } from "./services/connector/connector.service";
 import { ConnectorController } from "./controllers/connector.controller";
 import createConnectorRouter from "./routes/connectors";
 import createAIRouter from "./routes/ai";
-import { checkAndCreateDatabase, runMigrations, pool } from "./db";
+import { checkAndCreateDatabase, runMigrations, initializeApplicationData, pool } from "./db";
 import * as schema from "./db/schema";
 import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
 import { PostgresModelValidationRepository } from "./repositories/modelValidation.repository";
@@ -93,12 +93,14 @@ let aiController: AIController;
 async function bootstrap() {
 
   db = drizzle(pool, { schema });
-  let startupStage = "database verification and schema initialization";
+  let startupStage = "database verification";
   let sparrowPersistence: Awaited<ReturnType<typeof initializeSparrowPersistence>>;
   try {
     await checkAndCreateDatabase();
-    startupStage = "application migrations and intent seeding";
-    await runMigrations(db);
+    startupStage = "application schema migrations";
+    await runMigrations();
+    startupStage = "application data initialization";
+    await initializeApplicationData();
     startupStage = "Sparrow graph persistence initialization";
     sparrowPersistence = await initializeSparrowPersistence(pool);
   } catch (error) {

@@ -4,9 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "npx nodemon --config nodemon.json",
-    "build": "npm run db:generate && npx tsc",
+    "build": "npx tsc && node scripts/copy-migrations.cjs",
     "start": "node --max-old-space-size=8192 dist/index.js",
-    "db:generate": "npx drizzle-kit generate"
+    "db:generate": "npx drizzle-kit generate",
+    "db:validate": "node scripts/validate-migrations.cjs"
   },
   "dependencies": {
     "@langchain/community": "^1.1.29",

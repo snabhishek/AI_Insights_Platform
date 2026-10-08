@@ -1,8 +1,8 @@
 import { Client, Pool } from "pg";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { NodePgDatabase } from "drizzle-orm/node-postgres";
+import { drizzle } from "drizzle-orm/node-postgres";
+import path from "node:path";
 import dotenv from "dotenv";
-import { migrateSparrow } from "./db/migrations/sparrow";
 
 dotenv.config();
 
@@ -22,18 +22,9 @@ export const pool = new Pool({
 
 export const query = (text: string, params?: any[]) => pool.query(text, params);
 
-export async function initializeDatabaseSchemas() {
+export async function initializeApplicationData() {
   try {
-    console.log("[DB] Initializing database tables and migrations...");
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS workspaces (
-        id VARCHAR(50) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL UNIQUE,
-        is_default BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-    `);
+    console.log("[DB] Initializing application data...");
 
     await query(`
       INSERT INTO workspaces (id, name, is_default, created_at)
@@ -42,86 +33,7 @@ export async function initializeDatabaseSchemas() {
     `);
 
     await query(`
-      CREATE TABLE IF NOT EXISTS projects (
-        id VARCHAR(50) PRIMARY KEY,
-        project_name VARCHAR(255),
-        name VARCHAR(255) NOT NULL,
-        role VARCHAR(50) NOT NULL DEFAULT 'OWNER',
-        data_sources TEXT[] NOT NULL DEFAULT '{}',
-        initials VARCHAR(10) NOT NULL DEFAULT 'US',
-        workspace_id VARCHAR(50) NOT NULL REFERENCES workspaces(id) ON DELETE CASCADE,
-        use_case TEXT,
-        folder_path VARCHAR(500),
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-    `);
-
-    await query(`
-      ALTER TABLE projects ADD COLUMN IF NOT EXISTS project_name VARCHAR(255);
-      ALTER TABLE projects ADD COLUMN IF NOT EXISTS use_case TEXT;
-      ALTER TABLE projects ADD COLUMN IF NOT EXISTS domain VARCHAR(255);
-      ALTER TABLE projects ADD COLUMN IF NOT EXISTS sub_domain VARCHAR(255);
-      ALTER TABLE projects ADD COLUMN IF NOT EXISTS folder_path VARCHAR(500);
-      ALTER TABLE projects ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'idle';
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS domains (
-        id VARCHAR(50) PRIMARY KEY,
-        domain VARCHAR(255) NOT NULL UNIQUE,
-        sub_domains JSONB NOT NULL DEFAULT '[]',
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS connectors (
-        id VARCHAR(50) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        subtext VARCHAR(255) NOT NULL,
-        type VARCHAR(50) NOT NULL,
-        status VARCHAR(50) NOT NULL,
-        health VARCHAR(50) NOT NULL,
-        last_sync_time VARCHAR(100) NOT NULL,
-        last_sync_date VARCHAR(100) NOT NULL,
-        created_at TIMESTAMP NOT NULL,
-        connection_config JSONB NOT NULL,
-        assets JSONB NOT NULL,
-        workspace_id VARCHAR(50) REFERENCES workspaces(id) ON DELETE CASCADE
-      );
-    `);
-
-    await query(`
-      ALTER TABLE connectors ADD COLUMN IF NOT EXISTS workspace_id VARCHAR(50) REFERENCES workspaces(id) ON DELETE CASCADE;
-    `);
-
-    await query(`
       UPDATE connectors SET workspace_id = 'default' WHERE workspace_id IS NULL;
-    `);
-
-    await query(`
-      CREATE INDEX IF NOT EXISTS projects_workspace_id_idx ON projects (workspace_id);
-    `);
-    await query(`
-      CREATE INDEX IF NOT EXISTS connectors_workspace_id_idx ON connectors (workspace_id);
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS project_runs (
-        id VARCHAR(50) PRIMARY KEY,
-        project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        use_case TEXT,
-        status VARCHAR(50) DEFAULT 'idle',
-        agent_state JSONB NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-    `);
-    await query(`
-      ALTER TABLE project_runs ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'idle';
-    `);
-    await query(`
-      CREATE INDEX IF NOT EXISTS project_runs_project_id_idx ON project_runs (project_id);
-      CREATE INDEX IF NOT EXISTS project_runs_status_idx ON project_runs (status);
     `);
 
     try {
@@ -133,101 +45,10 @@ export async function initializeDatabaseSchemas() {
       console.warn("[DB] Startup sanitization warning:", cleanErr?.message || cleanErr);
     }
 
-    await query(`
-      CREATE TABLE IF NOT EXISTS agent_thinking (
-        id VARCHAR(50) PRIMARY KEY,
-        project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        pipeline VARCHAR(100) NOT NULL,
-        substep VARCHAR(100) NOT NULL,
-        thinking JSONB NOT NULL,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-    `);
-    await query(`
-      CREATE INDEX IF NOT EXISTS agent_thinking_project_id_idx ON agent_thinking (project_id);
-    `);
-    await query(`
-      CREATE INDEX IF NOT EXISTS agent_thinking_proj_pipe_sub_idx ON agent_thinking (project_id, pipeline, substep);
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS agent_jobs (
-        id VARCHAR(50) PRIMARY KEY,
-        project_id VARCHAR(50) REFERENCES projects(id) ON DELETE CASCADE,
-        project_name VARCHAR(255),
-        connector_id TEXT[] NOT NULL,
-        user_prompt TEXT,
-        status VARCHAR(50) NOT NULL DEFAULT 'queued',
-        error TEXT,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-    `);
-    await query(`
-      ALTER TABLE agent_jobs ADD COLUMN IF NOT EXISTS project_name VARCHAR(255);
-    `);
-    await query(`
-      CREATE INDEX IF NOT EXISTS agent_jobs_project_id_idx ON agent_jobs (project_id);
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS model_validation_runs (
-        id VARCHAR(50) PRIMARY KEY,
-        project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        evaluation_mode VARCHAR(50) NOT NULL,
-        prediction_objective_start_date VARCHAR(50),
-        prediction_objective_horizon INTEGER NOT NULL DEFAULT 12,
-        prediction_objective_frequency VARCHAR(50) NOT NULL DEFAULT 'Weekly',
-        dataset_reference TEXT,
-        dataset_schema_version VARCHAR(50),
-        actual_data_coverage DOUBLE PRECISION,
-        champion_model_id VARCHAR(100),
-        status VARCHAR(50) NOT NULL DEFAULT 'Completed',
-        summary TEXT,
-        validation_directory VARCHAR(500),
-        report_artifact_path TEXT,
-        predictions_artifact_path TEXT,
-        chart_data JSONB DEFAULT '{}'::jsonb,
-        warnings TEXT[] DEFAULT '{}'::text[],
-        metadata JSONB DEFAULT '{}'::jsonb,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-    `);
-    await query(`
-      CREATE INDEX IF NOT EXISTS model_validation_runs_project_id_idx ON model_validation_runs (project_id);
-      CREATE INDEX IF NOT EXISTS model_validation_runs_mode_idx ON model_validation_runs (evaluation_mode);
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS model_validation_results (
-        id VARCHAR(50) PRIMARY KEY,
-        validation_run_id VARCHAR(50) NOT NULL REFERENCES model_validation_runs(id) ON DELETE CASCADE,
-        model_id VARCHAR(100) NOT NULL,
-        display_name VARCHAR(255),
-        framework VARCHAR(50),
-        execution_status VARCHAR(50) NOT NULL DEFAULT 'Completed',
-        score DOUBLE PRECISION,
-        primary_metric_name VARCHAR(100),
-        metrics JSONB DEFAULT '{}'::jsonb,
-        totals JSONB DEFAULT '{}'::jsonb,
-        actual_total DOUBLE PRECISION,
-        forecast_total DOUBLE PRECISION,
-        difference DOUBLE PRECISION,
-        difference_percentage DOUBLE PRECISION,
-        evaluation_record_count INTEGER DEFAULT 0,
-        actual_data_coverage DOUBLE PRECISION,
-        chart_series JSONB DEFAULT '{}'::jsonb,
-        model_artifact_path TEXT,
-        error_message TEXT,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-    `);
-    await query(`
-      CREATE INDEX IF NOT EXISTS model_validation_results_run_id_idx ON model_validation_results (validation_run_id);
-      CREATE INDEX IF NOT EXISTS model_validation_results_model_id_idx ON model_validation_results (model_id);
-    `);
+    await query(`INSERT INTO model_source_types (id, name, description) VALUES
+      ('builtin', 'Built-in Model', 'Platform native algorithms and baseline implementations'),
+      ('external', 'External Model Source', 'Models discovered dynamically from external web and repository sources')
+      ON CONFLICT (id) DO NOTHING`);
 
     const connCheck = await query("SELECT COUNT(*) FROM connectors");
     const count = parseInt(connCheck.rows[0].count, 10);
@@ -563,112 +384,6 @@ export async function initializeDatabaseSchemas() {
       console.log("[DB] Seeding business domains completed successfully.");
     }
 
-    await query(`
-      CREATE TABLE IF NOT EXISTS model_selection_decisions (
-        id VARCHAR(50) PRIMARY KEY,
-        project_id VARCHAR(50) NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-        use_case TEXT,
-        status VARCHAR(50) NOT NULL DEFAULT 'READY',
-        dataset_version VARCHAR(100),
-        feature_set_version VARCHAR(100),
-        model_catalog_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
-        prompt_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
-        agent_version VARCHAR(50) NOT NULL DEFAULT '1.0.0',
-        llm_provider VARCHAR(50),
-        llm_model VARCHAR(100),
-        execution_duration_ms INTEGER,
-        candidate_count INTEGER,
-        primary_model_id VARCHAR(100),
-        input_context_snapshot JSONB NOT NULL DEFAULT '{}'::jsonb,
-        decision JSONB NOT NULL DEFAULT '{}'::jsonb,
-        user_selection JSONB,
-        is_stale BOOLEAN NOT NULL DEFAULT FALSE,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS model_selection_decisions_project_id_idx ON model_selection_decisions(project_id);
-      CREATE INDEX IF NOT EXISTS model_selection_decisions_status_idx ON model_selection_decisions(status);
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS model_source_types (
-        id VARCHAR(50) PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        description TEXT,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-
-      INSERT INTO model_source_types (id, name, description)
-      VALUES
-        ('builtin', 'Built-in Model', 'Platform native algorithms and baseline implementations'),
-        ('external', 'External Model Source', 'Models discovered dynamically from external web and repository sources')
-      ON CONFLICT (id) DO NOTHING;
-
-      CREATE TABLE IF NOT EXISTS model_source_providers (
-        id VARCHAR(100) PRIMARY KEY,
-        name VARCHAR(255) NOT NULL,
-        source_type_id VARCHAR(50) NOT NULL REFERENCES model_source_types(id),
-        base_url TEXT,
-        metadata JSONB DEFAULT '{}'::jsonb,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS model_source_providers_source_type_id_idx ON model_source_providers(source_type_id);
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS dynamic_model_registry (
-        model_id VARCHAR(100) PRIMARY KEY,
-        display_name VARCHAR(255) NOT NULL,
-        algorithm VARCHAR(255) NOT NULL,
-        framework VARCHAR(50) NOT NULL DEFAULT 'custom',
-        supported_tasks TEXT[] NOT NULL DEFAULT '{}',
-        capabilities TEXT[] NOT NULL DEFAULT '{}',
-        strengths TEXT[] NOT NULL DEFAULT '{}',
-        weaknesses TEXT[] NOT NULL DEFAULT '{}',
-        is_baseline BOOLEAN NOT NULL DEFAULT FALSE,
-        source_type_id VARCHAR(50) NOT NULL DEFAULT 'external' REFERENCES model_source_types(id),
-        source_provider_id VARCHAR(100) REFERENCES model_source_providers(id),
-        source VARCHAR(100) NOT NULL DEFAULT 'web_search',
-        repository_url TEXT,
-        repository_id VARCHAR(255),
-        version VARCHAR(100),
-        license VARCHAR(100),
-        metadata JSONB DEFAULT '{}'::jsonb,
-        discovered_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-
-      -- Defensive column migrations for existing tables
-      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS source_type_id VARCHAR(50) DEFAULT 'external';
-      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS source_provider_id VARCHAR(100);
-      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS repository_url TEXT;
-      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS repository_id VARCHAR(255);
-      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS version VARCHAR(100);
-      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS license VARCHAR(100);
-      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS discovered_at TIMESTAMP DEFAULT NOW();
-      ALTER TABLE dynamic_model_registry ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW();
-
-      CREATE INDEX IF NOT EXISTS dynamic_model_registry_framework_idx ON dynamic_model_registry(framework);
-      CREATE INDEX IF NOT EXISTS dynamic_model_registry_source_idx ON dynamic_model_registry(source);
-      CREATE INDEX IF NOT EXISTS dynamic_model_registry_source_type_idx ON dynamic_model_registry(source_type_id);
-      CREATE INDEX IF NOT EXISTS dynamic_model_registry_source_provider_idx ON dynamic_model_registry(source_provider_id);
-    `);
-
-    await query(`
-      CREATE TABLE IF NOT EXISTS chat_suggestions (
-        id VARCHAR(50) PRIMARY KEY,
-        suggestion VARCHAR(500) NOT NULL UNIQUE,
-        category VARCHAR(100) NOT NULL DEFAULT 'General',
-        display_order INTEGER NOT NULL DEFAULT 0,
-        is_active BOOLEAN NOT NULL DEFAULT true,
-        created_at TIMESTAMP NOT NULL DEFAULT NOW(),
-        updated_at TIMESTAMP NOT NULL DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS chat_suggestions_display_order_idx ON chat_suggestions(display_order);
-      CREATE INDEX IF NOT EXISTS chat_suggestions_is_active_idx ON chat_suggestions(is_active);
-    `);
-
     const seedChatSuggestions = [
       {
         id: "sugg-1",
@@ -710,9 +425,9 @@ export async function initializeDatabaseSchemas() {
     }
     console.log("[DB] Post-deployment seeding of chat suggestions completed.");
 
-    console.log("[DB] Database tables initialization and migrations completed successfully.");
+    console.log("[DB] Application data initialization completed.");
   } catch (err: any) {
-    console.error("[DB] Failed to initialize database schemas:", err);
+    console.error("[DB] Failed to initialize application data:", err);
     throw err;
   }
 }
@@ -746,7 +461,6 @@ export async function checkAndCreateDatabase() {
       console.log(`[DB] Database "${dbName}" verified successfully.`);
     }
 
-    await initializeDatabaseSchemas();
   } catch (err: any) {
     console.error("[DB] Database verification/creation guard failed:", err);
     throw err;
@@ -757,24 +471,31 @@ export async function checkAndCreateDatabase() {
   }
 }
 
-export async function runMigrations(db: NodePgDatabase<any>) {
+// The baseline is a real, additive migration for both fresh and legacy databases.
+// A separate journal preserves the retired migration history without pretending
+// those historical scripts ran on installations initialized by legacy SQL.
+export async function runMigrations(databasePool: Pool = pool, migrationsSchema = "drizzle") {
+  const client = await databasePool.connect();
+  let locked = false;
   try {
-    await migrate(db, { migrationsFolder: "./drizzle" });
-    console.log("[DB] Drizzle schema migrations verified and applied successfully.");
-  } catch (err: any) {
-    // The legacy initializer creates tables before Drizzle runs. Recognize only
-    // PostgreSQL's duplicate-object codes; never hide arbitrary migration errors.
-    let cause: any = err;
-    while (cause && cause.code !== "42P07" && cause.code !== "42710" && cause.cause) cause = cause.cause;
-    if (cause?.code === "42P07" || cause?.code === "42710") {
-      console.warn("[DB] Drizzle encountered an existing object created by the legacy schema initializer; remaining Drizzle migrations were not verified:", err);
-    } else {
-      console.error("[DB] Drizzle migration failed:", err);
-      throw err;
+    await client.query("SELECT pg_advisory_lock(hashtext('application-schema-migrations'))");
+    locked = true;
+    await migrate(drizzle(client), {
+      migrationsFolder: path.join(__dirname, "db/migrations/sql"),
+      migrationsSchema,
+      migrationsTable: "__application_migrations",
+    });
+    console.log("[DB] Application schema migrations completed.");
+  } catch (error) {
+    console.error("[DB] Application migration failed:", error);
+    throw error;
+  } finally {
+    try {
+      if (locked) await client.query("SELECT pg_advisory_unlock(hashtext('application-schema-migrations'))");
+      client.release();
+    } catch (error) {
+      client.release(true);
+      throw error;
     }
   }
-  // Drizzle discovers SQL migrations, not TypeScript seed functions. Keep
-  // idempotent startup seeds in this single application migration entry point.
-  // Run outside the legacy Drizzle error handler so Sparrow setup failures propagate.
-  await migrateSparrow(pool);
 }

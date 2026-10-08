@@ -5,6 +5,7 @@ export const agentJobs = pgTable("agent_jobs", {
   id: varchar("id", { length: 50 }).primaryKey(),
   projectId: varchar("project_id", { length: 50 })
     .references(() => projects.id, { onDelete: "cascade" }),
+  projectName: varchar("project_name", { length: 255 }),
   connectorId: text("connector_id").array().notNull(),
   userPrompt: text("user_prompt"),
   status: varchar("status", { length: 50 }).notNull().default("queued"),
