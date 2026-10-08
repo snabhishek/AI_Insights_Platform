@@ -111,6 +111,7 @@ interface AppContextType {
   activeWorkspaceId: string;
   setActiveWorkspaceId: (id: string) => void;
   addWorkspace: (name: string) => Promise<void>;
+  renameWorkspace: (id: string, name: string) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
@@ -379,6 +380,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setActiveWorkspaceId(data.id);
   };
 
+  const renameWorkspace = async (id: string, name: string) => {
+    const res = await fetch(`${BACKEND_URL}/workspaces/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to rename workspace");
+    setWorkspaces((prev) =>
+      prev.map((w) => (w.id === id ? { ...w, name: data.name || name } : w))
+    );
+  };
+
   const deleteWorkspace = async (id: string) => {
     const res = await fetch(`${BACKEND_URL}/workspaces/${id}`, { method: "DELETE" });
     const data = await res.json();
@@ -641,6 +655,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         activeWorkspaceId,
         setActiveWorkspaceId,
         addWorkspace,
+        renameWorkspace,
         deleteWorkspace,
         projects,
         setProjects,
