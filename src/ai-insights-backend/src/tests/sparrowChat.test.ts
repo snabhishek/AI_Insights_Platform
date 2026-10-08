@@ -3,11 +3,16 @@ import { test } from "node:test";
 import { Command, MemorySaver } from "@langchain/langgraph";
 import { z } from "zod";
 import { createSparrowGraph, SparrowGraphDependencies } from "../agents/sparrow/graph";
+import { MAX_TOOL_CALLS, MAX_RECTIFICATIONS } from "../agents/sparrow/nodes";
 import { analysisPlanSchema } from "../agents/sparrow/analysisPlanner";
 import { validateUnderstanding } from "../agents/sparrow/queryResolver";
 import { assertSafeReadOnlySql, createComparePeriodsTool } from "../agents/sparrow/tools/dataAnalysis.tools";
 import { QueryUnderstanding } from "../agents/sparrow/types";
 import { SparrowOrchestrator } from "../agents/sparrow/sparrowOrchestrator";
+import { QueryResolver } from "../agents/sparrow/queryResolver";
+import { AnalysisPlanner } from "../agents/sparrow/analysisPlanner";
+import { InsightsResponder } from "../agents/sparrow/insightsResponder";
+import { interactionAt } from "../agents/sparrow/clarification";
 import { SparrowChatController } from "../controllers/sparrowChat.controller";
 import { createRunModelInferenceTool } from "../agents/sparrow/tools/modelInference.tools";
 
@@ -34,7 +39,7 @@ function fakeTool(schema: any, invoke: (args: any) => Promise<any>) {
   return { schema, invoke, description: "Controlled test tool" };
 }
 function fixture(options: {
-  saver?: MemorySaver; resolve?: any; plan?: any; query?: any; respond?: any;
+  saver?: MemorySaver; resolve?: any; plan?: any; query?: any; respond?: any; now?: () => number;
 } = {}) {
   const saver = options.saver ?? new MemorySaver();
   const seen: any[] = [];
@@ -47,10 +52,12 @@ function fixture(options: {
     ["runModelInference", fakeTool(z.object({}), async () => { throw new Error("Inference must not run"); })],
   ]);
   const deps: SparrowGraphDependencies = {
-    checkpointer: saver, tools,
+    checkpointer: saver, tools, now: options.now,
     agents: {
       resolve: options.resolve ?? (async () => understanding),
       plan: options.plan ?? (async (_under: any, context: any, execution: any) => {
+        if (_under.needsClarification) return { action: "clarify", planType: "clarification", steps: [], rationale: "Resolve the missing business parameter",
+          clarification: { question: _under.clarificationQuestion, missingField: _under.missingField, options: _under.clarificationOptions } };
         seen.push({ context, execution });
         return execution.toolResults.some((item: any) => item.toolName === "queryProjectData" && item.success)
           ? responsePlan : toolPlan("SELECT SUM(revenue) AS total FROM transactions");
@@ -130,6 +137,112 @@ test("repeated ambiguity remains interrupted rather than guessing the answer", a
   assert.equal(paused.values.response, null);
 });
 
+test("clarification can discover grounded options before pausing", async () => {
+  const f = fixture({
+    resolve: async () => ({ ...understanding, needsClarification: true, clarificationQuestion: "Which regions?", missingField: "regions" }),
+    query: async () => ({ success: true, rows: [{ region: "North" }, { region: "South" }] }),
+    plan: async (_u: any, _ctx: any, execution: any) => {
+      const rows = execution.toolResults.find((result: any) => result.toolName === "queryProjectData")?.data.rows;
+      return rows ? { action: "clarify", planType: "clarification", steps: [], rationale: "Use observed region values",
+        clarification: { question: "Which regions should I compare?", missingField: "regions", options: rows.map((row: any) => row.region) } }
+        : toolPlan("SELECT DISTINCT region FROM transactions");
+    },
+  });
+  await f.graph.invoke(seed, config("choices"));
+  const paused = await f.graph.getState(config("choices"));
+  assert.deepEqual(paused.tasks[0].interrupts[0].value.options, ["North", "South"]);
+  assert.equal(paused.values.toolResults.filter((result: any) => result.toolName === "queryProjectData").length, 1);
+});
+
+test("100-second expiry survives restart and late answers resume without repeating workers", async (t) => {
+  let now = Date.parse("2026-10-08T12:00:00Z");
+  const f = fixture({ now: () => now,
+    resolve: async (_q: any, _c: any, _h: any, _i: any, memory: any) => memory.clarificationAnswer ? understanding
+      : { ...understanding, needsClarification: true, clarificationQuestion: "Which regions?", missingField: "regions" },
+  });
+  const thread = config("sparrow:p1:deadline");
+  await f.graph.invoke(seed, thread);
+  const paused = await f.graph.getState(thread);
+  const original = paused.values.interaction!;
+  assert.equal(Date.parse(original.expiresAt) - Date.parse(original.requestedAt), 100_000);
+  assert.equal(interactionAt(original, now + 99_999).status, "waiting");
+  now += 100_000;
+  let heldLocks = 0;
+  const orchestrator = new SparrowOrchestrator({
+    projectService: { getById: async () => ({ id: "p1", name: "Retail" }) } as any,
+    duckDBService: {} as any, modelValidationService: {} as any,
+    checkpointer: f.saver, intentRepository: { getActiveIntents: async () => intents }, now: () => now,
+    withConversationLock: async (_id, work) => { heldLocks++; try { return await work(); } finally { heldLocks--; } },
+  });
+  const expired = await orchestrator.getInteraction({ projectId: "p1", conversationId: "deadline" });
+  assert.equal(expired.interaction?.status, "timed_out");
+  assert.equal(expired.interaction?.id, original.id);
+  assert.equal(heldLocks, 0);
+  const afterExpiry = await f.graph.getState(thread);
+  assert.equal(afterExpiry.tasks[0].interrupts.length, 1);
+  assert.equal(afterExpiry.values.toolResults.length, paused.values.toolResults.length);
+  assert.equal(afterExpiry.values.interaction?.expiresAt, original.expiresAt);
+  t.mock.method(QueryResolver, "resolveQuery", async () => ({ ...understanding, filters: [{ column: "region", operator: "in", value: ["North", "South"] }] }));
+  t.mock.method(AnalysisPlanner, "createPlan", async () => responsePlan);
+  t.mock.method(InsightsResponder, "generateResponse", async () => ({ status: "complete", content: "Continued with preserved context.", thinking: [] }));
+  await assert.rejects(() => orchestrator.run({ projectId: "p1", conversationId: "deadline", userQuery: "North", interactionId: "stale-id" }), /no longer pending/);
+  const result = await orchestrator.run({ projectId: "p1", conversationId: "deadline", userQuery: "North and South", interactionId: original.id });
+  assert.equal(result.status, "complete");
+  assert.equal(heldLocks, 0);
+  const finished = await f.graph.getState(thread);
+  assert.equal(finished.values.toolResults.length, paused.values.toolResults.length);
+  assert.equal(finished.values.messages.some((message: any) => message.content === "North and South"), true);
+  assert.equal(finished.values.interaction?.status, "answered");
+  const duplicate = await orchestrator.run({ projectId: "p1", conversationId: "deadline", userQuery: "North and South", interactionId: original.id });
+  assert.equal(duplicate.content, result.content);
+  assert.equal((await f.graph.getState(thread)).values.clarificationHistory.length, 1);
+});
+
+test("missing clarification parameters fail validation instead of using a default", () => {
+  assert.throws(() => validateUnderstanding({ ...understanding, needsClarification: true, clarificationQuestion: "Which period?" }, intents), /missingField/);
+  assert.throws(() => analysisPlanSchema.parse({ action: "clarify", planType: "clarification", steps: [], rationale: "Ambiguous",
+    clarification: { question: " ", missingField: "period", options: [] } }));
+  assert.throws(() => analysisPlanSchema.parse({ action: "clarify", planType: "clarification", steps: [], rationale: "Ambiguous",
+    clarification: { question: "Which period?", missingField: "period", options: [""] } }));
+});
+
+test("retries after a second clarification or synthesis failure do not consume an answer twice", async (t) => {
+  const resolve = async (_q: any, _c: any, _h: any, _i: any, memory: any) => memory.clarificationAnswer === "September"
+    ? understanding : { ...understanding, needsClarification: true,
+      clarificationQuestion: memory.clarificationAnswer ? "Which period?" : "Which regions?",
+      missingField: memory.clarificationAnswer ? "period" : "regions" };
+  const f = fixture({ resolve });
+  const thread = config("sparrow:p1:retries");
+  await f.graph.invoke(seed, thread);
+  const first = (await f.graph.getState(thread)).values.interaction!;
+  t.mock.method(QueryResolver, "resolveQuery", resolve);
+  t.mock.method(AnalysisPlanner, "createPlan", async (under: any) => under.needsClarification
+    ? { action: "clarify", planType: "clarification", steps: [], rationale: "Resolve the remaining parameter",
+      clarification: { question: under.clarificationQuestion, missingField: under.missingField } } as any : responsePlan);
+  let responses = 0;
+  t.mock.method(InsightsResponder, "generateResponse", async () => {
+    if (++responses === 1) throw new Error("Temporary synthesis failure");
+    return { status: "complete", content: "Resumed September comparison.", thinking: [] };
+  });
+  const orchestrator = new SparrowOrchestrator({ projectService: { getById: async () => ({ id: "p1", name: "Retail" }) } as any,
+    duckDBService: {} as any, modelValidationService: {} as any, checkpointer: f.saver,
+    intentRepository: { getActiveIntents: async () => intents } });
+  const input = { projectId: "p1", conversationId: "retries", userQuery: "North and South", interactionId: first.id };
+  const second = await orchestrator.run(input);
+  assert.equal(second.clarification?.question, "Which period?");
+  assert.notEqual(second.interaction?.id, first.id);
+  const duplicate = await orchestrator.run(input);
+  assert.equal(duplicate.interaction?.id, second.interaction?.id);
+  assert.equal((await f.graph.getState(thread)).values.clarificationHistory.length, 1);
+  const reply = { ...input, userQuery: "September", interactionId: second.interaction!.id };
+  await assert.rejects(() => orchestrator.run(reply), /Temporary synthesis/);
+  const retried = await orchestrator.run(reply);
+  assert.equal(retried.status, "complete");
+  const finished = await f.graph.getState(thread);
+  assert.equal(finished.values.clarificationHistory.length, 2);
+  assert.equal(finished.values.toolResults.length, 2);
+});
+
 test("a checkpointed response failure can retry without rerunning completed analytics", async () => {
   let attempts = 0;
   let queryCalls = 0;
@@ -175,7 +288,7 @@ test("invalid tool decisions trigger bounded correction and truthful partial syn
     },
   });
   const result = await f.graph.invoke(seed, config("invalid"));
-  assert.equal(result.rectifications, 2);
+  assert.equal(result.rectifications, MAX_RECTIFICATIONS);
   assert.match(stopReason, /Correction limit/);
 });
 
@@ -187,7 +300,7 @@ test("identical failed calls are not executed again", async () => {
   });
   const result = await f.graph.invoke(seed, config("duplicate"));
   assert.equal(calls, 1);
-  assert.equal(result.rectifications, 2);
+  assert.equal(result.rectifications, MAX_RECTIFICATIONS);
   assert.ok(result.toolResults.some((item) => item.error?.includes("Identical failed call")));
 });
 
@@ -195,7 +308,7 @@ test("execution budget stops a supervisor that keeps asking for more work", asyn
   let sequence = 0;
   const f = fixture({ plan: async () => toolPlan(`SELECT ${++sequence} FROM transactions`) });
   const result = await f.graph.invoke(seed, config("budget"));
-  assert.equal(result.toolCalls, 12);
+  assert.equal(result.toolCalls, MAX_TOOL_CALLS);
   assert.match(result.stopReason, /Execution limit/);
 });
 
@@ -218,7 +331,7 @@ test("intent validation supports database additions and rejects unknown codes", 
   assert.equal(validateUnderstanding({ ...understanding, intent: "CUSTOM_RETENTION" }, intents).intent, "CUSTOM_RETENTION");
   assert.throws(() => validateUnderstanding({ ...understanding, intent: "invented" }, intents), /Unregistered/);
   assert.throws(() => validateUnderstanding({ ...understanding, isGeneralConversation: true }, intents), /Analytical intent/);
-  assert.throws(() => validateUnderstanding({ ...understanding, needsClarification: true }, intents), /specific question/);
+  assert.throws(() => validateUnderstanding({ ...understanding, needsClarification: true }, intents), /question/);
 });
 
 test("planner contract rejects static multi-step plans and empty tool decisions", () => {
@@ -288,7 +401,7 @@ test("project and checkpoint boundaries are checked before any model invocation"
 
 test("controller rejects a non-string query without invoking the agent", async () => {
   let status = 0;
-  const controller = new SparrowChatController({ sendMessage: async () => { throw new Error("Must not invoke"); } });
+  const controller = new SparrowChatController({ sendMessage: async () => { throw new Error("Must not invoke"); }, getInteraction: async () => ({}) });
   await controller.sendMessage({ body: { userQuery: {}, projectId: "p1" } } as any, {
     status: (value: number) => { status = value; return { json: () => {} }; },
   } as any);

@@ -13,7 +13,7 @@ import { PostgresSparrowIntentRepository } from "../repositories/sparrowIntent.r
 import { SparrowOrchestrator } from "../agents/sparrow/sparrowOrchestrator";
 
 // Opt-in live evaluation: configured LLM, real DuckDB, isolated PostgreSQL schema.
-test("live Sparrow answers a mixed greeting/analysis and a contextual follow-up from real data", { timeout: 240000 }, async () => {
+test("live Sparrow answers analysis, follow-ups and late clarification replies from real data", { timeout: 480000 }, async () => {
   const options = {
     host: process.env.DB_HOST, port: Number(process.env.DB_PORT || 5432),
     database: process.env.DB_NAME, user: process.env.DB_USER, password: process.env.DB_PASS,
@@ -38,11 +38,12 @@ test("live Sparrow answers a mixed greeting/analysis and a contextual follow-up 
     const checkpointer = new PostgresSaver(scoped, undefined, { schema });
     await checkpointer.setup();
     const project = { id: "sparrow-fixture", name: "Sparrow Test Retail", domain: "Retail", agentState: { targetColumn: "revenue" } };
+    let now = Date.now();
     const orchestrator = new SparrowOrchestrator({
       projectService: { getById: async () => project, getProjectWithWorkspace: async () => ({ project, workspaceName: "Sparrow Test Workspace" }) } as any,
       duckDBService: { getProjectDuckDbPath: () => dbPath, runQuery } as any,
       modelValidationService: {} as any,
-      checkpointer, intentRepository: new PostgresSparrowIntentRepository(scoped),
+      checkpointer, intentRepository: new PostgresSparrowIntentRepository(scoped), now: () => now,
     });
     const response = await orchestrator.run({
       projectId: project.id, conversationId: "live-test",
@@ -71,6 +72,26 @@ test("live Sparrow answers a mixed greeting/analysis and a contextual follow-up 
       plan: saved!.checkpoint.channel_values.plan, response: followUp.content,
     }));
     console.log("Live LLM + DuckDB verified regional comparison and contextual follow-up: North +50%, South -10%.");
+    const clarification = await orchestrator.run({ projectId: project.id, conversationId: "live-test",
+      userQuery: "Now compare revenue for a subset of regions. Do not choose the regions for me: ask me which regions using choices from actual data. I will supply the regions and the two periods in my reply.",
+      onThinkingUpdate: steps => console.log(steps.at(-1)?.text),
+    });
+    assert.equal(clarification.status, "awaiting_user_input", clarification.content);
+    assert.ok(clarification.clarification?.question.trim());
+    assert.ok(clarification.clarification?.missingField.trim());
+    assert.deepEqual(new Set(clarification.clarification?.options), new Set(["North", "South"]));
+    assert.ok(clarification.interaction?.id);
+    now = Date.parse(clarification.interaction!.expiresAt) + 1;
+    const expired = await orchestrator.getInteraction({ projectId: project.id, conversationId: "live-test" });
+    assert.equal(expired.interaction?.status, "timed_out");
+    const continued = await orchestrator.run({ projectId: project.id, conversationId: "live-test",
+      userQuery: "North and South, comparing September 2026 against August 2026.", interactionId: clarification.interaction!.id,
+      onThinkingUpdate: steps => console.log(steps.at(-1)?.text),
+    });
+    assert.equal(continued.status, "complete", continued.content);
+    const resumed = await checkpointer.getTuple(config);
+    assert.equal((resumed!.checkpoint.channel_values.clarificationHistory as any[]).length, 1);
+    console.log("Live agent authored grounded North/South choices and resumed the saved request after the 100-second deadline.");
   } finally {
     await new Promise<void>((resolve) => conn.close(() => resolve()));
     await new Promise<void>((resolve) => db.close(() => resolve()));

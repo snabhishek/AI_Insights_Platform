@@ -20,6 +20,9 @@ interface ChatMessageListProps {
   isGenerating?: boolean;
   onSelectAction?: (actionText: string) => void;
   onRetry?: (messageId: string) => void;
+  onClarificationReply?: (messageId: string, answer: string) => void;
+  onClarificationDraft?: (messageId: string, draft: string) => void;
+  onClarificationExpire?: (messageId: string, interactionId: string) => void;
   onFeedback?: (messageId: string, type: "like" | "dislike") => void;
   onSelectSuggestedQuestion?: (question: string) => void;
   selectedProject?: Project | null;
@@ -31,7 +34,7 @@ export default function ChatMessageList({
   activePersona,
   isGenerating = false,
   onSelectAction,
-  onRetry,
+  onRetry, onClarificationReply, onClarificationDraft, onClarificationExpire,
   onFeedback,
   selectedProject,
 }: ChatMessageListProps) {
@@ -167,6 +170,10 @@ export default function ChatMessageList({
             message={msg}
             onSelectAction={onSelectAction}
             onRetry={onRetry}
+            isGenerating={isGenerating}
+            onClarificationReply={onClarificationReply}
+            onClarificationDraft={onClarificationDraft}
+            onClarificationExpire={onClarificationExpire}
             onFeedback={onFeedback}
           />
         ))

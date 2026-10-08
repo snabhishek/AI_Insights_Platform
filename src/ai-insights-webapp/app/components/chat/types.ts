@@ -80,6 +80,12 @@ export interface ChatMessage {
   agentAvatar?: string;
   status?: "sending" | "complete" | "error" | "awaiting_user_input";
   clarification?: ClarificationPrompt;
+  interaction?: { id: string; requestedAt: string; expiresAt: string; status: "waiting" | "timed_out" | "answered" };
+  serverNow?: string;
+  serverClockOffset?: number;
+  clarificationDraft?: string;
+  clarificationReplies?: Array<{ question: string; answer: string }>;
+  clarificationError?: string;
   executionState?: Record<string, any>;
   error?: string;
   userLiked?: boolean;

@@ -59,6 +59,14 @@ export interface SparrowClarification {
   context?: Record<string, any>;
 }
 
+export interface SparrowInteraction {
+  id: string;
+  requestedAt: string;
+  expiresAt: string;
+  status: "waiting" | "timed_out" | "answered";
+  answeredAt?: string;
+}
+
 export interface SparrowThinkingStep {
   time: string;
   text: string;
@@ -94,6 +102,9 @@ export interface SparrowChatResponse {
   chart?: ChartData[];
   suggestedActions?: string[];
   clarification?: SparrowClarification;
+  interaction?: SparrowInteraction;
+  serverNow?: string;
+  clarificationReplies?: Array<{ question: string; answer: string }>;
   executionState?: Record<string, any>;
   error?: string;
 }

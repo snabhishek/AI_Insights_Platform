@@ -1,6 +1,6 @@
 import { Annotation } from "@langchain/langgraph";
 import { SparrowIntent } from "../../repositories/sparrowIntent.repository";
-import { AnalysisPlan, ExecutionToolResult, QueryUnderstanding, SparrowChatResponse, SparrowClarification, SparrowThinkingStep } from "./types";
+import { AnalysisPlan, ExecutionToolResult, QueryUnderstanding, SparrowChatResponse, SparrowClarification, SparrowInteraction, SparrowThinkingStep } from "./types";
 
 export interface SparrowMessage { role: "user" | "assistant"; content: string }
 export type SparrowAction = "resolve" | "context" | "tool" | "rectify" | "clarify" | "respond" | "finish";
@@ -20,7 +20,9 @@ export const SparrowAnnotation = Annotation.Root({
   toolResults: channel<ExecutionToolResult[]>(() => []),
   nextAction: channel<SparrowAction>(() => "resolve"),
   hitlState: channel<SparrowClarification | null>(() => null),
+  interaction: channel<SparrowInteraction | null>(() => null),
   clarificationAnswer: channel(() => ""),
+  clarificationHistory: channel<Array<{ id: string; question: string; answer: string }>>(() => []),
   contextInspected: channel(() => false),
   toolCalls: channel(() => 0),
   rectifications: channel(() => 0),

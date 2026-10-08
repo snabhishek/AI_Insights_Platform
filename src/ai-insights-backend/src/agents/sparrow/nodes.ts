@@ -5,10 +5,12 @@ import { InsightsResponder } from "./insightsResponder";
 import { QueryResolver } from "./queryResolver";
 import { SparrowState } from "./sparrowState";
 import { AnalysisPlan, ExecutionToolResult, SparrowThinkingStep } from "./types";
+import { clarificationSchema, createClarificationInteraction } from "./clarification";
 
 export interface SparrowGraphDependencies {
   tools: Map<string, any>;
   checkpointer: BaseCheckpointSaver;
+  now?: () => number;
   onThinkingUpdate?: (steps: SparrowThinkingStep[]) => void;
   agents?: {
     resolve: typeof QueryResolver.resolveQuery;
@@ -17,8 +19,8 @@ export interface SparrowGraphDependencies {
   };
 }
 
-const MAX_TOOL_CALLS = 20;
-const MAX_RECTIFICATIONS = 5;
+export const MAX_TOOL_CALLS = 20;
+export const MAX_RECTIFICATIONS = 5;
 
 export function createSparrowNodes(deps: SparrowGraphDependencies) {
   const agents = deps.agents ?? {
@@ -89,7 +91,8 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       if (plan.action === "tool" && !deps.tools.has(plan.steps[0].toolName)) {
         throw new Error(`Planner selected unregistered tool '${plan.steps[0].toolName}'.`);
       }
-      return { plan, decisionReady: true, hitlState: plan.clarification ?? null };
+      return { plan, decisionReady: true, hitlState: plan.clarification ?? null,
+        ...(plan.action === "clarify" ? { interaction: createClarificationInteraction(deps.now?.()) } : {}) };
     } catch (error) {
       // Preserve invalid planning as a real failure and let the rectifier see it.
       const failure: ExecutionToolResult = {
@@ -107,12 +110,6 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       const understanding = state.queryUnderstanding;
       if (!understanding.isGeneralConversation && !understanding.isProjectIrrelevant && !state.contextInspected) {
         return { nextAction: "context" as const };
-      }
-      if (understanding.needsClarification) {
-        return { nextAction: "clarify" as const, hitlState: {
-          question: understanding.clarificationQuestion!, missingField: understanding.missingField ?? "request",
-          options: understanding.clarificationOptions,
-        } };
       }
       if (state.toolCalls >= MAX_TOOL_CALLS) {
         return { nextAction: "respond" as const, stopReason: "Execution limit reached. Report available evidence and remaining gaps." };
@@ -167,10 +164,17 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
     },
     clarificationNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
       // LangGraph saves the pending task; only the checkpoint token leaves the server.
-      const answer = interrupt(state.hitlState);
+      const prompt = clarificationSchema.parse(state.hitlState);
+      const resumed = interrupt(prompt);
+      const answer = typeof resumed === "string" ? resumed : resumed?.answer;
+      const interaction = typeof resumed === "object" && resumed?.interaction ? resumed.interaction : state.interaction;
       if (typeof answer !== "string" || !answer.trim()) throw new Error("Clarification answer is required.");
       return {
         clarificationAnswer: answer.trim(), queryUnderstanding: null, plan: null, hitlState: null, decisionReady: false,
+        intentCatalog: typeof resumed === "object" && Array.isArray(resumed?.intentCatalog) ? resumed.intentCatalog : state.intentCatalog,
+        interaction: interaction ? { ...interaction, status: "answered", answeredAt: new Date(deps.now?.() ?? Date.now()).toISOString() } : null,
+        clarificationHistory: [...state.clarificationHistory, ...(interaction
+          ? [{ id: interaction.id, question: prompt.question, answer: answer.trim() }] : [])].slice(-24),
         messages: [...state.messages, { role: "assistant" as const, content: state.hitlState!.question }, { role: "user" as const, content: answer.trim() }].slice(-24),
         ...progress(state, "clarification", "Received clarification; continuing with preserved results."),
       };

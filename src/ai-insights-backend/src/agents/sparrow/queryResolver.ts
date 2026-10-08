@@ -3,6 +3,7 @@ import { pool } from "../../db";
 import { PostgresSparrowIntentRepository, SparrowIntent } from "../../repositories/sparrowIntent.repository";
 import { invokeSparrowJson } from "./llm";
 import { QueryUnderstanding } from "./types";
+import { clarificationSchema } from "./clarification";
 
 export const queryUnderstandingSchema = z.object({
   intent: z.string().min(1),
@@ -34,8 +35,9 @@ export function validateUnderstanding(value: unknown, intents: SparrowIntent[]):
   if (parsed.isGeneralConversation && !definition.conversational) {
     throw new Error("Analytical intent cannot be treated as a greeting.");
   }
-  if (parsed.needsClarification && !parsed.clarificationQuestion?.trim()) {
-    throw new Error("Clarification requires a specific question.");
+  if (parsed.needsClarification) {
+    clarificationSchema.parse({ question: parsed.clarificationQuestion,
+      missingField: parsed.missingField, options: parsed.clarificationOptions });
   }
   // Normalize nullable output without inventing business parameters.
   return JSON.parse(JSON.stringify(parsed, (_key, item) => item === null ? undefined : item));

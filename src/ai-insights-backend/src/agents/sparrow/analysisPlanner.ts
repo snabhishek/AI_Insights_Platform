@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { invokeSparrowJson } from "./llm";
 import { AnalysisPlan, QueryUnderstanding } from "./types";
+import { clarificationSchema } from "./clarification";
 
 export const analysisPlanSchema = z.object({
   action: z.enum(["tool", "clarify", "respond"]),
@@ -9,7 +10,7 @@ export const analysisPlanSchema = z.object({
     toolName: z.string().min(1), args: z.record(z.string(), z.unknown()), description: z.string(),
   })).max(1),
   rationale: z.string().min(1),
-  clarification: z.object({ question: z.string().min(1), missingField: z.string(), options: z.array(z.string()).optional() }).optional(),
+  clarification: clarificationSchema.optional(),
 }).superRefine((plan, ctx) => {
   if ((plan.action === "tool") !== (plan.steps.length === 1)) {
     ctx.addIssue({ code: "custom", message: "Tool decisions require exactly one step; other decisions require no steps." });

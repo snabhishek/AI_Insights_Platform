@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { BarChart3, Copy, Check, Sparkles, ThumbsUp, ThumbsDown } from "lucide-react";
 import { ChatMessage } from "./types";
+import ChatClarification from "./ChatClarification";
 import ChatThinkingAccordion from "./ChatThinkingAccordion";
 import MarkdownRenderer from "../shared/MarkdownRenderer";
 
@@ -10,13 +11,17 @@ interface ChatMessageItemProps {
   message: ChatMessage;
   onSelectAction?: (actionText: string) => void;
   onRetry?: (messageId: string) => void;
+  isGenerating?: boolean;
+  onClarificationReply?: (messageId: string, answer: string) => void;
+  onClarificationDraft?: (messageId: string, draft: string) => void;
+  onClarificationExpire?: (messageId: string, interactionId: string) => void;
   onFeedback?: (messageId: string, type: "like" | "dislike") => void;
 }
 
 export default function ChatMessageItem({
   message,
   onSelectAction,
-  onFeedback,
+  onFeedback, isGenerating, onClarificationReply, onClarificationDraft, onClarificationExpire,
 }: ChatMessageItemProps) {
   const [copied, setCopied] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
@@ -65,7 +70,8 @@ export default function ChatMessageItem({
           />
         )}
 
-        <MarkdownRenderer content={message.content} className={isUser ? "text-white [&_*]:!text-white" : ""} />
+        {(isUser || !message.clarification || message.content !== message.clarification.question) &&
+          <MarkdownRenderer content={message.content} className={isUser ? "text-white [&_*]:!text-white" : ""} />}
 
         {message.metricCards && message.metricCards.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
@@ -194,30 +200,11 @@ export default function ChatMessageItem({
         )}
 
         {!isUser && message.clarification && (
-          <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-2.5">
-            <div className="flex items-center gap-2 text-amber-500 text-xs font-semibold">
-              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-              <span>Clarification Required</span>
-            </div>
-            <p className="text-xs text-foreground font-medium">{message.clarification.question}</p>
-            {message.clarification.options && message.clarification.options.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 pt-1">
-                {message.clarification.options.map((opt, oIdx) => (
-                  <button
-                    key={oIdx}
-                    type="button"
-                    onClick={() => onSelectAction?.(opt)}
-                    className="px-2.5 py-1 rounded-lg border border-amber-500/30 bg-surface hover:bg-amber-500/20 text-foreground text-[11px] font-medium transition-colors cursor-pointer"
-                  >
-                    {opt}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+          <ChatClarification message={message} disabled={isGenerating || message.isThinking}
+            onReply={onClarificationReply} onDraft={onClarificationDraft} onExpire={onClarificationExpire} />
         )}
 
-        {!isUser && message.suggestedActions && message.suggestedActions.length > 0 && (
+        {!isUser && !message.clarification && message.suggestedActions && message.suggestedActions.length > 0 && (
           <div className="pt-2 flex flex-wrap gap-1.5">
             {message.suggestedActions.map((action, aIdx) => (
               <button

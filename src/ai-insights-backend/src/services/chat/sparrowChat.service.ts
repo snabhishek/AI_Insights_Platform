@@ -59,4 +59,8 @@ export class SparrowChatService implements ISparrowChatService {
       };
     }
   }
+
+  public getInteraction(input: { projectId: string; conversationId: string }): Promise<Partial<SparrowChatResponse>> {
+    return this.orchestrator.getInteraction(input);
+  }
 }

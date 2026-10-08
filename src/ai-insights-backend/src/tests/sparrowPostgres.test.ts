@@ -9,6 +9,7 @@ import { z } from "zod";
 import { runMigrations } from "../db";
 import { PostgresSparrowIntentRepository } from "../repositories/sparrowIntent.repository";
 import { createSparrowGraph } from "../agents/sparrow/graph";
+import { interactionAt } from "../agents/sparrow/clarification";
 
 // Uses only a temporary schema in the configured database; no project records.
 test("startup migration preserves edits and PostgreSQL restores Sparrow interrupts and memory", async () => {
@@ -45,7 +46,10 @@ test("startup migration preserves edits and PostgreSQL restores Sparrow interrup
         isProjectIrrelevant: false, needsClarification: !memory.clarificationAnswer,
         clarificationQuestion: "Which metric?", missingField: "targetMetric",
       }),
-      plan: async () => ({ action: "respond" as const, planType: "data_analysis" as const, steps: [], rationale: "Report available context" }),
+      plan: async (understanding: any) => understanding.needsClarification
+        ? { action: "clarify" as const, planType: "clarification" as const, steps: [], rationale: "Ask for the missing metric",
+          clarification: { question: understanding.clarificationQuestion, missingField: understanding.missingField } }
+        : { action: "respond" as const, planType: "data_analysis" as const, steps: [], rationale: "Report available context" },
       respond: async () => ({ status: "complete" as const, content: "No analytical observations are available yet.", thinking: [] }),
     };
     const config = { configurable: { thread_id: `sparrow:p1:${schema}` }, recursionLimit: 80 };
@@ -61,9 +65,12 @@ test("startup migration preserves edits and PostgreSQL restores Sparrow interrup
     assert.equal(saved.values.projectId, "p1");
     assert.equal(saved.values.toolResults.length, 2);
     assert.equal((saved.tasks[0].interrupts[0].value as any).question, "Which metric?");
-    // Exercise the catalog refresh used by the orchestrator before Command resume.
-    await restarted.updateState(config, { intentCatalog: await repository.getActiveIntents() });
-    const result = await restarted.invoke(new Command({ resume: "Revenue" }), config);
+    assert.equal(Date.parse(saved.values.interaction.expiresAt) - Date.parse(saved.values.interaction.requestedAt), 100_000);
+    assert.equal(interactionAt(saved.values.interaction, Date.parse(saved.values.interaction.expiresAt)).status, "timed_out");
+    // Refresh through the native resume payload, preserving the pending task.
+    const result = await restarted.invoke(new Command({ resume: {
+      answer: "Revenue", intentCatalog: await repository.getActiveIntents(), interaction: saved.values.interaction,
+    } }), config);
     assert.equal(result.toolResults.length, 2);
     assert.equal(result.response?.status, "complete");
     assert.equal(result.memory.previousUnderstanding && (result.memory.previousUnderstanding as any).intent, "ANALYZE");

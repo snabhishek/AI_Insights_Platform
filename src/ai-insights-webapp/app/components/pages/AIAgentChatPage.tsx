@@ -17,6 +17,7 @@ import {
   loadActiveSessionId,
   saveActiveSessionId,
   generateAgentChatResponse,
+  getChatInteraction,
 } from "../../services/aiAgentChatService";
 import { fetchChatSuggestions } from "../../services/chatSuggestionService";
 import ChatSidebar from "../chat/ChatSidebar";
@@ -38,6 +39,7 @@ export default function AIAgentChatPage() {
   const [suggestions, setSuggestions] = useState<string[]>([]);
 
   const abortGenerationRef = useRef<boolean>(false);
+  const generationEpochRef = useRef(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -89,6 +91,25 @@ export default function AIAgentChatPage() {
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
   const activePersona = AGENT_PERSONAS[selectedPersonaId] || AGENT_PERSONAS.orchestrator;
   const currentScopedProject = projects.find((p) => p.id === selectedProjectId) || null;
+
+  useEffect(() => {
+    const session = sessions.find(item => item.id === activeSessionId);
+    const pending = [...(session?.messages ?? [])].reverse().find(message => message.clarification
+      && (message.status === "awaiting_user_input" || message.status === "sending"));
+    if (!session?.projectId || !pending) return;
+    let cancelled = false;
+    void getChatInteraction(session.projectId, session.id).then(response => {
+      if (cancelled || (response.status === "complete" && !response.content)) return;
+      setSessions(previous => previous.map(item => item.id === session.id ? {
+        ...item, messages: item.messages.map(message => message.id === pending.id
+          ? { ...message, ...response, clarification: response.clarification ?? message.clarification, isThinking: false,
+            clarificationDraft: response.interaction?.id !== message.interaction?.id ? "" : message.clarificationDraft } : message),
+      } : item));
+    }).catch(error => console.error("Could not restore the saved clarification:", error));
+    return () => { cancelled = true; };
+    // Restore once when entering a conversation, not on each draft keystroke.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeSessionId]);
 
   const trainedModels = useMemo<TrainedModelOption[]>(() => {
     const defaultOption: TrainedModelOption = {
@@ -215,11 +236,16 @@ export default function AIAgentChatPage() {
 
   const handleSendMessage = async (
     text: string,
-    options?: { modelId?: string; attachments?: File[] }
+    options?: { modelId?: string; attachments?: File[]; clarificationMessageId?: string }
   ) => {
     if (!text.trim() || isGenerating || !selectedProjectId) return;
+    const clarificationMessage = options?.clarificationMessageId
+      ? activeSession?.messages.find(message => message.id === options.clarificationMessageId)
+      : [...(activeSession?.messages ?? [])].reverse().find(message => message.status === "awaiting_user_input" && message.clarification);
+    if (options?.clarificationMessageId && (!clarificationMessage || clarificationMessage.status !== "awaiting_user_input")) return;
 
     abortGenerationRef.current = false;
+    const generationEpoch = ++generationEpochRef.current;
     setIsGenerating(true);
 
     const userMessageId = `msg-u-${Date.now()}`;
@@ -235,7 +261,7 @@ export default function AIAgentChatPage() {
       timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
     };
 
-    const assistantMessageId = `msg-a-${Date.now() + 1}`;
+    const assistantMessageId = clarificationMessage?.id ?? `msg-a-${Date.now() + 1}`;
     const modelNote =
       options?.modelId && options.modelId !== "any"
         ? ` [Model: ${options.modelId}]`
@@ -275,7 +301,11 @@ export default function AIAgentChatPage() {
             ...s,
             title: updatedTitle,
             updatedAt: new Date().toISOString(),
-            messages: [...s.messages, userMessage, initialAssistantMessage],
+            messages: clarificationMessage ? s.messages.map(message => message.id === assistantMessageId
+              ? { ...message, isThinking: true, status: "sending" as const, clarificationError: undefined,
+                clarificationDraft: text.trim(),
+                interaction: message.interaction ? { ...message.interaction, status: "answered" as const } : undefined }
+              : message) : [...s.messages, userMessage, initialAssistantMessage],
           };
         }
         return s;
@@ -283,7 +313,7 @@ export default function AIAgentChatPage() {
     );
 
     const lastSessionMsg = activeSession?.messages[activeSession.messages.length - 1];
-    const pendingExecutionState = lastSessionMsg?.executionState;
+    const pendingExecutionState = clarificationMessage?.executionState ?? lastSessionMsg?.executionState;
     const conversationHistory = activeSession?.messages.map((m) => ({
       role: m.role,
       content: m.content,
@@ -297,6 +327,7 @@ export default function AIAgentChatPage() {
         projects,
         dataSources,
         (updatedThinking) => {
+          if (generationEpoch !== generationEpochRef.current) return;
           setSessions((prev) =>
             prev.map((s) => {
               if (s.id === activeSessionId) {
@@ -313,11 +344,11 @@ export default function AIAgentChatPage() {
         },
         pendingExecutionState,
         conversationHistory,
-        activeSessionId
+        activeSessionId,
+        clarificationMessage?.interaction?.id
       );
 
-      if (abortGenerationRef.current) {
-        setIsGenerating(false);
+      if (abortGenerationRef.current || generationEpoch !== generationEpochRef.current) {
         return;
       }
 
@@ -331,6 +362,11 @@ export default function AIAgentChatPage() {
                   ? {
                       ...m,
                       ...response,
+                      clarification: response.clarification ?? clarificationMessage?.clarification,
+                      clarificationReplies: clarificationMessage ? [...(clarificationMessage.clarificationReplies ?? []),
+                        { question: clarificationMessage.clarification!.question, answer: text.trim() }] : undefined,
+                      clarificationDraft: "",
+                      clarificationError: undefined,
                       isThinking: false,
                       status: response.status || "complete",
                     }
@@ -342,6 +378,7 @@ export default function AIAgentChatPage() {
         })
       );
     } catch (err: any) {
+      if (generationEpoch !== generationEpochRef.current) return;
       console.error("Agent chat execution error:", err);
       setSessions((prev) =>
         prev.map((s) => {
@@ -350,7 +387,11 @@ export default function AIAgentChatPage() {
               ...s,
               messages: s.messages.map((m) =>
                 m.id === assistantMessageId
-                  ? {
+                  ? clarificationMessage ? {
+                      ...m, isThinking: false, status: "awaiting_user_input",
+                      interaction: clarificationMessage.interaction,
+                      clarificationError: err?.message || "Could not submit your answer. Please try again.",
+                    } : {
                       ...m,
                       content: `⚠️ Failed to generate AI response: ${err?.message || "Unknown error"}. Please try again.`,
                       isThinking: false,
@@ -364,13 +405,44 @@ export default function AIAgentChatPage() {
         })
       );
     } finally {
-      setIsGenerating(false);
+      if (generationEpoch === generationEpochRef.current) setIsGenerating(false);
     }
+  };
+
+  const handleClarificationDraft = (messageId: string, draft: string) => {
+    setSessions(previous => previous.map(session => session.id === activeSessionId ? {
+      ...session, messages: session.messages.map(message => message.id === messageId ? { ...message, clarificationDraft: draft } : message),
+    } : session));
+  };
+
+  const handleClarificationExpire = (messageId: string, interactionId: string) => {
+    const sessionId = activeSessionId;
+    const projectId = activeSession?.projectId;
+    setSessions(previous => previous.map(session => session.id === sessionId ? {
+      ...session, messages: session.messages.map(message => message.id === messageId && message.interaction?.id === interactionId
+        && message.status === "awaiting_user_input" ? { ...message, interaction: { ...message.interaction, status: "timed_out" } } : message),
+    } : session));
+    if (!projectId) return;
+    // Observe expiry on the server without consuming the saved interrupt.
+    void getChatInteraction(projectId, sessionId).then(response => {
+      setSessions(previous => previous.map(session => session.id === sessionId ? {
+        ...session, messages: session.messages.map(message => message.id === messageId && message.interaction?.id === interactionId
+          && message.status === "awaiting_user_input" && response.interaction?.id === interactionId
+          ? { ...message, ...response } : message),
+      } : session));
+    }).catch(error => console.error("Could not synchronize the saved clarification:", error));
   };
 
   const handleStopGenerating = () => {
     abortGenerationRef.current = true;
+    generationEpochRef.current++;
     setIsGenerating(false);
+    setSessions(previous => previous.map(session => session.id === activeSessionId ? {
+      ...session, messages: session.messages.map(message => message.isThinking && message.clarification ? {
+        ...message, isThinking: false, status: "awaiting_user_input",
+        interaction: message.interaction ? { ...message.interaction, status: "waiting" } : undefined,
+      } : message),
+    } : session));
   };
 
   const handleFeedback = (messageId: string, type: "like" | "dislike") => {
@@ -451,6 +523,9 @@ export default function AIAgentChatPage() {
           selectedProject={currentScopedProject}
           isChatEnabled={Boolean(selectedProjectId)}
           onSelectAction={(actionText) => handleSendMessage(actionText)}
+          onClarificationReply={(messageId, answer) => handleSendMessage(answer, { clarificationMessageId: messageId })}
+          onClarificationDraft={handleClarificationDraft}
+          onClarificationExpire={handleClarificationExpire}
           onRetry={(mId) => {
             const idx = activeSession.messages.findIndex((m) => m.id === mId);
             if (idx > 0 && activeSession.messages[idx - 1].role === "user") {

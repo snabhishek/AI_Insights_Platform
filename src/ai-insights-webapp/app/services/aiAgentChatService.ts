@@ -49,7 +49,8 @@ export async function generateAgentChatResponse(
   onThinkingUpdate?: (thinking: ThinkingStep[]) => void,
   executionState?: Record<string, any>,
   conversationHistory?: Array<{ role: string; content: string }>,
-  conversationId?: string
+  conversationId?: string,
+  interactionId?: string
 ): Promise<Partial<ChatMessage>> {
   if (!selectedProject?.id) {
     return {
@@ -60,12 +61,13 @@ export async function generateAgentChatResponse(
   onThinkingUpdate?.([{ time: "00:01", text: "Connecting to Sparrow...", done: false }]);
   const res = await fetch(`${BACKEND_URL}/chat/message`, {
     method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ userQuery, projectId: selectedProject.id, conversationId, conversationHistory, executionState }),
+    body: JSON.stringify({ userQuery, projectId: selectedProject.id, conversationId, conversationHistory, executionState, interactionId }),
   });
   if (!res.ok) throw new Error(`Sparrow could not process the request (HTTP ${res.status}). Please try again.`);
   const json = await res.json();
   if (!json.success || !json.data) throw new Error(json.error || "Sparrow returned an invalid response.");
   const data = json.data;
+  if (data.status === "error") throw new Error(data.error || data.content);
   const thinking: ThinkingStep[] = Array.isArray(data.thinking) ? data.thinking : [];
   onThinkingUpdate?.(thinking);
   return {
@@ -75,6 +77,17 @@ export async function generateAgentChatResponse(
     metricCards: data.metricCards, tables: data.tables,
     chart: Array.isArray(data.chart) ? data.chart[0] : data.chart,
     suggestedActions: data.suggestedActions, clarification: data.clarification,
+    interaction: data.interaction, serverNow: data.serverNow,
+    serverClockOffset: data.serverNow ? Date.parse(data.serverNow) - Date.now() : undefined,
     executionState: data.executionState, status: data.status,
   };
+}
+
+export async function getChatInteraction(projectId: string, conversationId: string): Promise<Partial<ChatMessage>> {
+  const query = new URLSearchParams({ projectId, conversationId });
+  const response = await fetch(`${BACKEND_URL}/chat/interaction?${query}`);
+  const json = await response.json();
+  if (!response.ok || !json.success) throw new Error(json.error || "Could not retrieve the saved interaction.");
+  return { ...json.data, chart: Array.isArray(json.data.chart) ? json.data.chart[0] : json.data.chart,
+    serverClockOffset: json.data.serverNow ? Date.parse(json.data.serverNow) - Date.now() : undefined };
 }
