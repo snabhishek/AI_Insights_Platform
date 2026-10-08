@@ -40,6 +40,38 @@ export function saveActiveSessionId(id: string): void {
   localStorage.setItem(ACTIVE_SESSION_ID_KEY, id);
 }
 
+export function sendTextToAgent(text: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    const sessions = loadSavedChatSessions();
+    const activeId = loadActiveSessionId() || (sessions.length > 0 ? sessions[0].id : null);
+    if (!activeId || sessions.length === 0) return;
+
+    const userMessage: ChatMessage = {
+      id: `msg-${Date.now()}`,
+      role: "user",
+      content: text,
+      timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+    };
+
+    const updated = sessions.map((s) => {
+      if (s.id === activeId) {
+        return {
+          ...s,
+          messages: [...s.messages, userMessage],
+          updatedAt: new Date().toISOString(),
+        };
+      }
+      return s;
+    });
+
+    saveChatSessions(updated);
+    window.dispatchEvent(new CustomEvent("agent_message_sent", { detail: { text, message: userMessage } }));
+  } catch (err) {
+    console.warn("Failed to send text to agent:", err);
+  }
+}
+
 export async function generateAgentChatResponse(
   userQuery: string,
   personaId: AgentPersonaId,

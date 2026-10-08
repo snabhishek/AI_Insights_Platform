@@ -86,6 +86,17 @@ export default function AIAgentChatPage() {
     }
   }, [activeSessionId]);
 
+  useEffect(() => {
+    const handleAgentMessageSent = () => {
+      const reloaded = loadSavedChatSessions();
+      setSessions(reloaded);
+    };
+    window.addEventListener("agent_message_sent", handleAgentMessageSent);
+    return () => {
+      window.removeEventListener("agent_message_sent", handleAgentMessageSent);
+    };
+  }, []);
+
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
   const activePersona = AGENT_PERSONAS[selectedPersonaId] || AGENT_PERSONAS.orchestrator;
   const currentScopedProject = projects.find((p) => p.id === selectedProjectId) || null;

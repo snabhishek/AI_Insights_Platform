@@ -111,6 +111,7 @@ interface AppContextType {
   activeWorkspaceId: string;
   setActiveWorkspaceId: (id: string) => void;
   addWorkspace: (name: string) => Promise<void>;
+  renameWorkspace: (id: string, name: string) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
@@ -141,7 +142,7 @@ interface AppContextType {
   showToast: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
   showNotification: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
   showAlert: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; logs?: string; isModal?: boolean }) => void;
-  showConfirm: (config: { title: string; message: string; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
+  showConfirm: (config: { title: string; message: React.ReactNode; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
   openCreateWorkspace: () => void;
 }
 
@@ -238,7 +239,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmConfig, setConfirmConfig] = useState<{
     title: string;
-    message: string;
+    message: React.ReactNode;
     confirmText?: string;
     cancelText?: string;
     onConfirm: () => void;
@@ -377,6 +378,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!res.ok) throw new Error(data.message || "Failed to create workspace");
     setWorkspaces((prev) => [...prev, data]);
     setActiveWorkspaceId(data.id);
+  };
+
+  const renameWorkspace = async (id: string, name: string) => {
+    const res = await fetch(`${BACKEND_URL}/workspaces/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.message || "Failed to rename workspace");
+    setWorkspaces((prev) =>
+      prev.map((w) => (w.id === id ? { ...w, name: data.name || name } : w))
+    );
   };
 
   const deleteWorkspace = async (id: string) => {
@@ -641,6 +655,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         activeWorkspaceId,
         setActiveWorkspaceId,
         addWorkspace,
+        renameWorkspace,
         deleteWorkspace,
         projects,
         setProjects,
