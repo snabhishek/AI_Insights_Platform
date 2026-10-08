@@ -45,8 +45,9 @@ export default function ChatMessageList({
   }, [messages, isGenerating]);
 
   return (
-    <div className="flex-1 bg-surface overflow-y-auto relative px-4 sm:px-6 py-4 space-y-4 flex flex-col">
-      {!hasUserMessages ? (
+    <div className="flex-1 bg-background overflow-y-auto relative px-4 sm:px-6 py-4 flex flex-col">
+      <div className="w-full max-w-4xl lg:max-w-5xl mx-auto space-y-4 flex-1 flex flex-col">
+        {!hasUserMessages ? (
         <div className="flex-1 flex flex-col items-center justify-center my-auto p-2 sm:p-4 text-center animate-fade-in select-none">
           <div className="w-full max-w-md mx-auto space-y-3 sm:space-y-3.5 text-center">
             <div className="space-y-0.5">
@@ -171,7 +172,8 @@ export default function ChatMessageList({
         ))
       )}
 
-      <div ref={bottomRef} />
+        <div ref={bottomRef} />
+      </div>
     </div>
   );
 }

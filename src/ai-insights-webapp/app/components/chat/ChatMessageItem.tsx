@@ -35,14 +35,14 @@ export default function ChatMessageItem({
   };
 
   return (
-    <div
-      className={`flex gap-3.5 rounded-2xl transition-all p-3 ${
-        isUser
-          ? "bg-primary text-white border border-transparent shadow-md max-w-[50%] lg:max-w-[40%] relative left-[100%] -translate-x-[100%]"
-          : "bg-surface-muted/20"
-      }`}
-    >
-      <div className="flex-1 min-w-0 space-y-3">
+    <div className={`w-full flex ${isUser ? "justify-end" : "justify-start"} animate-fade-in`}>
+      <div
+        className={`rounded-2xl transition-all ${
+          isUser
+            ? "bg-primary text-white border border-transparent shadow-md max-w-[85%] sm:max-w-[75%] lg:max-w-[65%] p-3.5 sm:p-4 space-y-2"
+            : "bg-surface border border-border/80 dark:border-zinc-800 shadow-sm max-w-full p-4 sm:p-5 w-full space-y-3"
+        }`}
+      >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <span className={`text-xs font-bold ${isUser ? "text-white" : "text-foreground"}`}>

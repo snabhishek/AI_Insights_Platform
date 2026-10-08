@@ -207,8 +207,9 @@ export default function ChatInputArea({
     };
 
   return (
-    <div className="w-full bg-surface border-t border-border/40 px-4 sm:px-6 pt-2 pb-4 space-y-2.5 shrink-0 select-none">
-      {suggestions.length > 0 && (
+    <div className="w-full bg-surface border-t border-border/40 px-4 sm:px-6 pt-2 pb-4 shrink-0 select-none">
+      <div className="w-full max-w-4xl lg:max-w-5xl mx-auto space-y-2.5">
+        {suggestions.length > 0 && (
         <div className="w-full flex items-center gap-2 overflow-x-auto py-1 scrollbar-none no-scrollbar">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground shrink-0 pl-0.5">
             Suggestions:
@@ -509,5 +510,6 @@ export default function ChatInputArea({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 }

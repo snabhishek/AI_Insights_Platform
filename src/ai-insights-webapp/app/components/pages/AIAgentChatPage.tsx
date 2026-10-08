@@ -442,7 +442,7 @@ export default function AIAgentChatPage() {
         }}
       />
 
-      <div className="flex-1 flex flex-col h-full min-w-0 relative overflow-hidden px-4 sm:px-10">
+      <div className="flex-1 flex flex-col h-full min-w-0 relative overflow-hidden">
 
         <ChatMessageList
           messages={activeSession?.messages || []}
