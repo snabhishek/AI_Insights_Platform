@@ -4,3 +4,4 @@ export * from "./agentThinking";
 export * from "./modelSelection";
 export * from "./modelValidation";
 export * from "./chatSuggestions";
+export * from "./sparrowIntents";

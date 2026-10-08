@@ -2,6 +2,7 @@ import { Client, Pool } from "pg";
 import { migrate } from "drizzle-orm/node-postgres/migrator";
 import { NodePgDatabase } from "drizzle-orm/node-postgres";
 import dotenv from "dotenv";
+import { migrateSparrow } from "./db/migrations/sparrow";
 
 dotenv.config();
 
@@ -711,7 +712,8 @@ export async function initializeDatabaseSchemas() {
 
     console.log("[DB] Database tables initialization and migrations completed successfully.");
   } catch (err: any) {
-    console.error("[DB] Failed to initialize database schemas:", err.message || err);
+    console.error("[DB] Failed to initialize database schemas:", err);
+    throw err;
   }
 }
 
@@ -746,7 +748,8 @@ export async function checkAndCreateDatabase() {
 
     await initializeDatabaseSchemas();
   } catch (err: any) {
-    console.error("[DB] Database verification/creation guard failed:", err.message || err);
+    console.error("[DB] Database verification/creation guard failed:", err);
+    throw err;
   } finally {
     try {
       await client.end();
@@ -759,11 +762,19 @@ export async function runMigrations(db: NodePgDatabase<any>) {
     await migrate(db, { migrationsFolder: "./drizzle" });
     console.log("[DB] Drizzle schema migrations verified and applied successfully.");
   } catch (err: any) {
-    const msg = err.message || String(err);
-    if (msg.includes("already exists") || msg.includes("duplicate") || msg.includes("CREATE TABLE") || msg.includes("Failed query")) {
-      console.log("[DB] Database tables already initialized and up to date.");
+    // The legacy initializer creates tables before Drizzle runs. Recognize only
+    // PostgreSQL's duplicate-object codes; never hide arbitrary migration errors.
+    let cause: any = err;
+    while (cause && cause.code !== "42P07" && cause.code !== "42710" && cause.cause) cause = cause.cause;
+    if (cause?.code === "42P07" || cause?.code === "42710") {
+      console.warn("[DB] Drizzle encountered an existing object created by the legacy schema initializer; remaining Drizzle migrations were not verified:", err);
     } else {
-      console.log("[DB] Database tables already initialized.");
+      console.error("[DB] Drizzle migration failed:", err);
+      throw err;
     }
   }
+  // Drizzle discovers SQL migrations, not TypeScript seed functions. Keep
+  // idempotent startup seeds in this single application migration entry point.
+  // Run outside the legacy Drizzle error handler so Sparrow setup failures propagate.
+  await migrateSparrow(pool);
 }

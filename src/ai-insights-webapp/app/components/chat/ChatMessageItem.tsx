@@ -36,16 +36,16 @@ export default function ChatMessageItem({
 
   return (
     <div
-      className={`flex gap-3.5 rounded-2xl transition-all p-2 ${
+      className={`flex gap-3.5 rounded-2xl transition-all p-3 ${
         isUser
-          ? "bg-surface border border-border/40 max-w-[50%] lg:max-w-[40%] relative left-[100%] -translate-x-[100%]"
+          ? "bg-primary text-white border border-transparent shadow-md max-w-[50%] lg:max-w-[40%] relative left-[100%] -translate-x-[100%]"
           : "bg-surface-muted/20"
       }`}
     >
       <div className="flex-1 min-w-0 space-y-3">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-foreground">
+            <span className={`text-xs font-bold ${isUser ? "text-white" : "text-foreground"}`}>
               {isUser ? "You" : message.agentName || "Sparrow"}
             </span>
             {!isUser && message.agentBadge && (
@@ -54,7 +54,7 @@ export default function ChatMessageItem({
               </span>
             )}
           </div>
-          <span className="text-[10px] text-muted-foreground">{message.timestamp}</span>
+          <span className={`text-[10px] ${isUser ? "text-white/80" : "text-muted-foreground"}`}>{message.timestamp}</span>
         </div>
 
         {!isUser && message.thinking && message.thinking.length > 0 && (
@@ -65,7 +65,7 @@ export default function ChatMessageItem({
           />
         )}
 
-        <MarkdownRenderer content={message.content} />
+        <MarkdownRenderer content={message.content} className={isUser ? "text-white [&_*]:!text-white" : ""} />
 
         {message.metricCards && message.metricCards.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
@@ -190,6 +190,30 @@ export default function ChatMessageItem({
             <pre className="p-3 overflow-x-auto text-[11px] leading-relaxed select-text">
               <code>{message.codeSnippet.code}</code>
             </pre>
+          </div>
+        )}
+
+        {!isUser && message.clarification && (
+          <div className="p-3.5 rounded-xl border border-amber-500/30 bg-amber-500/10 space-y-2.5">
+            <div className="flex items-center gap-2 text-amber-500 text-xs font-semibold">
+              <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+              <span>Clarification Required</span>
+            </div>
+            <p className="text-xs text-foreground font-medium">{message.clarification.question}</p>
+            {message.clarification.options && message.clarification.options.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {message.clarification.options.map((opt, oIdx) => (
+                  <button
+                    key={oIdx}
+                    type="button"
+                    onClick={() => onSelectAction?.(opt)}
+                    className="px-2.5 py-1 rounded-lg border border-amber-500/30 bg-surface hover:bg-amber-500/20 text-foreground text-[11px] font-medium transition-colors cursor-pointer"
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

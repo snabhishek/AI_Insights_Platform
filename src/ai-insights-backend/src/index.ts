@@ -4,7 +4,6 @@ setupTimestampedLogging();
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import { Pool } from "pg";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { LocalFileService } from "./services/file/file.service";
 import { getWorkspacesBasePath } from "./config/fileServer.config";
@@ -22,13 +21,7 @@ import { ConnectorController } from "./controllers/connector.controller";
 import createConnectorRouter from "./routes/connectors";
 import createAIRouter from "./routes/ai";
 import { checkAndCreateDatabase, runMigrations, pool } from "./db";
-import * as connectorsSchema from "./db/connectors";
-import * as agentThinkingSchema from "./db/agentThinking";
-import * as agentJobsSchema from "./db/agentJobs";
-import * as modelSelectionSchema from "./db/modelSelection";
-import * as modelValidationSchema from "./db/modelValidation";
-import * as chatSuggestionsSchema from "./db/chatSuggestions";
-const schema = { ...connectorsSchema, ...agentThinkingSchema, ...agentJobsSchema, ...modelSelectionSchema, ...modelValidationSchema, ...chatSuggestionsSchema };
+import * as schema from "./db/schema";
 import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
 import { PostgresModelValidationRepository } from "./repositories/modelValidation.repository";
 import { PostgresChatSuggestionRepository } from "./repositories/chatSuggestion.repository";
@@ -57,6 +50,10 @@ import createTrainingConfigRouter from "./routes/trainingConfig";
 import { ModelValidationService } from "./services/ai/model-validation/modelValidation.service";
 import { ModelValidationController } from "./controllers/modelValidation.controller";
 import createModelValidationRouter from "./routes/modelValidation";
+import { SparrowChatService } from "./services/chat/sparrowChat.service";
+import { SparrowChatController } from "./controllers/sparrowChat.controller";
+import createSparrowChatRouter from "./routes/sparrowChat";
+import { initializeSparrowPersistence } from "./services/chat/sparrowPersistence";
 
 dotenv.config();
 
@@ -96,6 +93,18 @@ let aiController: AIController;
 async function bootstrap() {
 
   db = drizzle(pool, { schema });
+  let startupStage = "database verification and schema initialization";
+  let sparrowPersistence: Awaited<ReturnType<typeof initializeSparrowPersistence>>;
+  try {
+    await checkAndCreateDatabase();
+    startupStage = "application migrations and intent seeding";
+    await runMigrations(db);
+    startupStage = "Sparrow graph persistence initialization";
+    sparrowPersistence = await initializeSparrowPersistence(pool);
+  } catch (error) {
+    console.error(`[Bootstrap] Failed during ${startupStage}:`, error);
+    throw error;
+  }
 
   fileService = new LocalFileService();
   duckDBService = new DuckDBService(fileService);
@@ -146,6 +155,14 @@ async function bootstrap() {
   const chatSuggestionService = new ChatSuggestionService(chatSuggestionRepository);
   const chatSuggestionController = new ChatSuggestionController(chatSuggestionService);
 
+  const sparrowChatService = new SparrowChatService(
+    projectService,
+    duckDBService,
+    modelValidationService,
+    sparrowPersistence
+  );
+  const sparrowChatController = new SparrowChatController(sparrowChatService);
+
   app.get("/api/filter-options", connectorController.getFilterOptions);
   app.use("/api/connectors", createConnectorRouter(connectorController));
   app.use("/api/domains", createDomainRouter(domainController));
@@ -153,6 +170,7 @@ async function bootstrap() {
   app.use("/api/training-config", createTrainingConfigRouter(trainingConfigController));
   app.use("/api/model-validation", createModelValidationRouter(modelValidationController));
   app.use("/api/chat-suggestions", createChatSuggestionRouter(chatSuggestionController));
+  app.use("/api/chat", createSparrowChatRouter(sparrowChatController));
 
   const agentRouter = express.Router();
 
@@ -169,15 +187,9 @@ async function bootstrap() {
     console.log(`[Server] Health check available at http://${HOST}:${PORT}/api/health`);
   });
 
-  try {
-    await checkAndCreateDatabase();
-  } catch (err: any) {
-    console.error("[DB] Database check failed:", err.message || err);
-  }
-
-  await runMigrations(db);
 }
 
 bootstrap().catch((err) => {
-  console.error("[Bootstrap] Critical server start error:", err.message || err);
+  console.error("[Bootstrap] Critical server start error:", err);
+  process.exit(1);
 });

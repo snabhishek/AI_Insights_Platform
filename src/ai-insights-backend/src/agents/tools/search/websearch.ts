@@ -7,16 +7,25 @@ dotenv.config();
 
 let _webSearchTool: TavilySearch | null = null;
 const getWebSearchTool = () => {
-  if (!_webSearchTool) {
-    _webSearchTool = new TavilySearch({ maxResults: 5, tavilyApiKey: process.env.TAVILY_API_KEY});
+  if (!_webSearchTool && process.env.TAVILY_API_KEY) {
+    _webSearchTool = new TavilySearch({ maxResults: 5, tavilyApiKey: process.env.TAVILY_API_KEY });
   }
   return _webSearchTool;
 };
 
 export const webSearchTool = {
   invoke: async (input: any, options?: any) => {
-    return getWebSearchTool().invoke(input, options);
-  }
+    const toolInstance = getWebSearchTool();
+    if (!toolInstance) {
+      const q = typeof input === "string" ? input : input?.query || "";
+      return JSON.stringify({
+        query: q,
+        message: `Web search executed for query: "${q}". No Tavily API key configured for live retrieval.`,
+        results: [],
+      });
+    }
+    return toolInstance.invoke(input, options);
+  },
 } as any;
 
 let searchQueueChain = Promise.resolve<any>(undefined);

@@ -282,6 +282,13 @@ export default function AIAgentChatPage() {
       })
     );
 
+    const lastSessionMsg = activeSession?.messages[activeSession.messages.length - 1];
+    const pendingExecutionState = lastSessionMsg?.executionState;
+    const conversationHistory = activeSession?.messages.map((m) => ({
+      role: m.role,
+      content: m.content,
+    })) || [];
+
     try {
       const response = await generateAgentChatResponse(
         text,
@@ -290,7 +297,6 @@ export default function AIAgentChatPage() {
         projects,
         dataSources,
         (updatedThinking) => {
-
           setSessions((prev) =>
             prev.map((s) => {
               if (s.id === activeSessionId) {
@@ -304,7 +310,10 @@ export default function AIAgentChatPage() {
               return s;
             })
           );
-        }
+        },
+        pendingExecutionState,
+        conversationHistory,
+        activeSessionId
       );
 
       if (abortGenerationRef.current) {
@@ -323,7 +332,7 @@ export default function AIAgentChatPage() {
                       ...m,
                       ...response,
                       isThinking: false,
-                      status: "complete",
+                      status: response.status || "complete",
                     }
                   : m
               ),

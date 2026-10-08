@@ -50,6 +50,13 @@ export interface ChartData {
   data: number[];
 }
 
+export interface ClarificationPrompt {
+  question: string;
+  missingField: string;
+  options?: string[];
+  context?: Record<string, any>;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant" | "system";
@@ -71,7 +78,9 @@ export interface ChatMessage {
   agentName?: string;
   agentBadge?: string;
   agentAvatar?: string;
-  status?: "sending" | "complete" | "error";
+  status?: "sending" | "complete" | "error" | "awaiting_user_input";
+  clarification?: ClarificationPrompt;
+  executionState?: Record<string, any>;
   error?: string;
   userLiked?: boolean;
   userDisliked?: boolean;
