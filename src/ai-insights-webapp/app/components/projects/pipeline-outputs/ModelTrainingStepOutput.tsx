@@ -180,19 +180,19 @@ export default function ModelTrainingStepOutput({
   }
 
   const sourceCandidates: any[] =
-    (reportCandidates.length > 0)
+    reportCandidates.length > 0
       ? reportCandidates
-      : (Array.isArray(modelTraining?.rankedCandidates) && modelTraining.rankedCandidates.length > 0)
+      : Array.isArray(modelTraining?.rankedCandidates) && modelTraining.rankedCandidates.length > 0
         ? modelTraining.rankedCandidates
-        : (Array.isArray(modelTraining?.candidates) && modelTraining.candidates.length > 0)
+        : Array.isArray(modelTraining?.candidates) && modelTraining.candidates.length > 0
           ? modelTraining.candidates
-          : (Array.isArray(trainingConfiguration?.configuration?.model_selection?.models) && trainingConfiguration.configuration.model_selection.models.length > 0)
+          : Array.isArray(trainingConfiguration?.configuration?.model_selection?.models) && trainingConfiguration.configuration.model_selection.models.length > 0
             ? trainingConfiguration.configuration.model_selection.models
-            : (Array.isArray(trainingConfiguration?.configuration?.model_selection?.candidates) && trainingConfiguration.configuration.model_selection.candidates.length > 0)
+            : Array.isArray(trainingConfiguration?.configuration?.model_selection?.candidates) && trainingConfiguration.configuration.model_selection.candidates.length > 0
               ? trainingConfiguration.configuration.model_selection.candidates
-              : (Array.isArray(modelSelection?.candidates) && modelSelection.candidates.length > 0)
+              : Array.isArray(modelSelection?.candidates) && modelSelection.candidates.length > 0
                 ? modelSelection.candidates
-                : (Array.isArray(modelSelection?.models) && modelSelection.models.length > 0)
+                : Array.isArray(modelSelection?.models) && modelSelection.models.length > 0
                   ? modelSelection.models
                   : [];
 
@@ -322,7 +322,7 @@ export default function ModelTrainingStepOutput({
   const candidateModels = Array.from(uniqueCandidateMap.values());
 
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>(() => {
-    return candidateModels.map((c) => c.model_id);
+    return candidateModels.map((candidate) => candidate.model_id);
   });
 
   const [selectedModelsForValidation, setSelectedModelsForValidation] = useState<string[]>(() => {
@@ -405,39 +405,33 @@ export default function ModelTrainingStepOutput({
     );
   };
 
-  const selectAll = () => {
-    setSelectedModelIds(candidateModels.map((c) => c.model_id));
-  };
-
-  const deselectAll = () => {
-    setSelectedModelIds([]);
-  };
-
   const handleCopyPath = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedArtifact(text);
     setTimeout(() => setCopiedArtifact(null), 2000);
   };
 
+  const selectAll = () => setSelectedModelIds(candidateModels.map((candidate) => candidate.model_id));
+  const deselectAll = () => setSelectedModelIds([]);
+
   const minYearLimit = dateRangeInfo?.minYear ?? 2000;
   const maxYearLimit = dateRangeInfo?.maxYear ?? new Date().getFullYear();
   const availableYearsList = dateRangeInfo?.availableYears && dateRangeInfo.availableYears.length > 0
     ? dateRangeInfo.availableYears
     : Array.from({ length: maxYearLimit - minYearLimit + 1 }, (_, i) => minYearLimit + i);
-
-  const availableMonthsList = MONTHS.filter((m) => {
+  const availableMonthsList = MONTHS.filter((month) => {
     if (!dateRangeInfo?.hasTemporalData) return true;
-    if (selectedYear === dateRangeInfo.minYear && dateRangeInfo.minMonth && m.value < dateRangeInfo.minMonth) {
-      return false;
-    }
-    if (selectedYear === dateRangeInfo.maxYear && dateRangeInfo.maxMonth && m.value > dateRangeInfo.maxMonth) {
-      return false;
-    }
+    if (selectedYear === dateRangeInfo.minYear && dateRangeInfo.minMonth && month.value < dateRangeInfo.minMonth) return false;
+    if (selectedYear === dateRangeInfo.maxYear && dateRangeInfo.maxMonth && month.value > dateRangeInfo.maxMonth) return false;
     return true;
   });
-
-  const selectedMonthObj = MONTHS.find((m) => m.value === selectedMonth) || MONTHS[8];
+  const selectedMonthObj = MONTHS.find((month) => month.value === selectedMonth) || MONTHS[8];
   const formattedSplitCutoff = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
+  const handleCopyPath = (text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedArtifact(text);
+    setTimeout(() => setCopiedArtifact(null), 2000);
+  };
 
   const hasExecutionReport = Boolean(modelTraining?.report || modelTraining?.selectedModel || (modelTraining?.status === "Completed" && modelTraining?.validationMetrics));
   const hasCodeGenerated = Boolean(
@@ -575,7 +569,6 @@ export default function ModelTrainingStepOutput({
                 Choose which candidate models to execute inside the isolated Docker container. Selected models will be fit and scored against the evaluation dataset.
               </p>
             </div>
-
             <div className="flex items-center gap-2">
               <button
                 type="button"

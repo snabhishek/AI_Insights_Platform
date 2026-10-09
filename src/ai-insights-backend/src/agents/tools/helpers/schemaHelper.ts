@@ -1235,7 +1235,7 @@ export async function syncTrainingConfigSplitDate(
   targetState.splitDate = splitVal;
   targetState.splitEndDate = splitVal;
 
-  const existingTC = targetState.trainingConfiguration || targetState.stageOutputs?.trainingConfiguration || {};
+  const existingTC = targetState.trainingConfiguration || targetState.stageOutputs?.trainingConfigurationNode || {};
   const updatedTC = {
     ...existingTC,
     splitDate: splitVal,
@@ -1264,18 +1264,18 @@ export async function syncTrainingConfigSplitDate(
   if (!targetState.stageOutputs) {
     targetState.stageOutputs = {};
   }
-  targetState.stageOutputs.trainingConfiguration = {
-    ...(targetState.stageOutputs.trainingConfiguration || {}),
+  targetState.stageOutputs.trainingConfigurationNode = {
+    ...(targetState.stageOutputs.trainingConfigurationNode || {}),
     ...updatedTC,
     splitDate: splitVal,
     splitEndDate: splitVal,
     configuration: {
-      ...(targetState.stageOutputs.trainingConfiguration?.configuration || {}),
+      ...(targetState.stageOutputs.trainingConfigurationNode?.configuration || {}),
       ...updatedTC.configuration,
       splitDate: splitVal,
       splitEndDate: splitVal,
       split: {
-        ...(targetState.stageOutputs.trainingConfiguration?.configuration?.split || {}),
+        ...(targetState.stageOutputs.trainingConfigurationNode?.configuration?.split || {}),
         ...updatedTC.configuration.split,
         split_date: splitVal,
       },
@@ -1344,8 +1344,8 @@ export async function syncTrainingConfigSplitDate(
 
     targetState.trainingConfiguration.contractPath = savedContractPath;
     targetState.trainingConfiguration.contractFileName = path.basename(savedContractPath);
-    targetState.stageOutputs.trainingConfiguration.contractPath = savedContractPath;
-    targetState.stageOutputs.trainingConfiguration.contractFileName = path.basename(savedContractPath);
+    targetState.stageOutputs.trainingConfigurationNode.contractPath = savedContractPath;
+    targetState.stageOutputs.trainingConfigurationNode.contractFileName = path.basename(savedContractPath);
     console.info(`[syncTrainingConfigSplitDate] Synchronized split_date ("${splitVal}") in contract file: ${savedContractPath}`);
   } catch (contractErr: any) {
     console.warn(`[syncTrainingConfigSplitDate] Warning saving contract YAML with split date:`, contractErr?.message || contractErr);

@@ -47,10 +47,10 @@ export class ModelSelectionContextNormalizer {
         "medium",
     };
 
-    const architect = raw.featureArchitect || raw.stageOutputs?.featureArchitect || {};
-    const validator = raw.featureValidator || raw.stageOutputs?.featureValidator || architect.featureValidator || {};
-    const inspection = raw.inspection || raw.stageOutputs?.inspection || {};
-    const schemaResolution = raw.schemaResolution || raw.stageOutputs?.schemaResolution || {};
+    const architect = raw.featureArchitect || raw.stageOutputs?.featureArchitectNode || raw.stageOutputs?.featureArchitect || {};
+    const validator = raw.featureValidator || raw.stageOutputs?.featureValidatorNode || raw.stageOutputs?.featureValidator || architect.featureValidator || {};
+    const inspection = raw.inspection || raw.stageOutputs?.inspect || raw.stageOutputs?.inspection || {};
+    const schemaResolution = raw.schemaResolution || raw.stageOutputs?.resolveSchema || raw.stageOutputs?.schemaResolution || {};
 
     const targetColumn =
       raw.targetColumn ||

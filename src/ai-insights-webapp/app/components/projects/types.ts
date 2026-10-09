@@ -1,10 +1,22 @@
-export type PipelineStatus = "Completed" | "In Progress" | "Pending" | "Stopped" | "None" | "Awaiting Approval";
-export type RunStatus = "Success" | "Running" | "Paused" | "Stopped" | "Failed" | "Idle";
+import type {
+  GraphNodeKey,
+  AgentOutput,
+  GroupedStageStatuses,
+  PipelineStepStatus,
+  StageKey,
+  StageOutputs,
+  TrackedAgentKey,
+  WorkflowAgentState,
+} from "./pipelineNames";
 
-export type PipelineStatuses = Record<string, PipelineStatus>;
+export type PipelineStatus = PipelineStepStatus;
+export type RunStatus = PipelineStepStatus;
+
+export type PipelineStatuses = GroupedStageStatuses;
+export type { AgentOutput, GraphNodeKey, StageKey, StageOutputs, TrackedAgentKey, WorkflowAgentState };
 
 export interface Workflow {
-  id: string;
+  id: StageKey;
   title: string;
   description: string;
   color: "green" | "blue" | "purple" | "yellow" | "red" | "pink" | "teal";
@@ -12,8 +24,9 @@ export interface Workflow {
   step?: WorkflowStep[]
 }
 
-export interface WorkflowStep extends Workflow {
+export interface WorkflowStep extends Omit<Workflow, "id"> {
   metric: string;
+  id: TrackedAgentKey;
 }
 
 export type IngestionAgentStepResult = {
@@ -22,65 +35,18 @@ export type IngestionAgentStepResult = {
   summary: string;
 }
 
-export type StageStatusKey =
-  | "inspect"
-  | "profileData"
-  | "resolveSchema"
-  | "hierarchyMapper"
-  | "featureArchitect"
-  | "featureValidator"
-  | "exogenousScout"
-  | "modelSelection"
-  | "trainingConfiguration"
-  | "preFlight"
-  | "modelTrainingCode"
-  | "modelTrainingExec"
-  | "modelTraining"
-  | "modelEvaluation"
-  | "modelValidation"
-  | "dataProfile"
-  | "schemaResolution"
-  | "relationshipBuilder"
-  | "formBuilder"
-  | "exogenous"
-  | "modelSelectionNode"
-  | "preFlightNode"
-  | "modelTrainingNode"
-  | "modelTrainingExecNode"
-  | "modelTrainingCodeNode"
-  | "modelEvaluationNode"
-  | "modelValidationNode"
-  | "trainingConfigurationNode"
-  | "hierarchyMapperNode"
-  | "featureArchitectNode"
-  | "featureValidatorNode";
-
-export type StageStatusValue =
-  | "Pending"
-  | "In Progress"
-  | "Running"
-  | "Completed"
-  | "Success"
-  | "Failed"
-  | "Retrying"
-  | "Paused"
-  | "Skipped";
-
 export type IngestionAgentRunResult = {
   connectorId: string[];
   status: string;
   summary: string;
   steps: IngestionAgentStepResult[];
-  inspection: Record<string, unknown>;
-  schemaResolution: Record<string, unknown>;
-  dataProfile: Record<string, unknown>;
   batchedTables?: Array<{ tableName: string; status: string; node: string; summary: string }>;
   sessionId?: string;
   requiresApproval?: boolean;
   nextStep?: string;
   currentNode?: string;
   currentStage?: string;
-  stageOutputs?: Record<string, unknown>;
-  stageStatuses?: Partial<Record<StageStatusKey, StageStatusValue>> | Record<string, string>;
+  stageOutputs?: StageOutputs;
+  stageStatuses?: GroupedStageStatuses;
   message?: string;
 }

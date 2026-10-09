@@ -1,4 +1,5 @@
 import { RunnableConfig } from "@langchain/core/runnables";
+import { BaseMessage, HumanMessage, AIMessage } from "@langchain/core/messages";
 import { AgentState, IngestionServices } from "../../../state";
 import { getPromptFromFile, getModel, invokeAgentJson, logMilestoneThinking } from "../../../utils/agentUtils";
 import { generateHierarchicalFormsTool, normalizeAndEnforceFormSchema } from "./formBuilder.tool";
@@ -12,7 +13,7 @@ type FormBuilderValidationResult = { isValid: boolean; errors?: string[] };
 export function validateFormBuilderRawOutput(
   output: Record<string, unknown>,
   relationshipSchema?: RelationshipSchemaOutput,
-  expectedSourceId?: string
+  expectedSourceId?: string | string[]
 ): FormBuilderValidationResult {
   const errors: string[] = [];
   const nodes = relationshipSchema?.nodes || [];
@@ -32,10 +33,46 @@ export function validateFormBuilderRawOutput(
     return { isValid: false, errors: ["Output must be a JSON object."] };
   }
 
-  if (typeof output.sourceId !== "string" || output.sourceId.trim() === "") {
+  const validSourceIds: string[] = Array.isArray(expectedSourceId)
+    ? expectedSourceId.filter((id): id is string => typeof id === "string" && id.trim() !== "")
+    : typeof expectedSourceId === "string" && expectedSourceId.trim() !== ""
+      ? [expectedSourceId.trim()]
+      : [];
+
+  const rawSourceId = output.sourceId;
+  const isStringSourceId = typeof rawSourceId === "string" && rawSourceId.trim() !== "";
+  const isArraySourceId =
+    Array.isArray(rawSourceId) &&
+    rawSourceId.length > 0 &&
+    rawSourceId.every((s) => typeof s === "string" && s.trim() !== "");
+
+  if (!isStringSourceId && !isArraySourceId) {
     errors.push("sourceId must be a non-empty string.");
-  } else if (expectedSourceId && output.sourceId !== expectedSourceId) {
-    errors.push(`sourceId must match the input source ID "${expectedSourceId}".`);
+  } else if (validSourceIds.length > 0) {
+    if (isStringSourceId) {
+      const trimmed = (rawSourceId as string).trim();
+      const matches =
+        validSourceIds.includes(trimmed) ||
+        trimmed === validSourceIds.join(",") ||
+        trimmed === validSourceIds.join(", ");
+      if (!matches) {
+        if (validSourceIds.length === 1) {
+          errors.push(`sourceId must match the input source ID "${validSourceIds[0]}".`);
+        } else {
+          errors.push(
+            `sourceId must match one of the input source IDs [${validSourceIds.map((id) => `"${id}"`).join(", ")}].`
+          );
+        }
+      }
+    } else if (isArraySourceId) {
+      const arr = rawSourceId as string[];
+      const allMatch = arr.every((id) => validSourceIds.includes(id.trim()));
+      if (!allMatch) {
+        errors.push(
+          `sourceId must match the input source ID(s) [${validSourceIds.map((id) => `"${id}"`).join(", ")}].`
+        );
+      }
+    }
   }
 
   if (!Array.isArray(output.filterGroups)) {
@@ -134,13 +171,14 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
     "You are the Form Builder Agent. You convert a Relationship Schema into a Form Schema that a frontend can use to render a dynamic, cascading filter form."
   );
 
-  const relOutput = (state as any).relationshipBuilder;
-  const sourceId =
+  const relOutput = (state as any).relationshipBuilder as RelationshipSchemaOutput;
+  const sourceId: string | string[] =
     (state as any).connectorId ||
     (relOutput as any)?.sourceId ||
     (state.schemaResolution as any)?.connectorId ||
     (state as any)?.connector?.id ||
     "default_source";
+  const displaySourceId = Array.isArray(sourceId) ? sourceId.join(", ") : sourceId;
 
   const fallbackResult: FormBuilderOutput = await generateHierarchicalFormsTool({
     relationshipBuilderOutput: relOutput,
@@ -152,7 +190,7 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
   const prompt = [
     systemPrompt,
     "## Context",
-    `### Source Data ID\n"${sourceId}"`,
+    `### Source Data ID\n"${displaySourceId}"`,
     relOutput ? `### Input Relationship Schema\n\`\`\`json\n${JSON.stringify(relOutput, null, 2)}\n\`\`\`` : "",
     `### Discovered Candidate Form Structure\n\`\`\`json\n${JSON.stringify(fallbackResult, null, 2)}\n\`\`\``,
     state.userPrompt ? `### User Request\n${state.userPrompt}` : "",
@@ -167,17 +205,35 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
     "Executing LLM reasoning for Form Schema generation (grouping by entityScope, priority ordering, controlType decision)..."
   );
 
+  // 3. Invoke LLM Agent with AI trace logging, conversation memory, and validator retry loop
+  const conversationMessages: BaseMessage[] = [];
+
   const rawAgentResult = await validateWithRetry<Record<string, unknown>>(
     "formBuilder",
-    async (feedbackPrompt?: string) =>
-      invokeAgentJson<Record<string, unknown>>(
+    async (feedbackPrompt?: string) => {
+      const userMessage = feedbackPrompt
+        ? `Previous attempt had validation errors:\n${feedbackPrompt}\n\nPlease review your previous output and rectify these errors. Return the corrected Form Builder JSON object matching the required format.`
+        : prompt;
+
+      const agentResult = await invokeAgentJson<Record<string, unknown>>(
         "formBuilder",
         model,
-        feedbackPrompt ? `${prompt}\n\n${feedbackPrompt}` : prompt,
+        userMessage,
         fallbackResult as unknown as Record<string, unknown>,
         services,
-        { traceLabel: "agent:formBuilder" }
-      ),
+        {
+          systemPrompt,
+          traceLabel: "agent:formBuilder",
+          messages: [...conversationMessages],
+        }
+      );
+
+      // Record interaction in conversation memory
+      conversationMessages.push(new HumanMessage(userMessage));
+      conversationMessages.push(new AIMessage(typeof agentResult === "string" ? agentResult : JSON.stringify(agentResult, null, 2)));
+
+      return agentResult;
+    },
     fallbackResult as unknown as Record<string, unknown>,
     services,
     10,
@@ -205,8 +261,8 @@ export async function formBuilderNode(state: typeof AgentState.State, config?: R
   return {
     formBuilder: finalResult as unknown as Record<string, unknown>,
     runTimestamp: effectiveRunTimestamp,
-    status: "running",
+    status: "In-Progress" as const,
     summary: finalResult.summary,
-    steps: [{ name: "Form Builder", status: "completed", summary: finalResult.summary }],
+    steps: [{ name: "Form Builder", status: "Completed" as const, summary: finalResult.summary }],
   };
 }

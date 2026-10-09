@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as yaml from "js-yaml";
 import { BaseMessage } from "@langchain/core/messages";
-import { AgentStateType, IngestionServices } from "../../state";
+import { GraphAgentStateType, IngestionServices } from "../../state";
 import {
   getModel,
   getPromptFromFile,
@@ -66,7 +66,7 @@ export class ModelValidationAgent {
   }
 
   public static resolvePredictionStartDate(
-    state: AgentStateType,
+    state: GraphAgentStateType,
     trainingConfig: any
   ): string {
     const directStart =
@@ -171,7 +171,7 @@ export class ModelValidationAgent {
 
   public static extractValidatedFeatures(
     trainingConfig: any,
-    state: AgentStateType,
+    state: GraphAgentStateType,
     runDir?: string
   ): string[] {
 
@@ -196,11 +196,15 @@ export class ModelValidationAgent {
       stateConfig?.validated_features ||
       stateConfig?.validatedFeatures ||
       stateConfig?.features ||
+      ((state as any).featureValidatorNode as any)?.validatedFeatureSet?.kept ||
       (state.featureValidator as any)?.validatedFeatureSet?.kept ||
+      (state.stageOutputs?.featureValidatorNode as any)?.validatedFeatureSet?.kept ||
       (state.stageOutputs as any)?.featureValidator?.validatedFeatureSet?.kept ||
       (state as any)?.features ||
       (state as any)?.validatedFeatures ||
+      ((state as any).featureArchitectNode as any)?.validatedFeatureSet?.kept ||
       (state.featureArchitect as any)?.validatedFeatureSet?.kept ||
+      (state.stageOutputs?.modelTrainingExecNode as any)?.features ||
       (state.stageOutputs as any)?.modelTraining?.features;
 
     if (Array.isArray(stateFeatures) && stateFeatures.length > 0) {
@@ -227,7 +231,7 @@ export class ModelValidationAgent {
     return [];
   }
 
-  private static getProjectContext(state: AgentStateType, services: IngestionServices) {
+  private static getProjectContext(state: GraphAgentStateType, services: IngestionServices) {
     const projectId = state.projectId || services?.projectId || "default-project";
     let workspaceName = (state as any).workspaceName || services?.workspaceName || "";
     const projectName = (state as any).projectName || services?.projectName || "Forecasting";
@@ -367,7 +371,7 @@ export class ModelValidationAgent {
   }
 
   public static async execute(
-    state: AgentStateType,
+    state: GraphAgentStateType,
     services: IngestionServices,
     options?: {
       predictionHorizon?: number;
@@ -450,7 +454,7 @@ export class ModelValidationAgent {
       trainingConfig?.target_column ||
       trainingConfig?.model_selection?.target_entity?.name ||
       (state.modelSelection as any)?.target_entity?.name ||
-      (state.stageOutputs?.modelSelection as any)?.target_entity?.name ||
+      (state.stageOutputs?.modelSelectionNode as any)?.target_entity?.name ||
       "";
 
     const groupCol =
@@ -471,7 +475,7 @@ export class ModelValidationAgent {
       (state as any).problemType ||
       (state.modelSelection as any)?.problem_type ||
       (state.modelSelection as any)?.task_type ||
-      (state.stageOutputs?.modelSelection as any)?.problem_type ||
+      (state.stageOutputs?.modelSelectionNode as any)?.problem_type ||
       (state.featureArchitect as any)?.orchestrationDecision?.problemType;
 
     const direction =
@@ -484,9 +488,9 @@ export class ModelValidationAgent {
       trainingConfig?.["x-primary-metric-def"]?.direction ||
       (state as any).direction ||
       (state.modelSelection as any)?.direction ||
-      (state.stageOutputs?.modelSelection as any)?.direction ||
+      (state.stageOutputs?.modelSelectionNode as any)?.direction ||
       (state.modelTraining as any)?.direction ||
-      (state.stageOutputs?.modelTraining as any)?.direction ||
+      (state.stageOutputs?.modelTrainingExecNode as any)?.direction ||
       (state.trainingConfiguration as any)?.configuration?.objective?.direction ||
       (state.trainingConfiguration as any)?.configuration?.["x-primary-metric-def"]?.direction ||
       (state.trainingConfiguration as any)?.direction;
@@ -1057,10 +1061,10 @@ export class ModelValidationAgent {
     const stateCandidates = [
       ...((state.modelSelection as any)?.candidates || []),
       ...((state.modelSelection as any)?.models || []),
-      ...((state.stageOutputs?.modelSelection as any)?.candidates || []),
-      ...((state.stageOutputs?.modelSelection as any)?.models || []),
+      ...((state.stageOutputs?.modelSelectionNode as any)?.candidates || []),
+      ...((state.stageOutputs?.modelSelectionNode as any)?.models || []),
       ...((state.modelTraining as any)?.candidates || []),
-      ...((state.stageOutputs?.modelTraining as any)?.candidates || []),
+      ...((state.stageOutputs?.modelTrainingExecNode as any)?.candidates || []),
       ...((state.trainingConfiguration as any)?.configuration?.model_selection?.candidates || []),
       ...((state.trainingConfiguration as any)?.configuration?.model_selection?.models || []),
     ];

@@ -2,10 +2,11 @@
 
 import React from "react";
 import { Workflow } from "./types";
+import { buildGroupedStageStatuses, TRACKED_AGENT_KEYS } from "./pipelineNames";
 
 export const PIPELINE_STEPS: Workflow[] = [
   {
-    id: "Data Ingestion",
+    id: "dataIngestion",
     title: "Data Ingestion",
     description: "Inspect connector sources and discover structure",
     color: "green",
@@ -16,7 +17,7 @@ export const PIPELINE_STEPS: Workflow[] = [
     ),
     step: [
       {
-        id: "Data Inspection",
+        id: "inspect",
         title: "Data Inspection",
         description: "Inspect connector sources and discover structure",
         metric: "Inspect",
@@ -28,7 +29,7 @@ export const PIPELINE_STEPS: Workflow[] = [
         ),
       },
       {
-        id: "Data Profiling",
+        id: "profileData",
         title: "Data Profiling",
         description: "Profile data quality findings",
         metric: "Profile",
@@ -44,7 +45,7 @@ export const PIPELINE_STEPS: Workflow[] = [
         ),
       },
       {
-        id: "Schema Resolver",
+        id: "resolveSchema",
         title: "Schema Resolver",
         description: "Resolve and map the schema for downstream use",
         metric: "Resolve",
@@ -61,7 +62,7 @@ export const PIPELINE_STEPS: Workflow[] = [
     ]
   },
   {
-    id: "Feature Engineering",
+    id: "featureEngineering",
     title: "Feature Engineering",
     description: "Shape the data into features for downstream analytics",
 
@@ -76,7 +77,7 @@ export const PIPELINE_STEPS: Workflow[] = [
     ),
     step: [
       {
-        id: "Hierarchy Mapper",
+        id: "hierarchyMapperNode",
         title: "Hierarchy Mapper",
         description: "Discovers dimensional hierarchies and builds the queryable filter graph",
         metric: "HierarchyMapper",
@@ -88,7 +89,7 @@ export const PIPELINE_STEPS: Workflow[] = [
         ),
       },
       {
-        id: "Feature Architect",
+        id: "featureArchitectNode",
         title: "Feature Architect",
         description: "Generates and statistically validates lag/rolling/seasonal/calendar feature",
         metric: "FeatureArchitect",
@@ -104,7 +105,7 @@ export const PIPELINE_STEPS: Workflow[] = [
         ),
       },
       {
-        id: "Feature Validator",
+        id: "featureValidatorNode",
         title: "Feature Validator",
         description: "Audits features for leakage, multicollinearity, drift, and importance",
         metric: "FeatureValidator",
@@ -117,7 +118,7 @@ export const PIPELINE_STEPS: Workflow[] = [
         ),
       },
       {
-        id: "Exogenous Scout",
+        id: "exogenous",
         title: "Exogenous Scout",
         description: "Scouts and ranks external signals by predictive power",
         metric: "ExogenousScout",
@@ -133,7 +134,7 @@ export const PIPELINE_STEPS: Workflow[] = [
     ]
   },
   {
-    id: "Model Training & Validation",
+    id: "modelTrainingValidation",
     title: "Model Training & Validation",
     description: "Train, evaluate, validate, and select the best model",
 
@@ -149,21 +150,15 @@ export const PIPELINE_STEPS: Workflow[] = [
       </svg>
     ),
     step: [
-      { id: "Model Selection", title: "Model Selection", description: "Initialize model selection and select candidates", metric: "Select", color: "purple", icon: <span>01</span> },
-      { id: "Training Configuration", title: "Training Configuration", description: "Configure training environment and dataset splits", metric: "Configure", color: "pink", icon: <span>02</span> },
-      { id: "Pre Flight", title: "Pre Flight", description: "Validate runtime resources, environment and strategy pre-flight", metric: "Validate", color: "pink", icon: <span>03</span> },
-      { id: "Model Training", title: "Model Training", description: "Train candidate models from the validated feature dataset", metric: "Train", color: "pink", icon: <span>04</span> },
+      { id: "modelSelectionNode", title: "Model Selection", description: "Initialize model selection and select candidates", metric: "Select", color: "purple", icon: <span>01</span> },
+      { id: "trainingConfigurationNode", title: "Training Configuration", description: "Configure training environment and dataset splits", metric: "Configure", color: "pink", icon: <span>02</span> },
+      { id: "preFlightNode", title: "Pre Flight", description: "Validate runtime resources, environment and strategy pre-flight", metric: "Validate", color: "pink", icon: <span>03</span> },
+      { id: "modelTrainingCodeNode", title: "Model Training Code Generation", description: "Generate model training code from the approved configuration", metric: "Generate Code", color: "pink", icon: <span>04</span> },
+      { id: "modelTrainingExecNode", title: "Model Training Execution", description: "Execute training for the selected candidate models", metric: "Train", color: "pink", icon: <span>05</span> },
     ],
   },
 ];
 
-export const INITIAL_PIPELINE_STATUSES: Record<string, "Pending"> = {
-  "Data Inspection": "Pending",
-  "Data Profiling": "Pending",
-  "Schema Resolver": "Pending",
-  "Feature Engineering": "Pending",
-  "Model Selection": "Pending",
-  "Training Configuration": "Pending",
-  "Pre Flight": "Pending",
-  "Model Training": "Pending",
-};
+export const INITIAL_PIPELINE_STATUSES = buildGroupedStageStatuses(
+  Object.fromEntries(TRACKED_AGENT_KEYS.map((key) => [key, "None"]))
+);

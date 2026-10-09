@@ -120,11 +120,16 @@ export class ModelValidationService implements IModelValidationService {
     }
 
     try {
+      const existingStageOutputs = ((project.agentState as any)?.stageOutputs || {});
       const updatedAgentState = {
         ...((project.agentState as any) || {}),
         modelValidation: output,
         stageOutputs: {
-          ...((project.agentState as any)?.stageOutputs || {}),
+          ...existingStageOutputs,
+          modelTrainingExecNode: {
+            ...(existingStageOutputs?.modelTrainingExecNode || {}),
+            modelValidation: output,
+          },
           modelValidation: output,
         },
       };
@@ -149,8 +154,9 @@ export class ModelValidationService implements IModelValidationService {
     const project = await this.projectService.getById(projectId.trim());
     if (project?.agentState) {
       const state = project.agentState as any;
-      if (state.modelValidation || state.stageOutputs?.modelValidation) {
-        return state.modelValidation || state.stageOutputs?.modelValidation;
+      const modelValidation = state.stageOutputs?.modelTrainingExecNode?.modelValidation;
+      if (state.modelValidation || modelValidation) {
+        return state.modelValidation || modelValidation;
       }
     }
 
@@ -168,12 +174,12 @@ export class ModelValidationService implements IModelValidationService {
     }
 
     const state = (project.agentState as any) || {};
-    const trainingReport = state.modelTraining?.report || state.stageOutputs?.modelTraining?.report;
+    const trainingReport = state.modelTraining?.report || state.stageOutputs?.modelTrainingExecNode?.report;
     const candidates =
       trainingReport?.ranked_models ||
       trainingReport?.model_results ||
       state.modelSelection?.candidates ||
-      state.stageOutputs?.modelSelection?.candidates ||
+      state.stageOutputs?.modelSelectionNode?.candidates ||
       [];
 
     return {

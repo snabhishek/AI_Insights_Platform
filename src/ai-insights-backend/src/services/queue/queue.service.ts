@@ -30,14 +30,14 @@ export class QueueService {
         projectId,
         connectorId,
         userPrompt,
-        status: "queued",
+        status: "Queued",
         createdAt: new Date(),
         updatedAt: new Date(),
       })
       .onConflictDoUpdate({
         target: agentJobs.id,
         set: {
-          status: "queued",
+          status: "Queued",
           updatedAt: new Date(),
           userPrompt,
         },
@@ -61,7 +61,7 @@ export class QueueService {
 
           const oldestJob = this.pending[0];
           agentJobEvents.emit(`job:update:${oldestJob.jobId}`, {
-            status: "queued",
+            status: "Queued",
             summary: `Waiting for resources (System free memory: ${freeMemMb.toFixed(0)} MB)`,
           });
           break;
@@ -82,16 +82,16 @@ export class QueueService {
     try {
 
       await this.db.update(agentJobs)
-        .set({ status: "running", updatedAt: new Date() })
+        .set({ status: "In-Progress", updatedAt: new Date() })
         .where(eq(agentJobs.id, task.jobId));
 
       await task.runFn();
 
       const currentJob = await this.db.select().from(agentJobs).where(eq(agentJobs.id, task.jobId)).limit(1);
       const curStatus = currentJob[0]?.status;
-      if (curStatus !== "stopped" && curStatus !== "paused" && curStatus !== "failed") {
+      if (curStatus !== "Stopped" && curStatus !== "Paused" && curStatus !== "Failed") {
         await this.db.update(agentJobs)
-          .set({ status: "completed", updatedAt: new Date() })
+          .set({ status: "Completed", updatedAt: new Date() })
           .where(eq(agentJobs.id, task.jobId));
       }
 
@@ -99,11 +99,11 @@ export class QueueService {
       console.error(`[QueueService] Job ${task.jobId} failed:`, err.message || err);
 
       await this.db.update(agentJobs)
-        .set({ status: "failed", error: err.message || String(err), updatedAt: new Date() })
+        .set({ status: "Failed", error: err.message || String(err), updatedAt: new Date() })
         .where(eq(agentJobs.id, task.jobId));
 
       agentJobEvents.emit(`job:update:${task.jobId}`, {
-        status: "failed",
+        status: "Failed",
         summary: `Execution failed: ${err.message || String(err)}`,
       });
 

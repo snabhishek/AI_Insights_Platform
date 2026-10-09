@@ -177,6 +177,7 @@ export class TrainingConfigService implements ITrainingConfigService {
       console.warn(`[TrainingConfigService] Warning updating project agent state for ${projectId}:`, dbErr?.message || dbErr);
     }
 
+
     return {
       success: true,
       filePath,

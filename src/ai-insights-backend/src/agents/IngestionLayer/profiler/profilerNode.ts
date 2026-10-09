@@ -202,9 +202,9 @@ export async function profilerNode(state: typeof AgentState.State, config?: Runn
   if (!services) {
     throw new Error("Services dependency is not provided in config");
   }
-  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
+  if (services.isCancelled?.() || services.abortSignal?.aborted) {
     console.info(`[Workflow] profilerNode skipping execution because workflow is stopped/paused.`);
-    return { status: state.status || "failed" };
+    return { status: "Stopped" };
   }
   const { connectorService } = services;
   const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await connectorService.getById(connectorId)));
@@ -260,11 +260,11 @@ export async function profilerNode(state: typeof AgentState.State, config?: Runn
   }
 
   return {
-    dataProfile: { sources: profileSources },
+    profileData: { sources: profileSources },
     batchedTables: updatedBatchedTables,
-    status: "running",
+    status: "In-Progress",
     summary: "Data profiling completed",
-    steps: [{ name: "Data Profiler", status: "completed", summary: "Profiling completed" }],
+    steps: [{ name: "Data Profiler", status: "Completed", summary: "Profiling completed" }],
     stageOutputs: { profileData: { sources: profileSources } },
     stageStatuses: { profileData: "Completed" },
   };

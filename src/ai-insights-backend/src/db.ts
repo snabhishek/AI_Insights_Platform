@@ -125,8 +125,8 @@ export async function initializeDatabaseSchemas() {
 
     try {
       await query(`
-        UPDATE projects SET status = 'stopped' WHERE status = 'running';
-        UPDATE project_runs SET status = 'stopped', agent_state = jsonb_set(agent_state, '{status}', '"stopped"') WHERE status = 'running';
+        UPDATE projects SET status = 'Stopped' WHERE status IN ('running', 'In-Progress');
+        UPDATE project_runs SET status = 'Stopped', agent_state = jsonb_set(agent_state, '{status}', '"Stopped"') WHERE status IN ('running', 'In-Progress');
       `);
     } catch (cleanErr: any) {
       console.warn("[DB] Startup sanitization warning:", cleanErr?.message || cleanErr);

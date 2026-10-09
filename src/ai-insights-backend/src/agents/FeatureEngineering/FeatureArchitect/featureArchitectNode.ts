@@ -94,14 +94,10 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
 
   const isCancelled = services.isCancelled?.() ?? false;
   const isAborted = services.abortSignal?.aborted ?? false;
-  const isFailedState = state.status === DEFAULT_STATUS_FAILED;
-  const isPausedState = state.status === DEFAULT_STATUS_PAUSED;
-  const shouldSkip = isCancelled || isAborted || isFailedState || isPausedState;
 
-  if (shouldSkip) {
+  if (isCancelled || isAborted) {
     console.info("[Workflow] featureArchitectNode skipping execution because workflow is stopped/paused.");
-    const returnStatus = state.status.length > 0 ? state.status : DEFAULT_STATUS_FAILED;
-    return { status: returnStatus };
+    return { status: "Stopped" };
   }
 
   await logMilestoneThinking(
@@ -167,17 +163,17 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
       steps: [
         {
           name: DEFAULT_STAGE_TITLE,
-          status: STATUS_COMPLETED.toLowerCase(),
+          status: STATUS_COMPLETED,
           summary: DEFAULT_STEP_SUMMARY,
         },
       ],
       stageOutputs: {
-        featureArchitect: finalOutput,
-        featureValidator: featureValidatorOutput,
+        featureArchitectNode: finalOutput,
+        featureValidatorNode: featureValidatorOutput,
       },
       stageStatuses: {
-        featureArchitect: STATUS_COMPLETED,
-        featureValidator: STATUS_COMPLETED,
+        featureArchitectNode: STATUS_COMPLETED,
+        featureValidatorNode: STATUS_COMPLETED,
       },
     };
   } finally {

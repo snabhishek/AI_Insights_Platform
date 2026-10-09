@@ -2,10 +2,11 @@
 
 import React, { useState } from "react";
 import { Project, DataSource, UserProfile } from "../providers/AppContext";
-import { PipelineStatuses, RunStatus, Workflow } from "./types";
-import WorkflowPipeline, { getMainStepId } from "./WorkflowPipeline";
+import { PipelineStatuses, RunStatus, StageOutputs, Workflow, WorkflowAgentState } from "./types";
+import WorkflowPipeline, { getMainStepId, toDisplayStatuses } from "./WorkflowPipeline";
 import CardModal from "../shared/ui/CardModal";
 import { PIPELINE_STEPS } from "./constants";
+import { normalizeStageOutputs } from "./pipelineNames";
 import IngestionStepOutput from "./pipeline-outputs/IngestionStepOutput";
 import ProfilingStepOutput from "./pipeline-outputs/ProfilingStepOutput";
 import SchemaResolverStepOutput from "./pipeline-outputs/SchemaResolverStepOutput";
@@ -36,7 +37,7 @@ interface ProjectDetailPageProps {
   onManageSources: () => void;
   onAddTag: () => void;
   activeStage: string | null;
-  stageOutputs: Record<string, unknown>;
+  stageOutputs: StageOutputs;
   requiresApproval: boolean;
   workflowMessage: string;
   onSelectStage: (stepId: string) => void;
@@ -56,6 +57,11 @@ interface ProjectDetailPageProps {
   approvalNextStep?: string | null;
   isApproving?: boolean;
   isAwaitingResponse?: boolean;
+  isSubmittingWorkflow?: boolean;
+  isPausing?: boolean;
+  isStopping?: boolean;
+  isResuming?: boolean;
+  isRetrying?: boolean;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   showAlert: (opts: { title: string; message?: string; type: AlertType; logs?: string }) => void;
 }
@@ -92,6 +98,11 @@ export default function ProjectDetailPage({
   approvalNextStep,
   isApproving,
   isAwaitingResponse,
+  isSubmittingWorkflow,
+  isPausing,
+  isStopping,
+  isResuming,
+  isRetrying,
   agentThinking,
   showAlert,
 }: ProjectDetailPageProps) {
@@ -100,6 +111,7 @@ export default function ProjectDetailPage({
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState<boolean>(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [selectedSubstepId, setSelectedSubstepId] = useState<string | null>(null);
+  const displayPipelineStatuses = toDisplayStatuses(pipelineStatuses);
 
   React.useEffect(() => {
     setEditedUseCaseText(project.useCase || "");
@@ -113,11 +125,18 @@ export default function ProjectDetailPage({
       setSelectedWorkflow(match);
       if (stepId !== mainId) {
         setSelectedSubstepId(stepId);
-      } else if (mainId === "Model Training & Validation") {
-        const substeps = ["Model Training", "Pre Flight", "Training Configuration", "Model Selection"];
-        const inProgress = substeps.find((s) => pipelineStatuses[s] === "In Progress");
-        const withOutput = substeps.find((s) => stageOutputs?.[s] != null || pipelineStatuses[s] === "Completed");
-        setSelectedSubstepId(inProgress || withOutput || "Model Selection");
+      } else if (mainId === "modelTrainingValidation") {
+        const substeps = [
+          ["modelTrainingExecNode", "Model Training"],
+          ["preFlightNode", "Pre Flight"],
+          ["trainingConfigurationNode", "Training Configuration"],
+          ["modelSelectionNode", "Model Selection"],
+        ] as const;
+        const inProgress = substeps.find(([key]) => displayPipelineStatuses[key] === "In-Progress");
+        const withOutput = substeps.find(
+          ([key]) => stageOutputs?.[key] != null || displayPipelineStatuses[key] === "Completed"
+        );
+        setSelectedSubstepId(inProgress?.[0] || withOutput?.[0] || "modelSelectionNode");
       } else {
         setSelectedSubstepId(null);
       }
@@ -287,6 +306,8 @@ export default function ProjectDetailPage({
                       Save Only
                     </button>
                     <button
+                      type="button"
+                      disabled={isSubmittingWorkflow || isApproving || isPausing || isStopping || isResuming}
                       onClick={async () => {
                         if (onSaveUseCase) await onSaveUseCase(editedUseCaseText);
                         setIsEditingUseCase(false);
@@ -296,7 +317,7 @@ export default function ProjectDetailPage({
                           onRunWorkflow();
                         }
                       }}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-sm"
+                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Save & Re-Run Workflow
                     </button>
@@ -333,60 +354,81 @@ export default function ProjectDetailPage({
             onPause={onPause}
             onResume={onResume}
             isApproving={isApproving}
+            isSubmittingWorkflow={isSubmittingWorkflow}
+            isPausing={isPausing}
+            isStopping={isStopping}
+            isResuming={isResuming}
+            isRetrying={isRetrying}
             isAwaitingResponse={isAwaitingResponse}
             approvalNextStep={approvalNextStep}
           />
         </div>
       </div>
       {(() => {
-        const savedAgentState = (project.agentState as Record<string, any>) || {};
-        const savedOutputs = (savedAgentState.stageOutputs as Record<string, any>) || {};
+        const savedAgentState: WorkflowAgentState = project.agentState || {};
+        const savedOutputs = normalizeStageOutputs(savedAgentState.stageOutputs);
+        const currentOutputs = normalizeStageOutputs(stageOutputs);
+        const allowLegacyOutputFallback =
+          savedAgentState.stageOutputs === undefined && runStatus !== "In-Progress";
 
-        const effectiveInspect = stageOutputs.inspect || stageOutputs.inspectNode || savedOutputs.inspect || savedOutputs.inspectNode;
-        const effectiveProfileData = stageOutputs.profileData || savedOutputs.profileData;
-        const effectiveResolveSchema = stageOutputs.resolveSchema || savedOutputs.resolveSchema;
-        const effectiveHierarchyMapper = stageOutputs.hierarchyMapper || savedOutputs.hierarchyMapper;
-        const effectiveRelationshipBuilder = stageOutputs.relationshipBuilder || savedOutputs.relationshipBuilder;
-        const effectiveFormBuilder = stageOutputs.formBuilder || savedOutputs.formBuilder;
-        const effectiveFeatureArchitect = stageOutputs.featureArchitect || savedOutputs.featureArchitect;
-        const effectiveFeatureValidator = stageOutputs.featureValidator || (stageOutputs.featureArchitect as any)?.featureValidator || savedOutputs.featureValidator || (savedOutputs.featureArchitect as any)?.featureValidator;
-        const effectiveExogenousScout = stageOutputs.exogenousScout || savedOutputs.exogenousScout;
-        const effectiveModelSelection = stageOutputs.modelSelection || savedOutputs.modelSelection || savedAgentState.modelSelection;
-        const effectiveTrainingConfig = stageOutputs.trainingConfiguration || savedOutputs.trainingConfiguration || savedAgentState.trainingConfiguration;
-        const effectivePreFlight = stageOutputs.preFlight || savedOutputs.preFlight || savedAgentState.preFlight;
-        const effectiveModelTraining = stageOutputs.modelTraining || savedOutputs.modelTraining || savedAgentState.modelTraining;
-        const effectiveModelValidation = stageOutputs.modelValidation || savedOutputs.modelValidation || savedAgentState.modelValidation;
-        const effectiveRunTimestamp = (project.agentState as any)?.runTimestamp;
+        const effectiveInspect = currentOutputs.inspect || savedOutputs.inspect ||
+          (allowLegacyOutputFallback ? savedAgentState.inspection || savedAgentState.inspect : undefined);
+        const effectiveProfileData = currentOutputs.profileData || savedOutputs.profileData ||
+          (allowLegacyOutputFallback ? savedAgentState.dataProfile || savedAgentState.profileData : undefined);
+        const effectiveResolveSchema = currentOutputs.resolveSchema || savedOutputs.resolveSchema ||
+          (allowLegacyOutputFallback ? savedAgentState.schemaResolution || savedAgentState.resolveSchema : undefined);
+        const effectiveHierarchyMapper = currentOutputs.hierarchyMapperNode || savedOutputs.hierarchyMapperNode ||
+          (allowLegacyOutputFallback ? savedAgentState.hierarchyMapperNode || savedAgentState.hierarchyMapper : undefined);
+        const effectiveRelationshipBuilder = effectiveHierarchyMapper?.relationshipBuilder;
+        const effectiveFormBuilder = effectiveHierarchyMapper?.formBuilder;
+        const effectiveFeatureArchitect = currentOutputs.featureArchitectNode || savedOutputs.featureArchitectNode ||
+          (allowLegacyOutputFallback ? savedAgentState.featureArchitectNode || savedAgentState.featureArchitect : undefined);
+        const effectiveFeatureValidator = currentOutputs.featureValidatorNode || savedOutputs.featureValidatorNode ||
+          effectiveFeatureArchitect?.featureValidator ||
+          (allowLegacyOutputFallback ? savedAgentState.featureValidatorNode || savedAgentState.featureValidator : undefined);
+        const effectiveExogenousScout = currentOutputs.exogenous || savedOutputs.exogenous ||
+          (allowLegacyOutputFallback ? savedAgentState.exogenousScout || savedAgentState.exogenous : undefined);
+        const effectiveModelSelection = currentOutputs.modelSelectionNode || savedOutputs.modelSelectionNode ||
+          (allowLegacyOutputFallback ? savedAgentState.modelSelectionNode || savedAgentState.modelSelection : undefined);
+        const effectiveTrainingConfig = currentOutputs.trainingConfigurationNode || savedOutputs.trainingConfigurationNode ||
+          (allowLegacyOutputFallback ? savedAgentState.trainingConfigurationNode || savedAgentState.trainingConfiguration : undefined);
+        const effectivePreFlight = currentOutputs.preFlightNode || savedOutputs.preFlightNode ||
+          (allowLegacyOutputFallback ? savedAgentState.preFlightNode || savedAgentState.preFlight : undefined);
+        const effectiveModelTraining = currentOutputs.modelTrainingExecNode || savedOutputs.modelTrainingExecNode ||
+          (allowLegacyOutputFallback ? savedAgentState.modelTrainingExecNode || savedAgentState.modelTraining : undefined);
+        const effectiveModelValidation = effectiveModelTraining?.modelValidation ||
+          (allowLegacyOutputFallback ? savedAgentState.modelValidation : undefined);
+        const effectiveRunTimestamp = savedAgentState.runTimestamp;
 
         const stepOutputs: Record<string, React.ReactNode> = {
-          "Data Inspection": effectiveInspect ? (
+          inspect: effectiveInspect ? (
             <IngestionStepOutput inspectOutput={effectiveInspect} />
           ) : null,
-          "Data Profiling": effectiveProfileData ? (
+          profileData: effectiveProfileData ? (
             <ProfilingStepOutput profileData={effectiveProfileData} />
           ) : null,
-          "Schema Resolver": effectiveResolveSchema ? (
+          resolveSchema: effectiveResolveSchema ? (
             <SchemaResolverStepOutput resolveSchema={effectiveResolveSchema} />
           ) : null,
-          "Hierarchy Mapper": (effectiveHierarchyMapper || effectiveRelationshipBuilder || effectiveFormBuilder) ? (
+          hierarchyMapperNode: (effectiveHierarchyMapper || effectiveRelationshipBuilder || effectiveFormBuilder) ? (
             <HierarchyMapperStepOutput
               hierarchyMapper={effectiveHierarchyMapper}
               relationshipBuilder={effectiveRelationshipBuilder}
               formBuilder={effectiveFormBuilder}
             />
           ) : null,
-          "Feature Architect": effectiveFeatureArchitect ? (
+          featureArchitectNode: effectiveFeatureArchitect ? (
             <FeatureArchitectStepOutput featureArchitect={effectiveFeatureArchitect} />
           ) : null,
-          "Feature Validator": effectiveFeatureValidator ? (
+          featureValidatorNode: effectiveFeatureValidator ? (
             <FeatureValidatorStepOutput
               featureValidator={effectiveFeatureValidator}
             />
           ) : null,
-          "Exogenous Scout": effectiveExogenousScout ? (
+          exogenous: effectiveExogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={effectiveExogenousScout} />
           ) : null,
-          "Model Selection": effectiveModelSelection ? (
+          modelSelectionNode: effectiveModelSelection ? (
             <ModelTrainingValidationStepOutput
               modelSelection={effectiveModelSelection}
               projectId={project.id}
@@ -399,7 +441,7 @@ export default function ProjectDetailPage({
               }}
             />
           ) : null,
-          "Training Configuration": effectiveTrainingConfig ? (
+          trainingConfigurationNode: effectiveTrainingConfig ? (
             <ModelTrainingValidationStepOutput
               modelSelection={effectiveModelSelection}
               trainingConfiguration={effectiveTrainingConfig}
@@ -414,7 +456,7 @@ export default function ProjectDetailPage({
               isApproving={isApproving}
             />
           ) : null,
-          "Pre Flight": effectivePreFlight ? (
+          preFlightNode: effectivePreFlight ? (
             <ModelTrainingValidationStepOutput
               preFlight={effectivePreFlight}
               projectId={project.id}
@@ -428,7 +470,7 @@ export default function ProjectDetailPage({
               isApproving={isApproving}
             />
           ) : null,
-          "Model Training": (effectiveModelTraining || effectiveModelSelection) ? (
+          modelTrainingExecNode: (effectiveModelTraining || effectiveModelSelection) ? (
             <ModelTrainingValidationStepOutput
               modelTraining={effectiveModelTraining}
               trainingConfiguration={effectiveTrainingConfig}
@@ -449,6 +491,7 @@ export default function ProjectDetailPage({
               isApproving={isApproving}
             />
           ) : null,
+          modelTrainingCodeNode: null,
           "Model Validation": (effectiveModelValidation || effectiveModelTraining) ? (
             <ModelTrainingValidationStepOutput
               modelValidation={effectiveModelValidation}
@@ -480,7 +523,7 @@ export default function ProjectDetailPage({
             onClose={() => setIsExecutionModalOpen(false)}
             workflowCard={selectedWorkflow}
             selectedSubstepId={selectedSubstepId}
-            pipelineStatuses={pipelineStatuses}
+            pipelineStatuses={displayPipelineStatuses}
             stepOutputs={stepOutputs}
             runStatus={runStatus}
             workflowMessage={workflowMessage}

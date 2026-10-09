@@ -128,7 +128,6 @@ export default function ModelTrainingValidationStepOutput({
       <ModelTrainingStepOutput
         modelTraining={modelTraining || {}}
         trainingConfiguration={trainingConfiguration}
-        modelSelection={modelSelection}
         projectId={projectId}
         activeRunTimestamp={activeRunTimestamp}
         onApproveTraining={onApproveTraining}
