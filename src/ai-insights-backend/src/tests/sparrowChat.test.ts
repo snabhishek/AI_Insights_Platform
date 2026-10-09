@@ -407,3 +407,70 @@ test("controller rejects a non-string query without invoking the agent", async (
   } as any);
   assert.equal(status, 400);
 });
+
+test("discoverAvailableModels handles dictionary candidates object without crashing", async () => {
+  const { createDiscoverAvailableModelsTool } = await import("../agents/sparrow/tools/modelInference.tools");
+  const tool = createDiscoverAvailableModelsTool("p1", {
+    projectService: { getById: async () => ({ agentState: {} }) } as any,
+    modelValidationService: {
+      getValidationCandidates: async () => ({
+        candidates: {
+          lightgbm_sota: { model_id: "lightgbm_sota", display_name: "LightGBM Fast GBDT" },
+          xgboost_sota: { model_id: "xgboost_sota", display_name: "XGBoost Optimized Trees" },
+        },
+        championModelId: "lightgbm_sota",
+      }),
+    } as any,
+  });
+  const res: any = await tool.invoke({});
+  assert.equal(res.success, true);
+  assert.equal(res.models.length, 2);
+  assert.equal(res.championModelId, "lightgbm_sota");
+  assert.equal(res.models[0].isChampion, true);
+});
+
+test("revenue-volume compatibility allows model inference when target column is Order_Quantity", async () => {
+  const f = fixture({
+    resolve: async () => ({ ...understanding, intent: "PREDICT", targetMetric: "Order_Value" }),
+    plan: async () => ({
+      action: "tool" as const, planType: "model_inference" as const,
+      steps: [{ toolName: "runModelInference", args: { predictionHorizon: 3, predictionFrequency: "Monthly", selectedModels: ["m1"] }, description: "Inference" }],
+      rationale: "Forecast volume to project revenue",
+    }),
+  });
+  const predictIntents = [...intents, { code: "PREDICT", description: "Forecast", allowsInference: true, conversational: false }];
+  // With discoverAvailableModels successful in toolResults, runModelInference should not throw metric mismatch
+  const seedWithContext = {
+    ...seed,
+    intentCatalog: predictIntents,
+    projectContext: { projectId: "p1", targetColumn: "Order_Quantity" },
+  };
+  const toolsWithDiscovery = new Map(f.deps.tools);
+  toolsWithDiscovery.set("discoverAvailableModels", fakeTool(z.object({}), async () => ({ success: true, models: [] })));
+  toolsWithDiscovery.set("runModelInference", fakeTool(
+    z.object({ predictionHorizon: z.number(), predictionFrequency: z.string(), selectedModels: z.array(z.string()) }),
+    async () => ({ success: true, forecastTotal: 1000 })
+  ));
+  const graph = createSparrowGraph({ ...f.deps, tools: toolsWithDiscovery });
+  // First run discoverAvailableModels, then model inference
+  let currentStep = 0;
+  const multiStepGraph = createSparrowGraph({
+    ...f.deps,
+    tools: toolsWithDiscovery,
+    agents: {
+      ...f.deps.agents!,
+      resolve: async () => ({ ...understanding, intent: "PREDICT", targetMetric: "Order_Value" }),
+      plan: async (_u: any, _c: any, exec: any) => {
+        if (!exec.toolResults.some((t: any) => t.toolName === "discoverAvailableModels")) {
+          return { action: "tool" as const, planType: "model_inference" as const, steps: [{ toolName: "discoverAvailableModels", args: {}, description: "Discovery" }], rationale: "Discover" };
+        }
+        return currentStep++ === 0
+          ? { action: "tool" as const, planType: "model_inference" as const, steps: [{ toolName: "runModelInference", args: { predictionHorizon: 3, predictionFrequency: "Monthly", selectedModels: ["m1"] }, description: "Inference" }], rationale: "Run inference" }
+          : responsePlan;
+      },
+    },
+  });
+  const res = await multiStepGraph.invoke(seedWithContext, config("rev-vol-compat"));
+  assert.ok(res.toolResults.some((t: any) => t.toolName === "runModelInference" && t.success));
+});
+

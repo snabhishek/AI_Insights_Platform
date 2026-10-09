@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Search,
   Cpu,
@@ -27,6 +27,8 @@ interface ChatMessageListProps {
   onSelectSuggestedQuestion?: (question: string) => void;
   selectedProject?: Project | null;
   isChatEnabled?: boolean;
+  onScrollStateChange?: (isScrolledUp: boolean) => void;
+  onRegisterScrollToBottom?: (scrollToBottomFn: () => void) => void;
 }
 
 export default function ChatMessageList({
@@ -37,19 +39,53 @@ export default function ChatMessageList({
   onRetry, onClarificationReply, onClarificationDraft, onClarificationExpire,
   onFeedback,
   selectedProject,
+  onScrollStateChange,
+  onRegisterScrollToBottom,
 }: ChatMessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const [isScrolledUp, setIsScrolledUp] = useState(false);
 
   const hasUserMessages = messages.some((m) => m.role === "user");
   const conversationMessages = messages.filter((m) => m.id !== "msg-welcome-1");
 
+  const scrollToBottom = () => {
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    } else {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    }
+  };
+
+  useEffect(() => {
+    if (onRegisterScrollToBottom) {
+      onRegisterScrollToBottom(scrollToBottom);
+    }
+  }, [onRegisterScrollToBottom]);
+
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    setIsScrolledUp(false);
   }, [messages, isGenerating]);
 
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    const { scrollTop, scrollHeight, clientHeight } = e.currentTarget;
+    const scrolledUp = scrollHeight - scrollTop - clientHeight > 60;
+    setIsScrolledUp(scrolledUp);
+    onScrollStateChange?.(scrolledUp);
+  };
+
   return (
-    <div className="flex-1 bg-background overflow-y-auto relative px-4 sm:px-6 py-4 flex flex-col">
-      <div className="w-full max-w-4xl lg:max-w-5xl mx-auto space-y-4 flex-1 flex flex-col">
+    <div className="flex-1 min-h-0 relative flex flex-col bg-background">
+      <div
+        ref={scrollContainerRef}
+        onScroll={handleScroll}
+        className="flex-1 overflow-y-auto px-4 sm:px-6 py-4 flex flex-col"
+      >
+        <div className="w-full max-w-4xl lg:max-w-5xl mx-auto space-y-4 flex-1 flex flex-col pb-8">
         {!hasUserMessages ? (
         <div className="flex-1 flex flex-col items-center justify-center my-auto p-2 sm:p-4 text-center animate-fade-in select-none">
           <div className="w-full max-w-md mx-auto space-y-3 sm:space-y-3.5 text-center">
@@ -179,8 +215,25 @@ export default function ChatMessageList({
         ))
       )}
 
-        <div ref={bottomRef} />
+        <div ref={bottomRef} className="h-2 shrink-0" />
       </div>
     </div>
-  );
+
+    {/* Smooth natural blurred fade at the bottom of the chat window above the chat box */}
+    <div className="pointer-events-none absolute bottom-0 inset-x-0 h-10 bg-gradient-to-t from-background via-background/60 to-transparent backdrop-blur-[1px]" />
+
+    {/* Centered scroll to latest shortcut button at the bottom of the chat window */}
+    {isScrolledUp && (
+      <button
+        type="button"
+        onClick={scrollToBottom}
+        className="absolute bottom-3 left-1/2 -translate-x-1/2 z-30 flex items-center justify-center w-8 h-8 rounded-full bg-surface/95 dark:bg-zinc-800/95 backdrop-blur-md border border-border/80 dark:border-zinc-700 shadow-md hover:bg-surface hover:border-primary/50 text-foreground transition-all duration-200 hover:scale-110 active:scale-95 group cursor-pointer animate-in fade-in zoom-in-95"
+        title="Scroll to latest message"
+        aria-label="Scroll to latest message"
+      >
+        <ArrowDown className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+      </button>
+    )}
+  </div>
+);
 }

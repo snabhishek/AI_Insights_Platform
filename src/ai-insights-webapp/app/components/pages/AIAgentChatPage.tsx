@@ -225,6 +225,13 @@ export default function AIAgentChatPage() {
     );
   };
 
+  const handleRenameSession = (id: string, newTitle: string) => {
+    if (!newTitle.trim()) return;
+    setSessions((prev) =>
+      prev.map((s) => (s.id === id ? { ...s, title: newTitle.trim() } : s))
+    );
+  };
+
   const handleSelectSession = (id: string) => {
     const session = sessions.find((s) => s.id === id);
     if (session) {
@@ -488,6 +495,7 @@ export default function AIAgentChatPage() {
         onNewSession={handleNewSession}
         onDeleteSession={handleDeleteSession}
         onTogglePinSession={handleTogglePinSession}
+        onRenameSession={handleRenameSession}
         selectedPersonaId={selectedPersonaId}
         onSelectPersona={(pId) => {
           setSelectedPersonaId(pId);

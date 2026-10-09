@@ -169,18 +169,38 @@ export class ModelValidationService implements IModelValidationService {
 
     const state = (project.agentState as any) || {};
     const trainingReport = state.modelTraining?.report || state.stageOutputs?.modelTraining?.report;
-    const candidates =
+    const rawCandidates =
       trainingReport?.ranked_models ||
       trainingReport?.model_results ||
+      trainingReport?.candidate_model_results ||
       state.modelSelection?.candidates ||
       state.stageOutputs?.modelSelection?.candidates ||
       [];
+
+    const candidates = Array.isArray(rawCandidates)
+      ? rawCandidates
+      : typeof rawCandidates === "object" && rawCandidates !== null
+        ? Object.entries(rawCandidates).map(([key, val]: [string, any]) => ({
+            model_id: val?.model_id || val?.id || key,
+            displayName: val?.displayName || val?.display_name || val?.model_name || key,
+            framework: val?.framework || val?.training_metadata?.framework || "custom",
+            score: val?.best_metric_score || val?.score || val?.suitability_score || null,
+            ...val,
+          }))
+        : [];
+
+    const championModelId =
+      trainingReport?.champion_model_id ||
+      trainingReport?.best_model_id ||
+      state.modelTraining?.best_model_id ||
+      state.modelSelection?.selectedModelId ||
+      null;
 
     return {
       projectId: project.id,
       candidates,
       trainingReportSummary: trainingReport?.summary || null,
-      championModelId: trainingReport?.champion_model_id || null,
+      championModelId,
     };
   }
 }

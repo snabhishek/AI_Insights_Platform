@@ -59,10 +59,10 @@ export default function ChatInputArea({
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
-      textareaRef.current.style.height = `${Math.max(
-        Math.min(textareaRef.current.scrollHeight, 220),
-        84
-      )}px`;
+      const nextHeight = Math.max(Math.min(textareaRef.current.scrollHeight, 180), 24);
+      textareaRef.current.style.height = `${nextHeight}px`;
+      textareaRef.current.style.overflowY =
+        textareaRef.current.scrollHeight > 180 ? "auto" : "hidden";
     }
   }, [inputText]);
 
@@ -111,7 +111,8 @@ export default function ChatInputArea({
     setInputText("");
     setAttachedFiles([]);
     if (textareaRef.current) {
-      textareaRef.current.style.height = "84px";
+      textareaRef.current.style.height = "24px";
+      textareaRef.current.style.overflowY = "hidden";
     }
   };
 
@@ -207,7 +208,7 @@ export default function ChatInputArea({
     };
 
   return (
-    <div className="w-full bg-surface border-t border-border/40 px-4 sm:px-6 pt-2 pb-4 shrink-0 select-none">
+    <div className="w-full bg-background px-4 sm:px-6 pt-1 pb-4 shrink-0 select-none border-0 shadow-none">
       <div className="w-full max-w-4xl lg:max-w-5xl mx-auto space-y-2.5">
         {suggestions.length > 0 && (
         <div className="w-full flex items-center gap-2 overflow-x-auto py-1 scrollbar-none no-scrollbar">
@@ -236,7 +237,7 @@ export default function ChatInputArea({
       )}
 
       <div
-        className={`relative rounded-3xl border transition-all p-3 sm:p-4 space-y-2.5 shadow-sm ${
+        className={`relative rounded-3xl border transition-all p-2.5 sm:p-3 space-y-1.5 shadow-xs ${
           isChatEnabled
             ? "border-border/80 bg-surface-muted/50 dark:bg-zinc-900/90 focus-within:border-primary/80 focus-within:ring-2 focus-within:ring-primary/10"
             : "border-border/40 bg-surface-muted/30 opacity-70 cursor-not-allowed"
@@ -278,16 +279,16 @@ export default function ChatInputArea({
               ? "Ask anything, @ to mention, / for actions"
               : "Choose a project from the sidebar dropdown above to enable chat..."
           }
-          rows={3}
-          style={{ minHeight: "84px" }}
-          className={`w-full resize-none bg-transparent px-1 py-1 text-sm text-foreground focus:outline-none max-h-56 leading-relaxed ${
+          rows={1}
+          style={{ minHeight: "24px", maxHeight: "180px" }}
+          className={`w-full resize-none bg-transparent px-1 py-0.5 text-sm text-foreground focus:outline-none leading-relaxed ${
             isChatEnabled
               ? "placeholder:text-muted-foreground/60"
               : "placeholder:text-muted-foreground/40 cursor-not-allowed"
           }`}
         />
 
-        <div className="flex items-center justify-between gap-2 pt-1">
+        <div className="flex items-center justify-between gap-2 pt-0.5">
           <div className="flex items-center gap-2 min-w-0 flex-wrap">
             <input
               type="file"

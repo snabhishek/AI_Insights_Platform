@@ -1,7 +1,7 @@
 "use client";
 
-import React, { useState } from "react";
-import { Plus, Search, Pin, Trash2, MessageSquare, Folder } from "lucide-react";
+import React, { useState, useRef, useEffect } from "react";
+import { Plus, Search, Pin, Trash2, MessageSquare, Folder, MoreHorizontal, Pencil, Check } from "lucide-react";
 import { ChatSession, AgentPersonaId } from "./types";
 import { Project } from "../providers/AppContext";
 import ModernSelect from "../shared/ui/ModernSelect";
@@ -14,6 +14,7 @@ interface ChatSidebarProps {
   onNewSession: () => void;
   onDeleteSession: (id: string) => void;
   onTogglePinSession: (id: string) => void;
+  onRenameSession?: (id: string, newTitle: string) => void;
   selectedPersonaId: AgentPersonaId;
   onSelectPersona: (id: AgentPersonaId) => void;
   projects?: Project[];
@@ -28,6 +29,7 @@ export default function ChatSidebar({
   onNewSession,
   onDeleteSession,
   onTogglePinSession,
+  onRenameSession,
   projects = [],
   selectedProjectId = "",
   onSelectProject,
@@ -115,6 +117,7 @@ export default function ChatSidebar({
                   onSelect={() => onSelectSession(session.id)}
                   onDelete={() => onDeleteSession(session.id)}
                   onTogglePin={() => onTogglePinSession(session.id)}
+                  onRename={(newTitle) => onRenameSession?.(session.id, newTitle)}
                 />
               ))}
             </div>
@@ -140,6 +143,7 @@ export default function ChatSidebar({
                   onSelect={() => onSelectSession(session.id)}
                   onDelete={() => onDeleteSession(session.id)}
                   onTogglePin={() => onTogglePinSession(session.id)}
+                  onRename={(newTitle) => onRenameSession?.(session.id, newTitle)}
                 />
               ))}
             </div>
@@ -156,13 +160,64 @@ function SessionItem({
   onSelect,
   onDelete,
   onTogglePin,
+  onRename,
 }: {
   session: ChatSession;
   isActive: boolean;
   onSelect: () => void;
   onDelete: () => void;
   onTogglePin: () => void;
+  onRename?: (newTitle: string) => void;
 }) {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState(session.title);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setEditTitle(session.title);
+  }, [session.title]);
+
+  useEffect(() => {
+    if (isEditing) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    }
+  }, [isEditing]);
+
+  useEffect(() => {
+    if (!isMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setIsMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [isMenuOpen]);
+
+  const handleSaveRename = () => {
+    const trimmed = editTitle.trim();
+    if (trimmed && trimmed !== session.title && onRename) {
+      onRename(trimmed);
+    } else {
+      setEditTitle(session.title);
+    }
+    setIsEditing(false);
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      handleSaveRename();
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      setEditTitle(session.title);
+      setIsEditing(false);
+    }
+  };
+
   return (
     <div
       onClick={onSelect}
@@ -177,7 +232,37 @@ function SessionItem({
           <PersonaIcon id={session.agentPersona} className="w-3.5 h-3.5" />
         </div>
         <div className="min-w-0 flex-1">
-          <p className="text-xs truncate leading-snug">{session.title}</p>
+          {isEditing ? (
+            <div
+              className="flex items-center gap-1"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <input
+                ref={inputRef}
+                type="text"
+                value={editTitle}
+                onChange={(e) => setEditTitle(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={handleSaveRename}
+                className="w-full text-xs px-1.5 py-0.5 rounded border border-primary bg-surface text-foreground focus:outline-none"
+              />
+              <button
+                type="button"
+                onClick={handleSaveRename}
+                className="p-1 text-primary hover:bg-primary/10 rounded transition-colors"
+                title="Save"
+              >
+                <Check className="w-3 h-3" />
+              </button>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5 min-w-0">
+              <p className="text-xs truncate leading-snug">{session.title}</p>
+              {session.pinned && (
+                <Pin className="w-2.5 h-2.5 text-amber-500 fill-amber-500/20 shrink-0" />
+              )}
+            </div>
+          )}
           {session.projectName && (
             <span className="text-[9px] text-muted-foreground flex items-center gap-1 truncate mt-0.5">
               <Folder className="w-2.5 h-2.5 shrink-0" />
@@ -187,31 +272,76 @@ function SessionItem({
         </div>
       </div>
 
-      <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity shrink-0">
+      {/* Horizontal three-dot menu */}
+      <div className="relative shrink-0 flex items-center">
         <button
           type="button"
           onClick={(e) => {
             e.stopPropagation();
-            onTogglePin();
+            setIsMenuOpen(!isMenuOpen);
           }}
-          className={`p-1.5 hover:bg-surface rounded-lg transition-colors ${
-            session.pinned ? "text-amber-500" : "text-muted-foreground hover:text-foreground"
+          className={`p-1 bg-transparent hover:bg-transparent cursor-pointer rounded transition-all active:scale-90 ${
+            isMenuOpen
+              ? "text-primary opacity-100"
+              : "opacity-0 group-hover:opacity-100 text-muted-foreground hover:text-foreground"
           }`}
-          title={session.pinned ? "Unpin session" : "Pin session"}
+          title="Conversation options"
+          aria-label="Conversation options"
         >
-          <Pin className="w-3 h-3" />
+          <MoreHorizontal className="w-4 h-4" />
         </button>
-        <button
-          type="button"
-          onClick={(e) => {
-            e.stopPropagation();
-            onDelete();
-          }}
-          className="p-1.5 hover:bg-rose-500/10 text-muted-foreground hover:text-rose-500 rounded-lg transition-colors"
-          title="Delete session"
-        >
-          <Trash2 className="w-3 h-3" />
-        </button>
+
+        {isMenuOpen && (
+          <div
+            ref={menuRef}
+            onClick={(e) => e.stopPropagation()}
+            className="absolute right-0 top-full mt-1 w-36 rounded-xl border border-border/80 dark:border-zinc-700 bg-surface/98 dark:bg-zinc-900/98 backdrop-blur-md shadow-lg p-1 z-50 space-y-0.5 animate-in fade-in zoom-in-95 duration-100 select-none text-left"
+          >
+            <button
+              type="button"
+              onClick={() => {
+                setIsMenuOpen(false);
+                onTogglePin();
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-muted hover:text-primary transition-colors cursor-pointer group/item text-left"
+            >
+              <Pin
+                className={`w-3.5 h-3.5 ${
+                  session.pinned
+                    ? "text-amber-500 fill-amber-500/20"
+                    : "text-muted-foreground group-hover/item:text-primary"
+                }`}
+              />
+              <span>{session.pinned ? "Unpin" : "Pin"}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsMenuOpen(false);
+                setIsEditing(true);
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-muted hover:text-primary transition-colors cursor-pointer group/item text-left"
+            >
+              <Pencil className="w-3.5 h-3.5 text-muted-foreground group-hover/item:text-primary" />
+              <span>Edit</span>
+            </button>
+
+            <div className="h-px bg-border/60 my-0.5" />
+
+            <button
+              type="button"
+              onClick={() => {
+                setIsMenuOpen(false);
+                onDelete();
+              }}
+              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-destructive hover:bg-rose-500/10 transition-colors cursor-pointer group/item text-left"
+            >
+              <Trash2 className="w-3.5 h-3.5 text-destructive" />
+              <span>Delete</span>
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -22,6 +22,23 @@ export interface SparrowGraphDependencies {
 export const MAX_TOOL_CALLS = 20;
 export const MAX_RECTIFICATIONS = 5;
 
+function safeJsonSerialize<T>(value: T): T {
+  if (value === null || value === undefined) return value;
+  try {
+    return JSON.parse(
+      JSON.stringify(value, (_key, val) =>
+        typeof val === "bigint"
+          ? Number.isSafeInteger(Number(val)) ? Number(val) : val.toString()
+          : val instanceof Error
+            ? { message: val.message, name: val.name, stack: val.stack }
+            : val
+      )
+    );
+  } catch {
+    return String(value) as unknown as T;
+  }
+}
+
 export function createSparrowNodes(deps: SparrowGraphDependencies) {
   const agents = deps.agents ?? {
     resolve: QueryResolver.resolveQuery, plan: AnalysisPlanner.createPlan, respond: InsightsResponder.generateResponse,
@@ -29,20 +46,27 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
   const toolCatalog = Array.from(deps.tools, ([name, tool]) => ({
     name, description: tool.description, parameters: toJsonSchema(tool.schema),
   }));
+  const getToolResults = (state: SparrowState): ExecutionToolResult[] =>
+    Array.isArray(state?.toolResults) ? state.toolResults : [];
+
   const progress = (state: SparrowState, node: string, text: string) => {
-    const thinking = [...state.thinking, { time: `00:${String(state.thinking.length + 1).padStart(2, "0")}`, text, done: true }];
+    const thinkingList = Array.isArray(state?.thinking) ? state.thinking : [];
+    const thinking = [...thinkingList, { time: `00:${String(thinkingList.length + 1).padStart(2, "0")}`, text, done: true }];
     deps.onThinkingUpdate?.(thinking);
     return { thinking, history: [{ node, summary: text }] };
   };
-  const executionContext = (state: SparrowState, repairing = false) => ({
-    userQuery: state.userQuery, messages: state.messages, memory: state.memory,
-    clarificationAnswer: state.clarificationAnswer,
-    toolResults: state.toolResults, previousPlan: state.plan, toolCatalog,
-    toolSchemas: Array.from(deps.tools, ([name, tool]) => ({ name, schema: tool.schema })),
-    repairing, remainingToolCalls: MAX_TOOL_CALLS - state.toolCalls,
-    intentDefinition: state.intentCatalog.find((intent) => intent.code === state.queryUnderstanding?.intent),
-    inferenceCapabilities: { segmentFilters: false, featureScenarioChanges: false },
-  });
+  const executionContext = (state: SparrowState, repairing = false) => {
+    const toolResults = getToolResults(state);
+    return {
+      userQuery: state.userQuery, messages: Array.isArray(state.messages) ? state.messages : [], memory: state.memory,
+      clarificationAnswer: state.clarificationAnswer,
+      toolResults, previousPlan: state.plan, toolCatalog,
+      toolSchemas: Array.from(deps.tools, ([name, tool]) => ({ name, schema: tool.schema })),
+      repairing, remainingToolCalls: MAX_TOOL_CALLS - state.toolCalls,
+      intentDefinition: (Array.isArray(state.intentCatalog) ? state.intentCatalog : []).find((intent) => intent.code === state.queryUnderstanding?.intent),
+      inferenceCapabilities: { segmentFilters: false, featureScenarioChanges: false },
+    };
+  };
 
   const execute = async (name: string, args: Record<string, unknown>, state: SparrowState): Promise<ExecutionToolResult> => {
     try {
@@ -52,15 +76,28 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
         throw new Error("External search is unavailable because no search provider is configured.");
       }
       if (name === "runModelInference") {
-        const intent = state.intentCatalog.find((item) => item.code === state.queryUnderstanding?.intent);
+        const intent = (Array.isArray(state.intentCatalog) ? state.intentCatalog : []).find((item) => item.code === state.queryUnderstanding?.intent);
         if (!intent?.allowsInference) throw new Error("The resolved intent does not permit model inference.");
         if (state.queryUnderstanding?.filters?.length || state.queryUnderstanding?.scenarioChanges?.length) {
           throw new Error("The current inference engine does not apply segment filters or feature scenario changes. Do not substitute an unfiltered forecast.");
         }
-        if (state.queryUnderstanding?.targetMetric && state.projectContext.targetColumn && state.queryUnderstanding.targetMetric.toLowerCase() !== state.projectContext.targetColumn.toLowerCase()) {
+        const isCompatibleTargetMetric = (requested?: string | null, target?: string | null) => {
+          if (!requested || !target) return true;
+          const req = requested.toLowerCase().trim();
+          const tgt = target.toLowerCase().trim();
+          if (req === tgt) return true;
+          const revenueTerms = ["revenue", "order_value", "sales", "value", "turnover", "total_revenue", "price"];
+          const volumeTerms = ["quantity", "order_quantity", "volume", "units", "demand", "orders"];
+          const isReqRevenue = revenueTerms.some((t) => req.includes(t));
+          const isTgtVolume = volumeTerms.some((t) => tgt.includes(t));
+          const isReqVolume = volumeTerms.some((t) => req.includes(t));
+          const isTgtRevenue = revenueTerms.some((t) => tgt.includes(t));
+          return (isReqRevenue && isTgtVolume) || (isReqVolume && isTgtRevenue);
+        };
+        if (state.queryUnderstanding?.targetMetric && state.projectContext.targetColumn && !isCompatibleTargetMetric(state.queryUnderstanding.targetMetric, state.projectContext.targetColumn)) {
           throw new Error(`The trained project target is '${state.projectContext.targetColumn}', which differs from the requested metric.`);
         }
-        if (!state.toolResults.some((item) => item.toolName === "discoverAvailableModels" && item.success)) {
+        if (!getToolResults(state).some((item) => item.toolName === "discoverAvailableModels" && item.success)) {
           throw new Error("Discover available models before inference.");
         }
       }
@@ -68,20 +105,22 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       if (name === "runModelInference" && state.queryUnderstanding?.timeRange?.horizon && parsedArgs.predictionHorizon !== state.queryUnderstanding.timeRange.horizon) {
         throw new Error("Inference horizon must match the resolved user request.");
       }
-      const previousFailure = state.toolResults.find((result) => !result.success && result.toolName === name && JSON.stringify(result.args) === JSON.stringify(parsedArgs));
+      const previousFailure = getToolResults(state).find((result) => !result.success && result.toolName === name && JSON.stringify(result.args) === JSON.stringify(parsedArgs));
       if (previousFailure) throw new Error("Identical failed call rejected; correct its parameters or explain the limitation.");
       let data = await instance.invoke(parsedArgs);
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch { throw new Error(data); }
       }
       if (!data || typeof data !== "object") throw new Error("Tool returned no structured result.");
+      const cleanData = safeJsonSerialize(data);
+      const cleanArgs = safeJsonSerialize(parsedArgs);
       return {
-        toolName: name, args: parsedArgs, executedAt: new Date().toISOString(),
-        success: data.success !== false && !data.error,
-        data, error: data.success === false || data.error ? (data.error || data.message || "Tool execution failed.") : undefined,
+        toolName: name, args: cleanArgs, executedAt: new Date().toISOString(),
+        success: cleanData.success !== false && !cleanData.error,
+        data: cleanData, error: cleanData.success === false || cleanData.error ? (cleanData.error || cleanData.message || "Tool execution failed.") : undefined,
       };
     } catch (error) {
-      return { toolName: name, args, success: false, error: error instanceof Error ? error.message : String(error), executedAt: new Date().toISOString() };
+      return { toolName: name, args: safeJsonSerialize(args), success: false, error: error instanceof Error ? error.message : String(error), executedAt: new Date().toISOString() };
     }
   };
 
@@ -99,7 +138,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
         toolName: "analysisPlanner", success: false,
         error: error instanceof Error ? error.message : String(error),
       };
-      return { plan: null, decisionReady: false, toolResults: [...state.toolResults, failure] };
+      return { plan: null, decisionReady: false, toolResults: [...getToolResults(state), failure] };
     }
   };
 
@@ -114,8 +153,9 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       if (state.toolCalls >= MAX_TOOL_CALLS) {
         return { nextAction: "respond" as const, stopReason: "Execution limit reached. Report available evidence and remaining gaps." };
       }
-      const latest = state.toolResults[state.toolResults.length - 1];
-      if (latest?.success === false && state.toolResults.length > state.correctedResultsCount) {
+      const toolResults = getToolResults(state);
+      const latest = toolResults[toolResults.length - 1];
+      if (latest?.success === false && toolResults.length > state.correctedResultsCount) {
         if (state.rectifications >= MAX_RECTIFICATIONS) {
           return { nextAction: "respond" as const, stopReason: "Correction limit reached. Explain the unresolved failure and any partial results." };
         }
@@ -141,7 +181,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
           tables: schema.success ? schema.data.tables : [],
           schemaError: schema.error, dataFiles: schema.success ? schema.data.dataFiles : [],
         },
-        toolResults: [...state.toolResults, metadata, schema], toolCalls: state.toolCalls + 2,
+        toolResults: [...getToolResults(state), metadata, schema], toolCalls: state.toolCalls + 2,
         contextInspected: true, queryUnderstanding: null,
         ...progress(state, "projectContext", "Inspected available project metadata and data schema."),
       };
@@ -153,13 +193,13 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
         ? { ...state.projectContext, tables: result.data.tables, dataFiles: result.data.dataFiles, schemaError: undefined }
         : result.success && step.toolName === "getProjectContext"
           ? { ...state.projectContext, ...result.data } : state.projectContext;
-      return { projectContext, toolResults: [...state.toolResults, result], toolCalls: state.toolCalls + 1,
+      return { projectContext, toolResults: [...getToolResults(state), result], toolCalls: state.toolCalls + 1,
         ...progress(state, "toolExecutor", result.success ? `Completed ${step.toolName}.` : `${step.toolName} could not complete; reviewing the failure.`) };
     },
     programRectificationNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
       const update = await decide(state, true);
       return { ...update, rectifications: state.rectifications + 1,
-        correctedResultsCount: state.toolResults.length,
+        correctedResultsCount: getToolResults(state).length,
         ...progress(state, "programRectification", "Reassessed the failed operation using available schema and results.") };
     },
     clarificationNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
@@ -173,28 +213,29 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
         clarificationAnswer: answer.trim(), queryUnderstanding: null, plan: null, hitlState: null, decisionReady: false,
         intentCatalog: typeof resumed === "object" && Array.isArray(resumed?.intentCatalog) ? resumed.intentCatalog : state.intentCatalog,
         interaction: interaction ? { ...interaction, status: "answered", answeredAt: new Date(deps.now?.() ?? Date.now()).toISOString() } : null,
-        clarificationHistory: [...state.clarificationHistory, ...(interaction
+        clarificationHistory: [...(Array.isArray(state.clarificationHistory) ? state.clarificationHistory : []), ...(interaction
           ? [{ id: interaction.id, question: prompt.question, answer: answer.trim() }] : [])].slice(-24),
-        messages: [...state.messages, { role: "assistant" as const, content: state.hitlState!.question }, { role: "user" as const, content: answer.trim() }].slice(-24),
+        messages: [...(Array.isArray(state.messages) ? state.messages : []), { role: "assistant" as const, content: state.hitlState!.question }, { role: "user" as const, content: answer.trim() }].slice(-24),
         ...progress(state, "clarification", "Received clarification; continuing with preserved results."),
       };
     },
     responderNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
       const plan: AnalysisPlan = state.plan ?? { action: "respond", planType: "general_response", steps: [], rationale: state.stopReason || "Answer with available context." };
-      const response = await agents.respond(state.userQuery, state.queryUnderstanding!, plan, state.toolResults, state.projectContext, state.thinking, {
+      const toolResults = getToolResults(state);
+      const response = await agents.respond(state.userQuery, state.queryUnderstanding!, plan, toolResults, state.projectContext, state.thinking, {
         ...state.memory, messages: state.messages, clarificationAnswer: state.clarificationAnswer, stopReason: state.stopReason,
       });
       const update = progress(state, "responder", "Prepared an answer from the available evidence.");
       return {
         ...update, response: { ...response, thinking: update.thinking },
-        messages: [...state.messages, { role: "assistant" as const, content: response.content }].slice(-24),
+        messages: [...(Array.isArray(state.messages) ? state.messages : []), { role: "assistant" as const, content: response.content }].slice(-24),
         memory: {
           previousUnderstanding: state.queryUnderstanding,
           previousQuery: state.userQuery, previousAnswer: response.content,
           // Prior-turn evidence is explicitly dated and never passed as a fresh result.
           previousEvidence: [
-            ...(Array.isArray(state.memory.previousEvidence) ? state.memory.previousEvidence : []),
-            ...state.toolResults.filter((result) => result.success && !["getProjectContext", "getProjectDataSchema"].includes(result.toolName)),
+            ...(Array.isArray(state.memory?.previousEvidence) ? state.memory.previousEvidence : []),
+            ...toolResults.filter((result) => result.success && !["getProjectContext", "getProjectDataSchema"].includes(result.toolName)),
           ].slice(-12),
           recordedAt: new Date().toISOString(),
         },

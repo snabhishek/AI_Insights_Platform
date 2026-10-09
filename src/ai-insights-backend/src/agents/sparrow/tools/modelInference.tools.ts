@@ -21,7 +21,18 @@ export const createDiscoverAvailableModelsTool = (
         }
 
         const candidateInfo = await services.modelValidationService.getValidationCandidates(projectId);
-        const candidates = candidateInfo?.candidates || [];
+        const rawCandidates = candidateInfo?.candidates || [];
+        const candidates = Array.isArray(rawCandidates)
+          ? rawCandidates
+          : typeof rawCandidates === "object" && rawCandidates !== null
+            ? Object.entries(rawCandidates).map(([key, val]: [string, any]) => ({
+                model_id: val?.model_id || val?.id || key,
+                displayName: val?.displayName || val?.display_name || val?.model_name || key,
+                framework: val?.framework || "custom",
+                score: val?.best_metric_score || val?.score || null,
+                ...val,
+              }))
+            : [];
         const championModelId = candidateInfo?.championModelId || null;
 
         const project = await services.projectService.getById(projectId);
@@ -137,7 +148,16 @@ export const createRunModelInferenceTool = (
 
         const modelsToRun = selectedModels;
         const candidateInfo = await services.modelValidationService.getValidationCandidates(projectId);
-        const availableIds = (candidateInfo?.candidates ?? []).map((model: any) => model.model_id || model.id);
+        const rawCandidates = candidateInfo?.candidates ?? [];
+        const candidates = Array.isArray(rawCandidates)
+          ? rawCandidates
+          : typeof rawCandidates === "object" && rawCandidates !== null
+            ? Object.entries(rawCandidates).map(([key, val]: [string, any]) => ({
+                model_id: val?.model_id || val?.id || key,
+                ...val,
+              }))
+            : [];
+        const availableIds = candidates.map((model: any) => model.model_id || model.id || String(model));
         if (!modelsToRun.length || modelsToRun.some((id) => !availableIds.includes(id))) {
           return { success: false, error: "Select supported model IDs from the discovered project models." };
         }

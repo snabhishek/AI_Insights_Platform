@@ -1,6 +1,14 @@
 import { setupTimestampedLogging } from "./utils/logger";
 setupTimestampedLogging();
 
+// Polyfill BigInt.prototype.toJSON to prevent "Do not know how to serialize a BigInt" across Express and LangGraph
+if (typeof BigInt !== "undefined" && !(BigInt.prototype as any).toJSON) {
+  (BigInt.prototype as any).toJSON = function () {
+    const num = Number(this);
+    return Number.isSafeInteger(num) ? num : this.toString();
+  };
+}
+
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";

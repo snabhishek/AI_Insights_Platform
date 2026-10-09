@@ -25,6 +25,13 @@ import { createSparrowGraph } from "./graph";
 import { SparrowMessage } from "./sparrowState";
 import { clarificationSchema, CLARIFICATION_WINDOW_MS, interactionAt } from "./clarification";
 
+if (typeof BigInt !== "undefined" && !(BigInt.prototype as any).toJSON) {
+  (BigInt.prototype as any).toJSON = function () {
+    const num = Number(this);
+    return Number.isSafeInteger(num) ? num : this.toString();
+  };
+}
+
 function savedInteraction(snapshot: any): SparrowInteraction {
   if (snapshot.values.interaction) return snapshot.values.interaction;
   // Earlier checkpoints already have durable interrupt IDs and creation times.
@@ -164,7 +171,7 @@ export class SparrowOrchestrator {
       answer: input.userQuery.trim(), intentCatalog: intents, interaction: savedInteraction(snapshot),
     } }) : retryIncompleteTurn ? null : {
       projectId, userQuery: input.userQuery.trim(),
-      messages: [...(hasCheckpoint ? snapshot.values.messages : seedHistory), { role: "user" as const, content: input.userQuery.trim() }].slice(-24),
+      messages: [...(hasCheckpoint && Array.isArray(snapshot.values?.messages) ? snapshot.values.messages : seedHistory), { role: "user" as const, content: input.userQuery.trim() }].slice(-24),
       projectContext: {
         projectId, projectName: project.projectName || project.name,
         domain: project.domain, useCase: project.useCase,
@@ -183,7 +190,7 @@ export class SparrowOrchestrator {
       const interaction = interactionAt(savedInteraction(next), this.deps.now?.());
       return {
         status: "awaiting_user_input", content: prompt.question,
-        clarification: prompt, interaction, serverNow: new Date(this.deps.now?.() ?? Date.now()).toISOString(), thinking: next.values.thinking ?? [],
+        clarification: prompt, interaction, serverNow: new Date(this.deps.now?.() ?? Date.now()).toISOString(), thinking: Array.isArray(next.values?.thinking) ? next.values.thinking : [],
         executionState: stateToken,
       };
     }

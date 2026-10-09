@@ -442,11 +442,30 @@ export class DuckDBService implements IDuckDBService {
     });
   }
 
+  private sanitizeBigInts<T>(value: T): T {
+    if (value === null || value === undefined) return value;
+    if (typeof value === "bigint") {
+      const num = Number(value);
+      return (Number.isSafeInteger(num) ? num : value.toString()) as unknown as T;
+    }
+    if (Array.isArray(value)) {
+      return value.map((item) => this.sanitizeBigInts(item)) as unknown as T;
+    }
+    if (typeof value === "object" && value.constructor === Object) {
+      const result: Record<string, any> = {};
+      for (const [key, val] of Object.entries(value)) {
+        result[key] = this.sanitizeBigInts(val);
+      }
+      return result as unknown as T;
+    }
+    return value;
+  }
+
   private async query<T = any>(conn: any, sql: string, params: any[] = []): Promise<T[]> {
     return new Promise((resolve, reject) => {
       conn.all(sql, ...params, (err: Error | null, rows: T[]) => {
         if (err) return reject(err);
-        resolve(rows || []);
+        resolve(this.sanitizeBigInts(rows || []));
       });
     });
   }
