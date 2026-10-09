@@ -19,6 +19,8 @@ export interface AgentPersona {
 }
 
 export interface ThinkingStep {
+  status?: "running" | "completed" | "stopped" | "failed";
+  timestamp?: string;
   time: string;
   text: string;
   done: boolean;
@@ -58,6 +60,7 @@ export interface ClarificationPrompt {
 }
 
 export interface ChatMessage {
+  requestId?: string;
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
@@ -78,7 +81,7 @@ export interface ChatMessage {
   agentName?: string;
   agentBadge?: string;
   agentAvatar?: string;
-  status?: "sending" | "complete" | "error" | "awaiting_user_input";
+  status?: "sending" | "complete" | "error" | "awaiting_user_input" | "stopped";
   clarification?: ClarificationPrompt;
   interaction?: { id: string; requestedAt: string; expiresAt: string; status: "waiting" | "timed_out" | "answered" };
   serverNow?: string;

@@ -78,7 +78,7 @@ test("schema-aware execution returns to the supervisor after each worker", async
   assert.equal(f.seen[0].context.tables[0].columns[0].name, "revenue");
   assert.equal(f.seen[1].execution.toolResults.at(-1).data.rows[0].total, 125);
   assert.equal(result.nextAction, "finish");
-  assert.deepEqual(result.history.map((item) => item.node), ["queryResolver", "projectContext", "queryResolver", "toolExecutor", "responder"]);
+  assert.deepEqual(result.history.map((item) => item.node), ["queryResolver", "projectContext", "queryResolver", "supervisor", "toolExecutor", "supervisor", "responder"]);
 });
 
 test("a tool failure is corrected using its error and schema before answering", async () => {
@@ -401,7 +401,7 @@ test("project and checkpoint boundaries are checked before any model invocation"
 
 test("controller rejects a non-string query without invoking the agent", async () => {
   let status = 0;
-  const controller = new SparrowChatController({ sendMessage: async () => { throw new Error("Must not invoke"); }, getInteraction: async () => ({}) });
+  const controller = new SparrowChatController({ sendMessage: async () => { throw new Error("Must not invoke"); }, getInteraction: async () => ({}) } as any);
   await controller.sendMessage({ body: { userQuery: {}, projectId: "p1" } } as any, {
     status: (value: number) => { status = value; return { json: () => {} }; },
   } as any);
@@ -468,7 +468,7 @@ test("an agent-justified derived metric permits inference of the inspected train
   toolsWithDiscovery.set("discoverAvailableModels", fakeTool(z.object({}), async () => ({ success: true, models: [] })));
   toolsWithDiscovery.set("runModelInference", fakeTool(
     z.object({ predictionHorizon: z.number(), predictionFrequency: z.string(), selectedModels: z.array(z.string()) }),
-    async () => ({ success: true, forecastTotal: 1000 })
+    async () => ({ success: true, targetColumn: "Order_Quantity", forecastTotal: 1000 })
   ));
   const graph = createSparrowGraph({ ...f.deps, tools: toolsWithDiscovery });
   // First run discoverAvailableModels, then model inference

@@ -29,12 +29,14 @@ test("fresh database receives all application tables and an immutable migration 
   await fixture(async (pool, schema) => {
     await runMigrations(pool, `${schema}_journal`);
     const tables = await pool.query("SELECT tablename FROM pg_tables WHERE schemaname = $1", [schema]);
-    assert.equal(tables.rows.length, 15);
+    assert.equal(tables.rows.length, 17);
+    assert.ok(tables.rows.some(row => row.tablename === "sparrow_chat_messages"));
+    assert.ok(tables.rows.some(row => row.tablename === "sparrow_chat_sessions"));
     assert.ok(tables.rows.some(row => row.tablename === "domains"));
     assert.equal((await pool.query("SELECT COUNT(*) FROM sparrow_intents")).rows[0].count, "13");
     await pool.query("UPDATE sparrow_intents SET description = 'Operator edit' WHERE code = 'ANALYZE'");
     await runMigrations(pool, `${schema}_journal`);
-    assert.equal((await pool.query(`SELECT COUNT(*) FROM "${schema}_journal".__application_migrations`)).rows[0].count, "1");
+    assert.equal((await pool.query(`SELECT COUNT(*) FROM "${schema}_journal".__application_migrations`)).rows[0].count, "2");
     assert.equal((await pool.query("SELECT description FROM sparrow_intents WHERE code = 'ANALYZE'")).rows[0].description, "Operator edit");
   });
 });
@@ -75,6 +77,6 @@ test("incompatible legacy schema rolls back and does not record a successful mig
 test("simultaneous startup migrations serialize and record the baseline once", async () => {
   await fixture(async (pool, schema) => {
     await Promise.all([runMigrations(pool, `${schema}_journal`), runMigrations(pool, `${schema}_journal`)]);
-    assert.equal((await pool.query(`SELECT COUNT(*) FROM "${schema}_journal".__application_migrations`)).rows[0].count, "1");
+    assert.equal((await pool.query(`SELECT COUNT(*) FROM "${schema}_journal".__application_migrations`)).rows[0].count, "2");
   });
 });

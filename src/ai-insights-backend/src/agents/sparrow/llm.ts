@@ -3,6 +3,7 @@ import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import { toJsonSchema } from "@langchain/core/utils/json_schema";
 import { getModel, resolvePromptFilePath } from "../utils/agentUtils";
+import { sparrowSignal, throwIfSparrowStopped } from "./executionContext";
 
 export interface SparrowDecisionTool {
   name: string;
@@ -23,6 +24,7 @@ export function decisionTransportSchema(schema: z.ZodType): Record<string, unkno
 // Expose each action as its own function schema, keeping tool arguments explicit
 // without combining the entire registry into one union-shaped JSON plan.
 export async function invokeSparrowDecision(payload: unknown, tools: SparrowDecisionTool[]) {
+  throwIfSparrowStopped();
   const model = getModel();
   if (!model) throw new Error("Configure an LLM provider before using Sparrow.");
   const prompt = await readFile(resolvePromptFilePath("analysisPlanner.md"), "utf8");
@@ -32,7 +34,8 @@ export async function invokeSparrowDecision(payload: unknown, tools: SparrowDeci
   } }));
   const result = await model.bindTools(definitions, { tool_choice: "any" }).invoke([
     new SystemMessage(prompt), new HumanMessage(JSON.stringify(payload)),
-  ], { signal: AbortSignal.timeout(60_000) });
+  ], { signal: sparrowSignal(60_000) });
+  throwIfSparrowStopped();
   if (result.invalid_tool_calls?.length || result.tool_calls?.length !== 1) {
     throw new Error("Supervisor must select exactly one valid next action.");
   }
@@ -44,6 +47,7 @@ export async function invokeSparrowDecision(payload: unknown, tools: SparrowDeci
 
 // One prompt source; configuration and malformed output errors stay explicit.
 export async function invokeSparrowJson<T extends Record<string, unknown>>(promptName: string, payload: unknown, schema: z.ZodType<T>): Promise<T> {
+  throwIfSparrowStopped();
   const model = getModel();
   if (!model) throw new Error("Configure an LLM provider before using Sparrow.");
   
@@ -54,7 +58,8 @@ export async function invokeSparrowJson<T extends Record<string, unknown>>(promp
   
   const result = await structuredModel.invoke([
     new SystemMessage(prompt), new HumanMessage(JSON.stringify(payload)),
-  ], { signal: AbortSignal.timeout(60_000) });
+  ], { signal: sparrowSignal(60_000) });
+  throwIfSparrowStopped();
   
   return schema.parse(result);
 }

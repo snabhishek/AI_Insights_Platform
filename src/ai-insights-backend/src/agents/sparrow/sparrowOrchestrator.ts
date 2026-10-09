@@ -25,6 +25,9 @@ import { SparrowMessage } from "./sparrowState";
 import { clarificationSchema, CLARIFICATION_WINDOW_MS, interactionAt } from "./clarification";
 import { projectBusinessContext } from "./projectContext";
 import { createCalculateMetricTool } from "./tools/calculation.tools";
+import { ISparrowExecutionService, SparrowExecutionService } from "../../services/ai/sparrow-execution/sparrowExecution.service";
+import { createExecuteProjectScriptTool } from "./tools/scriptExecution.tools";
+import { sparrowRunContext, stoppedResponse, throwIfSparrowStopped } from "./executionContext";
 
 if (typeof BigInt !== "undefined" && !(BigInt.prototype as any).toJSON) {
   (BigInt.prototype as any).toJSON = function () {
@@ -49,6 +52,7 @@ export interface SparrowOrchestratorDependencies {
   projectService: ProjectService;
   duckDBService: IDuckDBService;
   modelValidationService: IModelValidationService;
+  executionService?: ISparrowExecutionService;
   checkpointer: BaseCheckpointSaver;
   intentRepository: ISparrowIntentRepository;
   now?: () => number;
@@ -56,6 +60,7 @@ export interface SparrowOrchestratorDependencies {
 }
 
 export interface RunSparrowInput {
+  resetStoppedTurn?: boolean;
   userQuery: string;
   projectId: string;
   conversationId?: string;
@@ -136,8 +141,8 @@ export class SparrowOrchestrator {
     const config = { configurable: { thread_id: threadId }, recursionLimit: 80 };
     const snapshot = await graph.getState(config);
     const hasCheckpoint = Boolean(snapshot.values?.projectId);
-    const pendingInterrupt = snapshot.tasks.some((task) => task.interrupts?.length);
-    const retryIncompleteTurn = hasCheckpoint && !pendingInterrupt && snapshot.next.length > 0;
+    const pendingInterrupt = !input.resetStoppedTurn && snapshot.tasks.some((task) => task.interrupts?.length);
+    const retryIncompleteTurn = !input.resetStoppedTurn && hasCheckpoint && !pendingInterrupt && snapshot.next.length > 0 && snapshot.values.response?.status !== "stopped";
     if (hasCheckpoint && snapshot.values.projectId !== projectId) throw new Error("Checkpoint project mismatch.");
     const stateToken = { projectId, threadId: conversationId };
     if (input.interactionId) {
@@ -167,7 +172,10 @@ export class SparrowOrchestrator {
     const seedHistory: SparrowMessage[] = !hasCheckpoint ? (input.conversationHistory ?? [])
       .filter((message) => (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
       .slice(-23).map((message) => ({ role: message.role as "user" | "assistant", content: message.content.slice(0, 12000) })) : [];
-    const result = await graph.invoke(pendingInterrupt ? new Command({ resume: {
+    throwIfSparrowStopped();
+    let result;
+    try {
+      result = await graph.invoke(pendingInterrupt ? new Command({ resume: {
       answer: input.userQuery.trim(), intentCatalog: intents, interaction: savedInteraction(snapshot),
     } }) : retryIncompleteTurn ? null : {
       projectId, userQuery: input.userQuery.trim(),
@@ -177,7 +185,17 @@ export class SparrowOrchestrator {
       toolResults: [], thinking: [], nextAction: "resolve" as const,
       hitlState: null, interaction: null, clarificationAnswer: "", clarificationHistory: [], contextInspected: false,
       toolCalls: 0, rectifications: 0, correctedResultsCount: 0, decisionReady: false, stopReason: "",
-    }, config);
+      }, { ...config, signal: sparrowRunContext.getStore()?.signal });
+      throwIfSparrowStopped();
+    } catch (error) {
+      const run = sparrowRunContext.getStore();
+      if (!run?.signal.aborted) throw error;
+      const stopped = stoppedResponse(run.thinking, stateToken);
+      const saved = await graph.getState(config);
+      await graph.updateState(config, { response: stopped, thinking: stopped.thinking, nextAction: "finish", hitlState: null, interaction: null,
+        messages: [...(saved.values.messages ?? []), { role: "assistant", content: stopped.content }].slice(-24) }, "responderNode");
+      return stopped;
+    }
     const next = await graph.getState(config);
     const clarification = next.tasks.flatMap((task) => task.interrupts ?? [])[0]?.value;
     if (clarification) {
@@ -195,6 +213,7 @@ export class SparrowOrchestrator {
 
   private createToolsMap(projectId: string): Map<string, any> {
     const map = new Map<string, any>();
+    const executionService = this.deps.executionService ?? new SparrowExecutionService(this.deps.projectService);
 
     const projCtxTool = createGetProjectContextTool(projectId, {
       projectService: this.deps.projectService,
@@ -233,10 +252,12 @@ export class SparrowOrchestrator {
     map.set("discoverAvailableModels", discModelsTool);
 
     map.set("calculateMetric", createCalculateMetricTool());
+    map.set("executeProjectScript", createExecuteProjectScriptTool(projectId, executionService));
 
     const runInferenceTool = createRunModelInferenceTool(projectId, {
       projectService: this.deps.projectService,
       modelValidationService: this.deps.modelValidationService,
+      executionService,
     });
     map.set("runModelInference", runInferenceTool);
 

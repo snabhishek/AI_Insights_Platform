@@ -70,7 +70,9 @@ export default function ChatMessageItem({
           />
         )}
 
-        {(isUser || !message.clarification || message.content !== message.clarification.question) &&
+        {message.status === "stopped" && <p role="status" className="text-sm text-muted-foreground">Agent was stopped</p>}
+        {message.status === "stopped" && message.error && <p role="alert" className="text-xs text-amber-600">{message.error}</p>}
+        {message.status !== "stopped" && (isUser || !message.clarification || message.content !== message.clarification.question) &&
           <MarkdownRenderer content={message.content} className={isUser ? "text-white [&_*]:!text-white" : ""} />}
 
         {message.metricCards && message.metricCards.length > 0 && (

@@ -1,13 +1,17 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
 import { IModelValidationService } from "../../../services/ai/model-validation/modelValidation.service.interface";
+import { ISparrowExecutionService } from "../../../services/ai/sparrow-execution/sparrowExecution.service";
+import { SparrowState } from "../sparrowState";
 import { ProjectService } from "../../../services/project/project.service";
 import { VALID_FREQUENCY_VALUES } from "../../../constants/modelValidation.constants";
 import { forecastWindow, selectForecastPeriods } from "../forecastWindow";
 
 export interface ModelInferenceToolServices {
   projectService: ProjectService;
-  modelValidationService: IModelValidationService;
+  modelValidationService: Pick<IModelValidationService, "getValidationCandidates">;
+  executionService?: ISparrowExecutionService;
+  onProgress?: (text: string) => void;
 }
 
 export const createDiscoverAvailableModelsTool = (
@@ -65,8 +69,8 @@ export const createDiscoverAvailableModelsTool = (
 export const createRunModelInferenceTool = (
   projectId: string,
   services: ModelInferenceToolServices
-) =>
-  tool(
+) => {
+  const instance = tool(
     async ({
       predictionObjectiveStartDate,
       requestedStartDate,
@@ -103,35 +107,38 @@ export const createRunModelInferenceTool = (
 
         const window = forecastWindow(predictionObjectiveStartDate, requestedStartDate, predictionHorizon, predictionFrequency);
 
-        const result = await services.modelValidationService.validateModels({
+        if (!services.executionService) throw new Error("Sparrow's independent script executor is not configured.");
+        const result = await services.executionService.execute({
           projectId,
-          predictionObjectiveStartDate: window.executionStart.toISOString().slice(0, 10),
-          predictionHorizon: window.executionHorizon,
-          predictionFrequency,
-          selectedModels: modelsToRun,
-          executionMode: "future_prediction",
-        });
+          task: "Forecast the project's trained target using the selected saved models and their fitted preprocessing contract. Reuse applicable existing inference logic without running training or model validation.",
+          prediction: {
+            predictionObjectiveStartDate: window.executionStart.toISOString().slice(0, 10),
+            predictionHorizon: window.executionHorizon, predictionFrequency, selectedModels: modelsToRun,
+          },
+        }, services.onProgress);
+        if (!result.success) return { success: false, error: result.error || "Sparrow model inference did not complete.", artifacts: result.artifacts };
+        const report = result.output || {};
+        const rankedModels = report.modelResults || [];
 
-        const report = result.report || {};
-        if (result.status !== "Completed") return { success: false, error: result.error || "Model inference did not complete." };
-        const rankedModels = report.ranked_models || Object.values(report.model_results || {});
         if (!rankedModels.length) return { success: false, error: "Inference returned no model predictions." };
-        if (modelsToRun.some(id => !rankedModels.some((model: any) => (model.model_id || model.modelId) === id && model.status !== "Failed"))) {
+        if (modelsToRun.some(id => !rankedModels.some((model: any) => model.modelId === id && model.status !== "Failed"))) {
           return { success: false, error: "Inference did not return predictions for every selected model." };
         }
 
         return {
-          success: result.status === "Completed",
-          targetColumn: report.target_column,
+          success: true,
+          artifacts: result.artifacts,
+          assumptions: report.assumptions, warnings: report.warnings,
+          targetColumn: report.targetColumn,
           predictionHorizon,
           predictionFrequency,
           startDate: window.displayStart.toISOString().slice(0, 10),
           endDate: new Date(window.displayEnd.getTime() - 86400000).toISOString().slice(0, 10),
           executionWindow: { startDate: window.executionStart.toISOString().slice(0, 10), horizon: window.executionHorizon, bridgePeriods: window.bridgePeriods },
-          championModel: report.champion_model_id || modelsToRun[0],
-          modelResults: rankedModels.filter((m: any) => modelsToRun.includes(m.model_id || m.modelId)).map((m: any) => {
-            const periods = selectForecastPeriods(m.chartData, window.displayStart, window.displayEnd, predictionHorizon, predictionFrequency);
-            return { modelId: m.model_id || m.modelId, periods,
+          championModel: candidateInfo.championModelId || modelsToRun[0],
+          modelResults: rankedModels.filter((m: any) => modelsToRun.includes(m.modelId)).map((m: any) => {
+            const periods = selectForecastPeriods({ dates: m.periods?.map((row: any) => row.period), predictedSeries: m.periods?.map((row: any) => row.predicted) }, window.displayStart, window.displayEnd, predictionHorizon, predictionFrequency);
+            return { modelId: m.modelId, periods,
               forecastTotal: periods.reduce((sum: number, row: any) => sum + row.predicted, 0) };
           }),
         };
@@ -151,8 +158,13 @@ export const createRunModelInferenceTool = (
         historyEvidenceIndex: z.number().int().nonnegative().describe("Index in toolResults of the successful queryProjectData MAX(date) coverage query."),
         historyEndColumn: z.string().min(1).describe("Exact column alias for the latest observed date in that query result."),
         predictionHorizon: z.number().int().positive().max(1000).describe("Number of periods to DISPLAY. The tool extends execution to cover the gap before requestedStartDate."),
-        predictionFrequency: z.enum(VALID_FREQUENCY_VALUES).describe("Explicit forecast frequency supported by the validation engine."),
+        predictionFrequency: z.enum(VALID_FREQUENCY_VALUES).describe("Explicit forecast frequency for the independent prediction runner."),
         selectedModels: z.array(z.string()).min(1).describe("Exact model IDs chosen from discovery results; respect the user selection."),
       }).strict(),
     }
   );
+  return Object.assign(instance, {
+    invokeWithContext: async (args: any, _state: SparrowState, runtime: { onProgress: (text: string) => void }) =>
+      createRunModelInferenceTool(projectId, { ...services, onProgress: runtime.onProgress }).invoke(args),
+  });
+};

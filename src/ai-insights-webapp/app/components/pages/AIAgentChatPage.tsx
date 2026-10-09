@@ -18,7 +18,9 @@ import {
   saveActiveSessionId,
   generateAgentChatResponse,
   getChatInteraction,
+  loadDatabaseChatSessions, saveChatSessionMetadata, deleteDatabaseChatSession, stopAgentChat, ChatRequestContext,
 } from "../../services/aiAgentChatService";
+import { stopChatMessage } from "../../services/chatLifecycle";
 import { fetchChatSuggestions } from "../../services/chatSuggestionService";
 import ChatSidebar from "../chat/ChatSidebar";
 import ChatMessageList from "../chat/ChatMessageList";
@@ -40,6 +42,10 @@ export default function AIAgentChatPage() {
 
   const abortGenerationRef = useRef<boolean>(false);
   const generationEpochRef = useRef(0);
+  const activeRequestRef = useRef<{ projectId: string; conversationId: string; userQuery: string; context: ChatRequestContext; controller: AbortController } | null>(null);
+  const historyLoadedRef = useRef(false);
+  const [historyError, setHistoryError] = useState<string>("");
+  const [historyRetry, setHistoryRetry] = useState(0);
 
   useEffect(() => {
     let isMounted = true;
@@ -56,6 +62,24 @@ export default function AIAgentChatPage() {
       isMounted = false;
     };
   }, []);
+
+  const projectScope = projects.map(project => project.id).sort().join(",");
+  useEffect(() => {
+    if (!projectScope || historyLoadedRef.current) return;
+    let cancelled = false;
+    void loadDatabaseChatSessions(projectScope.split(","), loadSavedChatSessions()).then(saved => {
+      if (cancelled) return;
+      historyLoadedRef.current = true;
+      setSessions(previous => {
+        const savedIds = new Set(saved.map(session => session.id));
+        const current = previous.filter(session => !savedIds.has(session.id));
+        return [...saved.map(session => activeRequestRef.current?.conversationId === session.id
+          ? previous.find(existing => existing.id === session.id) ?? session : session), ...current];
+      });
+      setHistoryError("");
+    }).catch(error => { if (!cancelled) setHistoryError(`Could not load database chat history: ${error.message}`); });
+    return () => { cancelled = true; };
+  }, [projectScope, historyRetry]);
 
   useEffect(() => {
     const loadedSessions = loadSavedChatSessions();
@@ -193,6 +217,7 @@ export default function AIAgentChatPage() {
 
     setSessions((prev) => [newSession, ...prev]);
     setActiveSessionId(newSessionId);
+    void saveChatSessionMetadata(newSession).catch(error => setHistoryError(error.message));
   };
 
   const handleDeleteSession = (id: string) => {
@@ -201,7 +226,12 @@ export default function AIAgentChatPage() {
       message: "Are you sure you want to delete this AI conversation history? This action cannot be undone.",
       confirmText: "Delete",
       cancelText: "Cancel",
-      onConfirm: () => {
+      onConfirm: async () => {
+        const deleting = sessions.find(session => session.id === id);
+        if (deleting) {
+          try { await deleteDatabaseChatSession(deleting); }
+          catch (error: any) { setHistoryError(error.message); return; }
+        }
         setSessions((prev) => {
           const next = prev.filter((s) => s.id !== id);
           if (next.length === 0) {
@@ -220,6 +250,8 @@ export default function AIAgentChatPage() {
   };
 
   const handleTogglePinSession = (id: string) => {
+    const session = sessions.find(item => item.id === id);
+    if (session) void saveChatSessionMetadata({ ...session, pinned: !session.pinned }).catch(error => setHistoryError(error.message));
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, pinned: !s.pinned } : s))
     );
@@ -227,6 +259,8 @@ export default function AIAgentChatPage() {
 
   const handleRenameSession = (id: string, newTitle: string) => {
     if (!newTitle.trim()) return;
+    const session = sessions.find(item => item.id === id);
+    if (session) void saveChatSessionMetadata({ ...session, title: newTitle.trim() }).catch(error => setHistoryError(error.message));
     setSessions((prev) =>
       prev.map((s) => (s.id === id ? { ...s, title: newTitle.trim() } : s))
     );
@@ -268,7 +302,13 @@ export default function AIAgentChatPage() {
       timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
     };
 
-    const assistantMessageId = clarificationMessage?.id ?? `msg-a-${Date.now() + 1}`;
+    const assistantMessageId = clarificationMessage?.id ?? `msg-a-${crypto.randomUUID()}`;
+    const requestId = crypto.randomUUID();
+    const requestController = new AbortController();
+    const requestContext: ChatRequestContext = { requestId, messageId: assistantMessageId, userMessageId, userContent: userMessage.content,
+      session: { title: activeSession?.messages.length ? activeSession.title : text.slice(0, 36), agentPersona: selectedPersonaId,
+        projectName: currentScopedProject?.projectName || currentScopedProject?.name, pinned: activeSession?.pinned }, signal: requestController.signal };
+    activeRequestRef.current = { projectId: selectedProjectId, conversationId: activeSessionId, userQuery: text, context: requestContext, controller: requestController };
     const modelNote =
       options?.modelId && options.modelId !== "any"
         ? ` [Model: ${options.modelId}]`
@@ -276,6 +316,7 @@ export default function AIAgentChatPage() {
 
     const initialAssistantMessage: ChatMessage = {
       id: assistantMessageId,
+      requestId,
       role: "assistant",
       content: "",
       timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
@@ -286,7 +327,8 @@ export default function AIAgentChatPage() {
       isThinking: true,
       thinking: [
         {
-          time: "00:01",
+          time: new Date().toLocaleTimeString("en-GB", { hour12: false }),
+          timestamp: new Date().toISOString(),
           text: `Analyzing query intent and activating ${activePersona.name}${modelNote}...`,
           done: false,
         },
@@ -308,11 +350,11 @@ export default function AIAgentChatPage() {
             ...s,
             title: updatedTitle,
             updatedAt: new Date().toISOString(),
-            messages: clarificationMessage ? s.messages.map(message => message.id === assistantMessageId
-              ? { ...message, isThinking: true, status: "sending" as const, clarificationError: undefined,
+            messages: clarificationMessage ? [...s.messages.filter(message => message.id !== assistantMessageId), userMessage,
+              { ...clarificationMessage, requestId, isThinking: true, status: "sending" as const, clarificationError: undefined,
                 clarificationDraft: text.trim(),
-                interaction: message.interaction ? { ...message.interaction, status: "answered" as const } : undefined }
-              : message) : [...s.messages, userMessage, initialAssistantMessage],
+                interaction: clarificationMessage.interaction ? { ...clarificationMessage.interaction, status: "answered" as const } : undefined }]
+              : [...s.messages, userMessage, initialAssistantMessage],
           };
         }
         return s;
@@ -352,7 +394,8 @@ export default function AIAgentChatPage() {
         pendingExecutionState,
         conversationHistory,
         activeSessionId,
-        clarificationMessage?.interaction?.id
+        clarificationMessage?.interaction?.id,
+        requestContext
       );
 
       if (abortGenerationRef.current || generationEpoch !== generationEpochRef.current) {
@@ -412,6 +455,7 @@ export default function AIAgentChatPage() {
         })
       );
     } finally {
+      if (activeRequestRef.current?.context.requestId === requestId) activeRequestRef.current = null;
       if (generationEpoch === generationEpochRef.current) setIsGenerating(false);
     }
   };
@@ -441,15 +485,25 @@ export default function AIAgentChatPage() {
   };
 
   const handleStopGenerating = () => {
+    const active = activeRequestRef.current;
+    if (!active) return;
     abortGenerationRef.current = true;
     generationEpochRef.current++;
     setIsGenerating(false);
-    setSessions(previous => previous.map(session => session.id === activeSessionId ? {
-      ...session, messages: session.messages.map(message => message.isThinking && message.clarification ? {
-        ...message, isThinking: false, status: "awaiting_user_input",
-        interaction: message.interaction ? { ...message.interaction, status: "waiting" } : undefined,
-      } : message),
+    activeRequestRef.current = null;
+    setSessions(previous => previous.map(session => session.id === active.conversationId ? {
+      ...session, messages: session.messages.map(message => message.id === active.context.messageId && message.requestId === active.context.requestId
+        ? stopChatMessage(message) : message),
     } : session));
+    void stopAgentChat(active.projectId, active.conversationId, active.userQuery, active.context).then(response => {
+      setSessions(previous => previous.map(session => session.id === active.conversationId ? { ...session,
+        messages: session.messages.map(message => message.id === active.context.messageId && message.requestId === active.context.requestId
+          ? response.status === "stopped" ? stopChatMessage({ ...message, ...response }) : { ...message, ...response, isThinking: false } : message) } : session));
+    }).catch(error => {
+      setSessions(previous => previous.map(session => session.id === active.conversationId ? { ...session,
+        messages: session.messages.map(message => message.id === active.context.messageId && message.requestId === active.context.requestId
+          ? { ...message, error: `The server could not confirm the stop: ${error.message}` } : message) } : session));
+    }).finally(() => active.controller.abort());
   };
 
   const handleFeedback = (messageId: string, type: "like" | "dislike") => {
@@ -523,6 +577,9 @@ export default function AIAgentChatPage() {
       />
 
       <div className="flex-1 flex flex-col h-full min-w-0 relative overflow-hidden">
+        {historyError && <div role="alert" className="px-4 py-2 text-xs text-amber-700 bg-amber-500/10">
+          {historyError} <button type="button" className="underline ml-2" onClick={() => { historyLoadedRef.current = false; setHistoryRetry(value => value + 1); }}>Retry loading</button>
+        </div>}
 
         <ChatMessageList
           messages={activeSession?.messages || []}

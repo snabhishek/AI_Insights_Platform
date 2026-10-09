@@ -40,6 +40,11 @@ export async function initializeApplicationData() {
       await query(`
         UPDATE projects SET status = 'stopped' WHERE status = 'running';
         UPDATE project_runs SET status = 'stopped', agent_state = jsonb_set(agent_state, '{status}', '"stopped"') WHERE status = 'running';
+        UPDATE sparrow_chat_messages SET payload=payload || jsonb_build_object(
+          'status','stopped','isThinking',false,'content','Agent was stopped','thinking',
+          COALESCE((SELECT jsonb_agg(CASE WHEN step->>'done'='true' THEN step ELSE step || '{"status":"stopped"}'::jsonb END)
+            FROM jsonb_array_elements(COALESCE(payload->'thinking','[]'::jsonb)) step),'[]'::jsonb))
+          WHERE payload->>'status'='sending';
       `);
     } catch (cleanErr: any) {
       console.warn("[DB] Startup sanitization warning:", cleanErr?.message || cleanErr);

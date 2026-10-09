@@ -8,6 +8,13 @@
       "when": 1791449313723,
       "tag": "0000_application_schema_baseline_and_sparrow_intent_seed",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1791549397043,
+      "tag": "0001_sparrow_chat_history",
+      "breakpoints": true
     }
   ]
 }

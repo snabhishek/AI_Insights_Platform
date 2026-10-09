@@ -31,11 +31,14 @@ test("live Sparrow derives revenue and profit, asks for missing inputs, and hono
     const executions: any[] = [];
     const modelValidationService = {
       getValidationCandidates: async () => ({ candidates: [{ model_id: "m1", displayName: "Fixture unit model" }], championModelId: "m1" }),
-      validateModels: async (input: any) => {
+      validateModels: async () => { throw new Error("Sparrow must never run model validation."); },
+    } as any;
+    const executionService = {
+      execute: async (request: any) => {
+        const input = request.prediction;
         executions.push(input);
-        return { status: "Completed", report: { target_column: "Sold_Items", champion_model_id: "m1", ranked_models: [{ model_id: "m1",
-          chartData: { dates: Array.from({ length: input.predictionHorizon }, (_, index) => advancePeriod(dateOnly(input.predictionObjectiveStartDate), input.predictionFrequency, index).toISOString().slice(0, 10)),
-            predictedSeries: Array.from({ length: input.predictionHorizon }, (_, index) => (index + 1) * 10) } }] } };
+        return { success: true, output: { targetColumn: "Sold_Items", modelResults: [{ modelId: "m1",
+          periods: Array.from({ length: input.predictionHorizon }, (_, index) => ({ period: advancePeriod(dateOnly(input.predictionObjectiveStartDate), input.predictionFrequency, index).toISOString().slice(0, 10), predicted: (index + 1) * 10 })) }] } };
       },
     } as any;
     const tools = new Map<string, any>([
@@ -43,7 +46,7 @@ test("live Sparrow derives revenue and profit, asks for missing inputs, and hono
       ["getProjectDataSchema", createGetProjectDataSchemaTool("p1", { projectService, duckDBService })],
       ["queryProjectData", createQueryProjectDataTool("p1", { projectService, duckDBService })],
       ["discoverAvailableModels", createDiscoverAvailableModelsTool("p1", { projectService, modelValidationService })],
-      ["runModelInference", createRunModelInferenceTool("p1", { projectService, modelValidationService })],
+      ["runModelInference", createRunModelInferenceTool("p1", { projectService, modelValidationService, executionService })],
       ["calculateMetric", createCalculateMetricTool()],
     ]);
     const graph = createSparrowGraph({ tools, checkpointer: new MemorySaver(), now: () => Date.parse("2026-10-09T12:00:00Z"),

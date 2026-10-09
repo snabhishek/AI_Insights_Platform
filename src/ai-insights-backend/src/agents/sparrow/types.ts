@@ -71,6 +71,8 @@ export interface SparrowInteraction {
 }
 
 export interface SparrowThinkingStep {
+  status?: "running" | "completed" | "stopped" | "failed";
+  timestamp?: string;
   time: string;
   text: string;
   done: boolean;
@@ -97,7 +99,7 @@ export interface ChartData {
 }
 
 export interface SparrowChatResponse {
-  status: "complete" | "awaiting_user_input" | "error";
+  status: "complete" | "awaiting_user_input" | "error" | "stopped";
   content: string;
   thinking: SparrowThinkingStep[];
   metricCards?: MetricCardData[];

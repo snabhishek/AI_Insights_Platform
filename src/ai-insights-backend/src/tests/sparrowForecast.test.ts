@@ -25,13 +25,17 @@ function inferenceFixture(missing = false) {
     projectService: { getById: async () => ({ agentState: { splitDate: "2025-01-01", modelValidation: { report: "DO_NOT_SEND" } } }) } as any,
     modelValidationService: {
       getValidationCandidates: async () => ({ candidates: [{ model_id: "m1" }] }),
-      validateModels: async (input: any) => {
+      validateModels: async () => { throw new Error("Sparrow must never launch validation."); },
+    } as any,
+    executionService: {
+      execute: async (request: any) => {
+        const input = request.prediction;
         calls.push(input);
         const count = input.predictionHorizon - (missing ? 1 : 0);
         const dates = Array.from({ length: count }, (_, index) => advancePeriod(dateOnly(input.predictionObjectiveStartDate), input.predictionFrequency, index).toISOString().slice(0, 10));
-        return { status: "Completed", summary: "validation details DO_NOT_SEND", report: {
-          target_column: "Order_Quantity", champion_model_id: "m1", ranked_models: [{ model_id: "m1", score: 99,
-            totals: { forecastTotal: 999999 }, chartData: { dates, predictedSeries: dates.map((_date, index) => (index + 1) * 10) } }],
+        return { success: true, output: {
+          targetColumn: "Order_Quantity", modelResults: [{ modelId: "m1",
+            periods: dates.map((period, index) => ({ period, predicted: (index + 1) * 10 })) }],
         } };
       },
     } as any,
@@ -57,7 +61,7 @@ test("execution bridges January 2026 to January 2027 but returns only November t
   assert.equal(result.success, true);
   assert.equal(f.calls[0].predictionObjectiveStartDate, "2026-01-01");
   assert.equal(f.calls[0].predictionHorizon, 13);
-  assert.equal(f.calls[0].executionMode, "future_prediction");
+  assert.equal(f.calls[0].executionMode, undefined);
   assert.deepEqual(result.modelResults[0].periods, [
     { period: "2026-11-01", predicted: 110 }, { period: "2026-12-01", predicted: 120 }, { period: "2027-01-01", predicted: 130 },
   ]);
@@ -158,6 +162,8 @@ for (const answer of ["40 INR", "No"]) {
     await f.graph.invoke(f.seed, config);
     const paused = await f.graph.getState(config);
     assert.ok(paused.tasks.some(task => task.interrupts?.length));
+    assert.ok(paused.values.thinking.some((step: any) => step.text.includes("Decision: No price field")));
+    assert.ok(paused.values.thinking.every((step: any) => step.done && Number.isFinite(Date.parse(step.timestamp!))));
     const result = await f.graph.invoke(new Command({ resume: answer }), config);
     assert.equal(result.response?.status, "complete");
     assert.equal(result.toolResults.filter(r => r.toolName === "queryProjectData").length, 1);

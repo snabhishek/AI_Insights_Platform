@@ -8,6 +8,8 @@ import { AnalysisPlan, ExecutionToolResult, SparrowThinkingStep } from "./types"
 import { clarificationSchema, createClarificationInteraction } from "./clarification";
 import { advancePeriod, dateOnly, resolveForecastRange } from "./forecastWindow";
 import { compactMemory, compactProjectContext, compactToolResults } from "./projectContext";
+import { setupTimestampedLogging } from "../../utils/logger";
+import { throwIfSparrowStopped } from "./executionContext";
 
 export interface SparrowGraphDependencies {
   tools: Map<string, any>;
@@ -42,6 +44,8 @@ function safeJsonSerialize<T>(value: T): T {
 }
 
 export function createSparrowNodes(deps: SparrowGraphDependencies) {
+  setupTimestampedLogging();
+  let liveThinking: SparrowThinkingStep[] = [];
   const agents = deps.agents ?? {
     resolve: QueryResolver.resolveQuery, plan: AnalysisPlanner.createPlan, respond: InsightsResponder.generateResponse,
   };
@@ -51,11 +55,22 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
   const getToolResults = (state: SparrowState): ExecutionToolResult[] =>
     compactToolResults(Array.isArray(state?.toolResults) ? state.toolResults : []);
 
+  const report = (state: SparrowState, text: string, done = true) => {
+    throwIfSparrowStopped();
+    if (state.thinking?.length > liveThinking.length) liveThinking = [...state.thinking];
+    const timestamp = new Date();
+    liveThinking = [...liveThinking, { time: timestamp.toLocaleTimeString("en-GB", { hour12: false }), timestamp: timestamp.toISOString(), text, done, status: done ? "completed" as const : "running" as const }].slice(-400);
+    console.info(`[Sparrow] ${text}`);
+    deps.onThinkingUpdate?.([...liveThinking]);
+    return [...liveThinking];
+  };
+  const begin = (state: SparrowState, text: string) => {
+    liveThinking = liveThinking.map(step => ({ ...step, done: true, status: "completed" }));
+    report(state, text, false);
+  };
   const progress = (state: SparrowState, node: string, text: string) => {
-    const thinkingList = Array.isArray(state?.thinking) ? state.thinking : [];
-    const thinking = [...thinkingList, { time: `00:${String(thinkingList.length + 1).padStart(2, "0")}`, text, done: true }];
-    deps.onThinkingUpdate?.(thinking);
-    return { thinking, history: [{ node, summary: text }] };
+    liveThinking = liveThinking.map(step => ({ ...step, done: true, status: "completed" }));
+    return { thinking: report(state, text), history: [{ node, summary: text }] };
   };
   const executionContext = (state: SparrowState, repairing = false) => {
     const toolResults = getToolResults(state);
@@ -118,12 +133,15 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       const previousFailure = getToolResults(state).find((result) => !result.success && result.toolName === name && JSON.stringify(result.args) === JSON.stringify(parsedArgs));
       if (previousFailure) throw new Error("Identical failed call rejected; correct its parameters or explain the limitation.");
       let data = instance.invokeWithContext
-        ? await instance.invokeWithContext(parsedArgs, state)
+        ? await instance.invokeWithContext(parsedArgs, state, { onProgress: (text: string) => report(state, text) })
         : await instance.invoke(parsedArgs);
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch { throw new Error(data); }
       }
       if (!data || typeof data !== "object") throw new Error("Tool returned no structured result.");
+      if (name === "runModelInference" && data.success !== false && state.projectContext.targetColumn && data.targetColumn !== state.projectContext.targetColumn) {
+        throw new Error("Inference returned a target that does not match the inspected trained target.");
+      }
       const cleanData = safeJsonSerialize(data);
       const cleanArgs = safeJsonSerialize(parsedArgs);
       return {
@@ -132,25 +150,29 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
         data: cleanData, error: cleanData.success === false || cleanData.error ? (cleanData.error || cleanData.message || "Tool execution failed.") : undefined,
       };
     } catch (error) {
+      throwIfSparrowStopped();
       return { toolName: name, args: safeJsonSerialize(args), success: false, error: error instanceof Error ? error.message : String(error), executedAt: new Date().toISOString() };
     }
   };
 
   const decide = async (state: SparrowState, repairing: boolean): Promise<Partial<SparrowState>> => {
+    begin(state, repairing ? "Reviewing the execution failure and choosing a correction." : "Reviewing the evidence and choosing the next action.");
     try {
       const plan = analysisPlanSchema.parse(await agents.plan(state.queryUnderstanding!, compactProjectContext(state.projectContext), executionContext(state, repairing)));
       if (plan.action === "tool" && !deps.tools.has(plan.steps[0].toolName)) {
         throw new Error(`Planner selected unregistered tool '${plan.steps[0].toolName}'.`);
       }
-      return { plan, decisionReady: true, hitlState: plan.clarification ?? null,
+      const trace = progress(state, "supervisor", `Decision: ${plan.rationale}`);
+      return { ...trace, plan, decisionReady: true, hitlState: plan.clarification ?? null,
         ...(plan.action === "clarify" ? { interaction: createClarificationInteraction(deps.now?.()) } : {}) };
     } catch (error) {
+      throwIfSparrowStopped();
       // Preserve invalid planning as a real failure and let the rectifier see it.
       const failure: ExecutionToolResult = {
         toolName: "analysisPlanner", success: false,
         error: error instanceof Error ? error.message : String(error),
       };
-      return { plan: null, decisionReady: false, toolResults: [...getToolResults(state), failure] };
+      return { ...progress(state, "supervisor", "Could not select a valid action; reviewing the planning failure."), plan: null, decisionReady: false, toolResults: [...getToolResults(state), failure] };
     }
   };
 
@@ -179,6 +201,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       return { ...update, nextAction: plan!.action!, decisionReady: false };
     },
     queryResolverNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
+      begin(state, "Interpreting your request and identifying the required evidence.");
       const clockContext = { ...compactProjectContext(state.projectContext), currentDate: new Date(deps.now?.() ?? Date.now()).toISOString().slice(0, 10) };
       const understanding = await agents.resolve(state.userQuery, clockContext, state.messages, state.intentCatalog, {
         ...compactMemory(state.memory), clarificationAnswer: state.clarificationAnswer, pendingUnderstanding: state.queryUnderstanding,
@@ -190,6 +213,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       return { projectContext: clockContext, queryUnderstanding: understanding, ...progress(state, "queryResolver", "Interpreted your request in its conversation and project context.") };
     },
     projectContextNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
+      begin(state, "Inspecting project metadata and available data.");
       const metadata = await execute("getProjectContext", {}, state);
       const schema = await execute("getProjectDataSchema", {}, state);
       return {
@@ -205,6 +229,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
     },
     toolExecutorNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
       const step = state.plan!.steps[0];
+      begin(state, `${step.toolName}: ${step.description}`);
       const result = await execute(step.toolName, step.args, state);
       const projectContext = result.success && step.toolName === "getProjectDataSchema"
         ? { ...state.projectContext, tables: result.data.tables, dataFiles: result.data.dataFiles, schemaError: undefined }
@@ -222,6 +247,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
     clarificationNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
       // LangGraph saves the pending task; only the checkpoint token leaves the server.
       const prompt = clarificationSchema.parse(state.hitlState);
+      progress(state, "clarification", `Waiting for clarification: ${prompt.question}`);
       const resumed = interrupt(prompt);
       const answer = typeof resumed === "string" ? resumed : resumed?.answer;
       const interaction = typeof resumed === "object" && resumed?.interaction ? resumed.interaction : state.interaction;
@@ -237,6 +263,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       };
     },
     responderNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
+      begin(state, "Preparing your answer from the collected evidence.");
       const plan: AnalysisPlan = state.plan ?? { action: "respond", planType: "general_response", steps: [], rationale: state.stopReason || "Answer with available context." };
       const toolResults = getToolResults(state);
       const response = await agents.respond(state.userQuery, state.queryUnderstanding!, plan, toolResults, compactProjectContext(state.projectContext), state.thinking, {
