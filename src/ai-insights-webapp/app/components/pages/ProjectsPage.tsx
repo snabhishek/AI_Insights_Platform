@@ -32,7 +32,6 @@ interface WorkflowResponse {
     status: string;
     summary: string;
     message?: string;
-    requiresApproval?: boolean;
     nextStep?: string;
     currentNode?: string;
     currentStage?: string;
@@ -104,7 +103,6 @@ export default function ProjectsPage() {
   const [stageOutputs, setStageOutputs] = useState<StageOutputs>({});
   const [agentThinking, setAgentThinking] = useState<Record<string, Array<{ time: string; text: string; done: boolean }>>>({});
   const [workflowMessage, setWorkflowMessage] = useState<string>("None");
-  const [requiresApproval, setRequiresApproval] = useState(false);
   const [approvalNextStep, setApprovalNextStep] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
   const [isSubmittingWorkflow, setIsSubmittingWorkflow] = useState(false);
@@ -135,7 +133,6 @@ export default function ProjectsPage() {
     setStageOutputs({});
     setAgentThinking({});
     setWorkflowMessage("None");
-    setRequiresApproval(false);
     setApprovalNextStep(null);
     setIsAwaitingResponse(false);
 
@@ -286,6 +283,65 @@ export default function ProjectsPage() {
     return "inspect";
   };
 
+  const resolveApprovalNextStep = (state: any): string => {
+    if (state?.nextStep) return state.nextStep;
+    const stageStatuses = state?.stageStatuses || {};
+    const isStageAwaiting = (key: string) => {
+      const s = stageStatuses[key];
+      return s?.status === "Awaiting Approval" || s === "Awaiting Approval";
+    };
+    if (isStageAwaiting("dataIngestion") || isStageAwaiting("Data Ingestion")) {
+      return "Feature Engineering";
+    }
+    if (isStageAwaiting("featureEngineering") || isStageAwaiting("Feature Engineering")) {
+      return "Model Training & Validation";
+    }
+    if (isStageAwaiting("modelTrainingValidation") || isStageAwaiting("Model Training & Validation")) {
+      return "Model Selection";
+    }
+    const diComplete =
+      stageStatuses["dataIngestion"]?.status === "Completed" ||
+      stageStatuses["Data Ingestion"]?.status === "Completed" ||
+      (stageStatuses.inspect === "Completed" && stageStatuses.profileData === "Completed" && stageStatuses.resolveSchema === "Completed");
+    if (diComplete) {
+      const feStarted =
+        stageStatuses["featureEngineering"]?.status === "In-Progress" ||
+        stageStatuses["featureEngineering"]?.status === "Completed";
+      if (!feStarted) return "Feature Engineering";
+    }
+    return "Feature Engineering";
+  };
+
+  // Hydrate pipeline state whenever selectedProject changes
+  const resolveApprovalNextStep = (state: any): string => {
+    if (state?.nextStep) return state.nextStep;
+    const stageStatuses = state?.stageStatuses || {};
+    const isStageAwaiting = (key: string) => {
+      const s = stageStatuses[key];
+      return s?.status === "Awaiting Approval" || s === "Awaiting Approval";
+    };
+    if (isStageAwaiting("dataIngestion") || isStageAwaiting("Data Ingestion")) {
+      return "Feature Engineering";
+    }
+    if (isStageAwaiting("featureEngineering") || isStageAwaiting("Feature Engineering")) {
+      return "Model Training & Validation";
+    }
+    if (isStageAwaiting("modelTrainingValidation") || isStageAwaiting("Model Training & Validation")) {
+      return "Model Selection";
+    }
+    const diComplete =
+      stageStatuses["dataIngestion"]?.status === "Completed" ||
+      stageStatuses["Data Ingestion"]?.status === "Completed" ||
+      (stageStatuses.inspect === "Completed" && stageStatuses.profileData === "Completed" && stageStatuses.resolveSchema === "Completed");
+    if (diComplete) {
+      const feStarted =
+        stageStatuses["featureEngineering"]?.status === "In-Progress" ||
+        stageStatuses["featureEngineering"]?.status === "Completed";
+      if (!feStarted) return "Feature Engineering";
+    }
+    return "Feature Engineering";
+  };
+
   useEffect(() => {
     if (!selectedProjectId) return;
 
@@ -307,47 +363,48 @@ export default function ProjectsPage() {
         Object.values(state.stageStatuses).some((s: any) =>
           s?.status === "In-Progress" || s === "In-Progress"
         );
+      const isAwaitingApprovalStage =
+        rawStatus === "awaiting approval" ||
+        rawStatus === "awaiting-approval" 
+        // ||
+        // (state.stageStatuses && Object.values(state.stageStatuses).some((s: any) =>
+        //   s?.status === "Awaiting Approval" || s === "Awaiting Approval"
+        // ));
       const isStillRunningLocally =
-        rawStatus === "in-progress" ||
-        rawStatus === "queued" ||
-        (Boolean(hasInProgressStage) && rawStatus !== "paused" && rawStatus !== "stopped" && rawStatus !== "failed");
+        !isAwaitingApprovalStage &&
+        (rawStatus === "in-progress" ||
+          rawStatus === "queued" ||
+          (Boolean(hasInProgressStage) && rawStatus !== "paused" && rawStatus !== "stopped" && rawStatus !== "failed"));
 
-      if (isStillRunningLocally) {
+      if (isAwaitingApprovalStage) {
+        setRunStatus("Awaiting Approval");
+        setIsPaused(false);
+        setApprovalNextStep(resolveApprovalNextStep(state));
+      } else if (isStillRunningLocally) {
         setRunStatus("In-Progress");
         setIsPaused(false);
-        setRequiresApproval(false);
         setApprovalNextStep(null);
       } else if (rawStatus === "completed") {
         setRunStatus("Completed");
         setIsPaused(false);
-        setRequiresApproval(false);
         setApprovalNextStep(null);
       } else if (rawStatus === "stopped") {
         setRunStatus("Stopped");
         setIsPaused(false);
-        setRequiresApproval(false);
         setApprovalNextStep(null);
       } else if (rawStatus === "failed") {
         setRunStatus("Failed");
         setIsPaused(false);
-        setRequiresApproval(false);
         setApprovalNextStep(null);
-      } else if (rawStatus === "paused" && state.requiresApproval) {
-        setRunStatus("Paused");
-        setIsPaused(false);
-        setRequiresApproval(true);
-        setApprovalNextStep(state.nextStep || "Feature Engineering");
       } else if (rawStatus === "paused") {
         setRunStatus("Paused");
         setIsPaused(true);
-        setRequiresApproval(false);
         setApprovalNextStep(null);
         setPausedAtPhase(determineActiveStage(state));
         if (state.sessionId) setPausedSessionId(state.sessionId);
       } else {
         setRunStatus("None");
         setIsPaused(false);
-        setRequiresApproval(false);
         setApprovalNextStep(null);
       }
 
@@ -392,7 +449,6 @@ export default function ProjectsPage() {
       setAgentThinking({});
       setRunStatus("None");
       setIsPaused(false);
-      setRequiresApproval(false);
       setApprovalNextStep(null);
       setWorkflowSessionId(null);
       setWorkflowMessage("");
@@ -424,36 +480,43 @@ export default function ProjectsPage() {
               Object.values(freshState.stageStatuses).some((s: any) =>
                 s?.status === "In-Progress" || s === "In-Progress"
               );
+            const isFreshAwaitingApproval =
+              freshStatus === "awaiting approval" ||
+              freshStatus === "awaiting-approval" 
+              // ||
+              // (freshState.stageStatuses && Object.values(freshState.stageStatuses).some((s: any) =>
+              //   s?.status === "Awaiting Approval" || s === "Awaiting Approval"
+              // ));
             const isStillRunning =
-              freshStatus === "in-progress" ||
-              freshStatus === "queued" ||
-              (Boolean(hasInProgressStage) && freshStatus !== "paused" && freshStatus !== "stopped" && freshStatus !== "failed");
+              !isFreshAwaitingApproval &&
+              (freshStatus === "in-progress" ||
+                freshStatus === "queued" ||
+                (Boolean(hasInProgressStage) && freshStatus !== "paused" && freshStatus !== "stopped" && freshStatus !== "failed"));
 
-            if (isStillRunning) {
+            if (isFreshAwaitingApproval) {
+              setRunStatus("Awaiting Approval");
+              setIsPaused(false);
+              setApprovalNextStep(resolveApprovalNextStep(freshState));
+            } else if (isStillRunning) {
               setRunStatus("In-Progress");
               setIsPaused(false);
-              setRequiresApproval(false);
               setApprovalNextStep(null);
             } else if (freshStatus === "completed") {
               setRunStatus("Completed");
               setIsPaused(false);
-              setRequiresApproval(false);
               setApprovalNextStep(null);
             } else if (freshStatus === "failed") {
               setRunStatus("Failed");
               setIsPaused(false);
-              setRequiresApproval(false);
               setApprovalNextStep(null);
             } else if (freshStatus === "stopped") {
               setRunStatus("Stopped");
               setIsPaused(false);
-              setRequiresApproval(false);
               setApprovalNextStep(null);
             } else if (freshStatus === "paused") {
               setRunStatus("Paused");
-              setIsPaused(!freshState.requiresApproval);
-              setRequiresApproval(Boolean(freshState.requiresApproval));
-              setApprovalNextStep(freshState.requiresApproval ? (freshState.nextStep || null) : null);
+              setIsPaused(true);
+              setApprovalNextStep(null);
               setPausedAtPhase(determineActiveStage(freshState));
               if (freshState.sessionId) setPausedSessionId(freshState.sessionId);
             }
@@ -540,15 +603,28 @@ export default function ProjectsPage() {
           Object.values(freshState.stageStatuses).some((s: any) =>
             s?.status === "In-Progress" || s === "In-Progress"
           );
+        const isFreshAwaitingApproval =
+          freshStatus === "awaiting approval" ||
+          freshStatus === "awaiting-approval" 
+          // ||
+          // (freshState.stageStatuses && Object.values(freshState.stageStatuses).some((s: any) =>
+          //   s?.status === "Awaiting Approval" || s === "Awaiting Approval"
+          // ));
         const isRunning =
-          freshStatus === "in-progress" ||
-          freshStatus === "queued" ||
-          (Boolean(hasInProgressStage) && freshStatus !== "paused" && freshStatus !== "stopped" && freshStatus !== "failed");
+          !isFreshAwaitingApproval &&
+          (freshStatus === "in-progress" ||
+            freshStatus === "queued" ||
+            (Boolean(hasInProgressStage) && freshStatus !== "paused" && freshStatus !== "stopped" && freshStatus !== "failed"));
 
-        if (isRunning) {
+        if (isFreshAwaitingApproval) {
+          activeRunningProjectIdRef.current = null;
+          isExecutingRef.current = false;
+          setRunStatus("Awaiting Approval");
+          setIsPaused(false);
+          setApprovalNextStep(resolveApprovalNextStep(freshState));
+        } else if (isRunning) {
           setRunStatus("In-Progress");
           setIsPaused(false);
-          setRequiresApproval(false);
           setApprovalNextStep(null);
           setPausedAtPhase(null);
           activeRunningProjectIdRef.current = selectedProjectId;
@@ -558,7 +634,6 @@ export default function ProjectsPage() {
           isExecutingRef.current = false;
           setRunStatus("Completed");
           setIsPaused(false);
-          setRequiresApproval(false);
           setApprovalNextStep(null);
           const completionMsg = freshState.summary || "Workflow completed successfully";
           if (lastCompletedSummaryRef.current !== completionMsg) {
@@ -570,15 +645,13 @@ export default function ProjectsPage() {
           isExecutingRef.current = false;
           setRunStatus("Failed");
           setIsPaused(false);
-          setRequiresApproval(false);
           setApprovalNextStep(null);
         } else if (freshStatus === "paused") {
           activeRunningProjectIdRef.current = null;
           isExecutingRef.current = false;
           setRunStatus("Paused");
-          setIsPaused(!freshState.requiresApproval);
-          setRequiresApproval(Boolean(freshState.requiresApproval));
-          setApprovalNextStep(freshState.requiresApproval ? (freshState.nextStep || null) : null);
+          setIsPaused(true);
+          setApprovalNextStep(null);
           setPausedAtPhase(determineActiveStage(freshState));
           setPausedSessionId(typeof freshState.sessionId === "string" ? freshState.sessionId : null);
         } else if (freshStatus === "stopped") {
@@ -586,13 +659,11 @@ export default function ProjectsPage() {
           isExecutingRef.current = false;
           setRunStatus("Stopped");
           setIsPaused(false);
-          setRequiresApproval(false);
           setApprovalNextStep(null);
         } else {
           activeRunningProjectIdRef.current = null;
           setRunStatus("None");
           setIsPaused(false);
-          setRequiresApproval(false);
           setApprovalNextStep(null);
         }
 
@@ -679,7 +750,6 @@ export default function ProjectsPage() {
       setIsSubmittingWorkflow(true);
       setRunStatus("In-Progress");
       setIsPaused(false);
-      setRequiresApproval(false);
       setApprovalNextStep(null);
     }
     activeRunningProjectIdRef.current = selectedProject.id;
@@ -750,44 +820,49 @@ export default function ProjectsPage() {
                 lastData = update;
 
                 const statusStr = String(update.status || "").toLowerCase();
+                const isChunkAwaitingApproval =
+                  statusStr === "awaiting approval" ||
+                  statusStr === "awaiting-approval" 
+                  // ||
+                  // (update.stageStatuses && Object.values(update.stageStatuses).some((s: any) =>
+                  //   s?.status === "Awaiting Approval" || s === "Awaiting Approval"
+                  // ));
                 const isRunning =
-                  statusStr === "in-progress" ||
-                  statusStr === "queued";
+                  !isChunkAwaitingApproval &&
+                  (statusStr === "in-progress" ||
+                    statusStr === "queued");
 
-                if (isRunning) {
+                if (isChunkAwaitingApproval) {
+                  setRunStatus("Awaiting Approval");
+                  setIsPaused(false);
+                  setApprovalNextStep(resolveApprovalNextStep(update));
+                  if (update.currentStage || update.currentNode) {
+                    setPausedAtPhase(update.currentNode || update.currentStage);
+                  }
+                } else if (isRunning) {
                   setRunStatus("In-Progress");
                   setIsPaused(false);
-                  setRequiresApproval(false);
                   setApprovalNextStep(null);
                   setPausedAtPhase(null);
                 } else if (statusStr === "paused") {
                   setRunStatus("Paused");
-                  setIsPaused(!update.requiresApproval);
-                  setRequiresApproval(Boolean(update.requiresApproval));
-                  setApprovalNextStep(update.requiresApproval ? (update.nextStep || null) : null);
+                  setIsPaused(true);
+                  setApprovalNextStep(null);
                   if (update.currentStage || update.currentNode) {
                     setPausedAtPhase(update.currentNode || update.currentStage);
                   }
                 } else if (statusStr === "completed") {
                   setRunStatus("Completed");
                   setIsPaused(false);
-                  setRequiresApproval(false);
                   setApprovalNextStep(null);
                 } else if (statusStr === "stopped") {
                   setRunStatus("Stopped");
                   setIsPaused(false);
-                  setRequiresApproval(false);
                   setApprovalNextStep(null);
                 } else if (statusStr === "failed") {
                   setRunStatus("Failed");
                   setIsPaused(false);
-                  setRequiresApproval(false);
                   setApprovalNextStep(null);
-                } else if (update.requiresApproval !== undefined) {
-                  setRequiresApproval(Boolean(update.requiresApproval));
-                  if (update.requiresApproval) {
-                    setApprovalNextStep(update.nextStep || null);
-                  }
                 }
 
                 if (update.stageStatuses) {
@@ -919,7 +994,6 @@ export default function ProjectsPage() {
       if (response.data?.status) {
         setRunStatus("Stopped");
         setIsPaused(false);
-        setRequiresApproval(false);
         setApprovalNextStep(null);
         showAlert({ title: "Workflow Stopped", type: "info" });
       }
@@ -998,7 +1072,6 @@ export default function ProjectsPage() {
       if (response.data?.status) {
         setRunStatus("Paused");
         setIsPaused(true);
-        setRequiresApproval(false);
         setApprovalNextStep(null);
         showAlert({ title: "Workflow Paused", type: "info" });
       }
@@ -1112,7 +1185,6 @@ export default function ProjectsPage() {
         lastRunTime={lastRunTime}
         activeStage={activeStage}
         stageOutputs={stageOutputs}
-        requiresApproval={requiresApproval}
         workflowMessage={workflowMessage}
         isApproving={isApproving}
         isSubmittingWorkflow={isSubmittingWorkflow}

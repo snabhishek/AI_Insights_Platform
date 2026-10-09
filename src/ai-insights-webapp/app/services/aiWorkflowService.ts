@@ -23,7 +23,6 @@ export interface WorkflowResponseData {
   stageOutputs?: StageOutputs;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   sessionId?: string;
-  requiresApproval?: boolean;
   nextStep?: string;
   currentNode?: string;
   currentStage?: string;

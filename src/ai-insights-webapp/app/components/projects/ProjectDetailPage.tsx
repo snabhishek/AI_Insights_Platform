@@ -38,7 +38,6 @@ interface ProjectDetailPageProps {
   onAddTag: () => void;
   activeStage: string | null;
   stageOutputs: StageOutputs;
-  requiresApproval: boolean;
   workflowMessage: string;
   onSelectStage: (stepId: string) => void;
   onApprove: (
@@ -86,7 +85,6 @@ export default function ProjectDetailPage({
   onAddTag,
   activeStage,
   stageOutputs,
-  requiresApproval,
   workflowMessage,
   onSelectStage,
   onApprove,
@@ -340,7 +338,6 @@ export default function ProjectDetailPage({
             lastRunTime={lastRunTime}
             activeStage={activeStage}
             stageOutputs={stageOutputs}
-            requiresApproval={requiresApproval}
             workflowMessage={workflowMessage}
             onRunWorkflow={onRunWorkflow}
             onReRunWorkflow={onReRunWorkflow ? () => onReRunWorkflow() : undefined}
@@ -530,7 +527,6 @@ export default function ProjectDetailPage({
             projectId={project.id}
             agentState={project.agentState}
             agentThinking={agentThinking}
-            requiresApproval={requiresApproval}
             approvalNextStep={approvalNextStep}
             isApproving={isApproving}
             isAwaitingResponse={isAwaitingResponse}

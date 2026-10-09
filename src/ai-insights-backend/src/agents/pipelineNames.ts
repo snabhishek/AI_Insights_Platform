@@ -196,7 +196,6 @@ export interface WorkflowAgentState {
   currentNode?: string;
   currentStage?: string;
   nextStep?: string;
-  requiresApproval?: boolean;
   sessionId?: string;
   runTimestamp?: string;
   lastRunTime?: string;

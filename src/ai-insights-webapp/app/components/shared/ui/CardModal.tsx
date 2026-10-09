@@ -20,7 +20,6 @@ interface CardModalProps {
   projectId?: string;
   agentState?: WorkflowAgentState;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
-  requiresApproval?: boolean;
   approvalNextStep?: string | null;
   isApproving?: boolean;
   isAwaitingResponse?: boolean;
@@ -85,7 +84,6 @@ function CardModalContent({
   projectId,
   agentState,
   agentThinking,
-  requiresApproval = false,
   approvalNextStep = null,
   isApproving = false,
   isAwaitingResponse = false,
@@ -169,7 +167,9 @@ function CardModalContent({
       approvalNextStep === "trainingConfigurationNode" ||
       approvalNextStep === "Model Selection" ||
       approvalNextStep === "modelSelectionNode" ||
-      (runStatus === "Paused" && requiresApproval));
+      runStatus === "Awaiting Approval" ||
+      pipelineStatuses["Training Configuration"] === "Awaiting Approval" ||
+      pipelineStatuses["Model Selection"] === "Awaiting Approval");
 
   const isWaitingForPreFlightApproval =
     isModelTrainingCard &&
@@ -178,7 +178,8 @@ function CardModalContent({
     pipelineStatuses["Pre Flight"] !== "Completed" &&
     (approvalNextStep === "Pre Flight" ||
       approvalNextStep === "preFlightNode" ||
-      (runStatus === "Paused" && requiresApproval && !isWaitingForModelConfirmation));
+      (runStatus === "Awaiting Approval" && !isWaitingForModelConfirmation) ||
+      pipelineStatuses["Pre Flight"] === "Awaiting Approval");
 
   const isWaitingForTrainingApproval =
     isModelTrainingCard &&
@@ -188,10 +189,14 @@ function CardModalContent({
     (approvalNextStep === "Model Training" ||
       approvalNextStep === "modelTrainingNode" ||
       approvalNextStep === "modelTrainingCodeNode" ||
-      (runStatus === "Paused" && requiresApproval && !isWaitingForModelConfirmation && !isWaitingForPreFlightApproval));
+      (runStatus === "Awaiting Approval" && !isWaitingForModelConfirmation && !isWaitingForPreFlightApproval) ||
+      pipelineStatuses["Model Training"] === "Awaiting Approval");
 
   const isStageAwaitingApprovalToAdvance =
-    (runStatus === "Paused" || requiresApproval) && (
+    (runStatus === "Awaiting Approval" ||
+      (isDataIngestionCard && agentState?.stageStatuses?.dataIngestion?.status === "Awaiting Approval") ||
+      (isFeatureEngineeringCard && agentState?.stageStatuses?.featureEngineering?.status === "Awaiting Approval") ||
+      (isModelTrainingCard && agentState?.stageStatuses?.modelTrainingValidation?.status === "Awaiting Approval")) && (
       (isDataIngestionCard && (approvalNextStep === "Feature Engineering" || approvalNextStep === "hierarchyMapperNode" || (!isDownstreamFromDIStartedOrDone && allSubstepsCompletedInStage))) ||
       (isFeatureEngineeringCard && (approvalNextStep === "Model Training & Validation" || approvalNextStep === "Model Selection" || approvalNextStep === "modelSelectionNode" || (!isDownstreamFromFEStartedOrDone && allSubstepsCompletedInStage)))
     );
@@ -199,7 +204,7 @@ function CardModalContent({
   const isCardAwaitingApproval =
     (isDataIngestionCard && isStageAwaitingApprovalToAdvance) ||
     (isFeatureEngineeringCard && isStageAwaitingApprovalToAdvance) ||
-    (isModelTrainingCard && (isWaitingForModelConfirmation || isWaitingForPreFlightApproval || isWaitingForTrainingApproval || (requiresApproval && runStatus === "Paused")));
+    (isModelTrainingCard && (isWaitingForModelConfirmation || isWaitingForPreFlightApproval || isWaitingForTrainingApproval || runStatus === "Awaiting Approval" || agentState?.stageStatuses?.modelTrainingValidation?.status === "Awaiting Approval"));
 
   useEffect(() => {
     if (!isOpen || !workflowCard) return;
@@ -267,7 +272,7 @@ function CardModalContent({
     isOpen,
     selectedSubstepId,
     approvalNextStep,
-    requiresApproval,
+    runStatus,
     isWaitingForModelConfirmation,
     isWaitingForPreFlightApproval,
     isWaitingForTrainingApproval,
@@ -495,7 +500,7 @@ function CardModalContent({
                   "Model Validation", "modelValidation", "modelValidationNode",
                 ].includes(approvalNextStep || "");
 
-                if (!requiresApproval || isSubProcessApproval) return null;
+                if (!isCardAwaitingApproval || isSubProcessApproval) return null;
 
                 return (
                   <button
@@ -627,7 +632,7 @@ function CardModalContent({
                 </div>
               ) : (
                 <div className="flex-1 flex flex-col justify-center items-center p-8 text-center text-sm text-muted-foreground bg-surface-muted/10 select-none">
-                  {requiresApproval ? (
+                  {runStatus === "Awaiting Approval" || isCardAwaitingApproval ? (
                     <div className="flex flex-col items-center max-w-md p-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-foreground animate-fadeIn">
                       <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500 mb-3">
                         <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5">
