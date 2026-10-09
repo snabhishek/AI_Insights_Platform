@@ -5,6 +5,8 @@ export interface ValidateModelsInput {
   predictionFrequency: string;
   selectedModels: string[];
   filters?: Record<string, any>;
+  // Internal inference callers can forecast unobserved periods that precede today's date.
+  executionMode?: "future_prediction" | "backtesting";
 }
 
 export interface IModelValidationService {

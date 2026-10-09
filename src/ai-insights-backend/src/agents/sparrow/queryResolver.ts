@@ -7,10 +7,13 @@ import { clarificationSchema } from "./clarification";
 
 export const queryUnderstandingSchema = z.object({
   intent: z.string().min(1),
+  metricRelationship: z.enum(["direct", "derived", "unsupported"]).optional(),
+  derivation: z.object({ forecastTarget: z.string().min(1), rationale: z.string().min(1), requiredInputs: z.array(z.string().min(1)) }).optional(),
   targetMetric: z.string().nullish(), targetEntity: z.string().nullish(),
   dimensions: z.array(z.string()).optional(),
   timeRange: z.object({
-    horizon: z.number().int().positive().nullish(), frequency: z.string().nullish(),
+    anchor: z.enum(["calendar", "latest_data", "explicit"]).optional(),
+    horizon: z.number().int().positive().nullish(), frequency: z.enum(["Monthly", "Weekly", "Yearly"]).nullish(),
     startDate: z.string().nullish(), endDate: z.string().nullish(),
   }).nullish(),
   filters: z.array(z.object({
@@ -39,6 +42,9 @@ export function validateUnderstanding(value: unknown, intents: SparrowIntent[]):
     clarificationSchema.parse({ question: parsed.clarificationQuestion,
       missingField: parsed.missingField, options: parsed.clarificationOptions });
   }
+  if (parsed.metricRelationship === "derived" && !parsed.derivation) {
+    throw new Error("A derived metric requires the agent's forecast basis, rationale and required inputs.");
+  }
   // Normalize nullable output without inventing business parameters.
   return JSON.parse(JSON.stringify(parsed, (_key, item) => item === null ? undefined : item));
 }
@@ -54,7 +60,7 @@ export class QueryResolver {
     const catalog = intents ?? await new PostgresSparrowIntentRepository(pool).getActiveIntents();
     const parsed = await invokeSparrowJson("queryResolver.md", {
       userQuery, projectContext, conversationHistory, memory, intentCatalog: catalog,
-      currentDate: new Date().toISOString().slice(0, 10),
+      currentDate: projectContext.currentDate ?? new Date().toISOString().slice(0, 10),
     }, queryUnderstandingSchema);
     return validateUnderstanding(parsed, catalog);
   }

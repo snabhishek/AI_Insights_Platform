@@ -3,6 +3,7 @@ import { z } from "zod";
 import { IModelValidationService } from "../../../services/ai/model-validation/modelValidation.service.interface";
 import { ProjectService } from "../../../services/project/project.service";
 import { VALID_FREQUENCY_VALUES } from "../../../constants/modelValidation.constants";
+import { forecastWindow, selectForecastPeriods } from "../forecastWindow";
 
 export interface ModelInferenceToolServices {
   projectService: ProjectService;
@@ -35,10 +36,6 @@ export const createDiscoverAvailableModelsTool = (
             : [];
         const championModelId = candidateInfo?.championModelId || null;
 
-        const project = await services.projectService.getById(projectId);
-        const agentState = (project?.agentState || {}) as any;
-        const validation = agentState.modelValidation || agentState.stageOutputs?.modelValidation;
-
         return {
           success: true,
           projectId,
@@ -48,9 +45,7 @@ export const createDiscoverAvailableModelsTool = (
             displayName: c.displayName || c.model_name || c.model_id || String(c),
             framework: c.framework || "custom",
             isChampion: (c.model_id || c.id) === championModelId,
-            score: c.score || c.suitability_score || null,
           })),
-          hasCompletedValidation: Boolean(validation?.report || validation?.status === "Completed"),
         };
       } catch (err: any) {
         return {
@@ -62,65 +57,7 @@ export const createDiscoverAvailableModelsTool = (
     },
     {
       name: "discoverAvailableModels",
-      description: "Discovers all trained and candidate ML models for the project, identifying the champion model and evaluation status.",
-      schema: z.object({}),
-    }
-  );
-
-export const createGetModelValidationResultsTool = (
-  projectId: string,
-  services: ModelInferenceToolServices
-) =>
-  tool(
-    async () => {
-      try {
-        if (!projectId) {
-          return { success: false, error: "No projectId provided." };
-        }
-
-        const run = await services.modelValidationService.getValidationResults(projectId);
-        if (!run) {
-          return {
-            success: false,
-            message: "No validation results or predictions found for this project yet.",
-          };
-        }
-
-        const modelsList = run.results || run.ranked_models || run.report?.ranked_models || [];
-        const championId = run.championModelId || run.champion_model_id;
-
-        return {
-          success: true,
-          validationRunId: run.id || run.validation_run_id,
-          status: run.status,
-          evaluationMode: run.evaluationMode || run.mode,
-          horizon: run.predictionObjectiveHorizon || run.prediction_objective_horizon,
-          frequency: run.predictionObjectiveFrequency || run.prediction_objective_frequency,
-          startDate: run.predictionObjectiveStartDate || run.prediction_objective_start_date,
-          championModelId: championId,
-          coveragePercentage: run.actualDataCoverage || run.coverage_percentage,
-          chartData: run.chartData || null,
-          modelsSummary: modelsList.map((m: any) => ({
-            modelId: m.modelId || m.model_id,
-            displayName: m.displayName || m.modelId || m.model_id,
-            score: m.score,
-            totals: m.totals,
-            primaryMetricName: m.primaryMetricName,
-            actualTotal: m.actualTotal,
-            forecastTotal: m.forecastTotal,
-            differencePercentage: m.differencePercentage,
-          })),
-        };
-      } catch (err: any) {
-        return {
-          success: false,
-          error: err?.message || String(err),
-        };
-      }
-    },
-    {
-      name: "getModelValidationResults",
-      description: "Retrieves latest validation results, forecast totals, metric comparisons, and backtest accuracy for trained models.",
+      description: "Discovers model IDs and names available for inference and identifies the training champion. Does not load validation reports.",
       schema: z.object({}),
     }
   );
@@ -132,11 +69,13 @@ export const createRunModelInferenceTool = (
   tool(
     async ({
       predictionObjectiveStartDate,
+      requestedStartDate,
       predictionHorizon,
       predictionFrequency,
       selectedModels,
     }: {
-      predictionObjectiveStartDate?: string;
+      predictionObjectiveStartDate: string;
+      requestedStartDate: string;
       predictionHorizon: number;
       predictionFrequency: string;
       selectedModels: string[];
@@ -162,39 +101,39 @@ export const createRunModelInferenceTool = (
           return { success: false, error: "Select supported model IDs from the discovered project models." };
         }
 
-        const project = await services.projectService.getById(projectId);
-        const agentState = (project?.agentState || {}) as any;
-        const resolvedStartDate =
-          predictionObjectiveStartDate ||
-          agentState.predictionObjectiveStartDate ||
-          agentState.splitDate;
-        if (!resolvedStartDate) return { success: false, error: "Prediction start date is required; specify it or configure the project objective." };
+        const window = forecastWindow(predictionObjectiveStartDate, requestedStartDate, predictionHorizon, predictionFrequency);
 
         const result = await services.modelValidationService.validateModels({
           projectId,
-          predictionObjectiveStartDate: resolvedStartDate,
-          predictionHorizon,
+          predictionObjectiveStartDate: window.executionStart.toISOString().slice(0, 10),
+          predictionHorizon: window.executionHorizon,
           predictionFrequency,
           selectedModels: modelsToRun,
+          executionMode: "future_prediction",
         });
 
         const report = result.report || {};
-        const rankedModels = report.ranked_models || [];
+        if (result.status !== "Completed") return { success: false, error: result.error || "Model inference did not complete." };
+        const rankedModels = report.ranked_models || Object.values(report.model_results || {});
+        if (!rankedModels.length) return { success: false, error: "Inference returned no model predictions." };
+        if (modelsToRun.some(id => !rankedModels.some((model: any) => (model.model_id || model.modelId) === id && model.status !== "Failed"))) {
+          return { success: false, error: "Inference did not return predictions for every selected model." };
+        }
 
         return {
           success: result.status === "Completed",
-          status: result.status,
-          summary: result.summary,
+          targetColumn: report.target_column,
           predictionHorizon,
           predictionFrequency,
-          startDate: resolvedStartDate,
+          startDate: window.displayStart.toISOString().slice(0, 10),
+          endDate: new Date(window.displayEnd.getTime() - 86400000).toISOString().slice(0, 10),
+          executionWindow: { startDate: window.executionStart.toISOString().slice(0, 10), horizon: window.executionHorizon, bridgePeriods: window.bridgePeriods },
           championModel: report.champion_model_id || modelsToRun[0],
-          modelResults: rankedModels.map((m: any) => ({
-            modelId: m.model_id || m.modelId,
-            score: m.score,
-            totals: m.totals,
-            chartData: m.chartData,
-          })),
+          modelResults: rankedModels.filter((m: any) => modelsToRun.includes(m.model_id || m.modelId)).map((m: any) => {
+            const periods = selectForecastPeriods(m.chartData, window.displayStart, window.displayEnd, predictionHorizon, predictionFrequency);
+            return { modelId: m.model_id || m.modelId, periods,
+              forecastTotal: periods.reduce((sum: number, row: any) => sum + row.predicted, 0) };
+          }),
         };
       } catch (err: any) {
         return {
@@ -205,10 +144,13 @@ export const createRunModelInferenceTool = (
     },
     {
       name: "runModelInference",
-      description: "Executes full-project predictions for the trained target, explicit horizon, supported frequency and discovered model IDs. Segment filters and changed-feature scenarios are not supported by the current inference engine.",
+      description: "Forecasts the trained target across any data gap, then returns only the requested periods and their totals. Inspect date coverage first. Segment filters and changed-feature scenarios are unsupported.",
       schema: z.object({
-        predictionObjectiveStartDate: z.string().optional().describe("Prediction start date in YYYY-MM-DD format."),
-        predictionHorizon: z.number().int().positive().max(1000).describe("Number of periods to forecast ahead (e.g. 4 for 4 weeks or 4 months)."),
+        predictionObjectiveStartDate: z.string().describe("Execution origin: first period after observed history, verified with a MAX(date) query; YYYY-MM-DD. Never use a stale project objective."),
+        requestedStartDate: z.string().describe("First period the user wants displayed, from the resolved request; YYYY-MM-DD."),
+        historyEvidenceIndex: z.number().int().nonnegative().describe("Index in toolResults of the successful queryProjectData MAX(date) coverage query."),
+        historyEndColumn: z.string().min(1).describe("Exact column alias for the latest observed date in that query result."),
+        predictionHorizon: z.number().int().positive().max(1000).describe("Number of periods to DISPLAY. The tool extends execution to cover the gap before requestedStartDate."),
         predictionFrequency: z.enum(VALID_FREQUENCY_VALUES).describe("Explicit forecast frequency supported by the validation engine."),
         selectedModels: z.array(z.string()).min(1).describe("Exact model IDs chosen from discovery results; respect the user selection."),
       }).strict(),

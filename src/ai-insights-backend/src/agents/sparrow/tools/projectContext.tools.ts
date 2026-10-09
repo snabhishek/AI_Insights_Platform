@@ -5,6 +5,7 @@ import * as path from "path";
 import { ProjectService } from "../../../services/project/project.service";
 import { IDuckDBService } from "../../../services/duckdb/duckdb.service.interface";
 import { getProjectDir, resolveStoragePath } from "../../../config/fileServer.config";
+import { projectBusinessContext } from "../projectContext";
 
 export interface ProjectContextToolServices {
   projectService: ProjectService;
@@ -34,46 +35,10 @@ export const createGetProjectContextTool = (
         }
 
         const pWs = await services.projectService.getProjectWithWorkspace(projectId);
-        const agentState = (project.agentState || {}) as any;
-        const stageStatuses = agentState?.stageStatuses || {};
-        const stageOutputs = agentState?.stageOutputs || {};
-
-        const featureArchitect = agentState?.featureArchitect || stageOutputs?.featureArchitect || {};
-        const targetColumn =
-          featureArchitect?.targetColumn ||
-          featureArchitect?.orchestrationDecision?.targetColumn ||
-          agentState?.targetColumn ||
-          agentState?.prediction_target_column ||
-          null;
-
-        const problemType =
-          featureArchitect?.problemType ||
-          featureArchitect?.orchestrationDecision?.problemType ||
-          agentState?.problemType ||
-          null;
-
-        const modelSelection = agentState?.modelSelection || stageOutputs?.modelSelection || {};
-        const recommendedModel = modelSelection?.recommended_model?.model_id || null;
-        const candidates = (modelSelection?.candidates || []).map((c: any) => c.displayName || c.model_id || c);
-
         return {
           success: true,
-          projectId: project.id,
-          projectName: project.projectName || project.name,
+          ...projectBusinessContext(project),
           workspaceName: pWs?.workspaceName || "Default_Workspace",
-          useCase: project.useCase || "Analytical Intelligence",
-          domain: project.domain || "General",
-          subDomain: project.subDomain || null,
-          dataSources: project.dataSources || [],
-          pipelineStatus: project.status || "idle",
-          targetColumn,
-          problemType,
-          recommendedModel,
-          predictionObjectiveHorizon: agentState.predictionObjectiveHorizon ?? agentState.predictionHorizon,
-          predictionObjectiveFrequency: agentState.predictionObjectiveFrequency ?? agentState.predictionFrequency,
-          predictionObjectiveStartDate: agentState.predictionObjectiveStartDate ?? agentState.splitDate,
-          candidateModels: candidates,
-          stageStatuses,
         };
       } catch (err: any) {
         return {
@@ -144,7 +109,6 @@ export const createGetProjectDataSchemaTool = (
         return {
           success: true,
           projectId,
-          dbPath: fs.existsSync(dbPath) ? dbPath : null,
           tables: tablesInfo,
           dataFiles: parquetFiles,
         };

@@ -6,6 +6,8 @@ import { QueryResolver } from "./queryResolver";
 import { SparrowState } from "./sparrowState";
 import { AnalysisPlan, ExecutionToolResult, SparrowThinkingStep } from "./types";
 import { clarificationSchema, createClarificationInteraction } from "./clarification";
+import { advancePeriod, dateOnly, resolveForecastRange } from "./forecastWindow";
+import { compactMemory, compactProjectContext, compactToolResults } from "./projectContext";
 
 export interface SparrowGraphDependencies {
   tools: Map<string, any>;
@@ -47,7 +49,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
     name, description: tool.description, parameters: toJsonSchema(tool.schema),
   }));
   const getToolResults = (state: SparrowState): ExecutionToolResult[] =>
-    Array.isArray(state?.toolResults) ? state.toolResults : [];
+    compactToolResults(Array.isArray(state?.toolResults) ? state.toolResults : []);
 
   const progress = (state: SparrowState, node: string, text: string) => {
     const thinkingList = Array.isArray(state?.thinking) ? state.thinking : [];
@@ -58,8 +60,9 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
   const executionContext = (state: SparrowState, repairing = false) => {
     const toolResults = getToolResults(state);
     return {
-      userQuery: state.userQuery, messages: Array.isArray(state.messages) ? state.messages : [], memory: state.memory,
+      userQuery: state.userQuery, messages: Array.isArray(state.messages) ? state.messages : [], memory: compactMemory(state.memory),
       clarificationAnswer: state.clarificationAnswer,
+      clarificationHistory: state.clarificationHistory,
       toolResults, previousPlan: state.plan, toolCatalog,
       toolSchemas: Array.from(deps.tools, ([name, tool]) => ({ name, schema: tool.schema })),
       repairing, remainingToolCalls: MAX_TOOL_CALLS - state.toolCalls,
@@ -81,20 +84,12 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
         if (state.queryUnderstanding?.filters?.length || state.queryUnderstanding?.scenarioChanges?.length) {
           throw new Error("The current inference engine does not apply segment filters or feature scenario changes. Do not substitute an unfiltered forecast.");
         }
-        const isCompatibleTargetMetric = (requested?: string | null, target?: string | null) => {
-          if (!requested || !target) return true;
-          const req = requested.toLowerCase().trim();
-          const tgt = target.toLowerCase().trim();
-          if (req === tgt) return true;
-          const revenueTerms = ["revenue", "order_value", "sales", "value", "turnover", "total_revenue", "price"];
-          const volumeTerms = ["quantity", "order_quantity", "volume", "units", "demand", "orders"];
-          const isReqRevenue = revenueTerms.some((t) => req.includes(t));
-          const isTgtVolume = volumeTerms.some((t) => tgt.includes(t));
-          const isReqVolume = volumeTerms.some((t) => req.includes(t));
-          const isTgtRevenue = revenueTerms.some((t) => tgt.includes(t));
-          return (isReqRevenue && isTgtVolume) || (isReqVolume && isTgtRevenue);
-        };
-        if (state.queryUnderstanding?.targetMetric && state.projectContext.targetColumn && !isCompatibleTargetMetric(state.queryUnderstanding.targetMetric, state.projectContext.targetColumn)) {
+        const understanding = state.queryUnderstanding;
+        const directTarget = !understanding?.targetMetric || !state.projectContext.targetColumn
+          || understanding.targetMetric.toLowerCase().trim() === state.projectContext.targetColumn.toLowerCase().trim();
+        const supportedDerivation = understanding?.metricRelationship === "derived" && !!understanding.derivation?.rationale.trim()
+          && understanding.derivation.forecastTarget === state.projectContext.targetColumn;
+        if (understanding?.metricRelationship === "unsupported" || (!directTarget && !supportedDerivation)) {
           throw new Error(`The trained project target is '${state.projectContext.targetColumn}', which differs from the requested metric.`);
         }
         if (!getToolResults(state).some((item) => item.toolName === "discoverAvailableModels" && item.success)) {
@@ -105,9 +100,26 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       if (name === "runModelInference" && state.queryUnderstanding?.timeRange?.horizon && parsedArgs.predictionHorizon !== state.queryUnderstanding.timeRange.horizon) {
         throw new Error("Inference horizon must match the resolved user request.");
       }
+      if (name === "runModelInference" && state.queryUnderstanding?.timeRange?.startDate) {
+        parsedArgs.requestedStartDate = state.queryUnderstanding.timeRange.startDate;
+      }
+      if (name === "runModelInference" && state.queryUnderstanding?.timeRange?.frequency && parsedArgs.predictionFrequency !== state.queryUnderstanding.timeRange.frequency) {
+        throw new Error("Inference frequency must match the resolved request.");
+      }
+      if (name === "runModelInference" && parsedArgs.historyEvidenceIndex !== undefined) {
+        const coverage = getToolResults(state)[parsedArgs.historyEvidenceIndex];
+        const lastDate = coverage?.data?.rows?.[0]?.[parsedArgs.historyEndColumn];
+        if (!coverage?.success || coverage.toolName !== "queryProjectData" || coverage.data?.rows?.length !== 1 || !lastDate) {
+          throw new Error("Inspect MAX(date) coverage through a successful query before forecasting across the data gap.");
+        }
+        const origin = advancePeriod(dateOnly(String(lastDate).slice(0, 10)), parsedArgs.predictionFrequency).toISOString().slice(0, 10);
+        if (parsedArgs.predictionObjectiveStartDate !== origin) throw new Error(`Inference must start after observed history at ${origin}, then bridge to the requested window.`);
+      }
       const previousFailure = getToolResults(state).find((result) => !result.success && result.toolName === name && JSON.stringify(result.args) === JSON.stringify(parsedArgs));
       if (previousFailure) throw new Error("Identical failed call rejected; correct its parameters or explain the limitation.");
-      let data = await instance.invoke(parsedArgs);
+      let data = instance.invokeWithContext
+        ? await instance.invokeWithContext(parsedArgs, state)
+        : await instance.invoke(parsedArgs);
       if (typeof data === "string") {
         try { data = JSON.parse(data); } catch { throw new Error(data); }
       }
@@ -126,7 +138,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
 
   const decide = async (state: SparrowState, repairing: boolean): Promise<Partial<SparrowState>> => {
     try {
-      const plan = analysisPlanSchema.parse(await agents.plan(state.queryUnderstanding!, state.projectContext, executionContext(state, repairing)));
+      const plan = analysisPlanSchema.parse(await agents.plan(state.queryUnderstanding!, compactProjectContext(state.projectContext), executionContext(state, repairing)));
       if (plan.action === "tool" && !deps.tools.has(plan.steps[0].toolName)) {
         throw new Error(`Planner selected unregistered tool '${plan.steps[0].toolName}'.`);
       }
@@ -167,20 +179,25 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       return { ...update, nextAction: plan!.action!, decisionReady: false };
     },
     queryResolverNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
-      const understanding = await agents.resolve(state.userQuery, state.projectContext, state.messages, state.intentCatalog, {
-        ...state.memory, clarificationAnswer: state.clarificationAnswer, pendingUnderstanding: state.queryUnderstanding,
+      const clockContext = { ...compactProjectContext(state.projectContext), currentDate: new Date(deps.now?.() ?? Date.now()).toISOString().slice(0, 10) };
+      const understanding = await agents.resolve(state.userQuery, clockContext, state.messages, state.intentCatalog, {
+        ...compactMemory(state.memory), clarificationAnswer: state.clarificationAnswer, pendingUnderstanding: state.queryUnderstanding,
+        clarificationHistory: state.clarificationHistory,
       });
-      return { queryUnderstanding: understanding, ...progress(state, "queryResolver", "Interpreted your request in its conversation and project context.") };
+      if (state.intentCatalog.find(intent => intent.code === understanding.intent)?.allowsInference) {
+        understanding.timeRange = resolveForecastRange(understanding.timeRange, deps.now?.() ?? Date.now());
+      }
+      return { projectContext: clockContext, queryUnderstanding: understanding, ...progress(state, "queryResolver", "Interpreted your request in its conversation and project context.") };
     },
     projectContextNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
       const metadata = await execute("getProjectContext", {}, state);
       const schema = await execute("getProjectDataSchema", {}, state);
       return {
-        projectContext: {
+        projectContext: compactProjectContext({
           ...state.projectContext, ...(metadata.success ? metadata.data : {}),
           tables: schema.success ? schema.data.tables : [],
           schemaError: schema.error, dataFiles: schema.success ? schema.data.dataFiles : [],
-        },
+        }),
         toolResults: [...getToolResults(state), metadata, schema], toolCalls: state.toolCalls + 2,
         contextInspected: true, queryUnderstanding: null,
         ...progress(state, "projectContext", "Inspected available project metadata and data schema."),
@@ -193,7 +210,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
         ? { ...state.projectContext, tables: result.data.tables, dataFiles: result.data.dataFiles, schemaError: undefined }
         : result.success && step.toolName === "getProjectContext"
           ? { ...state.projectContext, ...result.data } : state.projectContext;
-      return { projectContext, toolResults: [...getToolResults(state), result], toolCalls: state.toolCalls + 1,
+      return { projectContext: compactProjectContext(projectContext), toolResults: [...getToolResults(state), result], toolCalls: state.toolCalls + 1,
         ...progress(state, "toolExecutor", result.success ? `Completed ${step.toolName}.` : `${step.toolName} could not complete; reviewing the failure.`) };
     },
     programRectificationNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
@@ -222,8 +239,9 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
     responderNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
       const plan: AnalysisPlan = state.plan ?? { action: "respond", planType: "general_response", steps: [], rationale: state.stopReason || "Answer with available context." };
       const toolResults = getToolResults(state);
-      const response = await agents.respond(state.userQuery, state.queryUnderstanding!, plan, toolResults, state.projectContext, state.thinking, {
-        ...state.memory, messages: state.messages, clarificationAnswer: state.clarificationAnswer, stopReason: state.stopReason,
+      const response = await agents.respond(state.userQuery, state.queryUnderstanding!, plan, toolResults, compactProjectContext(state.projectContext), state.thinking, {
+        ...compactMemory(state.memory), messages: state.messages, clarificationAnswer: state.clarificationAnswer, stopReason: state.stopReason,
+        clarificationHistory: state.clarificationHistory,
       });
       const update = progress(state, "responder", "Prepared an answer from the available evidence.");
       return {

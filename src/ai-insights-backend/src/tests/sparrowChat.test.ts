@@ -429,9 +429,28 @@ test("discoverAvailableModels handles dictionary candidates object without crash
   assert.equal(res.models[0].isChampion, true);
 });
 
-test("revenue-volume compatibility allows model inference when target column is Order_Quantity", async () => {
+test("the supervisor can answer a derived request with a capability gap without a prescribed calculation", async () => {
+  const predictIntents = [{ code: "PREDICT", description: "Forecast", allowsInference: true, conversational: false }];
   const f = fixture({
-    resolve: async () => ({ ...understanding, intent: "PREDICT", targetMetric: "Order_Value" }),
+    resolve: async () => ({ ...understanding, intent: "PREDICT", targetMetric: "profit", metricRelationship: "derived",
+      derivation: { forecastTarget: "units", rationale: "Units times contribution margin", requiredInputs: ["contribution margin"] } }),
+    plan: async (_u: any, _c: any, execution: any) => execution.toolResults.some((result: any) => result.toolName === "discoverAvailableModels")
+      ? { ...responsePlan, rationale: "No trained models are available; explain the gap without fabricating a forecast." }
+      : { action: "tool", planType: "model_inference", steps: [{ toolName: "discoverAvailableModels", args: {}, description: "Inspect model availability" }], rationale: "Check actual capability" },
+    respond: async () => ({ status: "complete", content: "No trained model is available to forecast units. A profit estimate also needs contribution margin.", thinking: [] }),
+  });
+  const tools = new Map(f.deps.tools);
+  tools.set("discoverAvailableModels", fakeTool(z.object({}), async () => ({ success: true, models: [] })));
+  const result = await createSparrowGraph({ ...f.deps, tools }).invoke({ ...seed, intentCatalog: predictIntents,
+    projectContext: { targetColumn: "units" } }, config("derived-gap"));
+  assert.match(result.response!.content, /No trained model/);
+  assert.equal(result.toolResults.some(result => !result.success), false);
+  assert.equal(result.toolResults.some(result => result.toolName === "calculateMetric"), false);
+});
+
+test("an agent-justified derived metric permits inference of the inspected trained target", async () => {
+  const f = fixture({
+    resolve: async () => ({ ...understanding, intent: "PREDICT", targetMetric: "Order_Value", metricRelationship: "derived", derivation: { forecastTarget: "Order_Quantity", rationale: "Forecast sold units, then use evidenced price when available", requiredInputs: ["unit price"] } }),
     plan: async () => ({
       action: "tool" as const, planType: "model_inference" as const,
       steps: [{ toolName: "runModelInference", args: { predictionHorizon: 3, predictionFrequency: "Monthly", selectedModels: ["m1"] }, description: "Inference" }],
@@ -459,7 +478,7 @@ test("revenue-volume compatibility allows model inference when target column is 
     tools: toolsWithDiscovery,
     agents: {
       ...f.deps.agents!,
-      resolve: async () => ({ ...understanding, intent: "PREDICT", targetMetric: "Order_Value" }),
+      resolve: async () => ({ ...understanding, intent: "PREDICT", targetMetric: "Order_Value", metricRelationship: "derived", derivation: { forecastTarget: "Order_Quantity", rationale: "Forecast sold units, then use evidenced price when available", requiredInputs: ["unit price"] } }),
       plan: async (_u: any, _c: any, exec: any) => {
         if (!exec.toolResults.some((t: any) => t.toolName === "discoverAvailableModels")) {
           return { action: "tool" as const, planType: "model_inference" as const, steps: [{ toolName: "discoverAvailableModels", args: {}, description: "Discovery" }], rationale: "Discover" };

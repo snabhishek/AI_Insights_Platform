@@ -2,6 +2,7 @@
 export type QueryIntent = string;
 
 export interface TimeRangeContext {
+  anchor?: "calendar" | "latest_data" | "explicit";
   horizon?: number;
   frequency?: string;
   startDate?: string;
@@ -9,6 +10,8 @@ export interface TimeRangeContext {
 }
 
 export interface QueryUnderstanding {
+  metricRelationship?: "direct" | "derived" | "unsupported";
+  derivation?: { forecastTarget: string; rationale: string; requiredInputs: string[] };
   intent: QueryIntent;
   targetMetric?: string;
   targetEntity?: string;

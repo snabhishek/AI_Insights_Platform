@@ -13,7 +13,6 @@ import {
 } from "./tools/dataAnalysis.tools";
 import {
   createDiscoverAvailableModelsTool,
-  createGetModelValidationResultsTool,
   createRunModelInferenceTool,
 } from "./tools/modelInference.tools";
 import { createWebSearchTool } from "../tools/search/websearch";
@@ -24,6 +23,8 @@ import { ISparrowIntentRepository } from "../../repositories/sparrowIntent.repos
 import { createSparrowGraph } from "./graph";
 import { SparrowMessage } from "./sparrowState";
 import { clarificationSchema, CLARIFICATION_WINDOW_MS, interactionAt } from "./clarification";
+import { projectBusinessContext } from "./projectContext";
+import { createCalculateMetricTool } from "./tools/calculation.tools";
 
 if (typeof BigInt !== "undefined" && !(BigInt.prototype as any).toJSON) {
   (BigInt.prototype as any).toJSON = function () {
@@ -166,18 +167,12 @@ export class SparrowOrchestrator {
     const seedHistory: SparrowMessage[] = !hasCheckpoint ? (input.conversationHistory ?? [])
       .filter((message) => (message.role === "user" || message.role === "assistant") && typeof message.content === "string")
       .slice(-23).map((message) => ({ role: message.role as "user" | "assistant", content: message.content.slice(0, 12000) })) : [];
-    const state = project.agentState ?? {};
     const result = await graph.invoke(pendingInterrupt ? new Command({ resume: {
       answer: input.userQuery.trim(), intentCatalog: intents, interaction: savedInteraction(snapshot),
     } }) : retryIncompleteTurn ? null : {
       projectId, userQuery: input.userQuery.trim(),
       messages: [...(hasCheckpoint && Array.isArray(snapshot.values?.messages) ? snapshot.values.messages : seedHistory), { role: "user" as const, content: input.userQuery.trim() }].slice(-24),
-      projectContext: {
-        projectId, projectName: project.projectName || project.name,
-        domain: project.domain, useCase: project.useCase,
-        targetColumn: state.targetColumn || state.prediction_target_column,
-        stageStatuses: state.stageStatuses, availableModels: state.modelTraining?.report?.ranked_models,
-      },
+      projectContext: { ...projectBusinessContext(project), projectId },
       intentCatalog: intents, queryUnderstanding: null, plan: null, response: null,
       toolResults: [], thinking: [], nextAction: "resolve" as const,
       hitlState: null, interaction: null, clarificationAnswer: "", clarificationHistory: [], contextInspected: false,
@@ -237,11 +232,7 @@ export class SparrowOrchestrator {
     });
     map.set("discoverAvailableModels", discModelsTool);
 
-    const getValResultsTool = createGetModelValidationResultsTool(projectId, {
-      projectService: this.deps.projectService,
-      modelValidationService: this.deps.modelValidationService,
-    });
-    map.set("getModelValidationResults", getValResultsTool);
+    map.set("calculateMetric", createCalculateMetricTool());
 
     const runInferenceTool = createRunModelInferenceTool(projectId, {
       projectService: this.deps.projectService,

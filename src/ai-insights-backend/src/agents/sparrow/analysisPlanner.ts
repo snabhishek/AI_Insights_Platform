@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { invokeSparrowJson } from "./llm";
+import { invokeSparrowDecision, SparrowDecisionTool } from "./llm";
 import { AnalysisPlan, QueryUnderstanding } from "./types";
 import { clarificationSchema } from "./clarification";
 
@@ -26,20 +26,34 @@ export class AnalysisPlanner {
     projectContext: Record<string, any>,
     executionContext: Record<string, unknown> = {}
   ): Promise<AnalysisPlan> {
-    const { toolSchemas, ...context } = executionContext;
+    const { toolSchemas, toolCatalog, ...context } = executionContext;
     if (!Array.isArray(toolSchemas) || !toolSchemas.length) {
       throw new Error("Supervisor planning requires the registered tool argument schemas.");
     }
-    const stepSchemas = toolSchemas.map((tool) => z.object({
-      toolName: z.literal(String(tool.name)), args: tool.schema as z.ZodType<Record<string, unknown>, Record<string, unknown>>, description: z.string(),
+    const metadata = { planType: analysisPlanSchema.shape.planType, rationale: z.string().min(1) };
+    const actions: SparrowDecisionTool[] = toolSchemas.map(tool => ({
+      name: String(tool.name),
+      description: (toolCatalog as Array<{ name: string; description: string }> | undefined)
+        ?.find(item => item.name === tool.name)?.description ?? `Execute ${tool.name}`,
+      schema: z.object({ ...metadata, description: z.string().min(1), args: tool.schema as z.ZodType }).strict(),
     }));
-    // Explicit per-tool properties are essential: some providers discard values
-    // in open-ended JSON objects even when the prompt describes those values.
-    const schema = analysisPlanSchema.safeExtend({
-      steps: z.array(z.union(stepSchemas as unknown as [typeof stepSchemas[number], typeof stepSchemas[number], ...typeof stepSchemas[number][]])).max(1),
+    if (actions.some(action => ["sparrowClarify", "sparrowRespond"].includes(action.name))) {
+      throw new Error("Registered tool name conflicts with a supervisor action.");
+    }
+    actions.push(
+      { name: "sparrowClarify", description: "Ask the user for a genuinely unresolved input; checkpoint and preserve executed evidence.",
+        schema: z.object({ ...metadata, clarification: clarificationSchema }).strict() },
+      { name: "sparrowRespond", description: "Answer the complete request from sufficient evidence. Give a partial answer for a user-declined input or an established capability/execution limitation; clarify recoverable missing inputs first.",
+        schema: z.object(metadata).strict() },
+    );
+    const decision = await invokeSparrowDecision({ understanding, projectContext, ...context }, actions);
+    const args = decision.args as Record<string, any>;
+    return analysisPlanSchema.parse({
+      action: decision.name === "sparrowClarify" ? "clarify" : decision.name === "sparrowRespond" ? "respond" : "tool",
+      planType: args.planType, rationale: args.rationale,
+      steps: ["sparrowClarify", "sparrowRespond"].includes(decision.name) ? []
+        : [{ toolName: decision.name, args: args.args, description: args.description }],
+      ...(decision.name === "sparrowClarify" ? { clarification: args.clarification } : {}),
     });
-    return invokeSparrowJson("analysisPlanner.md", {
-      understanding, projectContext, ...context,
-    }, schema);
   }
 }
