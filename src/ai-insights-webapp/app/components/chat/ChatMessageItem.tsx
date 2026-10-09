@@ -45,22 +45,15 @@ export default function ChatMessageItem({
         className={`rounded-2xl transition-all ${
           isUser
             ? "bg-primary text-white border border-transparent shadow-md max-w-[85%] sm:max-w-[75%] lg:max-w-[65%] p-3.5 sm:p-4 space-y-2"
-            : "bg-surface border border-border/80 dark:border-zinc-800 shadow-sm max-w-full p-4 sm:p-5 w-full space-y-3"
+            : "max-w-full p-4 sm:p-5 w-full space-y-3"
         }`}
       >
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-bold ${isUser ? "text-white" : "text-foreground"}`}>
-              {isUser ? "You" : message.agentName || "Sparrow"}
-            </span>
-            {!isUser && message.agentBadge && (
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
-                {message.agentBadge}
-              </span>
-            )}
+        {isUser && (
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-bold text-white">You</span>
+            <span className="text-[10px] text-white/80">{message.timestamp}</span>
           </div>
-          <span className={`text-[10px] ${isUser ? "text-white/80" : "text-muted-foreground"}`}>{message.timestamp}</span>
-        </div>
+        )}
 
         {!isUser && message.thinking && message.thinking.length > 0 && (
           <ChatThinkingAccordion
@@ -201,7 +194,7 @@ export default function ChatMessageItem({
           </div>
         )}
 
-        {!isUser && message.clarification && (
+        {!isUser && message.status !== "stopped" && message.clarification && (
           <ChatClarification message={message} disabled={isGenerating || message.isThinking}
             onReply={onClarificationReply} onDraft={onClarificationDraft} onExpire={onClarificationExpire} />
         )}
@@ -223,46 +216,51 @@ export default function ChatMessageItem({
         )}
 
         {!isUser && (
-          <div className="flex items-center gap-3 pt-1 text-muted-foreground text-[10px] select-none">
-            <button
-              type="button"
-              onClick={handleCopyMessage}
-              className="hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
-              title="Copy message text"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3 h-3 text-emerald-500" />
-                  <span className="text-emerald-500 font-bold">Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3 h-3" />
-                  <span>Copy</span>
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => onFeedback?.(message.id, "like")}
-              className={`hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer ${
-                message.userLiked ? "text-emerald-500 font-bold" : ""
-              }`}
-              title="Helpful"
-            >
-              <ThumbsUp className="w-3 h-3" />
-              <span>Helpful</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onFeedback?.(message.id, "dislike")}
-              className={`hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer ${
-                message.userDisliked ? "text-rose-500 font-bold" : ""
-              }`}
-              title="Not helpful"
-            >
-              <ThumbsDown className="w-3 h-3" />
-            </button>
+          <div className="flex items-center justify-between gap-3 pt-1 text-muted-foreground text-[10px] select-none">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCopyMessage}
+                className="hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+                title="Copy message text"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span className="text-emerald-400 font-bold">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => onFeedback?.(message.id, "like")}
+                className={`hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer ${
+                  message.userLiked ? "text-emerald-500 font-bold" : ""
+                }`}
+                title="Helpful"
+              >
+                <ThumbsUp className="w-3 h-3" />
+                <span>Helpful</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onFeedback?.(message.id, "dislike")}
+                className={`hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer ${
+                  message.userDisliked ? "text-rose-500 font-bold" : ""
+                }`}
+                title="Not helpful"
+              >
+                <ThumbsDown className="w-3 h-3" />
+              </button>
+            </div>
+            {message.timestamp && (
+              <span className="text-[10px] text-muted-foreground">{message.timestamp}</span>
+            )}
           </div>
         )}
       </div>

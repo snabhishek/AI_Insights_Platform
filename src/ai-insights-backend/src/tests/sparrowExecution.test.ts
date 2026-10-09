@@ -118,6 +118,20 @@ test("subprocess logs stream complete timestamped lines before completion, inclu
   assert.equal(fs.readFileSync(log, "utf8"), lines.join("\n") + "\n");
 });
 
+test("Stop terminates a running subprocess and prevents its delayed side effect", { timeout: 15000 }, async t => {
+  const f = fixture(t); const script = path.join(f.root, "stop-fixture.cjs");
+  const sentinel = path.join(f.root, "must-not-exist.txt"); const controller = new AbortController();
+  fs.writeFileSync(script, "console.log('READY'); setTimeout(()=>require('fs').writeFileSync('must-not-exist.txt','late result'),1500); setInterval(()=>{},1000);");
+  let started = false;
+  const result = await executeProcess(`node "${script}"`, { cwd: f.root, signal: controller.signal, timeoutMs: 10000,
+    onLog: line => { if (line.endsWith("READY")) { started = true; controller.abort(); } } });
+  assert.equal(started, true); assert.equal(result.exitCode, 130);
+  await new Promise(resolve => setTimeout(resolve, 1600));
+  assert.equal(fs.existsSync(sentinel), false, "Stopping the shell must also terminate the executing child");
+  const beforeStart = await executeProcess(`node "${script}"`, { cwd: f.root, signal: controller.signal });
+  assert.equal(beforeStart.exitCode, 130); assert.equal(beforeStart.stdout, "");
+});
+
 test("actual configured script worker inspects and reuses existing prediction source", { skip: process.env.SPARROW_EXECUTOR_LIVE !== "1", timeout: 180000 }, async () => {
   const context = { request: { projectId: "fixture", task: "Adapt this saved prediction helper to forecast the requested dates", prediction }, projectName: "Fixture", runTimestamp: "run",
     artifacts: [{ path: "run/model_training/predict.py", bytes: 200 }], requestFile: "/workspace/run/sparrow/id/request.json", outputFile: "/workspace/run/sparrow/id/result.json", outputDirectory: "/workspace/run/sparrow/id" };

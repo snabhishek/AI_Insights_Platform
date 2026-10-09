@@ -554,6 +554,7 @@ export default function AIAgentChatPage() {
         onSelectPersona={(pId) => {
           setSelectedPersonaId(pId);
           if (activeSession) {
+            void saveChatSessionMetadata({ ...activeSession, agentPersona: pId }).catch(error => setHistoryError(error.message));
             setSessions((prev) =>
               prev.map((s) => (s.id === activeSession.id ? { ...s, agentPersona: pId } : s))
             );
@@ -565,6 +566,15 @@ export default function AIAgentChatPage() {
           setSelectedProjectId(pId);
           if (activeSession) {
             const proj = projects.find((p) => p.id === pId);
+            if (activeSession.projectId !== pId && activeSession.messages.length > 0) {
+              const next: ChatSession = { id: `session-${crypto.randomUUID()}`, title: "New AI Inquiry", messages: [],
+                createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), agentPersona: selectedPersonaId,
+                projectId: pId || undefined, projectName: proj?.projectName || proj?.name };
+              setSessions(previous => [next, ...previous]);
+              setActiveSessionId(next.id);
+              void saveChatSessionMetadata(next).catch(error => setHistoryError(error.message));
+              return;
+            }
             setSessions((prev) =>
               prev.map((s) =>
                 s.id === activeSession.id

@@ -161,7 +161,11 @@ export class SparrowChatService implements ISparrowChatService {
   public async importSessions(sessions: any[]) {
     for (const session of z.array(z.object({ id: identifier, projectId: z.string().min(1).max(50), title: z.string().max(255),
       agentPersona: z.string().max(100), projectName: z.string().max(255).optional(), createdAt: z.string().optional(), updatedAt: z.string().optional(), pinned: z.boolean().optional(),
-      messages: z.array(z.object({ id: identifier, role: z.enum(["user", "assistant", "system"]), content: z.string().max(100000), timestamp: z.string() }).passthrough()).max(1000) }).strict()).max(200).parse(sessions)) {
+      messages: z.array(z.object({ id: identifier, role: z.enum(["user", "assistant", "system"]), content: z.string().max(100000), timestamp: z.string(),
+        requestId: identifier.optional(), isThinking: z.boolean().optional(),
+        thinking: z.array(z.object({ time: z.string(), text: z.string(), done: z.boolean(), timestamp: z.string().optional(),
+          status: z.enum(["running", "completed", "stopped", "failed"]).optional() }).passthrough()).optional()
+      }).passthrough()).max(1000) }).strict()).max(200).parse(sessions)) {
       if (await this.projectService.getById(session.projectId)) await this.repository.importSession(session);
     }
   }
