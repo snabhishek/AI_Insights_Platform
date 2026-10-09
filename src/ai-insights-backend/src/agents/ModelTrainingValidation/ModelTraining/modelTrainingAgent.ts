@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as yaml from "js-yaml";
 import { BaseMessage } from "@langchain/core/messages";
-import { AgentStateType, IngestionServices } from "../../state";
+import { GraphAgentStateType, IngestionServices } from "../../state";
 import {
   getModel,
   getPromptFromFile,
@@ -48,11 +48,15 @@ interface RectifierResult extends Record<string, unknown> {
 
 export class ModelTrainingAgent {
 
-  private static getProjectContext(state: AgentStateType, services: IngestionServices) {
+  private static getProjectContext(state: GraphAgentStateType, services: IngestionServices) {
     const projectId = state.projectId || services?.projectId || "";
-    const workspaceName = (state as any).workspaceName || services?.workspaceName || "FileStorage_Testing";
-    const projectName = (state as any).projectName || services?.projectName || "default";
+    const workspaceName = (state as any).workspaceName || services?.workspaceName || "";
+    const projectName = (state as any).projectName || services?.projectName || "";
     const runTimestamp = state.runTimestamp || services?.runTimestamp || "";
+
+    if (!projectId || !workspaceName || !projectName || !runTimestamp) {
+      throw new Error("[ModelTrainingAgent] Project, workspace, project name, and active run timestamp are required.");
+    }
 
     const projectDir = getProjectDirectory({ projectId, workspaceName, projectName, runTimestamp });
     const runDir = path.join(projectDir, runTimestamp);
@@ -88,7 +92,7 @@ export class ModelTrainingAgent {
     };
   }
 
-  private static getCandidateModels(contractData: any, state: AgentStateType): CandidateModelItem[] {
+  private static getCandidateModels(contractData: any, state: GraphAgentStateType): CandidateModelItem[] {
     const rawCandidates =
       contractData?.model_selection?.models ||
       contractData?.model_selection?.candidates ||
@@ -123,7 +127,7 @@ export class ModelTrainingAgent {
   }
 
   public static async generateProjectCode(
-    state: AgentStateType,
+    state: GraphAgentStateType,
     services: IngestionServices
   ): Promise<ModelTrainingAgentOutput> {
     const ctx = this.getProjectContext(state, services);
@@ -140,10 +144,11 @@ export class ModelTrainingAgent {
       };
     }
 
-    const preFlight = state.preFlight || (state.stageOutputs as any)?.preFlight || {};
+    const preFlight = state.preFlight || (state.stageOutputs as any)?.preFlightNode || (state.stageOutputs as any)?.preFlight || {};
     const configuredCandidateModels = this.getCandidateModels(contractData, state);
 
-    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlight || {}) as any;
+    // Extract PreFlight host hardware diagnostics
+    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlightNode || (state.stageOutputs as any)?.preFlight || {}) as any;
     const sys = preFlightReport.system || {};
     const hostCpus = typeof sys.cpu_logical === "number" ? sys.cpu_logical : 4;
     const hostRamGb = typeof sys.ram_available_gb === "number" ? sys.ram_available_gb : 8;
@@ -182,7 +187,7 @@ export class ModelTrainingAgent {
       "You are an expert AI Machine Learning Software Engineering and Coding Agent."
     );
 
-    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitDate || "";
+    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTrainingExecNode?.splitEndDate || (state.stageOutputs as any)?.modelTrainingExecNode?.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitDate || "";
 
     const timeColumn =
       contractData?.split?.time_column ||
@@ -273,7 +278,7 @@ export class ModelTrainingAgent {
     ].join("\n\n");
 
     const codingFallback: CodingAgentResult = {
-      status: "Success",
+      status: "Completed",
       summary: "Python model training project scaffolded successfully.",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
       requiredPackages: [],
@@ -319,7 +324,7 @@ export class ModelTrainingAgent {
   }
 
   public static async executeContainerTraining(
-    state: AgentStateType,
+    state: GraphAgentStateType,
     services: IngestionServices,
     options?: { maxRetries?: number }
   ): Promise<ModelTrainingAgentOutput> {
@@ -343,9 +348,9 @@ export class ModelTrainingAgent {
       );
     }
 
-    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || "";
+    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTrainingExecNode?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || "";
 
-    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlight || {}) as any;
+    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlightNode || (state.stageOutputs as any)?.preFlight || {}) as any;
     const sys = preFlightReport.system || {};
     const hostCpus = typeof sys.cpu_logical === "number" ? sys.cpu_logical : 4;
     const hostRamGb = typeof sys.ram_available_gb === "number" ? sys.ram_available_gb : 8;
@@ -392,7 +397,7 @@ export class ModelTrainingAgent {
 
     const agentMessages: BaseMessage[] = [];
     const codingFallback: CodingAgentResult = {
-      status: "Success",
+      status: "Completed",
       summary: "Coding agent generated project files.",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
       requiredPackages: [],
@@ -984,10 +989,12 @@ export class ModelTrainingAgent {
   }
 
   public static async execute(
-    state: AgentStateType,
+    state: GraphAgentStateType,
     services: IngestionServices
   ): Promise<ModelTrainingAgentOutput> {
     const hasProjectDir = Boolean(
+      (state.stageOutputs as any)?.modelTrainingCodeNode?.projectDirectory ||
+      (state.stageOutputs as any)?.modelTrainingExecNode?.projectDirectory ||
       (state.stageOutputs as any)?.modelTrainingCode?.projectDirectory ||
       (state.stageOutputs as any)?.modelTraining?.projectDirectory
     );

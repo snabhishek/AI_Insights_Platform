@@ -1,11 +1,3 @@
-export const PIPELINE_NAMES = {
-  DATA_INGESTION: "Data Ingestion",
-  FEATURE_ENGINEERING: "Feature Engineering",
-  MODEL_TRAINING_VALIDATION: "Model Training & Validation",
-} as const;
-
-export type PipelineName = typeof PIPELINE_NAMES[keyof typeof PIPELINE_NAMES];
-
 export type PipelineStepStatus =
   | "None"
   | "Pending"
@@ -41,23 +33,20 @@ export const TRACKED_AGENT_KEYS = [
   "featureValidatorNode",
 ] as const satisfies readonly TrackedAgentKey[];
 
-export const INITIAL_STAGE_STATUSES: Record<TrackedAgentKey, PipelineStepStatus> =
-  Object.fromEntries(TRACKED_AGENT_KEYS.map((key) => [key, "Pending"])) as Record<TrackedAgentKey, PipelineStepStatus>;
-
 export const STAGE_CONFIG = {
   dataIngestion: {
     id: "dataIngestion",
-    displayName: PIPELINE_NAMES.DATA_INGESTION,
+    displayName: "Data Ingestion",
     steps: ["inspect", "profileData", "resolveSchema"],
   },
   featureEngineering: {
     id: "featureEngineering",
-    displayName: PIPELINE_NAMES.FEATURE_ENGINEERING,
+    displayName: "Feature Engineering",
     steps: ["hierarchyMapperNode", "featureArchitectNode", "featureValidatorNode", "exogenous"],
   },
   modelTrainingValidation: {
     id: "modelTrainingValidation",
-    displayName: PIPELINE_NAMES.MODEL_TRAINING_VALIDATION,
+    displayName: "Model Training & Validation",
     steps: [
       "modelSelectionNode",
       "trainingConfigurationNode",
@@ -95,7 +84,7 @@ export const NODE_CONFIG = {
 export type GroupedStageStatuses = Record<StageKey, { status: PipelineStepStatus } & Partial<Record<TrackedAgentKey, PipelineStepStatus>>>;
 export type FlatStageStatuses = Partial<Record<TrackedAgentKey, PipelineStepStatus>>;
 
-export type AgentOutput = Record<string, any>;
+export type AgentOutput = Record<string, unknown>;
 
 export interface WorkflowDecisionOutput extends AgentOutput {
   targetColumn?: string;
@@ -186,7 +175,6 @@ export type StageOutputs = Partial<{
   modelTrainingCodeNode: AgentOutput;
   modelTrainingExecNode: ModelTrainingExecutionOutput;
 }>;
-export type StageOutputsUpdate = StageOutputs & { __replaceStageOutputs?: true };
 
 export interface WorkflowAgentState {
   [key: string]: any;
@@ -379,19 +367,9 @@ export function applyResumeToStageStatuses(
   }
 
   if (!resolvedStepKey) {
-    for (const key of TRACKED_AGENT_KEYS) {
-      if (flat[key] !== "Completed") {
-        resolvedStepKey = key;
-        break;
-      }
-    }
-  }
-
-  if (!resolvedStepKey) {
     resolvedStepKey = "inspect";
   }
 
-  // Transition any Paused steps to In-Progress or Pending
   for (const key of TRACKED_AGENT_KEYS) {
     if (flat[key] === "Paused") {
       flat[key] = key === resolvedStepKey ? "In-Progress" : "Pending";

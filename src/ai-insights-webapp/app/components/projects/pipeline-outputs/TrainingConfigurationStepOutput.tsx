@@ -102,7 +102,6 @@ export default function TrainingConfigurationStepOutput({
 
   const fetchContract = useCallback(async () => {
     if (!projectId) {
-
       const config = trainingConfiguration?.configuration || trainingConfiguration || {};
       setParsedData(config);
       const existing = extractSplitDateParts(config, trainingConfiguration);
@@ -140,7 +139,6 @@ export default function TrainingConfigurationStepOutput({
       }
     } catch (err: any) {
       console.warn("[TrainingConfig] Could not fetch contract from API:", err);
-
       const config = trainingConfiguration?.configuration || trainingConfiguration || {};
       setParsedData(config);
       const existing = extractSplitDateParts(config, trainingConfiguration);

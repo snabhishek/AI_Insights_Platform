@@ -1,25 +1,25 @@
+import { GroupedStageStatuses, PipelineStepStatus, StageOutputs } from "../../../agents/pipelineNames";
+
 export interface IngestionAgentStepResult {
   name: string;
-  status: string;
+  status: PipelineStepStatus;
   summary: string;
 }
 
 export interface IngestionAgentRunResult {
   connectorId: string[];
-  status: string;
+  status: PipelineStepStatus;
   summary: string;
   steps: IngestionAgentStepResult[];
-  inspection: Record<string, unknown>;
-  schemaResolution: Record<string, unknown>;
-  dataProfile: Record<string, unknown>;
   batchedTables?: Array<{ tableName: string; status: string; node: string; summary: string }>;
   sessionId?: string;
   requiresApproval?: boolean;
   nextStep?: string;
   currentNode?: string;
   currentStage?: string;
-  stageOutputs?: Record<string, unknown>;
-  stageStatuses?: Record<string, string>;
+  stageOutputs?: StageOutputs;
+  replaceStageOutputs?: boolean;
+  stageStatuses?: GroupedStageStatuses;
   message?: string;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   runTimestamp?: string;
@@ -45,5 +45,6 @@ export interface IIngestionAgentService {
   stop(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
   pause(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
   isProjectActive?(projectId?: string): boolean;
-  getActiveWorkflow(): { active: boolean; projectId: string | null; sessionId: string | null; status: string };
+  findSessionIdForProject?(projectId?: string): string | undefined;
+  getActiveWorkflow(): { active: boolean; projectId: string | null; sessionId: string | null; status: PipelineStepStatus };
 }

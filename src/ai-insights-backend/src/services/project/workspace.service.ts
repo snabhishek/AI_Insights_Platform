@@ -312,11 +312,10 @@ export class WorkspaceService {
     for (const run of runs) {
       const state = (run.agentState as any) || {};
       const candidates = [
-        state.stageOutputs?.formBuilder,
-        state.stageOutputs?.hierarchyMapper?.formBuilder,
+        state.stageOutputs?.hierarchyMapperNode?.formBuilder,
         state.hierarchyMapper?.formBuilder,
         state.formBuilder,
-        state.stageOutputs?.hierarchyMapper,
+        state.stageOutputs?.hierarchyMapperNode,
         state.hierarchyMapper,
       ];
 

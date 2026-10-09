@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Workflow, WorkflowStep, PipelineStatus } from "../../projects/types";
+import { Workflow, WorkflowStep, PipelineStatus, WorkflowAgentState } from "../../projects/types";
 import SubProcessLogModal from "./SubProcessLogModal";
 
 export type CardModalTabType = "output" | "thinking";
@@ -18,7 +18,7 @@ interface CardModalProps {
   runStatus?: string;
   workflowMessage?: string;
   projectId?: string;
-  agentState?: Record<string, any>;
+  agentState?: WorkflowAgentState;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   requiresApproval?: boolean;
   approvalNextStep?: string | null;
@@ -80,7 +80,7 @@ function CardModalContent({
   selectedSubstepId = null,
   pipelineStatuses = {},
   stepOutputs = {},
-  runStatus = "Idle",
+  runStatus = "None",
   workflowMessage = "",
   projectId,
   agentState,
@@ -104,57 +104,58 @@ function CardModalContent({
   const stepsList: WorkflowStep[] = workflowCard?.step || [];
   const activeStep = stepsList[activeStepIndex] || null;
   const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Pending") : "Pending";
+  const isInProgressStatus = (status: string | undefined) =>
+    status === "In-Progress";
 
   const cardId = workflowCard?.id || "";
-  const isDataIngestionCard = cardId === "Data Ingestion" || workflowCard?.title === "Data Ingestion";
-  const isFeatureEngineeringCard = cardId === "Feature Engineering" || workflowCard?.title === "Feature Engineering";
-  const isModelTrainingCard = cardId === "Model Training & Validation" || workflowCard?.title === "Model Training & Validation";
+  const isDataIngestionCard = cardId === "dataIngestion" || workflowCard?.title === "Data Ingestion";
+  const isFeatureEngineeringCard = cardId === "featureEngineering" || workflowCard?.title === "Feature Engineering";
+  const isModelTrainingCard = cardId === "modelTrainingValidation" || workflowCard?.title === "Model Training & Validation";
 
   const hasStepOutput = (stepId: string): boolean => {
     if (stepOutputs[stepId] != null) return true;
     const stageOuts = agentState?.stageOutputs;
     if (!stageOuts) return false;
-    if (stepId === "Data Inspection") return Boolean(stageOuts.inspection || agentState?.inspection);
-    if (stepId === "Data Profiling") return Boolean(stageOuts.dataProfile || agentState?.dataProfile);
-    if (stepId === "Schema Resolver") return Boolean(stageOuts.schemaResolution || agentState?.schemaResolution);
-    if (stepId === "Hierarchy Mapper") return Boolean(stageOuts.hierarchyMapper || agentState?.hierarchyMapper);
-    if (stepId === "Feature Architect") return Boolean(stageOuts.featureArchitect || agentState?.featureArchitect);
-    if (stepId === "Feature Validator") return Boolean(stageOuts.featureValidator || agentState?.featureValidator);
-    if (stepId === "Exogenous Scout") return Boolean(stageOuts.exogenousScout || stageOuts.exogenous || agentState?.exogenousScout);
-    if (stepId === "Model Selection") return Boolean(stageOuts.modelSelection || agentState?.modelSelection);
-    if (stepId === "Training Configuration") return Boolean(stageOuts.trainingConfiguration?.contractPath || agentState?.trainingConfiguration?.contractPath);
-    if (stepId === "Pre Flight") return Boolean(stageOuts.preFlight || agentState?.preFlight);
-    if (stepId === "Model Training") return Boolean(stageOuts.modelTraining || agentState?.modelTraining);
-    return Boolean(stageOuts[stepId]);
+    if (stepId === "inspect") return Boolean(stageOuts.inspect || agentState?.inspect);
+    if (stepId === "profileData") return Boolean(stageOuts.profileData || agentState?.profileData);
+    if (stepId === "resolveSchema") return Boolean(stageOuts.resolveSchema || agentState?.resolveSchema);
+    if (stepId === "hierarchyMapperNode") return Boolean(stageOuts.hierarchyMapperNode || agentState?.hierarchyMapperNode);
+    if (stepId === "featureArchitectNode") return Boolean(stageOuts.featureArchitectNode || agentState?.featureArchitectNode);
+    if (stepId === "featureValidatorNode") return Boolean(stageOuts.featureValidatorNode || agentState?.featureValidatorNode);
+    if (stepId === "exogenous") return Boolean(stageOuts.exogenous || agentState?.exogenous);
+    if (stepId === "modelSelectionNode") return Boolean(stageOuts.modelSelectionNode || agentState?.modelSelectionNode);
+    if (stepId === "trainingConfigurationNode") return Boolean(stageOuts.trainingConfigurationNode?.contractPath || agentState?.trainingConfigurationNode?.contractPath);
+    if (stepId === "preFlightNode") return Boolean(stageOuts.preFlightNode || agentState?.preFlightNode);
+    if (stepId === "modelTrainingExecNode") return Boolean(stageOuts.modelTrainingExecNode || agentState?.modelTrainingExecNode);
+    return false;
   };
 
   const isDownstreamFromDIStartedOrDone =
     pipelineStatuses["Feature Engineering"] === "Completed" ||
-    pipelineStatuses["Feature Engineering"] === "In Progress" ||
+    isInProgressStatus(pipelineStatuses["Feature Engineering"]) ||
     pipelineStatuses["Hierarchy Mapper"] === "Completed" ||
-    pipelineStatuses["Hierarchy Mapper"] === "In Progress" ||
+    isInProgressStatus(pipelineStatuses["Hierarchy Mapper"]) ||
     pipelineStatuses["Model Training & Validation"] === "Completed" ||
-    pipelineStatuses["Model Training & Validation"] === "In Progress" ||
+    isInProgressStatus(pipelineStatuses["Model Training & Validation"]) ||
     pipelineStatuses["Model Selection"] === "Completed" ||
-    pipelineStatuses["Model Selection"] === "In Progress";
+    isInProgressStatus(pipelineStatuses["Model Selection"]);
 
   const isDownstreamFromFEStartedOrDone =
     pipelineStatuses["Model Training & Validation"] === "Completed" ||
-    pipelineStatuses["Model Training & Validation"] === "In Progress" ||
+    isInProgressStatus(pipelineStatuses["Model Training & Validation"]) ||
     pipelineStatuses["Model Selection"] === "Completed" ||
-    pipelineStatuses["Model Selection"] === "In Progress" ||
+    isInProgressStatus(pipelineStatuses["Model Selection"]) ||
     pipelineStatuses["Training Configuration"] === "Completed" ||
-    pipelineStatuses["Training Configuration"] === "In Progress";
+    isInProgressStatus(pipelineStatuses["Training Configuration"]);
 
-  const allSubstepsCompletedInStage = stepsList.length > 0 && stepsList.every((s) => {
-    return pipelineStatuses[s.id] === "Completed" || hasStepOutput(s.id);
-  });
+  const allSubstepsCompletedInStage = stepsList.length > 0 &&
+    stepsList.every((s) => pipelineStatuses[s.id] === "Completed");
 
   const hasModelSelectionOutput = hasStepOutput("Model Selection") || pipelineStatuses["Model Selection"] === "Completed";
   const hasTrainingConfigContract = Boolean(
-    agentState?.stageOutputs?.trainingConfiguration?.contractPath ||
-    agentState?.trainingConfiguration?.contractPath ||
-    (stepOutputs["Training Configuration"] && typeof stepOutputs["Training Configuration"] === "object")
+    agentState?.stageOutputs?.trainingConfigurationNode?.contractPath ||
+    agentState?.trainingConfigurationNode?.contractPath ||
+    (stepOutputs.trainingConfigurationNode && typeof stepOutputs.trainingConfigurationNode === "object")
   );
   const hasPreFlightOutput = hasStepOutput("Pre Flight") || pipelineStatuses["Pre Flight"] === "Completed";
   const hasModelTrainingOutput = hasStepOutput("Model Training") || pipelineStatuses["Model Training"] === "Completed";
@@ -164,12 +165,11 @@ function CardModalContent({
     hasModelSelectionOutput &&
     !hasTrainingConfigContract &&
     pipelineStatuses["Training Configuration"] !== "Completed" &&
-    (isAwaitingResponse ||
-      approvalNextStep === "Training Configuration" ||
+    (approvalNextStep === "Training Configuration" ||
       approvalNextStep === "trainingConfigurationNode" ||
       approvalNextStep === "Model Selection" ||
       approvalNextStep === "modelSelectionNode" ||
-      (runStatus === "Paused" && (requiresApproval || isAwaitingResponse)));
+      (runStatus === "Paused" && requiresApproval));
 
   const isWaitingForPreFlightApproval =
     isModelTrainingCard &&
@@ -199,7 +199,7 @@ function CardModalContent({
   const isCardAwaitingApproval =
     (isDataIngestionCard && isStageAwaitingApprovalToAdvance) ||
     (isFeatureEngineeringCard && isStageAwaitingApprovalToAdvance) ||
-    (isModelTrainingCard && (isWaitingForModelConfirmation || isWaitingForPreFlightApproval || isWaitingForTrainingApproval || isAwaitingResponse || (requiresApproval && runStatus === "Paused")));
+    (isModelTrainingCard && (isWaitingForModelConfirmation || isWaitingForPreFlightApproval || isWaitingForTrainingApproval || (requiresApproval && runStatus === "Paused")));
 
   useEffect(() => {
     if (!isOpen || !workflowCard) return;
@@ -214,28 +214,29 @@ function CardModalContent({
       }
     }
 
-    const inProgressIdx = steps.findIndex((s) => pipelineStatuses[s.id] === "In Progress" && runStatus === "Running");
+    // 2. If a step is actively "In-Progress", prioritize it
+    const inProgressIdx = steps.findIndex((s) => isInProgressStatus(pipelineStatuses[s.id]) && runStatus === "In-Progress");
     if (inProgressIdx !== -1) {
       setActiveStepIndex(inProgressIdx);
       return;
     }
 
     if (isWaitingForModelConfirmation) {
-      const modelSelIdx = steps.findIndex((s) => s.id === "Model Selection");
+      const modelSelIdx = steps.findIndex((s) => s.id === "modelSelectionNode");
       if (modelSelIdx !== -1) {
         setActiveStepIndex(modelSelIdx);
         return;
       }
     }
     if (isWaitingForPreFlightApproval) {
-      const trainCfgIdx = steps.findIndex((s) => s.id === "Training Configuration");
+      const trainCfgIdx = steps.findIndex((s) => s.id === "trainingConfigurationNode");
       if (trainCfgIdx !== -1) {
         setActiveStepIndex(trainCfgIdx);
         return;
       }
     }
     if (isWaitingForTrainingApproval) {
-      const preFlightIdx = steps.findIndex((s) => s.id === "Pre Flight");
+      const preFlightIdx = steps.findIndex((s) => s.id === "preFlightNode");
       if (preFlightIdx !== -1) {
         setActiveStepIndex(preFlightIdx);
         return;
@@ -320,46 +321,33 @@ function CardModalContent({
               const isSelected = activeStepIndex === idx;
               const stepStatus = pipelineStatuses[stepItem.id] ?? "Pending";
 
-              let isStepAwaitingApproval = false;
+              const isStepAwaitingApproval =
+                stepStatus === "Awaiting Approval" || stepStatus === "User Input";
 
-              if (isModelTrainingCard) {
-                if (stepItem.id === "Model Selection" && isWaitingForModelConfirmation) {
-                  isStepAwaitingApproval = true;
-                } else if (stepItem.id === "Training Configuration" && isWaitingForPreFlightApproval) {
-                  isStepAwaitingApproval = true;
-                } else if (stepItem.id === "Pre Flight" && isWaitingForTrainingApproval) {
-                  isStepAwaitingApproval = true;
-                }
-              } else if (isStageAwaitingApprovalToAdvance) {
+              const isNonterminalModelTrainingStep =
+                isModelTrainingCard &&
+                (stepItem.id === "trainingConfigurationNode" ||
+                  stepItem.id === "preFlightNode" ||
+                  stepItem.id === "modelTrainingCodeNode" ||
+                  stepItem.id === "modelTrainingExecNode") &&
+                (stepStatus === "Pending" ||
+                  isInProgressStatus(stepStatus));
 
-                if (idx === stepsList.length - 1) {
-                  isStepAwaitingApproval = true;
-                }
-              }
-
-              const isSubsequentStepStartedOrDone = stepsList.slice(idx + 1).some((s) => {
-                return pipelineStatuses[s.id] === "Completed" || pipelineStatuses[s.id] === "In Progress" || hasStepOutput(s.id);
-              });
-
-              const isDownstreamDone =
-                (isDataIngestionCard && isDownstreamFromDIStartedOrDone) ||
-                (isFeatureEngineeringCard && isDownstreamFromFEStartedOrDone);
-
-              const isStepCompleted = !isStepAwaitingApproval && (
-                stepStatus === "Completed" ||
-                hasStepOutput(stepItem.id) ||
-                isSubsequentStepStartedOrDone ||
-                isDownstreamDone ||
-                (isStageAwaitingApprovalToAdvance && idx < stepsList.length - 1)
-              );
+              // Is this step completed?
+              // All completed substeps show completed UI (green and tick)
+              const isStepCompleted =
+                !isNonterminalModelTrainingStep &&
+                !isStepAwaitingApproval &&
+                stepStatus === "Completed";
 
               const isStepInProgress =
                 !isStepAwaitingApproval &&
                 !isStepCompleted &&
-                stepStatus === "In Progress" &&
-                runStatus === "Running";
+                isInProgressStatus(stepStatus) &&
+                runStatus === "In-Progress";
 
-              const isStopped = runStatus === "Stopped" && !isStepCompleted && stepStatus === "In Progress";
+              const isStopped = runStatus === "Stopped" && !isStepCompleted && isInProgressStatus(stepStatus);
+              const isPausedStep = !isStepCompleted && (stepStatus === "Paused" || (runStatus === "Paused" && isInProgressStatus(stepStatus)));
               const stepColors = CIRCLE_COLOR_MAP[stepItem.color] || CIRCLE_COLOR_MAP.green;
 
               return (
@@ -380,13 +368,14 @@ function CardModalContent({
                     }}
                     className="flex items-center gap-3.5 text-left w-full relative z-10 py-1.5 focus:outline-none transition-all cursor-pointer"
                   >
-
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10
-                      ${isStepCompleted ? "bg-emerald-500 border-emerald-500 text-white shadow-md"
-                        : isStopped ? "bg-rose-100 border-rose-300 text-rose-600 dark:bg-rose-950/40 dark:border-rose-700 dark:text-rose-400"
-                          : isStepAwaitingApproval ? "bg-yellow-500 border-yellow-500 text-white shadow-md animate-pulse"
+                    {/* Circle Indicator */}
+                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 
+                      ${isStepCompleted ? "bg-status-completed border-status-completed text-white shadow-md"
+                        : isPausedStep ? "bg-status-paused border-status-paused text-white shadow-md"
+                        : isStopped ? "bg-status-stopped border-status-stopped text-white shadow-md"
+                          : isStepAwaitingApproval ? "bg-status-awaiting-approval border-status-awaiting-approval text-white shadow-md animate-pulse"
                             : isStepInProgress
-                              ? "bg-indigo-500 border-indigo-500 text-white shadow-lg animate-pulse"
+                              ? "bg-status-in-progress border-status-in-progress text-white shadow-lg animate-pulse"
                               : isSelected
                                 ? `${stepColors.border} ${stepColors.text} bg-surface`
                                 : "border-border bg-surface text-muted-foreground/60 group-hover:border-muted-foreground/40"
@@ -395,6 +384,11 @@ function CardModalContent({
                         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
                           <polyline points="20 6 9 17 4 12" />
                         </svg>
+                      ) : isPausedStep ? (
+                        <div className="flex items-center gap-0.5">
+                          <div className="w-0.5 h-2.5 bg-white rounded-full" />
+                          <div className="w-0.5 h-2.5 bg-white rounded-full" />
+                        </div>
                       ) : isStepAwaitingApproval ? (
                         <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
                           <polygon points="5 3 19 12 5 21 5 3" />
@@ -419,13 +413,16 @@ function CardModalContent({
 
                         <div className="flex items-center gap-1.5 shrink-0">
                           {isStepCompleted && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-status-completed shrink-0" />
                           )}
                           {isStepAwaitingApproval && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-yellow-500 animate-pulse shrink-0" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-status-awaiting-approval animate-pulse shrink-0" />
                           )}
                           {isStepInProgress && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-ping shrink-0" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-status-in-progress animate-ping shrink-0" />
+                          )}
+                          {isStopped && (
+                            <span className="w-1.5 h-1.5 rounded-full bg-status-stopped shrink-0" />
                           )}
 
                           <span
@@ -472,13 +469,16 @@ function CardModalContent({
                 </h2>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className={`w-2 h-2 rounded-full ${
-                    isCardAwaitingApproval ? "bg-yellow-500 animate-pulse" :
-                    cardStatus === "Completed" ? "bg-emerald-500" :
-                    cardStatus === "In Progress" ? "bg-indigo-500 animate-ping" :
-                    cardStatus === "Pending" ? "bg-amber-500" : "bg-muted-foreground/30"
+                    isCardAwaitingApproval ? "bg-status-awaiting-approval animate-pulse" :
+                    cardStatus === "Completed" ? "bg-status-completed" :
+                    isInProgressStatus(cardStatus) ? "bg-status-in-progress animate-ping" :
+                    cardStatus === "Pending" ? "bg-status-pending" :
+                    cardStatus === "User Input" ? "bg-status-user-input" :
+                    cardStatus === "Stopped" ? "bg-status-stopped" :
+                    cardStatus === "Failed" ? "bg-status-failed" : "bg-status-none"
                   }`} />
                   <span className="text-[11px] font-semibold text-muted-foreground">
-                    {isCardAwaitingApproval ? "Awaiting Approval" : (cardStatus === "In Progress" ? "Running" : cardStatus)}
+                    {isCardAwaitingApproval ? "Awaiting Approval" : cardStatus}
                   </span>
                 </div>
               </div>
@@ -486,7 +486,7 @@ function CardModalContent({
 
             <div className="flex items-center gap-2">
               {(() => {
-                const isModelTrainingCard = workflowCard?.id === "Model Training & Validation" || workflowCard?.title === "Model Training & Validation";
+                const isModelTrainingCard = workflowCard?.id === "modelTrainingValidation" || workflowCard?.title === "Model Training & Validation";
                 const isSubProcessApproval = isModelTrainingCard || [
                   "Model Selection", "modelSelection", "modelSelectionNode",
                   "Training Configuration", "trainingConfiguration", "trainingConfigurationNode",
@@ -544,26 +544,42 @@ function CardModalContent({
                 <span
                   className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
                     activeStepStatus === "Completed"
-                      ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20"
-                      : activeStepStatus === "In Progress"
-                        ? "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20 animate-pulse"
-                        : activeStepStatus === "Stopped"
-                          ? "bg-rose-500/10 text-rose-600 dark:text-rose-400 border border-rose-500/20"
-                          : "bg-surface-muted text-muted-foreground border border-border"
+                      ? "bg-status-completed/15 text-status-completed border border-status-completed/30"
+                      : isInProgressStatus(activeStepStatus)
+                        ? "bg-status-in-progress/15 text-status-in-progress border border-status-in-progress/30 animate-pulse"
+                        : activeStepStatus === "Awaiting Approval"
+                          ? "bg-status-awaiting-approval/15 text-status-awaiting-approval border border-status-awaiting-approval/30 animate-pulse"
+                          : activeStepStatus === "User Input"
+                            ? "bg-status-user-input/15 text-status-user-input border border-status-user-input/30"
+                            : activeStepStatus === "Stopped"
+                              ? "bg-status-stopped/15 text-status-stopped border border-status-stopped/30"
+                              : activeStepStatus === "Failed"
+                                ? "bg-status-failed/15 text-status-failed border border-status-failed/30"
+                                : activeStepStatus === "Pending"
+                                  ? "bg-status-pending/15 text-status-pending border border-status-pending/30"
+                                  : "bg-surface-muted text-muted-foreground border border-border"
                   }`}
                 >
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
                       activeStepStatus === "Completed"
-                        ? "bg-emerald-500"
-                        : activeStepStatus === "In Progress"
-                          ? "bg-indigo-500 animate-ping"
-                          : activeStepStatus === "Stopped"
-                            ? "bg-rose-500"
-                            : "bg-muted-foreground/40"
+                        ? "bg-status-completed"
+                        : isInProgressStatus(activeStepStatus)
+                          ? "bg-status-in-progress animate-ping"
+                          : activeStepStatus === "Awaiting Approval"
+                            ? "bg-status-awaiting-approval animate-pulse"
+                            : activeStepStatus === "User Input"
+                              ? "bg-status-user-input"
+                              : activeStepStatus === "Stopped"
+                                ? "bg-status-stopped"
+                                : activeStepStatus === "Failed"
+                                  ? "bg-status-failed"
+                                  : activeStepStatus === "Pending"
+                                    ? "bg-status-pending"
+                                    : "bg-status-none"
                     }`}
                   />
-                  {activeStepStatus === "In Progress" ? "Running" : activeStepStatus}
+                  {activeStepStatus}
                 </span>
                 {activeStep.description && (
                   <span className="text-[11px] text-muted-foreground truncate hidden md:inline border-l border-border/70 pl-2.5">
@@ -592,7 +608,7 @@ function CardModalContent({
                     <line x1="12" y1="19" x2="20" y2="19" />
                   </svg>
                   <span>Logs</span>
-                  {activeStepStatus === "In Progress" && (
+                  {isInProgressStatus(activeStepStatus) && (
                     <span className="relative flex h-2 w-2">
                       <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
                       <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>

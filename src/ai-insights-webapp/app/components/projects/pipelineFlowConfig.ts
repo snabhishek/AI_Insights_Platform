@@ -1,5 +1,3 @@
-import { PipelineStatuses, PipelineStatus } from "./types";
-
 export const PIPELINE_PHASES = {
   DATA_INGESTION: "Data Ingestion",
   FEATURE_ENGINEERING: "Feature Engineering",
@@ -8,14 +6,11 @@ export const PIPELINE_PHASES = {
 
 export type PipelinePhase = typeof PIPELINE_PHASES[keyof typeof PIPELINE_PHASES];
 
-export const PHASE_SEQUENCE: readonly PipelinePhase[] = [
-  PIPELINE_PHASES.DATA_INGESTION,
-  PIPELINE_PHASES.FEATURE_ENGINEERING,
-  PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-];
-
 export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
 
+  "dataIngestion": PIPELINE_PHASES.DATA_INGESTION,
+  "featureEngineering": PIPELINE_PHASES.FEATURE_ENGINEERING,
+  "modelTrainingValidation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "inspect": PIPELINE_PHASES.DATA_INGESTION,
   "profileData": PIPELINE_PHASES.DATA_INGESTION,
   "dataProfile": PIPELINE_PHASES.DATA_INGESTION,
@@ -121,30 +116,16 @@ export const STEP_TO_NODE_MAP: Record<string, string> = {
   "modelValidationNode": "modelValidationNode",
 };
 
-export function getPipelineForSubstep(substepOrNode: string | null | undefined): PipelinePhase {
-  if (!substepOrNode) return PIPELINE_PHASES.DATA_INGESTION;
-  return SUBSTEP_TO_PIPELINE_MAP[substepOrNode] ?? PIPELINE_PHASES.DATA_INGESTION;
-}
-
 export interface ResolveNextPhaseParams {
   approvalNextStep?: string | null;
-  overrideTargetPhase?: unknown;
-  currentStatuses?: PipelineStatuses;
-  stageOutputs?: Record<string, unknown>;
+  overrideTargetPhase?: string;
 }
 
-export interface ResolveNextPhaseResult {
-  targetPhase: string;
-  stepNode: string;
-  statusesToUpdate: Record<string, PipelineStatus>;
-  outputsToClear: string[];
-}
-
-export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): ResolveNextPhaseResult {
+export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): string {
   const { approvalNextStep, overrideTargetPhase } = params;
 
   const validOverride =
-    typeof overrideTargetPhase === "string" && overrideTargetPhase.trim().length > 0
+    overrideTargetPhase && overrideTargetPhase.trim().length > 0
       ? overrideTargetPhase.trim()
       : undefined;
 
@@ -183,8 +164,11 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
     ) {
       targetPhase = "Model Training Execution";
     } else if (
-      nextStepLower.includes("model") ||
-      nextStepLower.includes("selection")
+      nextStepLower === "model selection" ||
+      nextStepLower === "modelselection" ||
+      nextStepLower === "modelselectionnode" ||
+      nextStepLower === "model training & validation" ||
+      nextStepLower === "modeltrainingvalidation"
     ) {
       targetPhase = "Model Selection";
     } else {
@@ -193,134 +177,5 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): Resolv
     }
   }
 
-  const stepNode = STEP_TO_NODE_MAP[targetPhase] || targetPhase;
-
-  const statusesToUpdate: Record<string, PipelineStatus> = {};
-  const outputsToClear: string[] = [];
-
-  if (targetPhase === "Feature Engineering") {
-
-    statusesToUpdate["Data Ingestion"] = "Completed";
-    statusesToUpdate["Data Inspection"] = "Completed";
-    statusesToUpdate["Data Profiling"] = "Completed";
-    statusesToUpdate["Schema Resolver"] = "Completed";
-
-    statusesToUpdate["Feature Engineering"] = "In Progress";
-    statusesToUpdate["Hierarchy Mapper"] = "In Progress";
-    statusesToUpdate["Feature Architect"] = "Pending";
-    statusesToUpdate["Feature Validator"] = "Pending";
-    statusesToUpdate["Exogenous Scout"] = "Pending";
-    statusesToUpdate["Model Training & Validation"] = "Pending";
-    statusesToUpdate["Model Selection"] = "Pending";
-    statusesToUpdate["Training Configuration"] = "Pending";
-    statusesToUpdate["Pre Flight"] = "Pending";
-    statusesToUpdate["Model Training"] = "Pending";
-
-    outputsToClear.push(
-      "modelSelection",
-      "trainingConfiguration",
-      "preFlight",
-      "modelTrainingCode",
-      "modelTraining"
-    );
-  } else if (targetPhase === "Model Selection") {
-
-    statusesToUpdate["Data Ingestion"] = "Completed";
-    statusesToUpdate["Data Inspection"] = "Completed";
-    statusesToUpdate["Data Profiling"] = "Completed";
-    statusesToUpdate["Schema Resolver"] = "Completed";
-    statusesToUpdate["Feature Engineering"] = "Completed";
-    statusesToUpdate["Hierarchy Mapper"] = "Completed";
-    statusesToUpdate["Feature Architect"] = "Completed";
-    statusesToUpdate["Feature Validator"] = "Completed";
-    statusesToUpdate["Exogenous Scout"] = "Completed";
-
-    statusesToUpdate["Model Training & Validation"] = "In Progress";
-    statusesToUpdate["Model Selection"] = "In Progress";
-    statusesToUpdate["Training Configuration"] = "Pending";
-    statusesToUpdate["Pre Flight"] = "Pending";
-    statusesToUpdate["Model Training"] = "Pending";
-
-    outputsToClear.push(
-      "modelSelection",
-      "trainingConfiguration",
-      "preFlight",
-      "modelTrainingCode",
-      "modelTraining"
-    );
-  } else if (targetPhase === "Training Configuration") {
-    statusesToUpdate["Data Ingestion"] = "Completed";
-    statusesToUpdate["Data Inspection"] = "Completed";
-    statusesToUpdate["Data Profiling"] = "Completed";
-    statusesToUpdate["Schema Resolver"] = "Completed";
-    statusesToUpdate["Feature Engineering"] = "Completed";
-    statusesToUpdate["Hierarchy Mapper"] = "Completed";
-    statusesToUpdate["Feature Architect"] = "Completed";
-    statusesToUpdate["Feature Validator"] = "Completed";
-    statusesToUpdate["Exogenous Scout"] = "Completed";
-    statusesToUpdate["Model Training & Validation"] = "In Progress";
-    statusesToUpdate["Model Selection"] = "Completed";
-    statusesToUpdate["Training Configuration"] = "In Progress";
-    statusesToUpdate["Pre Flight"] = "Pending";
-    statusesToUpdate["Model Training"] = "Pending";
-
-    outputsToClear.push("trainingConfiguration", "preFlight", "modelTrainingCode", "modelTraining");
-  } else if (targetPhase === "Pre Flight") {
-    statusesToUpdate["Data Ingestion"] = "Completed";
-    statusesToUpdate["Data Inspection"] = "Completed";
-    statusesToUpdate["Data Profiling"] = "Completed";
-    statusesToUpdate["Schema Resolver"] = "Completed";
-    statusesToUpdate["Feature Engineering"] = "Completed";
-    statusesToUpdate["Hierarchy Mapper"] = "Completed";
-    statusesToUpdate["Feature Architect"] = "Completed";
-    statusesToUpdate["Feature Validator"] = "Completed";
-    statusesToUpdate["Exogenous Scout"] = "Completed";
-    statusesToUpdate["Model Training & Validation"] = "In Progress";
-    statusesToUpdate["Model Selection"] = "Completed";
-    statusesToUpdate["Training Configuration"] = "Completed";
-    statusesToUpdate["Pre Flight"] = "In Progress";
-    statusesToUpdate["Model Training"] = "Pending";
-
-    outputsToClear.push("preFlight", "modelTrainingCode", "modelTraining");
-  } else if (targetPhase === "Model Training Code Generation" || targetPhase === "Model Training") {
-    statusesToUpdate["Data Ingestion"] = "Completed";
-    statusesToUpdate["Data Inspection"] = "Completed";
-    statusesToUpdate["Data Profiling"] = "Completed";
-    statusesToUpdate["Schema Resolver"] = "Completed";
-    statusesToUpdate["Feature Engineering"] = "Completed";
-    statusesToUpdate["Hierarchy Mapper"] = "Completed";
-    statusesToUpdate["Feature Architect"] = "Completed";
-    statusesToUpdate["Feature Validator"] = "Completed";
-    statusesToUpdate["Exogenous Scout"] = "Completed";
-    statusesToUpdate["Model Training & Validation"] = "In Progress";
-    statusesToUpdate["Model Selection"] = "Completed";
-    statusesToUpdate["Training Configuration"] = "Completed";
-    statusesToUpdate["Pre Flight"] = "Completed";
-    statusesToUpdate["Model Training"] = "In Progress";
-
-    outputsToClear.push("modelTrainingCode", "modelTraining");
-  } else if (targetPhase === "Model Training Execution") {
-    statusesToUpdate["Data Ingestion"] = "Completed";
-    statusesToUpdate["Data Inspection"] = "Completed";
-    statusesToUpdate["Data Profiling"] = "Completed";
-    statusesToUpdate["Schema Resolver"] = "Completed";
-    statusesToUpdate["Feature Engineering"] = "Completed";
-    statusesToUpdate["Hierarchy Mapper"] = "Completed";
-    statusesToUpdate["Feature Architect"] = "Completed";
-    statusesToUpdate["Feature Validator"] = "Completed";
-    statusesToUpdate["Exogenous Scout"] = "Completed";
-    statusesToUpdate["Model Training & Validation"] = "In Progress";
-    statusesToUpdate["Model Selection"] = "Completed";
-    statusesToUpdate["Training Configuration"] = "Completed";
-    statusesToUpdate["Pre Flight"] = "Completed";
-    statusesToUpdate["Model Training"] = "In Progress";
-    outputsToClear.push("modelTraining");
-  }
-
-  return {
-    targetPhase,
-    stepNode,
-    statusesToUpdate,
-    outputsToClear,
-  };
+  return targetPhase;
 }

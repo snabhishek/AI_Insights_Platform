@@ -7,6 +7,19 @@ import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { createAgent, summarizationMiddleware, todoListMiddleware, toolRetryMiddleware, contextEditingMiddleware, ClearToolUsesEdit } from "langchain";
 import { BatchedTableState, IngestionServices } from "../state";
 import { getPipelineForSubstep } from "../pipelineFlowConfig";
+import {
+  buildGroupedStageStatuses,
+  FlatStageStatuses,
+  INITIAL_STAGE_STATUSES,
+  NODE_CONFIG,
+  PipelineStepStatus,
+  StageKey,
+  TRACKED_AGENT_KEYS,
+  TrackedAgentKey,
+  normalizeFlatStageStatuses,
+  normalizePipelineStepStatus,
+  normalizeStageOutputs,
+} from "../pipelineNames";
 
 export type SupportedChatModel = ChatOpenAI | AzureChatOpenAI | ChatGoogleGenerativeAI;
 export type InspectionPayload = Record<string, unknown> & {
@@ -941,168 +954,46 @@ export function mergeBatchedTableStates(left: BatchedTableState[] = [], right: B
 }
 
 export function determineCurrentStage(nextNodes: string[], stageStatuses: Record<string, string>): string {
-  const isRunningOrDone = (v?: string) => v === "Completed" || v === "In Progress" || v === "Running";
-  const isRunning = (v?: string) => v === "In Progress" || v === "Running";
+  const activeStatuses = new Set<PipelineStepStatus>(["In-Progress", "Paused", "Awaiting Approval", "User Input"]);
+  const current = Object.entries(stageStatuses).find(([node, value]) =>
+    node in NODE_CONFIG && activeStatuses.has(value as PipelineStepStatus)
+  );
+  if (current) return current[0];
+  const nextNode = nextNodes.find((node) => node in NODE_CONFIG);
+  if (nextNode) return nextNode;
 
-  for (const node of [
-    "modelValidationNode",
-    "modelValidation",
-    "modelTrainingNode",
-    "modelTraining",
-    "preFlightNode",
-    "preFlight",
-    "trainingConfigurationNode",
-    "trainingConfiguration",
-    "modelSelectionNode",
-    "modelSelection",
-  ]) {
-    if (isRunning(stageStatuses[node])) return node;
+  for (const key of TRACKED_AGENT_KEYS) {
+    if (stageStatuses[key] && stageStatuses[key] !== "Completed") {
+      return key;
+    }
   }
 
-  if (
-    (nextNodes.includes("modelValidationNode") || nextNodes.includes("modelValidation")) &&
-    (stageStatuses.modelTraining === "Completed" || stageStatuses.modelTrainingExecNode === "Completed") &&
-    stageStatuses.modelValidation !== "Completed" &&
-    stageStatuses.modelValidation !== "In Progress"
-  ) {
-    return "modelTrainingExecNode";
-  }
-
-  if (
-    (nextNodes.includes("modelTrainingCodeNode") || nextNodes.includes("modelTrainingNode") || nextNodes.includes("modelTraining")) &&
-    (stageStatuses.preFlight === "Completed" || stageStatuses.preFlightNode === "Completed") &&
-    stageStatuses.modelTraining !== "Completed" &&
-    stageStatuses.modelTraining !== "In Progress"
-  ) {
-    return "preFlightNode";
-  }
-
-  if (
-    (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration")) &&
-    (stageStatuses.modelSelection === "Completed" || stageStatuses.modelSelectionNode === "Completed") &&
-    stageStatuses.trainingConfiguration !== "Completed" &&
-    stageStatuses.trainingConfiguration !== "In Progress"
-  ) {
-    return "modelSelectionNode";
-  }
-
-  if (
-    (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) &&
-    (stageStatuses.exogenousScout === "Completed" || stageStatuses.exogenous === "Completed") &&
-    stageStatuses.modelSelection !== "Completed" &&
-    stageStatuses.modelSelection !== "In Progress"
-  ) {
-    return "exogenousScout";
-  }
-
-  if (
-    nextNodes.includes("hierarchyMapperNode") &&
-    stageStatuses.resolveSchema === "Completed" &&
-    stageStatuses.hierarchyMapper !== "Completed" &&
-    stageStatuses.hierarchyMapper !== "In Progress"
-  ) {
-    return "resolveSchema";
-  }
-
-  for (const node of [
-    "finalModelSelectionNode",
-    "modelValidationNode",
-    "modelValidation",
-    "modelEvaluationNode",
-    "modelEvaluation",
-    "modelTrainingNode",
-    "modelTraining",
-    "preFlightNode",
-    "preFlight",
-    "trainingConfigurationNode",
-    "trainingConfiguration",
-    "modelSelectionNode",
-    "modelSelection",
-  ]) {
-    if (isRunningOrDone(stageStatuses[node]) || nextNodes.includes(node)) return node;
-  }
-
-  const isExo = isRunningOrDone(stageStatuses.exogenousScout) ||
-    isRunningOrDone(stageStatuses.exogenous) ||
-    nextNodes.includes("exogenous");
-  if (isExo) return "exogenousScout";
-
-  const isFeatureValidator = isRunningOrDone(stageStatuses.featureValidator) ||
-    nextNodes.includes("featureValidatorNode");
-  if (isFeatureValidator) return "featureValidator";
-
-  const isFeatureArchitect = isRunningOrDone(stageStatuses.featureArchitect) ||
-    nextNodes.includes("featureArchitectNode");
-  if (isFeatureArchitect) return "featureArchitect";
-
-  const isHierarchy = isRunningOrDone(stageStatuses.hierarchyMapper) ||
-    nextNodes.includes("hierarchyMapperNode");
-  if (isHierarchy) return "hierarchyMapperNode";
-
-  if (isRunningOrDone(stageStatuses.resolveSchema) || nextNodes.includes("resolveSchema")) return "resolveSchema";
-  if (isRunningOrDone(stageStatuses.profileData)) return "profileData";
   return "inspect";
 }
 
 export function buildMessage(nextNodes: string[], status: string, stageStatuses?: Record<string, string>): string {
-  if (status === "failed") {
-    return "Workflow failed.";
-  }
-  const isRunning = (v?: string) => v === "In Progress" || v === "Running" || v === "Retrying";
-  const isCompleted = (v?: string) => v === "Completed" || v === "Success";
-
-  if (status === "completed" || isCompleted(stageStatuses?.modelValidation)) {
-    return "Model Training & Validation completed successfully.";
-  }
-  if (isRunning(stageStatuses?.modelValidation)) return "Validating the leading model on held-out data...";
-  if (isRunning(stageStatuses?.modelEvaluation)) return "Evaluating and ranking candidate models...";
-  if (isRunning(stageStatuses?.modelTraining)) return "Training candidate models...";
-  if (isCompleted(stageStatuses?.preFlight)) return "Pre Flight assessment completed. Ready to begin model training.";
-  if (isRunning(stageStatuses?.preFlight)) return "Running pre-flight checks and hardware assessment...";
-  if (isRunning(stageStatuses?.trainingConfiguration)) return "Configuring model training parameters...";
-  if (isCompleted(stageStatuses?.trainingConfiguration)) return "Training configuration completed. Ready to begin model training.";
-  if (isRunning(stageStatuses?.modelSelection)) return "Selecting and ranking candidate models...";
-  if (isCompleted(stageStatuses?.modelSelection) || isCompleted(stageStatuses?.modelSelectionNode)) {
-    return "Model selection completed. Please confirm candidate models for training.";
-  }
-  if (isRunning(stageStatuses?.exogenousScout) || isRunning(stageStatuses?.exogenous)) {
-    return "Scouting and ranking exogenous variables and external signals...";
-  }
-  if (isRunning(stageStatuses?.featureValidator)) {
-    return "Auditing features for leakage, multicollinearity, and drift, ranking importances...";
-  }
-  if (isRunning(stageStatuses?.featureArchitect)) {
-    return "Architecting features (Creation, Transformation, Extraction, Selection)...";
-  }
-  if (isRunning(stageStatuses?.hierarchyMapper)) {
-    return "Discovering dimensional hierarchies and entity relationships...";
-  }
-
-  const isFEComplete = isCompleted(stageStatuses?.exogenousScout) || isCompleted(stageStatuses?.exogenous);
-  if (isFEComplete) {
-    return "Feature Engineering completed successfully. Approve to proceed to Model Training & Validation.";
-  }
-
-  const isFEStarted = (stageStatuses?.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending") ||
-    (stageStatuses?.featureArchitect && stageStatuses.featureArchitect !== "Pending") ||
-    (stageStatuses?.featureValidator && stageStatuses.featureValidator !== "Pending");
-  if (isFEStarted) {
-    return "Feature Engineering workflow is running...";
-  }
-
-  if (isCompleted(stageStatuses?.resolveSchema)) {
-    return "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.";
-  }
-  if (isRunning(stageStatuses?.resolveSchema)) {
-    return "Resolving schema mappings...";
-  }
-  if (isRunning(stageStatuses?.profileData)) {
-    return "Running data profiling...";
-  }
-  if (isRunning(stageStatuses?.inspect)) {
-    return "Inspecting data sources...";
-  }
-  return "Data Ingestion workflow is running...";
+  const normStatus = normalizePipelineStepStatus(status) || status;
+  if (normStatus === "Failed") return "Workflow failed.";
+  if (normStatus === "Paused") return "Workflow paused.";
+  if (normStatus === "Stopped") return "Workflow stopped.";
+  const messages: Partial<Record<TrackedAgentKey, string>> = {
+    inspect: "Inspecting data sources...",
+    profileData: "Running data profiling...",
+    resolveSchema: "Resolving schema mappings...",
+    hierarchyMapperNode: "Discovering dimensional hierarchies and entity relationships...",
+    featureArchitectNode: "Architecting features (Creation, Transformation, Extraction, Selection)...",
+    featureValidatorNode: "Auditing features for leakage, multicollinearity, and drift, ranking importances...",
+    exogenous: "Scouting and ranking exogenous variables and external signals...",
+    modelSelectionNode: "Selecting and ranking candidate models...",
+    trainingConfigurationNode: "Configuring model training parameters...",
+    preFlightNode: "Running pre-flight checks and hardware assessment...",
+    modelTrainingCodeNode: "Generating model training code...",
+    modelTrainingExecNode: "Training candidate models...",
+  };
+  const activeNode = determineCurrentStage(nextNodes, stageStatuses || {});
+  return messages[activeNode as TrackedAgentKey] || (normStatus === "Completed"
+    ? "Workflow completed successfully."
+    : "Workflow state updated.");
 }
 
 export function buildResultFromGraphState(
@@ -1112,62 +1003,61 @@ export function buildResultFromGraphState(
 ): any {
   const values = graphState?.values ?? {};
   const nextNodes: string[] = Array.isArray(graphState?.next) ? graphState.next : [];
-  const defaultStatuses = {
-    inspect: "Pending",
-    profileData: "Pending",
-    resolveSchema: "Pending",
-    hierarchyMapper: "Pending",
-    featureArchitect: "Pending",
-    featureValidator: "Pending",
-    exogenousScout: "Pending",
-    trainingConfiguration: "Pending",
-    preFlight: "Pending",
-    modelTraining: "Pending",
-    modelEvaluation: "Pending",
-    modelValidation: "Pending",
-    modelSelection: "Pending"
+  const stageStatuses: FlatStageStatuses = {
+    ...INITIAL_STAGE_STATUSES,
+    ...normalizeFlatStageStatuses(values.stageStatuses),
   };
-  const stageStatuses = (values.stageStatuses && typeof values.stageStatuses === "object")
-    ? values.stageStatuses as Record<string, string>
-    : defaultStatuses;
-  const status = (typeof values.status === "string" && values.status) ? values.status : "running";
+  const status = (typeof values.status === "string" && values.status)
+    ? (normalizePipelineStepStatus(values.status) || "In-Progress")
+    : "In-Progress";
 
-  const isIngestionComplete = status === "completed" || stageStatuses.resolveSchema === "Completed";
-  const isFeatureEngineeringStarted = stageStatuses.hierarchyMapper && stageStatuses.hierarchyMapper !== "Pending";
+  const isIngestionComplete = status === "Completed" || stageStatuses.resolveSchema === "Completed";
+  const isFeatureEngineeringStarted = !["None", "Pending"].includes(stageStatuses.hierarchyMapperNode ?? "None");
   const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted && isIngestionComplete;
-  const ss = stageStatuses as Record<string, string>;
-  const isAtModelApproval = (nextNodes.includes("modelSelectionNode") || nextNodes.includes("modelSelection")) && (ss.exogenousScout === "Completed" || ss.exogenous === "Completed");
-  const isAtTrainingConfigApproval = (nextNodes.includes("trainingConfigurationNode") || nextNodes.includes("trainingConfiguration")) && (ss.modelSelection === "Completed" || ss.modelSelectionNode === "Completed");
-  const isAtModelTrainingApproval = (nextNodes.includes("modelTrainingCodeNode") || nextNodes.includes("modelTrainingNode") || nextNodes.includes("modelTraining")) && (ss.preFlight === "Completed" || ss.preFlightNode === "Completed");
-  const requiresApproval = status !== "failed" && status !== "running" && (Boolean(values.requiresApproval) || isAtFeatureApproval || isAtModelApproval || isAtTrainingConfigApproval || isAtModelTrainingApproval);
+  const isAtModelApproval = nextNodes.includes("modelSelectionNode") && stageStatuses.exogenous === "Completed";
+  const isAtTrainingConfigApproval = nextNodes.includes("trainingConfigurationNode") && stageStatuses.modelSelectionNode === "Completed";
+  const isAtPreFlightInput = nextNodes.includes("preFlightNode") && stageStatuses.trainingConfigurationNode === "Completed";
+  const isAtModelCodeInput = nextNodes.includes("modelTrainingCodeNode") && stageStatuses.preFlightNode === "Completed";
+  const isAtModelExecutionInput = nextNodes.includes("modelTrainingExecNode") && stageStatuses.modelTrainingCodeNode === "Completed";
+  const requiresApproval = status !== "Failed" && status !== "In-Progress" && status !== "Paused" && status !== "Stopped" && (
+    Boolean(values.requiresApproval) ||
+    isAtFeatureApproval ||
+    isAtModelApproval ||
+    isAtTrainingConfigApproval ||
+    isAtPreFlightInput ||
+    isAtModelCodeInput ||
+    isAtModelExecutionInput
+  );
+  const awaitingNode = isAtFeatureApproval ? undefined
+    : isAtModelApproval ? "modelSelectionNode"
+      : isAtTrainingConfigApproval ? "trainingConfigurationNode"
+        : isAtPreFlightInput ? "preFlightNode"
+          : isAtModelCodeInput ? "modelTrainingCodeNode"
+            : isAtModelExecutionInput ? "modelTrainingExecNode"
+              : undefined;
+  if (awaitingNode) {
+    stageStatuses[awaitingNode] = "User Input";
+  }
+  const stageOverrides: Partial<Record<StageKey, PipelineStepStatus>> = {};
+  if (isAtFeatureApproval) stageOverrides.dataIngestion = "Awaiting Approval";
+  if (awaitingNode) stageOverrides.modelTrainingValidation = "User Input";
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
+  const groupedStageStatuses = buildGroupedStageStatuses(stageStatuses, stageOverrides);
+  const stageOutputs = normalizeStageOutputs(values.stageOutputs);
 
   return {
     connectorId,
     status,
     summary: (typeof values.summary === "string" && values.summary) ? values.summary : "Workflow updated",
     steps: Array.isArray(values.steps) ? values.steps : [],
-    inspection: (values.inspection && typeof values.inspection === "object") ? values.inspection : {},
-    schemaResolution: (values.schemaResolution && typeof values.schemaResolution === "object") ? values.schemaResolution : {},
-    dataProfile: (values.dataProfile && typeof values.dataProfile === "object") ? values.dataProfile : {},
-    hierarchyMapper: (values.hierarchyMapper && typeof values.hierarchyMapper === "object") ? values.hierarchyMapper : {},
-    featureArchitect: (values.featureArchitect && typeof values.featureArchitect === "object") ? values.featureArchitect : {},
-    featureValidator: (values.featureValidator && typeof values.featureValidator === "object") ? values.featureValidator : {},
-    exogenousScout: (values.exogenousScout && typeof values.exogenousScout === "object") ? values.exogenousScout : {},
-    trainingConfiguration: (values.trainingConfiguration && typeof values.trainingConfiguration === "object") ? values.trainingConfiguration : {},
-    preFlight: (values.preFlight && typeof values.preFlight === "object") ? values.preFlight : {},
-    modelTraining: (values.modelTraining && typeof values.modelTraining === "object") ? values.modelTraining : {},
-    modelEvaluation: (values.modelEvaluation && typeof values.modelEvaluation === "object") ? values.modelEvaluation : {},
-    modelValidation: (values.modelValidation && typeof values.modelValidation === "object") ? values.modelValidation : {},
-    modelSelection: (values.modelSelection && typeof values.modelSelection === "object") ? values.modelSelection : {},
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
     requiresApproval,
-    nextStep: isAtModelTrainingApproval ? "Model Training" : (isAtTrainingConfigApproval ? "Training Configuration" : (isAtModelApproval ? "Model Training & Validation" : (isIngestionComplete && !isFeatureEngineeringStarted ? "Feature Engineering" : (nextNodes[0] || "inspect")))),
+    nextStep: awaitingNode || (isAtFeatureApproval ? "hierarchyMapperNode" : nextNodes[0] || "inspect"),
     currentNode: currentStage,
-    currentStage,
-    stageOutputs: (values.stageOutputs && typeof values.stageOutputs === "object") ? values.stageOutputs : {},
-    stageStatuses,
+    currentStage: NODE_CONFIG[currentStage as TrackedAgentKey]?.stage,
+    stageOutputs,
+    stageStatuses: groupedStageStatuses,
     message: buildMessage(nextNodes, status, stageStatuses),
     runTimestamp: (typeof values.runTimestamp === "string" && values.runTimestamp.trim().length > 0) ? values.runTimestamp.trim() : undefined,
   };

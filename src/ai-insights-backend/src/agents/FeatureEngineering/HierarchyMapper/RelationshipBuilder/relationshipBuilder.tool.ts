@@ -11,6 +11,22 @@ export interface AnalyzeDependenciesInput {
   connectorType?: string;
 }
 
+function getTemporalUnit(node: RelationshipNode): "year" | "quarter" | "month" | null {
+  const tokens = [node.id, node.columnName, ...node.aliasOf]
+    .filter((name): name is string => typeof name === "string")
+    .flatMap((name) => name.toLowerCase().split(/[^a-z0-9]+/));
+
+  if (tokens.includes("year")) return "year";
+  if (tokens.includes("quarter")) return "quarter";
+  if (tokens.includes("month")) return "month";
+  return null;
+}
+
+/**
+ * High-performance Relationship Builder Engine
+ * Discovers real hierarchical relationships across tables/files via generic data connector functions
+ * without pulling raw row data into LLM context.
+ */
 export async function analyzeFunctionalDependenciesTool(
   input: AnalyzeDependenciesInput
 ): Promise<RelationshipSchemaOutput> {
@@ -147,16 +163,17 @@ export async function analyzeFunctionalDependenciesTool(
           continue;
         }
 
-        let purity = 1.0;
-        let sampleSize = 1000;
+        if (!connector) continue;
 
-        if (connector) {
-          const stats = await connector.getDependencyStats(parentNode.aliasOf[0], childNode.aliasOf[0]);
-          purity = stats.purity;
-          sampleSize = stats.sampleSize;
-        }
+        const stats = await connector.getDependencyStats(
+          parentNode.aliasOf[0],
+          childNode.aliasOf[0],
+          parentNode.tableName
+        );
+        const purity = stats.purity;
+        const sampleSize = stats.sampleSize;
 
-        if (purity >= 0.90) {
+        if (sampleSize > 0 && purity >= 0.90) {
           const relType = parentNode.role === "location" || childNode.role === "location"
             ? "geographic_hierarchy"
             : "strict_hierarchy";
@@ -167,7 +184,7 @@ export async function analyzeFunctionalDependenciesTool(
             type: relType,
             evidence: {
               method: "dependency_stats",
-              sourceType,
+              sourceType: stats.sourceType || sourceType,
               purity,
               sampleSize,
             },
@@ -181,23 +198,43 @@ export async function analyzeFunctionalDependenciesTool(
     }
   }
 
-  const temporalNodes = nodes.filter((n) => n.role === "temporal");
-  for (const tempNode of temporalNodes) {
-    relationships.push({
-      parent: `${tempNode.id}_year`,
-      child: `${tempNode.id}_month`,
-      type: "temporal_hierarchy",
-      evidence: {
-        method: "date_decomposition",
-        sourceType,
-        purity: 1.0,
-        sampleSize: 10000,
-      },
-      confidence: 1.0,
-      businessLabel: "Year > Month temporal rollup",
-      priority: "primary",
-      status: "confirmed",
-    });
+  // Step 5: Handle temporal fields separately (calendar hierarchy)
+  const temporalGroups = new Map<string, Map<string, RelationshipNode[]>>();
+  for (const node of nodes.filter((candidate) => candidate.role === "temporal")) {
+    const unit = getTemporalUnit(node);
+    if (!unit) continue;
+    const scope = node.entityScope || "general";
+    if (!temporalGroups.has(scope)) temporalGroups.set(scope, new Map());
+    const units = temporalGroups.get(scope)!;
+    if (!units.has(unit)) units.set(unit, []);
+    units.get(unit)!.push(node);
+  }
+
+  for (const units of temporalGroups.values()) {
+    const availableUnits = (["year", "quarter", "month"] as const)
+      .filter((unit) => units.get(unit)?.length === 1);
+    for (let index = 1; index < availableUnits.length; index++) {
+      const parentUnit = availableUnits[index - 1];
+      const childUnit = availableUnits[index];
+      const parentNode = units.get(parentUnit)![0];
+      const childNode = units.get(childUnit)![0];
+
+      relationships.push({
+        parent: parentNode.id,
+        child: childNode.id,
+        type: "temporal_hierarchy",
+        evidence: {
+          method: "date_decomposition",
+          sourceType,
+          purity: 1.0,
+          sampleSize: 0,
+        },
+        confidence: 1.0,
+        businessLabel: `Calendar ${parentUnit} to ${childUnit} hierarchy`,
+        priority: "primary",
+        status: "confirmed",
+      });
+    }
   }
 
   const conceptMap = new Map<string, string[]>();

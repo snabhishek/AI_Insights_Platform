@@ -521,7 +521,7 @@ runTest("ModelTraining: Successfully parses report with models_evaluated array a
       {
         model_id: "lightgbm_sota",
         displayName: "LightGBM Fast GBDT",
-        status: "Success",
+        status: "Completed",
         metrics: {
           validation: { score: 0.525, primaryMetricName: "WAPE" },
           test: { score: 0.506, primaryMetricName: "WAPE" },
@@ -530,7 +530,7 @@ runTest("ModelTraining: Successfully parses report with models_evaluated array a
       {
         model_id: "catboost_sota",
         displayName: "CatBoost Gradient Boosting",
-        status: "Success",
+        status: "Completed",
         metrics: {
           validation: { score: 0.5268, primaryMetricName: "WAPE" },
           test: { score: 0.5058, primaryMetricName: "WAPE" },
@@ -674,12 +674,19 @@ function resolveValidationDirection(ctx: {
     trainingConfig?.objective?.direction ||
     trainingConfig?.["x-primary-metric-def"]?.direction ||
     state?.direction ||
+    state?.modelSelectionNode?.direction ||
     state?.modelSelection?.direction ||
+    state?.stageOutputs?.modelSelectionNode?.direction ||
     state?.stageOutputs?.modelSelection?.direction ||
+    state?.modelTrainingExecNode?.direction ||
     state?.modelTraining?.direction ||
+    state?.stageOutputs?.modelTrainingExecNode?.direction ||
     state?.stageOutputs?.modelTraining?.direction ||
+    state?.trainingConfigurationNode?.configuration?.objective?.direction ||
     state?.trainingConfiguration?.configuration?.objective?.direction ||
+    state?.trainingConfigurationNode?.configuration?.["x-primary-metric-def"]?.direction ||
     state?.trainingConfiguration?.configuration?.["x-primary-metric-def"]?.direction ||
+    state?.trainingConfigurationNode?.direction ||
     state?.trainingConfiguration?.direction;
 
   if (!direction || !["maximize", "minimize"].includes(String(direction).toLowerCase())) {
@@ -760,13 +767,21 @@ function buildValidationFrameworkMap(ctx: {
   }
 
   const stateCandidates = [
+    ...((state?.modelSelectionNode as any)?.candidates || []),
     ...((state?.modelSelection as any)?.candidates || []),
+    ...((state?.modelSelectionNode as any)?.models || []),
     ...((state?.modelSelection as any)?.models || []),
+    ...((state?.stageOutputs?.modelSelectionNode as any)?.candidates || []),
     ...((state?.stageOutputs?.modelSelection as any)?.candidates || []),
+    ...((state?.stageOutputs?.modelSelectionNode as any)?.models || []),
     ...((state?.stageOutputs?.modelSelection as any)?.models || []),
+    ...((state?.modelTrainingExecNode as any)?.candidates || []),
     ...((state?.modelTraining as any)?.candidates || []),
+    ...((state?.stageOutputs?.modelTrainingExecNode as any)?.candidates || []),
     ...((state?.stageOutputs?.modelTraining as any)?.candidates || []),
+    ...((state?.trainingConfigurationNode as any)?.configuration?.model_selection?.candidates || []),
     ...((state?.trainingConfiguration as any)?.configuration?.model_selection?.candidates || []),
+    ...((state?.trainingConfigurationNode as any)?.configuration?.model_selection?.models || []),
     ...((state?.trainingConfiguration as any)?.configuration?.model_selection?.models || []),
   ];
   for (const sc of stateCandidates) {

@@ -147,8 +147,8 @@ async function runFromLastState() {
   savedState.projectName = (savedState as any).projectName || "carrier";
   savedState.workspaceName = (savedState as any).workspaceName || "FileStorage_Testing";
   savedState.runTimestamp = savedState.runTimestamp || "20260918-185832";
-
-  savedState.status = "running";
+  // Reset status to "In-Progress" so nodes do not skip execution on previous paused/failed status
+  savedState.status = "In-Progress";
 
   let targetNode: string = "modelTrainingNode";
   if (process.argv[2] && !process.argv[2].endsWith(".json")) {

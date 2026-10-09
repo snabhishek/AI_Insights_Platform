@@ -5,6 +5,7 @@ import MessageModal from "../shared/ui/MessageModal";
 import ConfirmationModal from "../shared/ui/ConfirmationModal";
 import CreateWorkspaceModal from "../shared/ui/CreateWorkspaceModal";
 import ToastNotification, { ToastItem } from "../shared/ui/ToastNotification";
+import type { WorkflowAgentState } from "../projects/pipelineNames";
 
 export interface ConnectionConfig {
   host?: string;
@@ -87,7 +88,7 @@ export interface Project {
   subDomain?: string;
   status?: string;
   splitDate?: string;
-  agentState?: Record<string, unknown>;
+  agentState?: WorkflowAgentState;
 }
 
 export interface UserProfile {

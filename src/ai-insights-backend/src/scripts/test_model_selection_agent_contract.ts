@@ -212,7 +212,7 @@ async function runTest() {
     primaryMetric: decision.primary_metric,
     direction: decision.direction,
     targetColumn: decision.target_entity?.name || targetCol,
-    status: "running",
+    status: "In-Progress",
   };
 
   const trainingConfigResult = await TrainingConfigurationAgent.execute(

@@ -81,7 +81,7 @@ export class GenericDataConnector implements IGenericDataConnector {
           const maxMatching = Number(rows[0].max_matching_rows || 0);
           const total = Number(rows[0].total_rows || 0);
           sampleSize = total;
-          purity = total > 0 ? Number((maxMatching / total).toFixed(4)) : 1.0;
+          purity = total > 0 ? Number((maxMatching / total).toFixed(4)) : 0;
         }
       }
     } catch (error) {

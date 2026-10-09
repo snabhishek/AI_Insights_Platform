@@ -1,3 +1,5 @@
+import { PipelineStepStatus } from "../agents/pipelineNames";
+
 export interface Workspace {
   id: string;
   name: string;
@@ -28,7 +30,7 @@ export interface UpdateProjectDto {
   dataSources?: string[];
   domain?: string;
   subDomain?: string;
-  status?: string;
+  status?: PipelineStepStatus;
   agentState?: Record<string, unknown>;
   replaceAgentState?: boolean;
 }

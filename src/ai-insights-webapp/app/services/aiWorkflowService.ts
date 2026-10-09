@@ -1,4 +1,5 @@
 import { BACKEND_URL } from "../components/providers/AppContext";
+import { GroupedStageStatuses, StageOutputs } from "../components/projects/pipelineNames";
 
 export interface WorkflowRequestPayload {
   connectorId: string[];
@@ -18,8 +19,8 @@ export interface WorkflowRequestPayload {
 export interface WorkflowResponseData {
   status: string;
   summary: string;
-  stageStatuses?: Record<string, string>;
-  stageOutputs?: Record<string, unknown>;
+  stageStatuses?: GroupedStageStatuses;
+  stageOutputs?: StageOutputs;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   sessionId?: string;
   requiresApproval?: boolean;
@@ -33,6 +34,12 @@ export interface WorkflowResponseData {
 export interface WorkflowApiResponse {
   success: boolean;
   data: WorkflowResponseData;
+}
+
+export interface WorkflowControlResponse {
+  success: boolean;
+  data?: Partial<WorkflowResponseData>;
+  message?: string;
 }
 
 export async function executeWorkflowApi(
@@ -75,28 +82,30 @@ export async function fetchActiveWorkflowApi(): Promise<{
   return { success: false, data: { active: false, projectId: null, sessionId: null, status: "idle" } };
 }
 
-export async function pauseWorkflowApi(sessionId?: string, projectId?: string): Promise<void> {
-  if (!sessionId && !projectId) return;
-
-  await fetch(`${BACKEND_URL}/ai/ingestion/pause`, {
+export async function pauseWorkflowApi(sessionId?: string, projectId?: string): Promise<WorkflowControlResponse> {
+  if (!sessionId && !projectId) throw new Error("A session or project is required to pause the workflow");
+  const response = await fetch(`${BACKEND_URL}/ai/ingestion/pause`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sessionId, projectId }),
-  }).catch((err) => {
-    console.warn("Failed to notify backend of workflow pause:", err);
   });
+  if (!response.ok) throw new Error(`Failed to pause workflow: ${response.statusText}`);
+  const result = await response.json() as WorkflowControlResponse;
+  if (!result.success) throw new Error(result.message || "Failed to pause workflow");
+  return result;
 }
 
-export async function stopWorkflowApi(sessionId?: string, projectId?: string): Promise<void> {
-  if (!sessionId && !projectId) return;
-
-  await fetch(`${BACKEND_URL}/ai/ingestion/stop`, {
+export async function stopWorkflowApi(sessionId?: string, projectId?: string): Promise<WorkflowControlResponse> {
+  if (!sessionId && !projectId) throw new Error("A session or project is required to stop the workflow");
+  const response = await fetch(`${BACKEND_URL}/ai/ingestion/stop`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ sessionId, projectId }),
-  }).catch((err) => {
-    console.warn("Failed to notify backend of workflow stop:", err);
   });
+  if (!response.ok) throw new Error(`Failed to stop workflow: ${response.statusText}`);
+  const result = await response.json() as WorkflowControlResponse;
+  if (!result.success) throw new Error(result.message || "Failed to stop workflow");
+  return result;
 }
 
 export async function fetchAgentThinkingApi(

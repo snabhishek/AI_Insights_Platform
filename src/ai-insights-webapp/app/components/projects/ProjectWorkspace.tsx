@@ -45,6 +45,11 @@ interface ProjectWorkspaceProps {
   requiresApproval: boolean;
   workflowMessage: string;
   isApproving: boolean;
+  isSubmittingWorkflow: boolean;
+  isPausing?: boolean;
+  isStopping?: boolean;
+  isResuming?: boolean;
+  isRetrying?: boolean;
   isPaused: boolean;
   pausedAtPhase: string | null;
   approvalNextStep: string | null;
@@ -104,6 +109,11 @@ function ProjectWorkspaceContent({
   requiresApproval,
   workflowMessage,
   isApproving,
+  isSubmittingWorkflow,
+  isPausing,
+  isStopping,
+  isResuming,
+  isRetrying,
   isPaused,
   pausedAtPhase,
   approvalNextStep,
@@ -210,7 +220,7 @@ function ProjectWorkspaceContent({
           <ProjectCreatePage
             dataSources={dataSources}
             project={project}
-            isWorkflowActiveOrPaused={runStatus === "Running" || runStatus === "Paused" || isPaused}
+            isWorkflowActiveOrPaused={runStatus === "In-Progress" || runStatus === "Paused" || isPaused}
             startInEditMode={startInEditMode}
             onEditModeChange={setStartInEditMode}
             onCancel={onGoToList}
@@ -252,6 +262,11 @@ function ProjectWorkspaceContent({
             onSelectStage={onStageSelect}
             onApprove={onApprove}
             isApproving={isApproving}
+            isSubmittingWorkflow={isSubmittingWorkflow}
+            isPausing={isPausing}
+            isStopping={isStopping}
+            isResuming={isResuming}
+            isRetrying={isRetrying}
             onRetry={onRetry}
             isPaused={isPaused}
             pausedAtPhase={pausedAtPhase}

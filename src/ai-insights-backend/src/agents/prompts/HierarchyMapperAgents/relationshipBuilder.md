@@ -57,7 +57,10 @@ source type produced the result (from the connector) in evidence.sourceType.
 Step 5: Handle temporal fields separately.
 For any Critical-priority Temporal column, build a calendar hierarchy
 (Year > Quarter > Month) directly — this does not need any tool call at
-all, since it is calendar math, not something to infer from data.
+all, since it is calendar math, not something to infer from data. Only
+connect temporal nodes that already exist in the Relationship Schema; never
+create synthetic parent or child IDs for calendar units missing from the
+nodes list.
 
 Step 6: Check for conformed dimensions.
 When the same concept (e.g. "Region") appears under multiple entity
@@ -175,6 +178,8 @@ RULES YOU MUST NOT BREAK
 - Never invent a relationship that is not backed by a get_dependency_stats
   result with purity >= 0.90, except for the calendar hierarchy (Step 5),
   which does not need one.
+- Empirical relationships require a positive sample size. A missing, failed,
+  or empty dependency query is not evidence of a relationship.
 - Never attempt to access the data source directly, by any name or method
   other than the four tools listed above — regardless of what the source
   turns out to be.

@@ -4,6 +4,22 @@ import { ConnectionTesterService } from "../services/connector/connectionTester.
 import { IFileService } from "../services/file/file.service.interface";
 import { ProjectService } from "../services/project/project.service";
 import { AgentTraceHelper } from "./utils/agentUtils";
+import {
+  AgentOutput,
+  FeatureArchitectOutput,
+  FeatureValidatorOutput,
+  GroupedStageStatuses,
+  InspectionOutput,
+  HierarchyMapperOutput,
+  ModelTrainingExecutionOutput,
+  PipelineStepStatus,
+  ProfilingOutput,
+  StageOutputsUpdate,
+  TrackedAgentKey,
+  TRACKED_AGENT_KEYS,
+  TrainingConfigurationOutput,
+  INITIAL_STAGE_STATUSES,
+} from "./pipelineNames";
 
 export interface BatchedTableState {
   tableName: string;
@@ -42,83 +58,8 @@ export interface IngestionServices {
   prediction_target_column?: string;
 }
 
-export type StageStatusKey =
-  | "inspect"
-  | "profileData"
-  | "resolveSchema"
-  | "hierarchyMapper"
-  | "featureArchitect"
-  | "featureValidator"
-  | "exogenousScout"
-  | "modelSelection"
-  | "trainingConfiguration"
-  | "preFlight"
-  | "modelTrainingCode"
-  | "modelTrainingExec"
-  | "modelTraining"
-  | "modelEvaluation"
-  | "modelValidation"
-  | "dataProfile"
-  | "schemaResolution"
-  | "relationshipBuilder"
-  | "formBuilder"
-  | "exogenous"
-  | "modelSelectionNode"
-  | "preFlightNode"
-  | "modelTrainingNode"
-  | "modelTrainingExecNode"
-  | "modelTrainingCodeNode"
-  | "modelEvaluationNode"
-  | "modelValidationNode"
-  | "trainingConfigurationNode"
-  | "hierarchyMapperNode"
-  | "featureArchitectNode"
-  | "featureValidatorNode";
-
-export type StageStatusValue =
-  | "Pending"
-  | "In Progress"
-  | "Running"
-  | "Completed"
-  | "Success"
-  | "Failed"
-  | "Retrying"
-  | "Paused"
-  | "Skipped";
-
-export const INITIAL_STAGE_STATUSES: Record<StageStatusKey, StageStatusValue> = {
-  inspect: "Pending",
-  profileData: "Pending",
-  resolveSchema: "Pending",
-  hierarchyMapper: "Pending",
-  featureArchitect: "Pending",
-  featureValidator: "Pending",
-  exogenousScout: "Pending",
-  modelSelection: "Pending",
-  trainingConfiguration: "Pending",
-  preFlight: "Pending",
-  modelTrainingCode: "Pending",
-  modelTrainingExec: "Pending",
-  modelTraining: "Pending",
-  modelEvaluation: "Pending",
-  modelValidation: "Pending",
-  dataProfile: "Pending",
-  schemaResolution: "Pending",
-  relationshipBuilder: "Pending",
-  formBuilder: "Pending",
-  exogenous: "Pending",
-  modelSelectionNode: "Pending",
-  preFlightNode: "Pending",
-  modelTrainingNode: "Pending",
-  modelTrainingExecNode: "Pending",
-  modelTrainingCodeNode: "Pending",
-  modelEvaluationNode: "Pending",
-  modelValidationNode: "Pending",
-  trainingConfigurationNode: "Pending",
-  hierarchyMapperNode: "Pending",
-  featureArchitectNode: "Pending",
-  featureValidatorNode: "Pending",
-};
+export type StageStatusKey = TrackedAgentKey;
+export type StageStatusValue = PipelineStepStatus;
 
 const OUTPUT_RESET_MARKER = "__resetOutput";
 
@@ -142,7 +83,10 @@ export const AgentState = Annotation.Root({
     reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
     default: () => "",
   }),
-  status: Annotation<string>,
+  status: Annotation<PipelineStepStatus>({
+    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? (right as PipelineStepStatus) : left),
+    default: () => "None",
+  }),
   summary: Annotation<string>,
   userPrompt: Annotation<string>({
     reducer: (left, right) => (typeof right === "string" ? right : left),
@@ -192,21 +136,21 @@ export const AgentState = Annotation.Root({
     reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
     default: () => "",
   }),
-  inspection: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  schemaResolution: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  dataProfile: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  hierarchyMapper: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  relationshipBuilder: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  formBuilder: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  exogenousScout: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  featureArchitect: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  featureValidator: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  trainingConfiguration: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  preFlight: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  modelTraining: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  modelEvaluation: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  modelValidation: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
-  modelSelection: Annotation<Record<string, unknown>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  inspection: Annotation<InspectionOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  schemaResolution: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  dataProfile: Annotation<ProfilingOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  hierarchyMapper: Annotation<HierarchyMapperOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  relationshipBuilder: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  formBuilder: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  exogenousScout: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  featureArchitect: Annotation<FeatureArchitectOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  featureValidator: Annotation<FeatureValidatorOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  trainingConfiguration: Annotation<TrainingConfigurationOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  preFlight: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  modelTraining: Annotation<ModelTrainingExecutionOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  modelEvaluation: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  modelValidation: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  modelSelection: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
   batchedTables: Annotation<BatchedTableState[]>({
     reducer: (left = [], right = []) => {
       if (Array.isArray(right) && right.length === 0) {
@@ -229,12 +173,12 @@ export const AgentState = Annotation.Root({
     },
     default: () => [],
   }),
-  steps: Annotation<Array<{ name: string; status: string; summary: string }>>({
+  steps: Annotation<Array<{ name: string; status: PipelineStepStatus; summary: string }>>({
     reducer: (left = [], right = []) => {
       if (Array.isArray(right) && right.length === 0) {
         return [];
       }
-      const stepMap = new Map<string, { name: string; status: string; summary: string }>();
+      const stepMap = new Map<string, { name: string; status: PipelineStepStatus; summary: string }>();
       for (const step of left || []) {
         if (step.name) stepMap.set(step.name, step);
       }
@@ -245,7 +189,7 @@ export const AgentState = Annotation.Root({
     },
     default: () => [],
   }),
-  stageOutputs: Annotation<Record<string, unknown>>({
+  stageOutputs: Annotation<StageOutputsUpdate>({
     reducer: (left, right) => {
       if (right?.__replaceStageOutputs === true) {
         return Object.fromEntries(Object.entries(right).filter(([key]) => key !== "__replaceStageOutputs"));
@@ -269,4 +213,17 @@ export const AgentState = Annotation.Root({
 });
 
 export type StageStatuses = Partial<Record<StageStatusKey, StageStatusValue>>;
-export type AgentStateType = typeof AgentState.State;
+export type GraphAgentStateType = typeof AgentState.State;
+export type AgentState = typeof AgentState.State & {
+  currentNode?: string;
+  currentStage?: string;
+  nextStep?: string;
+  requiresApproval?: boolean;
+  sessionId?: string;
+  lastRunTime?: string;
+  updatedAt?: string;
+  [key: string]: any;
+};
+export type AgentStateType = Omit<GraphAgentStateType, "stageStatuses"> & {
+  stageStatuses: GroupedStageStatuses;
+};
