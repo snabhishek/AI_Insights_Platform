@@ -312,36 +312,6 @@ export default function ProjectsPage() {
     return "Feature Engineering";
   };
 
-  // Hydrate pipeline state whenever selectedProject changes
-  const resolveApprovalNextStep = (state: any): string => {
-    if (state?.nextStep) return state.nextStep;
-    const stageStatuses = state?.stageStatuses || {};
-    const isStageAwaiting = (key: string) => {
-      const s = stageStatuses[key];
-      return s?.status === "Awaiting Approval" || s === "Awaiting Approval";
-    };
-    if (isStageAwaiting("dataIngestion") || isStageAwaiting("Data Ingestion")) {
-      return "Feature Engineering";
-    }
-    if (isStageAwaiting("featureEngineering") || isStageAwaiting("Feature Engineering")) {
-      return "Model Training & Validation";
-    }
-    if (isStageAwaiting("modelTrainingValidation") || isStageAwaiting("Model Training & Validation")) {
-      return "Model Selection";
-    }
-    const diComplete =
-      stageStatuses["dataIngestion"]?.status === "Completed" ||
-      stageStatuses["Data Ingestion"]?.status === "Completed" ||
-      (stageStatuses.inspect === "Completed" && stageStatuses.profileData === "Completed" && stageStatuses.resolveSchema === "Completed");
-    if (diComplete) {
-      const feStarted =
-        stageStatuses["featureEngineering"]?.status === "In-Progress" ||
-        stageStatuses["featureEngineering"]?.status === "Completed";
-      if (!feStarted) return "Feature Engineering";
-    }
-    return "Feature Engineering";
-  };
-
   useEffect(() => {
     if (!selectedProjectId) return;
 
