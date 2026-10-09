@@ -427,11 +427,6 @@ export default function ModelTrainingStepOutput({
   });
   const selectedMonthObj = MONTHS.find((month) => month.value === selectedMonth) || MONTHS[8];
   const formattedSplitCutoff = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
-  const handleCopyPath = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedArtifact(text);
-    setTimeout(() => setCopiedArtifact(null), 2000);
-  };
 
   const hasExecutionReport = Boolean(modelTraining?.report || modelTraining?.selectedModel || (modelTraining?.status === "Completed" && modelTraining?.validationMetrics));
   const hasCodeGenerated = Boolean(
