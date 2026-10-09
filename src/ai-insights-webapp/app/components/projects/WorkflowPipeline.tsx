@@ -13,7 +13,6 @@ interface WorkflowPipelineProps {
   lastRunTime: string;
   activeStage: string | null;
   stageOutputs: Record<string, unknown>;
-  requiresApproval: boolean;
   workflowMessage: string;
   onRunWorkflow: () => void;
   onReRunWorkflow?: () => void;
@@ -153,7 +152,6 @@ export default function WorkflowPipeline({
   lastRunTime,
   activeStage,
   stageOutputs,
-  requiresApproval,
   workflowMessage,
   onRunWorkflow,
   onReRunWorkflow,
@@ -184,23 +182,53 @@ export default function WorkflowPipeline({
   );
   const hasInProgress = hasInProgressGroup || hasInProgressFlat;
 
-  const effectiveRunStatus: RunStatus =
-    runStatus === "In-Progress"
-      ? "In-Progress"
-      : runStatus === "Paused" || isPaused
-        ? "Paused"
-        : runStatus === "Stopped"
-          ? "Stopped"
-          : runStatus === "Failed"
-            ? "Failed"
-            : hasInProgress
-              ? "In-Progress"
-              : runStatus;
+  const hasAwaitingApproval =
+    runStatus === "Awaiting Approval" 
+    // &&
+    // Object.values(groupedPipelineStatuses || {}).some(
+    //   (g: any) => g?.status === "Awaiting Approval"
+    // ) &&
+    // Object.values(pipelineStatuses).some(
+    //   (s) => s === "Awaiting Approval"
+    // );
 
-  const isWorkflowStoppedOrFailed = effectiveRunStatus === "Stopped" || effectiveRunStatus === "Failed";
+  const effectiveRunStatus: RunStatus =
+    hasAwaitingApproval
+      ? "Awaiting Approval"
+      : runStatus === "In-Progress"
+        ? "In-Progress"
+        : runStatus === "Paused" || isPaused
+          ? "Paused"
+          : runStatus === "Stopped"
+            ? "Stopped"
+            : runStatus === "Failed"
+              ? "Failed"
+              : hasInProgress
+                ? "In-Progress"
+                : runStatus;
+
+  const isAwaitingApprovalWorkflow = hasAwaitingApproval || effectiveRunStatus === "Awaiting Approval";
+
+  const effectiveApprovalNextStep = approvalNextStep || (() => {
+    const diStatus = pipelineStatuses["dataIngestion"] || pipelineStatuses["Data Ingestion"];
+    const feStatus = pipelineStatuses["featureEngineering"] || pipelineStatuses["Feature Engineering"];
+    const mtvStatus = pipelineStatuses["modelTrainingValidation"] || pipelineStatuses["Model Training & Validation"];
+    if (diStatus === "Awaiting Approval" || (diStatus === "Completed" && (feStatus === "Pending" || feStatus === "None"))) {
+      return "Feature Engineering";
+    }
+    if (feStatus === "Awaiting Approval" || (feStatus === "Completed" && (mtvStatus === "Pending" || mtvStatus === "None"))) {
+      return "Model Training & Validation";
+    }
+    if (mtvStatus === "Awaiting Approval") {
+      return "Model Selection";
+    }
+    return "Feature Engineering";
+  })();
+
+  const isWorkflowStoppedOrFailed = effectiveRunStatus === "Stopped" || effectiveRunStatus === "Failed" || effectiveRunStatus === 'In-Progress';
   const isAnyActionLoading = Boolean(
     isApproving || isSubmittingWorkflow || isPausing || isStopping || isResuming || isRetrying
-  );
+  );  
   const currentStage = activeStage || "inspect";
   const mainSelectedStage = getMainStepId(currentStage);
 
@@ -256,8 +284,8 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
   const getWorkflowStageStatus = (stage: string): PipelineStatus => {
     let status = pipelineStatuses[stage] ?? "None";
 
-    if (requiresApproval) {
-      const nextStep = (approvalNextStep || "").trim();
+    if (isAwaitingApprovalWorkflow) {
+      const nextStep = (effectiveApprovalNextStep || "").trim();
       const isDataIngestion = stage === "dataIngestion" || stage === "Data Ingestion";
       const isFeatureEngineering = stage === "featureEngineering" || stage === "Feature Engineering";
       const isModelTraining = stage === "modelTrainingValidation" || stage === "Model Training & Validation";
@@ -321,7 +349,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
   return (
     <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-background border border-border rounded-lg p-6 shadow-soft">
 
-      {requiresApproval && (
+      {isAwaitingApprovalWorkflow && (
         <div className="mb-5 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-surface border border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-sm animate-fadeIn">
           <div className="flex items-center gap-2.5">
             <span className="relative flex h-2.5 w-2.5">
@@ -344,7 +372,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
               ) {
                 return workflowMessage;
               }
-              const step = (approvalNextStep || "").trim();
+              const step = (effectiveApprovalNextStep || "").trim();
               if (step === "trainingConfigurationNode" || step === "Training Configuration") {
                 return "Please confirm candidate models in the Model Selection view below to proceed.";
               }
@@ -385,29 +413,29 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
         </div>
 
         <div className="flex items-center gap-2 shrink-0">
-          {requiresApproval ? (
+          {isAwaitingApprovalWorkflow ? (
             <>
               {(() => {
                 const isModelTrainingSubprocess =
-                  approvalNextStep === "Training Configuration" ||
-                  approvalNextStep === "trainingConfigurationNode" ||
-                  approvalNextStep === "Pre Flight" ||
-                  approvalNextStep === "preFlightNode" ||
-                  approvalNextStep === "Model Training" ||
-                  approvalNextStep === "modelTrainingNode" ||
-                  approvalNextStep === "modelTrainingCodeNode" ||
-                  approvalNextStep === "Model Training Code Generation" ||
-                  approvalNextStep === "Model Training Execution" ||
-                  approvalNextStep === "modelTrainingExecNode" ||
-                  approvalNextStep === "Model Validation" ||
-                  approvalNextStep === "modelValidationNode" ||
+                  effectiveApprovalNextStep === "Training Configuration" ||
+                  effectiveApprovalNextStep === "trainingConfigurationNode" ||
+                  effectiveApprovalNextStep === "Pre Flight" ||
+                  effectiveApprovalNextStep === "preFlightNode" ||
+                  effectiveApprovalNextStep === "Model Training" ||
+                  effectiveApprovalNextStep === "modelTrainingNode" ||
+                  effectiveApprovalNextStep === "modelTrainingCodeNode" ||
+                  effectiveApprovalNextStep === "Model Training Code Generation" ||
+                  effectiveApprovalNextStep === "Model Training Execution" ||
+                  effectiveApprovalNextStep === "modelTrainingExecNode" ||
+                  effectiveApprovalNextStep === "Model Validation" ||
+                  effectiveApprovalNextStep === "modelValidationNode" ||
                   pausedAtPhase === "Training Configuration" ||
                   pausedAtPhase === "Pre Flight" ||
                   pausedAtPhase === "Model Training";
 
                 if (isModelTrainingSubprocess) {
                   let buttonLabel = "Review Model Selection";
-                  const step = (approvalNextStep || pausedAtPhase || "").trim();
+                  const step = (effectiveApprovalNextStep || pausedAtPhase || "").trim();
                   if (step === "modelValidationNode" || step === "Model Validation") {
                     buttonLabel = "Review & Validate Models";
                   } else if (
@@ -538,7 +566,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
                 )}
               </button>
             </>
-          ) : (effectiveRunStatus === "Paused" || isPaused) && !requiresApproval ? (
+          ) : (effectiveRunStatus === "Paused" || isPaused) && !isAwaitingApprovalWorkflow ? (
             <>
               <button
                 type="button"
@@ -625,7 +653,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
                   status={getWorkflowStageStatus(step.id)}
                   index={idx}
                   isActive={mainSelectedStage === step.id}
-                  isUserPaused={effectiveRunStatus === "Paused" && !requiresApproval}
+                  isUserPaused={effectiveRunStatus === "Paused"}
                   onSelect={onSelectStage}
                 />
               </div>
@@ -653,7 +681,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
             <p className="text-xs text-muted-foreground mt-1">
               {(() => {
                 const isIngestionStageDone = calculateDataIngestionStatus(pipelineStatuses) === "Completed";
-                if (mainSelectedStage === "dataIngestion" && isIngestionStageDone && !requiresApproval) {
+                if (mainSelectedStage === "dataIngestion" && isIngestionStageDone && effectiveRunStatus !== "Awaiting Approval" && groupedPipelineStatuses?.dataIngestion?.status !== "Awaiting Approval") {
                   return "Data Ingestion completed successfully.";
                 }
                 return workflowMessage || "Select a workflow stage to inspect the live output.";
@@ -728,7 +756,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
           <span className="text-muted-foreground">Last run: {lastRunTime}</span>
 
           <span
-            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${requiresApproval
+            className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full font-bold ${isAwaitingApprovalWorkflow
               ? "bg-status-awaiting-approval/15 text-status-awaiting-approval border border-status-awaiting-approval/30"
               : effectiveRunStatus === "Paused"
                 ? "bg-status-paused/15 text-status-paused border border-status-paused/30"
@@ -744,7 +772,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
               }`}
           >
             <span
-              className={`w-1.5 h-1.5 rounded-full shrink-0 ${requiresApproval
+              className={`w-1.5 h-1.5 rounded-full shrink-0 ${isAwaitingApprovalWorkflow
                 ? "bg-status-awaiting-approval animate-pulse"
                 : effectiveRunStatus === "Paused"
                   ? "bg-status-paused"
@@ -759,7 +787,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
                           : "bg-status-none"
                 }`}
             />
-            {requiresApproval
+            {isAwaitingApprovalWorkflow
               ? "Awaiting Approval"
               : effectiveRunStatus === "In-Progress"
                 ? "In-Progress"

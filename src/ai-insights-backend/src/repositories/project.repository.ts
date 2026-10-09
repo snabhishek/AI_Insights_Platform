@@ -8,12 +8,16 @@ import { Project, ProjectRun, ProjectWithWorkspace } from "../models/project.typ
 import { AgentStateType } from "../agents/state";
 import {
   buildGroupedStageStatuses,
+  FlatStageStatuses,
+  NODE_CONFIG,
   normalizeFlatStageStatuses,
   normalizeGroupedStageStatuses,
   normalizePipelineStepStatus,
   normalizeStageOutputs,
   PipelineStepStatus,
   StageKey,
+  TRACKED_AGENT_KEYS,
+  TrackedAgentKey,
 } from "../agents/pipelineNames";
 
 function normalizePersistedAgentState(value: unknown): AgentStateType | undefined {
@@ -172,14 +176,24 @@ export class PostgresProjectRepository implements IProjectRepository {
         if (status) incomingStageOverrides[key] = status;
       }
     }
+    const existingFlat = normalizeFlatStageStatuses(existingState.stageStatuses);
+    const incomingFlat = normalizeFlatStageStatuses(incomingStatuses);
+    const mergedFlat: FlatStageStatuses = {
+      ...existingFlat,
+      ...incomingFlat,
+    };
+    if (!replaceState) {
+      for (const key of TRACKED_AGENT_KEYS) {
+        if (existingFlat[key] === "Completed" && (incomingFlat[key] === "Pending" || incomingFlat[key] === "In-Progress")) {
+          const stage = NODE_CONFIG[key]?.stage;
+          if (stage && (existingStatuses[stage]?.status === "Completed" || incomingFlat[key] === "Pending")) {
+            mergedFlat[key] = "Completed";
+          }
+        }
+      }
+    }
     const mergedStageStatuses = incomingGroupedStatuses
-      ? buildGroupedStageStatuses(
-        {
-          ...normalizeFlatStageStatuses(existingState.stageStatuses),
-          ...normalizeFlatStageStatuses(incomingStatuses),
-        },
-        incomingStageOverrides
-      )
+      ? buildGroupedStageStatuses(mergedFlat, incomingStageOverrides)
       : existingStatuses;
 
     const getAgentState = () => {

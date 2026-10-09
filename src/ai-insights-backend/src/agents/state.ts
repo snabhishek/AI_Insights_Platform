@@ -218,7 +218,6 @@ export type AgentState = typeof AgentState.State & {
   currentNode?: string;
   currentStage?: string;
   nextStep?: string;
-  requiresApproval?: boolean;
   sessionId?: string;
   lastRunTime?: string;
   updatedAt?: string;

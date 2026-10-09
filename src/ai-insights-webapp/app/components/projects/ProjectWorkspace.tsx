@@ -42,7 +42,6 @@ interface ProjectWorkspaceProps {
   lastRunTime: string;
   activeStage: string | null;
   stageOutputs: Record<string, any>;
-  requiresApproval: boolean;
   workflowMessage: string;
   isApproving: boolean;
   isSubmittingWorkflow: boolean;
@@ -106,7 +105,6 @@ function ProjectWorkspaceContent({
   lastRunTime,
   activeStage,
   stageOutputs,
-  requiresApproval,
   workflowMessage,
   isApproving,
   isSubmittingWorkflow,
@@ -257,7 +255,6 @@ function ProjectWorkspaceContent({
             }
             activeStage={activeStage}
             stageOutputs={stageOutputs}
-            requiresApproval={requiresApproval}
             workflowMessage={workflowMessage}
             onSelectStage={onStageSelect}
             onApprove={onApprove}
