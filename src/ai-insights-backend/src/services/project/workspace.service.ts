@@ -27,7 +27,7 @@ export class WorkspaceService {
     private projectRepository: IProjectRepository,
     private connectorRepository?: IConnectorRepository,
     private duckDBService?: IDuckDBService
-  ) {}
+  ) { }
 
   async getAllWorkspaces(): Promise<Workspace[]> {
     return this.workspaceRepository.getAll();
@@ -58,6 +58,44 @@ export class WorkspaceService {
 
     const created = await this.workspaceRepository.create(newWorkspace);
     return { success: true, data: created };
+  }
+
+  async renameWorkspace(id: string, name: string): Promise<ServiceResult<Workspace>> {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return { success: false, reason: "BAD_REQUEST", message: "Workspace name cannot be empty." };
+    }
+    const ws = await this.workspaceRepository.getById(id);
+    if (!ws) {
+      return { success: false, reason: "NOT_FOUND", message: "Workspace not found." };
+    }
+    const existing = await this.workspaceRepository.getByName(trimmedName);
+    if (existing && existing.id !== id) {
+      return {
+        success: false,
+        reason: "DUPLICATE",
+        message: `Workspace named "${trimmedName}" already exists.`,
+      };
+    }
+
+    const oldDir = getWorkspaceDir(ws.name);
+    const updated = await this.workspaceRepository.update(id, trimmedName);
+    if (!updated) {
+      return { success: false, reason: "NOT_FOUND", message: "Failed to update workspace." };
+    }
+
+    if (fs.existsSync(oldDir) && ws.name !== trimmedName) {
+      const newDir = getWorkspaceDir(trimmedName);
+      try {
+        ensureDirectoryExists(path.dirname(newDir));
+        fs.renameSync(oldDir, newDir);
+        console.log(`[workspaceService] Renamed workspace directory from ${oldDir} to ${newDir}`);
+      } catch (e: any) {
+        console.warn(`[workspaceService] Could not rename workspace directory:`, e?.message || e);
+      }
+    }
+
+    return { success: true, data: updated };
   }
 
   async deleteWorkspace(id: string): Promise<ServiceResult<boolean>> {
