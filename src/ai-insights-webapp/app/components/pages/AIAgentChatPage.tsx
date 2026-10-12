@@ -86,17 +86,6 @@ export default function AIAgentChatPage() {
     }
   }, [activeSessionId]);
 
-  useEffect(() => {
-    const handleAgentMessageSent = () => {
-      const reloaded = loadSavedChatSessions();
-      setSessions(reloaded);
-    };
-    window.addEventListener("agent_message_sent", handleAgentMessageSent);
-    return () => {
-      window.removeEventListener("agent_message_sent", handleAgentMessageSent);
-    };
-  }, []);
-
   const activeSession = sessions.find((s) => s.id === activeSessionId) || sessions[0];
   const activePersona = AGENT_PERSONAS[selectedPersonaId] || AGENT_PERSONAS.orchestrator;
   const currentScopedProject = projects.find((p) => p.id === selectedProjectId) || null;
@@ -331,11 +320,11 @@ export default function AIAgentChatPage() {
               messages: s.messages.map((m) =>
                 m.id === assistantMessageId
                   ? {
-                      ...m,
-                      ...response,
-                      isThinking: false,
-                      status: "complete",
-                    }
+                    ...m,
+                    ...response,
+                    isThinking: false,
+                    status: "complete",
+                  }
                   : m
               ),
             };
@@ -353,11 +342,11 @@ export default function AIAgentChatPage() {
               messages: s.messages.map((m) =>
                 m.id === assistantMessageId
                   ? {
-                      ...m,
-                      content: `⚠️ Failed to generate AI response: ${err?.message || "Unknown error"}. Please try again.`,
-                      isThinking: false,
-                      status: "error",
-                    }
+                    ...m,
+                    content: `⚠️ Failed to generate AI response: ${err?.message || "Unknown error"}. Please try again.`,
+                    isThinking: false,
+                    status: "error",
+                  }
                   : m
               ),
             };
