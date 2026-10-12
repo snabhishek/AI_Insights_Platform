@@ -2,7 +2,6 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useApp } from "../../providers/AppContext";
-import { sendTextToAgent } from "../../../services/aiAgentChatService";
 import RenameWorkspaceModal from "./RenameWorkspaceModal";
 
 export interface Workspace {
@@ -148,17 +147,16 @@ export function WorkspaceSwitcherDropdown({
               {workspaces.map((workspace) => {
                 const isActive = workspace.id === selectedId;
                 const isDeletable = !workspace.isDefault && !isActive;
-                const isEditable = !workspace.isDefault;
+                const isEditable = !workspace.isDefault && !isActive;
 
                 return (
                   /* Unified row div - grey background covers name, edit icon, and delete icon in the same div */
                   <div
                     key={workspace.id}
-                    className={`group flex items-center justify-between gap-1.5 rounded-lg px-3 py-2 transition-colors ${
-                      isActive
+                    className={`group flex items-center justify-between gap-1.5 rounded-lg px-3 py-2 transition-colors ${isActive
                         ? "bg-primary/10 text-primary dark:bg-white/10 dark:text-white font-semibold"
                         : "text-foreground hover:bg-surface-muted dark:hover:bg-white/5"
-                    }`}
+                      }`}
                   >
                     <button
                       type="button"
@@ -236,9 +234,6 @@ export function WorkspaceSwitcherDropdown({
         onClose={() => setEditingWorkspace(null)}
         onRename={async (id, newName) => {
           await renameWorkspace(id, newName);
-        }}
-        onSendAgentMessage={(text) => {
-          sendTextToAgent(text);
         }}
       />
     </>

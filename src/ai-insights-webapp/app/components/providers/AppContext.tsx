@@ -386,7 +386,18 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name }),
     });
-    const data = await res.json();
+    const contentType = res.headers.get("content-type");
+    let data: any = {};
+    if (contentType && contentType.includes("application/json")) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
+      throw new Error(
+        res.ok
+          ? "Unexpected non-JSON response from server."
+          : `Server returned status ${res.status}. Please ensure backend is running.`
+      );
+    }
     if (!res.ok) throw new Error(data.message || "Failed to rename workspace");
     setWorkspaces((prev) =>
       prev.map((w) => (w.id === id ? { ...w, name: data.name || name } : w))

@@ -9,7 +9,6 @@ interface RenameWorkspaceModalProps {
   workspaces: Workspace[];
   onClose: () => void;
   onRename: (id: string, newName: string) => Promise<void>;
-  onSendAgentMessage?: (text: string) => void;
 }
 
 export default function RenameWorkspaceModal({
@@ -18,7 +17,6 @@ export default function RenameWorkspaceModal({
   workspaces,
   onClose,
   onRename,
-  onSendAgentMessage,
 }: RenameWorkspaceModalProps) {
   const [name, setName] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -58,12 +56,6 @@ export default function RenameWorkspaceModal({
 
     try {
       await onRename(workspace.id, trimmed);
-      
-      // AC 3: Save - primary btn - sends text to agent
-      if (onSendAgentMessage) {
-        onSendAgentMessage(`Workspace renamed from "${workspace.name}" to "${trimmed}".`);
-      }
-
       onClose();
     } catch (err: any) {
       setError(err.message || "Failed to rename workspace.");

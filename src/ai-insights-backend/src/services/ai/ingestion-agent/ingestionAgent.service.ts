@@ -370,12 +370,15 @@ export class IngestionAgentService implements IIngestionAgentService {
           if (savedAgentState && (options?.action === "resume" || options?.action === "retry" || options?.action === "approve")) {
             latestGraphStateValues = {
               ...savedAgentState,
+              ...(pWs?.workspaceName ? { workspaceName: pWs.workspaceName } : {}),
               status: "running",
               summary: options?.action === "approve"
                 ? `Advancing workflow to ${options.step || "Feature Engineering"} phase`
                 : `Resuming workflow at ${options.step || "inspect"} phase`,
               ...(options?.action === "approve" ? { requiresApproval: false, nextStep: undefined } : {}),
             };
+          } else if (pWs?.workspaceName) {
+            latestGraphStateValues.workspaceName = pWs.workspaceName;
           }
         } catch (e) {
           console.warn("[Workflow] Failed to lookup project with workspace:", e);
