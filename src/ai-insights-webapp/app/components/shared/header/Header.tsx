@@ -15,9 +15,28 @@ export default function Header() {
     activeWorkspaceId,
     setActiveWorkspaceId,
     openCreateWorkspace,
+    deleteWorkspace,
+    showConfirm,
   } = useApp();
 
   const handleLogout = () => {};
+
+  const handleDeleteWorkspace = (id: string) => {
+    const workspace = workspaces.find((w) => w.id === id);
+    if (!workspace) return;
+    showConfirm({
+      title: "Delete Workspace",
+      message: (
+        <>
+          <span className="font-semibold">Are you sure you want to delete &quot;{workspace.name}&quot;?</span><br/>
+          {" "}All projects inside will be permanently deleted. This action cannot be undone.
+        </>
+      ),
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      onConfirm: () => deleteWorkspace(id),
+    });
+  };
 
   const metaString = `${userProfile.role} • ${userProfile.daysRemaining} days • ${userProfile.tasksCount} tasks • ${userProfile.tokensLeft} tokens left`;
 
@@ -45,6 +64,7 @@ export default function Header() {
           selectedId={activeWorkspaceId}
           onSelect={setActiveWorkspaceId}
           onCreate={openCreateWorkspace}
+          onDelete={handleDeleteWorkspace}
         />
       </div>
 

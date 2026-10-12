@@ -5,7 +5,7 @@ import React from "react";
 interface ConfirmationModalProps {
   isOpen: boolean;
   title: string;
-  message: string;
+  message: React.ReactNode;
   confirmText?: string;
   cancelText?: string;
   onConfirm: () => void;
@@ -48,7 +48,7 @@ export default function ConfirmationModal({
         </div>
 
         <div className="p-5 flex flex-col gap-3 overflow-y-auto text-sm text-foreground">
-          <p className="leading-relaxed font-semibold">{message}</p>
+          <p className="leading-relaxed">{message}</p>
         </div>
 
         <div className="border-t border-border/80 px-5 py-3 bg-surface-muted/60 flex justify-end gap-2.5">

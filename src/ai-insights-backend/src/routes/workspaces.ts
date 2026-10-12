@@ -6,6 +6,7 @@ export default function createWorkspaceRouter(controller: WorkspaceController): 
 
   router.get("/", controller.getAllWorkspaces);
   router.post("/", controller.createWorkspace);
+  router.put("/:id", controller.renameWorkspace);
   router.delete("/:id", controller.deleteWorkspace);
 
   router.get("/:id/projects", controller.getProjectsByWorkspace);
