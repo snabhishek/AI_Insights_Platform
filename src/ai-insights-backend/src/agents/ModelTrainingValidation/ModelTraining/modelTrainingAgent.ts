@@ -26,6 +26,7 @@ import { webSearchTool, extractUrlContentTool } from "../../tools/search";
 import { validateWithRetry } from "../../validator/validatorNode";
 import { sanitizeFolderName } from "../../../config/fileServer.config";
 import { ModelTrainingAgentOutput, ModelTrainingReport, CandidateModelRun } from "./types";
+import { normalizeFlatStageStatuses } from "../../pipelineNames";
 
 interface CodingAgentResult extends Record<string, unknown> {
   status: string;
@@ -48,7 +49,7 @@ interface RectifierResult extends Record<string, unknown> {
 
 export class ModelTrainingAgent {
 
-  private static getProjectContext(state: GraphAgentStateType, services: IngestionServices) {
+  private static async getProjectContext(state: GraphAgentStateType, services: IngestionServices) {
     const projectId = state.projectId || services?.projectId || "";
     const workspaceName = (state as any).workspaceName || services?.workspaceName || "";
     const projectName = (state as any).projectName || services?.projectName || "";
@@ -63,19 +64,81 @@ export class ModelTrainingAgent {
     const pythonProjectName = `${projectName}_model_training`;
     const modelTrainingDir = path.join(runDir, pythonProjectName);
 
-    let contractPath = (state.trainingConfiguration as any)?.contractPath;
-    let contractData: any = (state.trainingConfiguration as any)?.configuration || {};
-    if (!contractPath || !fs.existsSync(contractPath)) {
-      const schemasDir = path.join(runDir, "schemas");
-      if (fs.existsSync(schemasDir)) {
-        const yamlFile = fs.readdirSync(schemasDir).find((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
-        if (yamlFile) {
-          contractPath = path.join(schemasDir, yamlFile);
-          try {
-            contractData = yaml.load(fs.readFileSync(contractPath, "utf-8")) || {};
-          } catch {}
-        }
+    let persistedAgentState: any = {};
+    const stateTrainingConfiguration = state.trainingConfiguration as any;
+    const stateConfigurationOutput =
+      (state.stageOutputs as any)?.trainingConfigurationNode ||
+      (state as any).trainingConfigurationNode ||
+      {};
+    const stateContractPath =
+      stateTrainingConfiguration?.contractPath || stateConfigurationOutput?.contractPath;
+    const stateContractData =
+      stateTrainingConfiguration?.configuration &&
+      Object.keys(stateTrainingConfiguration.configuration).length > 0
+        ? stateTrainingConfiguration.configuration
+        : stateConfigurationOutput?.configuration;
+
+    if (!stateContractPath || !stateContractData || Object.keys(stateContractData).length === 0) {
+      const projectWithWorkspace = await services.projectService.getProjectWithWorkspace(projectId);
+      const candidateAgentState = (projectWithWorkspace?.project?.agentState as any) || {};
+      if (candidateAgentState.runTimestamp === runTimestamp) {
+        persistedAgentState = candidateAgentState;
       }
+    }
+
+    const persistedTrainingConfiguration = persistedAgentState.trainingConfiguration || {};
+    const persistedConfigurationOutput =
+      persistedAgentState.stageOutputs?.trainingConfigurationNode ||
+      persistedAgentState.trainingConfigurationNode ||
+      {};
+    const trainingConfigurationState = {
+      ...persistedTrainingConfiguration,
+      ...stateTrainingConfiguration,
+    };
+    const configurationOutput = {
+      ...persistedConfigurationOutput,
+      ...stateConfigurationOutput,
+    };
+    const contractPath =
+      stateContractPath ||
+      persistedTrainingConfiguration.contractPath ||
+      persistedConfigurationOutput.contractPath;
+    const isNonEmptyObject = (value: unknown): value is Record<string, any> =>
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value).length > 0;
+    let contractData = [
+      stateContractData,
+      trainingConfigurationState.configuration,
+      configurationOutput.configuration,
+    ].find(isNonEmptyObject);
+
+    if (
+      !contractData &&
+      contractPath &&
+      fs.existsSync(contractPath)
+    ) {
+      const parsedContract = yaml.load(fs.readFileSync(contractPath, "utf-8"));
+      if (parsedContract && typeof parsedContract === "object" && !Array.isArray(parsedContract)) {
+        contractData = parsedContract;
+      }
+    }
+
+    const configurationStatus =
+      normalizeFlatStageStatuses(state.stageStatuses).trainingConfigurationNode ||
+      normalizeFlatStageStatuses(persistedAgentState.stageStatuses).trainingConfigurationNode ||
+      configurationOutput.status;
+    if (
+      configurationStatus !== "Completed" ||
+      !contractPath ||
+      !contractData ||
+      typeof contractData !== "object"
+    ) {
+      throw new Error("[ModelTrainingAgent] Completed training configuration is required before model execution.");
+    }
+    if (!fs.existsSync(contractPath)) {
+      throw new Error(`[ModelTrainingAgent] Completed training configuration contract is missing: ${contractPath}`);
     }
 
     return {
@@ -89,23 +152,72 @@ export class ModelTrainingAgent {
       modelTrainingDir,
       contractPath,
       contractData,
+      trainingConfiguration: {
+        ...configurationOutput,
+        ...trainingConfigurationState,
+        contractPath,
+        configuration: contractData,
+      },
     };
   }
 
-  private static getCandidateModels(contractData: any, state: GraphAgentStateType): CandidateModelItem[] {
-    const rawCandidates =
-      contractData?.model_selection?.models ||
-      contractData?.model_selection?.candidates ||
-      contractData?.models ||
-      contractData?.candidate_models ||
-      (state.modelSelection as any)?.candidates ||
-      (state.modelSelection as any)?.models;
+  private static getCandidateModels(
+    contractData: any,
+    state?: GraphAgentStateType
+  ): CandidateModelItem[] {
+    const modelSelection =
+      state?.modelSelection ||
+      (state?.stageOutputs as any)?.modelSelectionNode ||
+      (state as any)?.modelSelectionNode;
+    const trainingConfigurations = [
+      state?.trainingConfiguration,
+      (state?.stageOutputs as any)?.trainingConfigurationNode,
+      (state as any)?.trainingConfigurationNode,
+    ].filter((configuration) => configuration && typeof configuration === "object");
+    const configuredCandidates = trainingConfigurations.flatMap((configuration: any) => [
+      configuration.models,
+      configuration.configuration?.model_selection?.models,
+      configuration.configuration?.models,
+    ]).find((models) => Array.isArray(models) && models.length > 0);
+    const fallbackCandidates = [
+      contractData?.model_selection?.models,
+      contractData?.model_selection?.candidates,
+      contractData?.models,
+      contractData?.candidate_models,
+      modelSelection?.candidates,
+      modelSelection?.models,
+    ].find((models) => Array.isArray(models) && models.length > 0);
+    const rawCandidates = configuredCandidates || fallbackCandidates;
 
     if (!Array.isArray(rawCandidates) || rawCandidates.length === 0) {
-      throw new Error("[ModelTrainingAgent] No candidate models found in training contract or model selection. Candidate models are required.");
+      throw new Error(
+        "[ModelTrainingAgent] No candidate models were found in the training contract or model-selection output."
+      );
     }
 
-    return rawCandidates.map((m: any, idx: number) => {
+    const modelMetadata = new Map<string, any>();
+    for (const candidate of [...(fallbackCandidates || []), ...rawCandidates]) {
+      const id = typeof candidate === "string" ? candidate : candidate?.model_id || candidate?.id;
+      if (id) {
+        const key = String(id).toLowerCase();
+        modelMetadata.set(key, {
+          ...(modelMetadata.get(key) || {}),
+          ...(typeof candidate === "string" ? {} : candidate),
+          model_id: id,
+        });
+      }
+    }
+    const enabledCandidates = rawCandidates
+      .filter((model: any) => model && model.enabled !== false)
+      .map((model: any) => {
+        if (typeof model !== "string") return model;
+        return modelMetadata.get(model.toLowerCase()) || model;
+      });
+    if (enabledCandidates.length === 0) {
+      throw new Error("[ModelTrainingAgent] The training configuration contains no enabled models.");
+    }
+
+    return enabledCandidates.map((m: any, idx: number) => {
       const modelId = typeof m === "string" ? m : (m.model_id || m.id);
       if (!modelId) {
         throw new Error(`[ModelTrainingAgent] Candidate model at index ${idx} is missing 'model_id'.`);
@@ -130,8 +242,19 @@ export class ModelTrainingAgent {
     state: GraphAgentStateType,
     services: IngestionServices
   ): Promise<ModelTrainingAgentOutput> {
-    const ctx = this.getProjectContext(state, services);
-    const { projectId, workspaceName, projectName, runTimestamp, runDir, pythonProjectName, modelTrainingDir, contractPath, contractData } = ctx;
+    const ctx = await this.getProjectContext(state, services);
+    const {
+      projectId,
+      workspaceName,
+      projectName,
+      runTimestamp,
+      runDir,
+      pythonProjectName,
+      modelTrainingDir,
+      contractPath,
+      contractData,
+      trainingConfiguration,
+    } = ctx;
 
     if (!projectId || !projectName || !runTimestamp) {
       return {
@@ -168,7 +291,7 @@ export class ModelTrainingAgent {
     fs.mkdirSync(path.join(modelTrainingDir, "artifacts", "plots"), { recursive: true });
 
     const fsTools = await getMcpFilesystemTools({ projectId, workspaceName, projectName, runTimestamp });
-    const contractTool = createReadTrainingContractTool(state.trainingConfiguration || {}, projectId, runTimestamp, services);
+    const contractTool = createReadTrainingContractTool(trainingConfiguration, projectId, runTimestamp, services);
     const preFlightTool = createGetPreFlightDetailsTool(preFlight);
     const validationTool = createValidateProjectStructureTool(modelTrainingDir);
 
@@ -187,7 +310,7 @@ export class ModelTrainingAgent {
       "You are an expert AI Machine Learning Software Engineering and Coding Agent."
     );
 
-    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTrainingExecNode?.splitEndDate || (state.stageOutputs as any)?.modelTrainingExecNode?.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitDate || "";
+    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTrainingCodeNode?.splitEndDate || (state.stageOutputs as any)?.modelTrainingCodeNode?.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitDate || "";
 
     const timeColumn =
       contractData?.split?.time_column ||
@@ -277,6 +400,37 @@ export class ModelTrainingAgent {
       `Use 'write_todos' to track task progress as you create the files.`,
     ].join("\n\n");
 
+    const effectiveSelectedModels = Array.isArray(state.selectedModels) && state.selectedModels.length > 0
+      ? Array.from(new Set(state.selectedModels.map((modelId) => modelId.trim()).filter(Boolean)))
+      : configuredCandidateModels.map((m) => m.model_id);
+
+    const resourceLimits = { cpus: containerCpuStr, memory: containerRamStr, hasGpu };
+    const relativeEntrypoint = `${runTimestamp}/${pythonProjectName}/main.py`;
+    let accumulatedPackages: string[] = [];
+    let lastExecResult = { success: false, stdout: "", stderr: "" };
+
+    const readOnlyFsTools = fsTools.filter((t) => {
+      const name = (t.name || "").toLowerCase();
+      return (
+        !name.includes("write") &&
+        !name.includes("edit") &&
+        !name.includes("delete") &&
+        !name.includes("move") &&
+        !name.includes("create") &&
+        !name.includes("execute")
+      );
+    });
+
+    const extraArgs: string[] = [];
+    if (effectiveSelectedModels.length > 0) {
+      extraArgs.push(`--models "${effectiveSelectedModels.join(",")}"`);
+    }
+    if (effectiveSplitEndDate) {
+      extraArgs.push(`--split-date "${effectiveSplitEndDate}"`);
+      extraArgs.push(`--split-end-date "${effectiveSplitEndDate}"`);
+    }
+
+    const agentMessages: BaseMessage[] = [];
     const codingFallback: CodingAgentResult = {
       status: "Completed",
       summary: "Python model training project scaffolded successfully.",
@@ -284,42 +438,189 @@ export class ModelTrainingAgent {
       requiredPackages: [],
     };
 
-    let codingResult: CodingAgentResult = codingFallback;
+    let codingResult: CodingAgentResult;
     try {
-      codingResult = await invokeAgentJson<CodingAgentResult>(
-        "modelTrainingCode",
-        model,
-        userPrompt,
+      codingResult = await validateWithRetry<CodingAgentResult>(
+        "modelTraining",
+        async (feedbackPrompt?: string) => {
+          const currentPrompt = feedbackPrompt
+            ? [
+                `The previous model training pipeline run encountered an execution error during container testing.`,
+                feedbackPrompt,
+                `Please inspect the failing code files and apply the required corrections using your file editing tools. Return the updated project status JSON.`,
+              ].join("\n\n")
+            : userPrompt;
+
+          return await invokeAgentJson<CodingAgentResult>(
+            "modelTraining",
+            model,
+            currentPrompt,
+            codingFallback,
+            services,
+            {
+              systemPrompt,
+              traceLabel: "modelTraining:codeGeneration",
+              tools: agentTools,
+              useDeepAgent: true,
+              enableTodoList: true,
+              recursionLimit: 200,
+              messages: agentMessages,
+              middlewareOptions: {
+                summarization: {
+                  triggerTokens: 200000,
+                  keepTokens: 25000,
+                },
+                todoList: true,
+                toolRetry: { maxRetries: 2 },
+              },
+              throwOnError: true,
+            }
+          );
+        },
         codingFallback,
         services,
-        {
-          systemPrompt,
-          traceLabel: "modelTraining:codeGeneration",
-          tools: agentTools,
-          useDeepAgent: true,
-          enableTodoList: true,
-          recursionLimit: 200,
-        }
+        20,
+        undefined,
+        async (result: CodingAgentResult) => {
+          if (Array.isArray(result.requiredPackages)) {
+            accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...result.requiredPackages]));
+          }
+
+          await logMilestoneThinking(
+            services,
+            "Model Training",
+            `Executing container test run for generated code without mounting project folder (mounting python_script only for dataset)...`
+          );
+
+          const execResult = await executePythonScript(
+            relativeEntrypoint,
+            "",
+            projectId,
+            runTimestamp,
+            services,
+            state.connectorId,
+            accumulatedPackages,
+            extraArgs,
+            resourceLimits,
+            { mountMode: "python_script_only" }
+          );
+
+          lastExecResult = execResult;
+
+          if (execResult.success) {
+            await logMilestoneThinking(
+              services,
+              "Model Training",
+              `Model training container test execution succeeded with no errors.`
+            );
+            return { isValid: true };
+          }
+
+          await logMilestoneThinking(
+            services,
+            "Model Training",
+            `Container test run encountered issues (exit code non-zero). Invoking Rectifier advisor subagent to diagnose issues and provide rectification steps...`
+          );
+
+          const rectifierPrompt = await getPromptFromFile(
+            "ModelTrainingValidation/modelTrainingRectifier.md",
+            "You are an expert AI Python Debugger and Code Rectifier Advisor."
+          );
+
+          const rectifierUserMsg = [
+            `The Python model training project at '${runTimestamp}/${pythonProjectName}' failed during isolated container test execution.`,
+            `--- Execution Stdout ---`,
+            execResult.stdout || "[No stdout]",
+            `--- Execution Stderr / Traceback ---`,
+            execResult.stderr || "[No stderr]",
+            `Target Directory: ${modelTrainingDir}`,
+            `Inspect the failing files using your read-only filesystem tools. Diagnose the root cause and provide precise rectification instructions and code snippets for ModelTrainingAgent to apply.`,
+          ].join("\n\n");
+
+          const rectifierFallback: RectifierResult = {
+            status: "NeedsRectification",
+            explanation: "Execution error: " + (execResult.stderr || execResult.stdout).slice(0, 300),
+          };
+
+          let rectResult: RectifierResult = rectifierFallback;
+          try {
+            rectResult = await invokeAgentJson<RectifierResult>(
+              "modelTrainingRectifier",
+              model,
+              rectifierUserMsg,
+              rectifierFallback,
+              services,
+              {
+                systemPrompt: rectifierPrompt,
+                traceLabel: "modelTraining:rectifierAdvisor",
+                tools: readOnlyFsTools,
+                recursionLimit: 200,
+              }
+            );
+
+            if (Array.isArray(rectResult.requiredPackages)) {
+              accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...rectResult.requiredPackages]));
+            }
+          } catch (rErr: any) {
+            console.warn("[ModelTrainingAgent] Rectifier subagent invocation warning:", rErr?.message || rErr);
+          }
+
+          const feedbackReason = [
+            `Execution failed with error:`,
+            execResult.stderr || execResult.stdout || "Unknown execution failure",
+            `\n--- Rectifier Advisor Subagent Diagnosis ---`,
+            `Failing File: ${rectResult.failingFile || "See traceback above"}`,
+            `Root Cause: ${rectResult.rootCause || rectResult.explanation || "Execution error"}`,
+            `Rectification Steps:\n${rectResult.rectificationSteps || rectResult.explanation || "Please fix the failing code."}`,
+            rectResult.recommendedCodeSnippet
+              ? `Recommended Code Snippet:\n\`\`\`python\n${rectResult.recommendedCodeSnippet}\n\`\`\``
+              : "",
+          ].filter(Boolean).join("\n\n");
+
+          return {
+            isValid: false,
+            reason: feedbackReason,
+          };
+        },
+        false
       );
     } catch (codeErr: any) {
-      console.warn("[ModelTrainingAgent] Code generation invoke warning:", codeErr?.message || codeErr);
+      await cleanupRunContainer(projectId, runTimestamp);
+      console.warn("[ModelTrainingAgent] Code generation/validation warning:", codeErr?.message || codeErr);
+      const errorMessage = codeErr instanceof Error ? codeErr.message : String(codeErr);
+      return {
+        status: "Failed",
+        summary: `Model training code generation failed: ${errorMessage}`,
+        phase: "Model Training",
+        projectDirectory: `${runTimestamp}/${pythonProjectName}`,
+        candidates: configuredCandidateModels,
+        rankedCandidates: configuredCandidateModels,
+        filesCreated: [],
+        splitEndDate: effectiveSplitEndDate,
+        executionLogs: `--- STDOUT ---\n${lastExecResult.stdout}\n\n--- STDERR ---\n${lastExecResult.stderr || errorMessage}`,
+      };
     }
+
+    await cleanupRunContainer(projectId, runTimestamp);
+
+    const finalSummary = `Model training code generation and container validation completed successfully without errors in '${pythonProjectName}'. All candidate models verified.`;
 
     await logMilestoneThinking(
       services,
       "Model Training",
-      `Python model training project generated. Pausing for user to select candidate models to execute in Docker.`
+      finalSummary
     );
 
     return {
       status: "Completed",
-      summary: `Python model training program created in '${pythonProjectName}'. Please select the candidate models to train and execute in Docker.`,
+      summary: finalSummary,
       phase: "Model Training",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
       candidates: configuredCandidateModels,
       rankedCandidates: configuredCandidateModels,
       filesCreated: codingResult.files || [],
       splitEndDate: effectiveSplitEndDate,
+      executionLogs: `--- STDOUT ---\n${lastExecResult.stdout}\n\n--- STDERR ---\n${lastExecResult.stderr}`,
     };
   }
 
@@ -329,26 +630,42 @@ export class ModelTrainingAgent {
     options?: { maxRetries?: number }
   ): Promise<ModelTrainingAgentOutput> {
     const startTime = Date.now();
-    const ctx = this.getProjectContext(state, services);
-    const { projectId, workspaceName, projectName, runTimestamp, runDir, pythonProjectName, modelTrainingDir, contractPath, contractData } = ctx;
+    const ctx = await this.getProjectContext(state, services);
+    const {
+      projectId,
+      workspaceName,
+      projectName,
+      runTimestamp,
+      runDir,
+      pythonProjectName,
+      modelTrainingDir,
+      contractPath,
+      contractData,
+      trainingConfiguration,
+    } = ctx;
 
     const configuredCandidateModels = this.getCandidateModels(contractData, state);
 
-    const effectiveSelectedModels: string[] = (
-      Array.isArray(state.selectedModels) && state.selectedModels.length > 0
-        ? state.selectedModels
-        : Array.isArray((state.stageOutputs as any)?.modelTraining?.selectedModels) && (state.stageOutputs as any).modelTraining.selectedModels.length > 0
-        ? (state.stageOutputs as any).modelTraining.selectedModels
-        : []
-    );
+    const effectiveSelectedModels = Array.isArray(state.selectedModels)
+      ? Array.from(new Set(state.selectedModels.map((modelId) => modelId.trim()).filter(Boolean)))
+      : [];
 
     if (effectiveSelectedModels.length === 0) {
       throw new Error(
         "[ModelTrainingAgent] No candidate models selected for training. Selected models are required to execute container training."
       );
     }
+    const enabledModelIds = new Set(configuredCandidateModels.map((model) => model.model_id.toLowerCase()));
+    const unconfiguredModels = effectiveSelectedModels.filter(
+      (modelId) => !enabledModelIds.has(modelId.toLowerCase())
+    );
+    if (unconfiguredModels.length > 0) {
+      throw new Error(
+        `[ModelTrainingAgent] Selected models are not enabled in the training configuration: ${unconfiguredModels.join(", ")}.`
+      );
+    }
 
-    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTrainingExecNode?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || "";
+    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTrainingCodeNode?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || "";
 
     const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlightNode || (state.stageOutputs as any)?.preFlight || {}) as any;
     const sys = preFlightReport.system || {};
@@ -417,7 +734,7 @@ export class ModelTrainingAgent {
 
     const agentTools = [
       ...fsTools,
-      createReadTrainingContractTool(state.trainingConfiguration || {}, projectId, runTimestamp, services),
+      createReadTrainingContractTool(trainingConfiguration, projectId, runTimestamp, services),
       createGetPreFlightDetailsTool(preFlightReport),
       createValidateProjectStructureTool(modelTrainingDir),
       webSearchTool,
@@ -429,7 +746,9 @@ export class ModelTrainingAgent {
       "You are an expert AI Machine Learning Software Engineering and Coding Agent."
     );
 
-    const codingResult = await validateWithRetry<CodingAgentResult>(
+    let codingResult: CodingAgentResult;
+    try {
+      codingResult = await validateWithRetry<CodingAgentResult>(
       "modelTraining",
       async (feedbackPrompt?: string) => {
         const userPrompt = feedbackPrompt
@@ -493,6 +812,7 @@ export class ModelTrainingAgent {
               todoList: true,
               toolRetry: { maxRetries: 2 },
             },
+            throwOnError: true,
           }
         );
       },
@@ -623,8 +943,23 @@ export class ModelTrainingAgent {
           isValid: false,
           reason: feedbackReason,
         };
-      }
-    );
+      },
+        false
+      );
+    } catch (error) {
+      await cleanupRunContainer(projectId, runTimestamp);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        status: "Failed",
+        summary: `Model training execution could not complete its agent call: ${errorMessage}`,
+        phase: "Model Training",
+        projectDirectory: `${runTimestamp}/${pythonProjectName}`,
+        candidates: configuredCandidateModels,
+        rankedCandidates: configuredCandidateModels,
+        executedModels: [],
+        executionLogs: errorMessage,
+      };
+    }
 
     await cleanupRunContainer(projectId, runTimestamp);
 
@@ -756,8 +1091,14 @@ export class ModelTrainingAgent {
       return res;
     };
 
-    const runs: CandidateModelRun[] = rawRuns.map((r: any, idx: number) => {
-      const modelId = String(r.model_id || r.id || r.name || r.model_name || `model_${idx + 1}`);
+    const runs: CandidateModelRun[] = rawRuns.map((r: any) => {
+      const modelId = String(r.model_id || r.id || r.name || r.model_name || "").trim();
+      if (!modelId) {
+        throw new Error("[ModelTrainingAgent] Model execution report contains a result without a model identifier.");
+      }
+      if (!enabledModelIds.has(modelId.toLowerCase()) || !effectiveSelectedModels.some((id) => id.toLowerCase() === modelId.toLowerCase())) {
+        throw new Error(`[ModelTrainingAgent] Model execution report contains unselected model '${modelId}'.`);
+      }
       const configuredModel = configuredCandidateModels.find(
         (c) => c.model_id?.toLowerCase() === modelId.toLowerCase()
       );
@@ -770,9 +1111,7 @@ export class ModelTrainingAgent {
       const status: "Completed" | "Failed" =
         normStatus === "completed" || normStatus === "success"
           ? "Completed"
-          : r.error || normStatus === "failed"
-          ? "Failed"
-          : "Completed";
+          : "Failed";
 
       const validationMetrics =
         r.validationMetrics ||
@@ -854,7 +1193,7 @@ export class ModelTrainingAgent {
         r.time_taken ??
         (r.duration_ms ? r.duration_ms / 1000 : undefined);
 
-      const artifact = r.model_artifact || r.artifact || r.model_path || r.artifact_path || `artifacts/models/${modelId}.joblib`;
+      const artifact = r.model_artifact || r.artifact || r.model_path || r.artifact_path;
       const plots = normalizePlotMap(r.plots || r.comparison_plots || r.plot_paths || {});
 
       return {
@@ -915,7 +1254,13 @@ export class ModelTrainingAgent {
       );
     }
 
-    const championRun = runs.find((r) => r.model_id?.toLowerCase() === selectedModel.toLowerCase()) || rankedCandidates[0];
+    if (!enabledModelIds.has(selectedModel.toLowerCase())) {
+      throw new Error(`[ModelTrainingAgent] Champion model '${selectedModel}' was not enabled in the training configuration.`);
+    }
+    const championRun = runs.find((r) => r.model_id?.toLowerCase() === selectedModel.toLowerCase());
+    if (!championRun) {
+      throw new Error(`[ModelTrainingAgent] Champion model '${selectedModel}' is missing from the model execution results.`);
+    }
 
     const selectedModelArtifact =
       report.best_model?.model_path ||
@@ -925,9 +1270,7 @@ export class ModelTrainingAgent {
       report.selectedModelArtifact ||
       report.champion_artifact ||
       report.artifacts?.selected_model ||
-      championRun?.artifact ||
-      (rankedCandidates[0]?.artifact) ||
-      `artifacts/models/${selectedModel}.joblib`;
+      championRun.artifact;
 
     const validationMetrics =
       report.validationMetrics ||
@@ -973,10 +1316,12 @@ export class ModelTrainingAgent {
       summary: finalSummary,
       phase: "Model Training",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
-      report,
+      report: { ...report, model_results: runs },
+      executionCompleted: finalStatus === "Completed",
       direction: report.metric_direction || report.direction || reportDirection,
       candidates: runs,
       rankedCandidates,
+      executedModels: runs,
       selectedModel,
       selectedModelArtifact,
       validationMetrics,
@@ -992,17 +1337,6 @@ export class ModelTrainingAgent {
     state: GraphAgentStateType,
     services: IngestionServices
   ): Promise<ModelTrainingAgentOutput> {
-    const hasProjectDir = Boolean(
-      (state.stageOutputs as any)?.modelTrainingCodeNode?.projectDirectory ||
-      (state.stageOutputs as any)?.modelTrainingExecNode?.projectDirectory ||
-      (state.stageOutputs as any)?.modelTrainingCode?.projectDirectory ||
-      (state.stageOutputs as any)?.modelTraining?.projectDirectory
-    );
-    const hasSelectedModelsToRun = Array.isArray(state.selectedModels) && state.selectedModels.length > 0;
-
-    if (hasProjectDir && hasSelectedModelsToRun) {
-      return await this.executeContainerTraining(state, services);
-    }
     return await this.generateProjectCode(state, services);
   }
 }

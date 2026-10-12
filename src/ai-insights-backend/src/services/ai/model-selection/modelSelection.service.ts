@@ -263,8 +263,6 @@ export class ModelSelectionService implements IModelSelectionService {
         delete cleanStageOutputs.preFlight;
         delete cleanStageOutputs.modelTrainingCodeNode;
         delete cleanStageOutputs.modelTrainingCode;
-        delete cleanStageOutputs.modelTrainingExecNode;
-        delete cleanStageOutputs.modelTrainingExec;
         delete cleanStageOutputs.modelTraining;
         delete cleanStageOutputs.modelValidation;
 
@@ -277,10 +275,7 @@ export class ModelSelectionService implements IModelSelectionService {
         cleanStageStatuses.preFlight = "Pending";
         cleanStageStatuses.modelTrainingCodeNode = "Pending";
         cleanStageStatuses.modelTrainingCode = "Pending";
-        cleanStageStatuses.modelTrainingExecNode = "Pending";
-        cleanStageStatuses.modelTrainingExec = "Pending";
         cleanStageStatuses.modelTraining = "Pending";
-        cleanStageStatuses.modelEvaluation = "Pending";
         cleanStageStatuses.modelValidation = "Pending";
 
         const updatedModelSelection = {
@@ -393,8 +388,6 @@ export class ModelSelectionService implements IModelSelectionService {
     delete cleanStageOutputs.preFlight;
     delete cleanStageOutputs.modelTrainingCodeNode;
     delete cleanStageOutputs.modelTrainingCode;
-    delete cleanStageOutputs.modelTrainingExecNode;
-    delete cleanStageOutputs.modelTrainingExec;
     delete cleanStageOutputs.modelTraining;
     delete cleanStageOutputs.modelValidation;
 
@@ -407,10 +400,7 @@ export class ModelSelectionService implements IModelSelectionService {
     cleanStageStatuses.preFlight = "Pending";
     cleanStageStatuses.modelTrainingCodeNode = "Pending";
     cleanStageStatuses.modelTrainingCode = "Pending";
-    cleanStageStatuses.modelTrainingExecNode = "Pending";
-    cleanStageStatuses.modelTrainingExec = "Pending";
     cleanStageStatuses.modelTraining = "Pending";
-    cleanStageStatuses.modelEvaluation = "Pending";
     cleanStageStatuses.modelValidation = "Pending";
 
     const updatedState = {

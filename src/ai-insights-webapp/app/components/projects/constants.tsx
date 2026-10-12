@@ -153,8 +153,7 @@ export const PIPELINE_STEPS: Workflow[] = [
       { id: "modelSelectionNode", title: "Model Selection", description: "Initialize model selection and select candidates", metric: "Select", color: "purple", icon: <span>01</span> },
       { id: "trainingConfigurationNode", title: "Training Configuration", description: "Configure training environment and dataset splits", metric: "Configure", color: "pink", icon: <span>02</span> },
       { id: "preFlightNode", title: "Pre Flight", description: "Validate runtime resources, environment and strategy pre-flight", metric: "Validate", color: "pink", icon: <span>03</span> },
-      { id: "modelTrainingCodeNode", title: "Model Training Code Generation", description: "Generate model training code from the approved configuration", metric: "Generate Code", color: "pink", icon: <span>04</span> },
-      { id: "modelTrainingExecNode", title: "Model Training Execution", description: "Execute training for the selected candidate models", metric: "Train", color: "pink", icon: <span>05</span> },
+      { id: "modelTrainingCodeNode", title: "Model Training Code Generation", description: "Generate model training code and verify execution in Docker", metric: "Generate Code", color: "pink", icon: <span>04</span> },
     ],
   },
 ];

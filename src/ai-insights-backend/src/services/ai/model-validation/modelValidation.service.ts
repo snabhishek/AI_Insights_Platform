@@ -126,8 +126,8 @@ export class ModelValidationService implements IModelValidationService {
         modelValidation: output,
         stageOutputs: {
           ...existingStageOutputs,
-          modelTrainingExecNode: {
-            ...(existingStageOutputs?.modelTrainingExecNode || {}),
+          modelTrainingCodeNode: {
+            ...(existingStageOutputs?.modelTrainingCodeNode || {}),
             modelValidation: output,
           },
           modelValidation: output,
@@ -154,7 +154,7 @@ export class ModelValidationService implements IModelValidationService {
     const project = await this.projectService.getById(projectId.trim());
     if (project?.agentState) {
       const state = project.agentState as any;
-      const modelValidation = state.stageOutputs?.modelTrainingExecNode?.modelValidation;
+      const modelValidation = state.stageOutputs?.modelTrainingCodeNode?.modelValidation;
       if (state.modelValidation || modelValidation) {
         return state.modelValidation || modelValidation;
       }
@@ -174,7 +174,7 @@ export class ModelValidationService implements IModelValidationService {
     }
 
     const state = (project.agentState as any) || {};
-    const trainingReport = state.modelTraining?.report || state.stageOutputs?.modelTrainingExecNode?.report;
+    const trainingReport = state.modelTraining?.report || state.stageOutputs?.modelTrainingCodeNode?.report;
     const candidates =
       trainingReport?.ranked_models ||
       trainingReport?.model_results ||

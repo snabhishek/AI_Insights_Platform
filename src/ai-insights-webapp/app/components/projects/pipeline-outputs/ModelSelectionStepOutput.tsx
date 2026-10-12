@@ -33,12 +33,14 @@ interface ModelCandidate {
 interface ModelSelectionProps {
   modelSelection: any;
   projectId?: string;
+  nextStepInProgress?: boolean;
   onSelectionConfirmed?: (selectedModels: string[]) => void;
 }
 
 export default function ModelSelectionStepOutput({
   modelSelection,
   projectId,
+  nextStepInProgress = false,
   onSelectionConfirmed,
 }: ModelSelectionProps) {
   const payload = modelSelection?.decision || modelSelection?.modelSelection || modelSelection || {};
@@ -361,6 +363,7 @@ export default function ModelSelectionStepOutput({
                   type="checkbox"
                   checked={selectedModelIds.includes(primaryCandidate.model_id)}
                   onChange={() => toggleModelSelection(primaryCandidate.model_id)}
+                  disabled={nextStepInProgress}
                   className="w-4 h-4 rounded text-primary focus:ring-primary/20 accent-primary"
                 />
                 <span className="text-xs font-bold text-foreground">Include in Training</span>
@@ -446,6 +449,7 @@ export default function ModelSelectionStepOutput({
                     <div className="mt-3 pt-2.5 border-t border-border/60">
                       <button
                         type="button"
+                        disabled={nextStepInProgress}
                         onClick={() => toggleCandidateExpanded(candidate.model_id)}
                         className="text-[11px] font-semibold text-primary hover:underline flex items-center gap-1 cursor-pointer"
                       >
@@ -489,6 +493,7 @@ export default function ModelSelectionStepOutput({
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleModelSelection(candidate.model_id)}
+                        disabled={nextStepInProgress}
                         className="w-3.5 h-3.5 rounded text-primary focus:ring-primary/20 accent-primary"
                       />
                       <span className={isSelected ? "text-primary font-bold" : "text-muted-foreground"}>
@@ -597,7 +602,7 @@ export default function ModelSelectionStepOutput({
 
           <button
             type="button"
-            disabled={selectedModelIds.length === 0 || isSubmitting}
+            disabled={selectedModelIds.length === 0 || isSubmitting || nextStepInProgress}
             onClick={handleConfirmSelection}
             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >

@@ -57,6 +57,29 @@ export class TrainingConfigController {
     }
   };
 
+  syncSplitDate = async (req: Request, res: Response): Promise<void> => {
+    try {
+      const projectId = String(req.params.projectId || "");
+      const { splitDate, timestamp } = req.body || {};
+      if (!projectId) {
+        res.status(400).json({ success: false, message: "projectId parameter is required" });
+        return;
+      }
+      if (typeof splitDate !== "string" || !splitDate.trim()) {
+        res.status(400).json({ success: false, message: "splitDate string is required in request body" });
+        return;
+      }
+      const result = await this.service.syncSplitDate(projectId, splitDate, timestamp);
+      res.status(200).json({ success: true, data: result });
+    } catch (error: any) {
+      console.error("[TrainingConfigController] syncSplitDate error:", error);
+      res.status(400).json({
+        success: false,
+        message: error?.message || "Failed to synchronize training split date",
+      });
+    }
+  };
+
   getDateRange = async (req: Request, res: Response): Promise<void> => {
     try {
       const projectId = String(req.params.projectId || "");

@@ -75,6 +75,7 @@ The generated Python project MUST adhere strictly to the following modular archi
 - Installs necessary system libraries (e.g. `build-essential`, `libgomp1` for LightGBM/XGBoost C++ bindings).
 - Copies `requirements.txt` and installs dependencies via `pip install --no-cache-dir -r requirements.txt`.
 - Sets `WORKDIR /workspace`.
+- Copies all project code files into the container image: `COPY . /workspace`.
 
 Example `Dockerfile`:
 ```dockerfile
@@ -86,13 +87,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 COPY requirements.txt /tmp/requirements.txt
 RUN pip install --no-cache-dir --disable-pip-version-check -r /tmp/requirements.txt
+COPY . /workspace
 ```
 
 ### 3. `docker-compose.yml`
 - Defines the service name `model-training`.
 - Sets the build context to `.` and uses `Dockerfile`.
 - Uses `network: host` under `build:` and `network_mode: host` to guarantee external internet and DNS connectivity during container builds and runs.
-- Mounts the host workspace directory to `/workspace` using `"${HOST_PROJECT_ROOT:-../../}:/workspace"`.
+- **CONTAINER SANDBOXING & VOLUME MOUNTING MANDATE**:
+  - To test that the program is completely error-free without contaminating host project artifacts, DO NOT mount the project directory.
+  - Mount ONLY the `python_script` folder from the project directory (which contains `dataset.parquet`) as read-only:
+    - `"${HOST_PYTHON_SCRIPT_DIR}:/workspace/python_script:ro"`
+    - `"${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro"`
+  - All test execution runs exclusively inside the container's ephemeral writable layer. No data or run artifacts should be stored in any Docker volume or host project folder.
 - Sets working directory to `/workspace`.
 - Configures environment variables (`PYTHONPATH=/workspace`).
 - **PreFlight Hardware Limits**: Configures runtime resource limits based on the host machine PreFlight assessment (available via `get_preflight_details` tool or prompt context). Set `cpus` and `memory` limits conservatively (e.g. up to 75% of host logical cores, 80% of host RAM). If GPU is enabled in PreFlight, configure GPU reservations.
@@ -107,7 +114,8 @@ services:
       network: host
     network_mode: host
     volumes:
-      - "${HOST_PROJECT_ROOT:-../../}:/workspace"
+      - "${HOST_PYTHON_SCRIPT_DIR}:/workspace/python_script:ro"
+      - "${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro"
     working_dir: /workspace
     environment:
       - PYTHONPATH=/workspace
@@ -123,7 +131,7 @@ services:
 ## COMPONENT SPECIFICATIONS
 
 ### 1. `data/data_loader.py`
-- **Primary Dataset Path**: ALWAYS use `dataset.parquet` as the primary dataset path (e.g. `/workspace/<runTimestamp>/dataset.parquet` or `/workspace/dataset.parquet`).
+- **Primary Dataset Path**: ALWAYS check multiple paths to locate `dataset.parquet`: `python_script/dataset.parquet`, `/workspace/python_script/dataset.parquet`, `/workspace/<runTimestamp>/python_script/dataset.parquet`, `dataset.parquet`, or `/workspace/dataset.parquet`.
 - **Feature & Target Extraction**: The training configuration specifies the list of validated features (`features` / `features_list`) and the target column (`target_column` / `prediction_target_column`). The data loader MUST load `dataset.parquet`, extract all specified feature columns plus the target column (and date/timestamp column if temporal splitting), construct the modeling DataFrame containing these columns, and use that DataFrame for training and testing.
 - Supports both Parquet (via `duckdb` or `pandas` / `pyarrow`) and CSV fallback.
 - Validates that the target column exists. Drops rows where the target column is null.

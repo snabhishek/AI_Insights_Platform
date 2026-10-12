@@ -1282,74 +1282,26 @@ export async function syncTrainingConfigSplitDate(
     },
   };
 
-  let savedContractPath: string | undefined;
-  try {
-    const targetDir = getProjectSchemasDir(workspaceName, projectName, effectiveTs);
-    await fs.mkdir(targetDir, { recursive: true });
-
-    const cleanProjectTitle = sanitizeName(projectName);
-    const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-    const contractFileName = `${useCaseSlug}_training_job_contract_${effectiveTs}.yaml`;
-    let contractPath = updatedTC.contractPath || path.resolve(targetDir, contractFileName);
-
-    let contractData: any = null;
-    let fileToRead = contractPath;
-    if (!fsSync.existsSync(fileToRead)) {
-      const defaultPath = path.resolve(targetDir, contractFileName);
-      if (fsSync.existsSync(defaultPath)) {
-        fileToRead = defaultPath;
-      } else {
-        try {
-          if (fsSync.existsSync(targetDir)) {
-            const files = await fs.readdir(targetDir);
-            const match = files.find((f) => f.includes("_training_job_contract_") && (f.endsWith(".yaml") || f.endsWith(".yml")));
-            if (match) {
-              fileToRead = path.resolve(targetDir, match);
-            }
-          }
-        } catch {}
-      }
-    }
-
-    if (fsSync.existsSync(fileToRead)) {
-      try {
-        const rawContent = await fs.readFile(fileToRead, "utf-8");
-        contractData = (yaml.load(rawContent) as Record<string, any>) || {};
-      } catch (e) {
-        console.warn(`[syncTrainingConfigSplitDate] Could not read existing contract at ${fileToRead}:`, e);
-      }
-    }
-
-    if (!contractData) {
-      contractData = updatedTC.configuration || {};
-    }
-
-    if (!contractData.split) {
-      contractData.split = {};
-    }
-    contractData.split.split_date = splitVal;
-    if (contractData.split.temporal) {
-      contractData.split.temporal.train_end = splitVal;
-    }
-    contractData.splitDate = splitVal;
-    contractData.splitEndDate = splitVal;
-
-    const saveRes = await saveModularTrainingJobContract(
-      workspaceName,
-      projectName,
-      contractData,
-      effectiveTs
-    );
-    savedContractPath = saveRes.contractPath;
-
-    targetState.trainingConfiguration.contractPath = savedContractPath;
-    targetState.trainingConfiguration.contractFileName = path.basename(savedContractPath);
-    targetState.stageOutputs.trainingConfigurationNode.contractPath = savedContractPath;
-    targetState.stageOutputs.trainingConfigurationNode.contractFileName = path.basename(savedContractPath);
-    console.info(`[syncTrainingConfigSplitDate] Synchronized split_date ("${splitVal}") in contract file: ${savedContractPath}`);
-  } catch (contractErr: any) {
-    console.warn(`[syncTrainingConfigSplitDate] Warning saving contract YAML with split date:`, contractErr?.message || contractErr);
+  const savedContractPath = updatedTC.contractPath;
+  if (!savedContractPath || !fsSync.existsSync(savedContractPath)) {
+    throw new Error("Cannot synchronize split date: the active training configuration contract file is unavailable.");
   }
+  const rawContract = await fs.readFile(savedContractPath, "utf-8");
+  const contractData = (yaml.load(rawContract) as Record<string, any>) || {};
+  if (!contractData.split) contractData.split = {};
+  contractData.split.split_date = splitVal;
+  if (contractData.split.temporal) {
+    contractData.split.temporal.train_end = splitVal;
+  }
+  contractData.splitDate = splitVal;
+  contractData.splitEndDate = splitVal;
+  await fs.writeFile(savedContractPath, yaml.dump(contractData, { noRefs: true }), "utf-8");
+
+  targetState.trainingConfiguration.contractPath = savedContractPath;
+  targetState.trainingConfiguration.contractFileName = path.basename(savedContractPath);
+  targetState.stageOutputs.trainingConfigurationNode.contractPath = savedContractPath;
+  targetState.stageOutputs.trainingConfigurationNode.contractFileName = path.basename(savedContractPath);
+  console.info(`[syncTrainingConfigSplitDate] Synchronized split_date ("${splitVal}") in contract file: ${savedContractPath}`);
 
   try {
     const runDir = getProjectRunDir(workspaceName, projectName, effectiveTs);
@@ -1375,7 +1327,8 @@ export async function syncTrainingConfigSplitDate(
       }
     }
   } catch (pyErr) {
-    console.warn(`[syncTrainingConfigSplitDate] Warning updating python training config:`, pyErr);
+    console.error("[syncTrainingConfigSplitDate] Failed to synchronize the generated training configuration:", pyErr);
+    throw pyErr;
   }
 
   return { updatedState: targetState, contractPath: savedContractPath };

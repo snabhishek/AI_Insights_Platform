@@ -19,6 +19,11 @@ export interface ExecutionResult {
   logFilePath?: string;
 }
 
+export interface PythonExecutionOptions {
+  mountMode?: "project" | "python_script_only";
+  serviceName?: string;
+}
+
 export function generateLogTimestamp(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -277,6 +282,7 @@ export function ensureDockerfile(targetDir: string): string {
     "    && rm -rf /var/lib/apt/lists/*",
     "COPY requirements.txt /tmp/requirements.txt",
     "RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=120 --retries 3 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r /tmp/requirements.txt",
+    "COPY . /workspace",
     "",
   ].join("\n");
 
@@ -284,11 +290,12 @@ export function ensureDockerfile(targetDir: string): string {
     fs.mkdirSync(targetDir, { recursive: true });
     fs.writeFileSync(dockerfilePath, dockerfileContent, "utf-8");
   } else {
-
     try {
       const existing = fs.readFileSync(dockerfilePath, "utf-8");
       if (!existing.includes("python3-dev") || !existing.includes("libgomp1")) {
         fs.writeFileSync(dockerfilePath, dockerfileContent, "utf-8");
+      } else if (!existing.includes("COPY . /workspace") && !existing.includes("COPY . .")) {
+        fs.appendFileSync(dockerfilePath, "\nCOPY . /workspace\n", "utf-8");
       }
     } catch {}
   }
@@ -298,13 +305,19 @@ export function ensureDockerfile(targetDir: string): string {
 export function ensureDockerCompose(
   targetDir: string,
   serviceName: string = "app",
-  resourceLimits?: { cpus?: string; memory?: string; hasGpu?: boolean }
+  resourceLimits?: { cpus?: string; memory?: string; hasGpu?: boolean },
+  options?: PythonExecutionOptions
 ): string {
-  const composeYml = path.join(targetDir, "docker-compose.yml");
+  const isPythonScriptOnly = options?.mountMode === "python_script_only";
+  const composeYml = isPythonScriptOnly
+    ? path.join(targetDir, "docker-compose.test.yml")
+    : path.join(targetDir, "docker-compose.yml");
   const composeYaml = path.join(targetDir, "docker-compose.yaml");
 
-  if (fs.existsSync(composeYml)) return composeYml;
-  if (fs.existsSync(composeYaml)) return composeYaml;
+  if (!isPythonScriptOnly) {
+    if (fs.existsSync(composeYml)) return composeYml;
+    if (fs.existsSync(composeYaml)) return composeYaml;
+  }
 
   const cpus = resourceLimits?.cpus || "2.0";
   const memory = resourceLimits?.memory || "4G";
@@ -318,6 +331,15 @@ export function ensureDockerCompose(
       ].join("\n")
     : "";
 
+  const volumeMounts = isPythonScriptOnly
+    ? [
+        "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/python_script:ro\"",
+        "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro\"",
+      ]
+    : [
+        "      - \"${HOST_PROJECT_ROOT:-.}:/workspace\"",
+      ];
+
   const content = [
     "services:",
     `  ${serviceName}:`,
@@ -327,7 +349,7 @@ export function ensureDockerCompose(
     "      network: host",
     "    network_mode: host",
     "    volumes:",
-    "      - \"${HOST_PROJECT_ROOT:-.}:/workspace\"",
+    ...volumeMounts,
     "    working_dir: /workspace",
     "    environment:",
     "      - PYTHONPATH=/workspace",
@@ -384,7 +406,8 @@ export async function executePythonScript(
   connectorIdList?: string[],
   requiredPackages?: string[],
   extraArgs: string[] = [],
-  resourceLimits?: { cpus?: string; memory?: string; hasGpu?: boolean }
+  resourceLimits?: { cpus?: string; memory?: string; hasGpu?: boolean },
+  options?: PythonExecutionOptions
 ): Promise<ExecutionResult> {
   let workspaceName = "Default_Workspace";
   let projectName = projectId || "default";
@@ -503,20 +526,26 @@ export async function executePythonScript(
   const execDir = resolveExecutionDirectory(scriptPath, projectRootDir, effectiveTimestamp);
   ensureDirectoryExists(execDir);
 
+  const isPythonScriptOnly = options?.mountMode === "python_script_only";
+  const pythonScriptDir = getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
+  const normPythonScriptDir = path.resolve(pythonScriptDir).replace(/\\/g, "/");
+
   ensureRequirementsTxt(execDir, requiredPackages);
   ensureDockerfile(execDir);
-  const composeFile = ensureDockerCompose(execDir, "app", resourceLimits);
+  const composeFile = ensureDockerCompose(execDir, options?.serviceName || "app", resourceLimits, options);
   const composeFileName = path.basename(composeFile);
 
   const sessionKey = `${projectId || "default"}__${effectiveTimestamp}`;
   activeComposeSessions.set(sessionKey, { composeDir: execDir, composeFile });
 
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     HOST_PROJECT_ROOT: normProjectDir,
+    HOST_PYTHON_SCRIPT_DIR: normPythonScriptDir,
+    RUN_TIMESTAMP: effectiveTimestamp,
     PYTHONPATH: "/workspace",
   };
 
-  console.info(`[DockerExecutor] Building and running via Docker Compose in [${execDir}] for script [${relFromProjectRoot}]`);
+  console.info(`[DockerExecutor] Building and running via Docker Compose in [${execDir}] for script [${relFromProjectRoot}] (mountMode: ${options?.mountMode || "project"})`);
 
   const dockerLogsDir = path.join(execDir, "docker_logs");
   ensureDirectoryExists(dockerLogsDir);
@@ -531,14 +560,25 @@ export async function executePythonScript(
     duplicateIndex++;
   }
 
+  const scriptInContainer = isPythonScriptOnly
+    ? path.relative(execDir, scriptPath).replace(/\\/g, "/") || "main.py"
+    : relFromProjectRoot;
+
+  const effectiveArgs = isPythonScriptOnly
+    ? args.map((arg) => (arg.startsWith("--out-dir") ? '--out-dir "/workspace"' : arg))
+    : args;
+
   const initLogHeader = [
     "=".repeat(80),
     `DOCKER CONTAINER EXECUTION LOG`,
     `Execution Start Time: ${new Date().toISOString()}`,
     `Execution Directory: ${execDir}`,
     `Script Relative Path: ${relFromProjectRoot}`,
+    `Script In Container: ${scriptInContainer}`,
+    `Mount Mode: ${options?.mountMode || "project"}`,
     `Host Project Root: ${normProjectDir}`,
-    `Arguments: ${args.join(" ")}`,
+    `Host Python Script Dir: ${normPythonScriptDir}`,
+    `Arguments: ${effectiveArgs.join(" ")}`,
     "=".repeat(80),
     "",
   ].join("\n");
@@ -603,7 +643,7 @@ export async function executePythonScript(
     "utf-8"
   );
 
-  let serviceName = "app";
+  let serviceName = options?.serviceName || "app";
   try {
     const composeContent = fs.readFileSync(composeFile, "utf-8");
     const serviceMatch = composeContent.match(/services:\s*\n\s*([a-zA-Z0-9_-]+):/);
@@ -612,7 +652,7 @@ export async function executePythonScript(
     }
   } catch {}
 
-  const runCmd = `docker compose -f "${composeFileName}" run --rm ${serviceName} python "${relFromProjectRoot}" ${args.join(" ")}`;
+  const runCmd = `docker compose -f "${composeFileName}" run --rm ${serviceName} python "${scriptInContainer}" ${effectiveArgs.join(" ")}`;
   fs.appendFileSync(
     logFilePath,
     [

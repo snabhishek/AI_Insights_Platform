@@ -1,0 +1,97 @@
+.ss {
+  position: relative;
+  overflow: hidden;
+  border-radius: 16px;
+  border: 1px solid var(--app-border, var(--line, #cdd8e8));
+  background: var(--app-surface, var(--surface, #fbfdff));
+}
+
+.ss svg {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+.ss-label {
+  position: absolute;
+  top: 7px;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--c);
+}
+
+.ss-label-end {
+  text-align: right;
+}
+
+.ss-dot {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  text-align: center;
+  border: 2px solid var(--c);
+  background: var(--app-surface, var(--surface, #fbfdff));
+  color: var(--c);
+  transition: background 0.25s, color 0.25s;
+}
+
+.ss-dot[data-status="pending"] {
+  opacity: 0.65;
+}
+
+.ss-dot[data-status="done"] {
+  background: var(--c);
+  color: #fff;
+}
+
+.ss-dot[data-status="running"] {
+  animation: ss-pulse 1.1s infinite;
+}
+
+.ss-dot.is-selected {
+  animation: none;
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--c) 28%, transparent);
+}
+
+.ss-dot:focus-visible {
+  outline: 2px solid var(--blue, #2563d9);
+  outline-offset: 2px;
+}
+
+@keyframes ss-pulse {
+  0% {
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--c) 50%, transparent);
+  }
+  100% {
+    box-shadow: 0 0 0 9px transparent;
+  }
+}
+
+@media (max-width: 860px) {
+  .ss-dot {
+    width: 21px;
+    height: 21px;
+    font-size: 9px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ss-dot {
+    animation: none !important;
+    transition: none !important;
+  }
+}

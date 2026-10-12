@@ -68,7 +68,8 @@ export async function validateWithRetry<T extends Record<string, unknown>>(
   services?: IngestionServices,
   maxRetries = 1,
   validatorPrompt?: string,
-  customValidator?: (output: T) => CustomValidatorResult | Promise<CustomValidatorResult>
+  customValidator?: (output: T) => CustomValidatorResult | Promise<CustomValidatorResult>,
+  retryOnError = true
 ): Promise<T> {
   let attempt = 0;
   let lastFeedback: string | undefined = undefined;
@@ -148,6 +149,9 @@ Do not return any other text.`;
         return result;
       }
     } catch (err) {
+      if (!retryOnError) {
+        throw err;
+      }
       lastFeedback = `Execution failed with error: ${String(err)}`;
       if (services) {
         await logMilestoneThinking(

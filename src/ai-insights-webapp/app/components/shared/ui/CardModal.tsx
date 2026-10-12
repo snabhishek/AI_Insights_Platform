@@ -27,44 +27,6 @@ interface CardModalProps {
   onSubstepChange?: (substepId: string) => void;
 }
 
-const CIRCLE_COLOR_MAP: Record<string, { border: string; bg: string; text: string }> = {
-  green: {
-    border: "border-emerald-500 dark:border-emerald-400",
-    bg: "bg-emerald-500 dark:bg-emerald-600",
-    text: "text-emerald-500 dark:text-emerald-400",
-  },
-  blue: {
-    border: "border-blue-500 dark:border-blue-400",
-    bg: "bg-blue-500 dark:bg-blue-600",
-    text: "text-blue-500 dark:text-blue-400",
-  },
-  purple: {
-    border: "border-purple-500 dark:border-purple-400",
-    bg: "bg-purple-500 dark:bg-purple-600",
-    text: "text-purple-500 dark:text-purple-400",
-  },
-  yellow: {
-    border: "border-amber-500 dark:border-amber-400",
-    bg: "bg-amber-500 dark:bg-amber-600",
-    text: "text-amber-500 dark:text-amber-400",
-  },
-  red: {
-    border: "border-rose-500 dark:border-rose-400",
-    bg: "bg-rose-500 dark:bg-rose-600",
-    text: "text-rose-500 dark:text-rose-400",
-  },
-  pink: {
-    border: "border-pink-500 dark:border-pink-400",
-    bg: "bg-pink-500 dark:bg-pink-600",
-    text: "text-pink-500 dark:text-pink-400",
-  },
-  teal: {
-    border: "border-teal-500 dark:border-teal-400",
-    bg: "bg-teal-500 dark:bg-teal-600",
-    text: "text-teal-500 dark:text-teal-400",
-  },
-};
-
 export default function CardModal(props: CardModalProps) {
   if (!props.isOpen) return null;
 
@@ -91,7 +53,6 @@ function CardModalContent({
   onSubstepChange,
 }: CardModalProps) {
   const [mounted, setMounted] = useState(false);
-  const [activeStepIndex, setActiveStepIndex] = useState<number>(0);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
   const [logModalSubstep, setLogModalSubstep] = useState<WorkflowStep | null>(null);
 
@@ -100,8 +61,6 @@ function CardModalContent({
   }, []);
 
   const stepsList: WorkflowStep[] = workflowCard?.step || [];
-  const activeStep = stepsList[activeStepIndex] || null;
-  const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Pending") : "Pending";
   const isInProgressStatus = (status: string | undefined) =>
     status === "In-Progress";
 
@@ -124,7 +83,7 @@ function CardModalContent({
     if (stepId === "modelSelectionNode") return Boolean(stageOuts.modelSelectionNode || agentState?.modelSelectionNode);
     if (stepId === "trainingConfigurationNode") return Boolean(stageOuts.trainingConfigurationNode?.contractPath || agentState?.trainingConfigurationNode?.contractPath);
     if (stepId === "preFlightNode") return Boolean(stageOuts.preFlightNode || agentState?.preFlightNode);
-    if (stepId === "modelTrainingExecNode") return Boolean(stageOuts.modelTrainingExecNode || agentState?.modelTrainingExecNode);
+    if (stepId === "modelTrainingCodeNode") return Boolean(stageOuts.modelTrainingCodeNode || agentState?.modelTrainingCodeNode);
     return false;
   };
 
@@ -206,78 +165,49 @@ function CardModalContent({
     (isFeatureEngineeringCard && isStageAwaitingApprovalToAdvance) ||
     (isModelTrainingCard && (isWaitingForModelConfirmation || isWaitingForPreFlightApproval || isWaitingForTrainingApproval || runStatus === "Awaiting Approval" || agentState?.stageStatuses?.modelTrainingValidation?.status === "Awaiting Approval"));
 
-  useEffect(() => {
-    if (!isOpen || !workflowCard) return;
-    const steps = workflowCard.step || [];
-    if (steps.length === 0) return;
-
+  const activeStepIndex = (() => {
+    if (!isOpen || stepsList.length === 0) return 0;
     if (selectedSubstepId) {
-      const targetIdx = steps.findIndex((s) => s.id === selectedSubstepId || s.title === selectedSubstepId);
-      if (targetIdx !== -1) {
-        setActiveStepIndex(targetIdx);
-        return;
-      }
+      const selectedIndex = stepsList.findIndex(
+        (step) => step.id === selectedSubstepId || step.title === selectedSubstepId
+      );
+      if (selectedIndex !== -1) return selectedIndex;
     }
 
-    // 2. If a step is actively "In-Progress", prioritize it
-    const inProgressIdx = steps.findIndex((s) => isInProgressStatus(pipelineStatuses[s.id]) && runStatus === "In-Progress");
-    if (inProgressIdx !== -1) {
-      setActiveStepIndex(inProgressIdx);
-      return;
-    }
+    const inProgressIndex = stepsList.findIndex(
+      (step) => isInProgressStatus(pipelineStatuses[step.id]) && runStatus === "In-Progress"
+    );
+    if (inProgressIndex !== -1) return inProgressIndex;
 
     if (isWaitingForModelConfirmation) {
-      const modelSelIdx = steps.findIndex((s) => s.id === "modelSelectionNode");
-      if (modelSelIdx !== -1) {
-        setActiveStepIndex(modelSelIdx);
-        return;
-      }
+      const modelSelectionIndex = stepsList.findIndex((step) => step.id === "modelSelectionNode");
+      if (modelSelectionIndex !== -1) return modelSelectionIndex;
     }
     if (isWaitingForPreFlightApproval) {
-      const trainCfgIdx = steps.findIndex((s) => s.id === "trainingConfigurationNode");
-      if (trainCfgIdx !== -1) {
-        setActiveStepIndex(trainCfgIdx);
-        return;
-      }
+      const trainingConfigurationIndex = stepsList.findIndex(
+        (step) => step.id === "trainingConfigurationNode"
+      );
+      if (trainingConfigurationIndex !== -1) return trainingConfigurationIndex;
     }
     if (isWaitingForTrainingApproval) {
-      const preFlightIdx = steps.findIndex((s) => s.id === "preFlightNode");
-      if (preFlightIdx !== -1) {
-        setActiveStepIndex(preFlightIdx);
-        return;
-      }
+      const preFlightIndex = stepsList.findIndex((step) => step.id === "preFlightNode");
+      if (preFlightIndex !== -1) return preFlightIndex;
     }
-    if (isStageAwaitingApprovalToAdvance) {
-      setActiveStepIndex(steps.length - 1);
-      return;
+    if (isStageAwaitingApprovalToAdvance) return stepsList.length - 1;
+
+    for (let i = stepsList.length - 1; i >= 0; i--) {
+      const step = stepsList[i];
+      if (hasStepOutput(step.id) || pipelineStatuses[step.id] === "Completed") return i;
     }
 
-    let latestWithOutputIdx = -1;
-    for (let i = steps.length - 1; i >= 0; i--) {
-      const s = steps[i];
-      if (hasStepOutput(s.id) || pipelineStatuses[s.id] === "Completed") {
-        latestWithOutputIdx = i;
-        break;
-      }
-    }
-    if (latestWithOutputIdx !== -1) {
-      setActiveStepIndex(latestWithOutputIdx);
-      return;
-    }
+    const firstUncompletedIndex = stepsList.findIndex(
+      (step) => pipelineStatuses[step.id] !== "Completed"
+    );
+    return firstUncompletedIndex !== -1 ? firstUncompletedIndex : 0;
+  })();
 
-    const firstUncompletedIdx = steps.findIndex((s) => pipelineStatuses[s.id] !== "Completed");
-    setActiveStepIndex(firstUncompletedIdx !== -1 ? firstUncompletedIdx : 0);
-  }, [
-    workflowCard?.id,
-    isOpen,
-    selectedSubstepId,
-    approvalNextStep,
-    runStatus,
-    isWaitingForModelConfirmation,
-    isWaitingForPreFlightApproval,
-    isWaitingForTrainingApproval,
-    isStageAwaitingApprovalToAdvance,
-  ]);
+  const activeStep = stepsList[activeStepIndex] || null;
+  const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Pending") : "Pending";
 
   const handleOpenLogs = (stepToOpen?: WorkflowStep | null) => {
     const target = stepToOpen || activeStep;
@@ -312,154 +242,7 @@ function CardModalContent({
   return createPortal(
     <div className="fixed inset-0 z-[200] p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in select-none">
 
-      <div className="relative w-[97vw] h-[95vh] overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col sm:flex-row animate-scale-up">
-
-        <div className="w-full sm:w-[250px] border-b sm:border-b-0 sm:border-r border-border p-5 overflow-y-auto shrink-0 flex flex-col bg-surface-muted/30">
-
-          <div className="mb-4 shrink-0">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Execution Steps</span>
-            <p className="text-xs text-muted-foreground mt-0.5">Select a pipeline step to review outputs.</p>
-          </div>
-
-          <div className="relative flex flex-col gap-5 flex-1 min-h-0">
-            {stepsList.map((stepItem, idx) => {
-              const isSelected = activeStepIndex === idx;
-              const stepStatus = pipelineStatuses[stepItem.id] ?? "Pending";
-
-              const isStepAwaitingApproval =
-                stepStatus === "Awaiting Approval" || stepStatus === "User Input";
-
-              const isNonterminalModelTrainingStep =
-                isModelTrainingCard &&
-                (stepItem.id === "trainingConfigurationNode" ||
-                  stepItem.id === "preFlightNode" ||
-                  stepItem.id === "modelTrainingCodeNode" ||
-                  stepItem.id === "modelTrainingExecNode") &&
-                (stepStatus === "Pending" ||
-                  isInProgressStatus(stepStatus));
-
-              // Is this step completed?
-              // All completed substeps show completed UI (green and tick)
-              const isStepCompleted =
-                !isNonterminalModelTrainingStep &&
-                !isStepAwaitingApproval &&
-                stepStatus === "Completed";
-
-              const isStepInProgress =
-                !isStepAwaitingApproval &&
-                !isStepCompleted &&
-                isInProgressStatus(stepStatus) &&
-                runStatus === "In-Progress";
-
-              const isStopped = runStatus === "Stopped" && !isStepCompleted && isInProgressStatus(stepStatus);
-              const isPausedStep = !isStepCompleted && (stepStatus === "Paused" || (runStatus === "Paused" && isInProgressStatus(stepStatus)));
-              const stepColors = CIRCLE_COLOR_MAP[stepItem.color] || CIRCLE_COLOR_MAP.green;
-
-              return (
-                <div
-                  key={stepItem.id}
-                  className="relative flex items-center group w-full"
-                >
-
-                  {idx < stepsList.length - 1 && (
-                    <div className="absolute left-[17px] top-9 bottom-[-24px] w-[2px] bg-border dark:bg-slate-800 z-0" />
-                  )}
-
-                  <button
-                    title={stepItem.description}
-                    onClick={() => {
-                      setActiveStepIndex(idx);
-                      onSubstepChange?.(stepItem.id);
-                    }}
-                    className="flex items-center gap-3.5 text-left w-full relative z-10 py-1.5 focus:outline-none transition-all cursor-pointer"
-                  >
-                    {/* Circle Indicator */}
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 font-extrabold text-sm border-2 transition-all relative z-10 
-                      ${isStepCompleted ? "bg-status-completed border-status-completed text-white shadow-md"
-                        : isPausedStep ? "bg-status-paused border-status-paused text-white shadow-md"
-                        : isStopped ? "bg-status-stopped border-status-stopped text-white shadow-md"
-                          : isStepAwaitingApproval ? "bg-status-awaiting-approval border-status-awaiting-approval text-white shadow-md animate-pulse"
-                            : isStepInProgress
-                              ? "bg-status-in-progress border-status-in-progress text-white shadow-lg animate-pulse"
-                              : isSelected
-                                ? `${stepColors.border} ${stepColors.text} bg-surface`
-                                : "border-border bg-surface text-muted-foreground/60 group-hover:border-muted-foreground/40"
-                      }`}>
-                      {isStepCompleted ? (
-                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      ) : isPausedStep ? (
-                        <div className="flex items-center gap-0.5">
-                          <div className="w-0.5 h-2.5 bg-white rounded-full" />
-                          <div className="w-0.5 h-2.5 bg-white rounded-full" />
-                        </div>
-                      ) : isStepAwaitingApproval ? (
-                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="4.5">
-                          <polygon points="5 3 19 12 5 21 5 3" />
-                        </svg>
-                      ) : isStepInProgress ? (
-                        <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                        </svg>
-                      ) : (
-                        idx + 1
-                      )}
-                    </div>
-
-                    <div className="flex-1 min-w-0 pr-1">
-                      <div className="flex items-center justify-between gap-1">
-                        <span className={`text-xs font-bold truncate transition-colors leading-tight ${
-                          isSelected ? "text-foreground font-black" : "text-muted-foreground group-hover:text-foreground"
-                        }`}>
-                          {stepItem.title}
-                        </span>
-
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          {isStepCompleted && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-status-completed shrink-0" />
-                          )}
-                          {isStepAwaitingApproval && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-status-awaiting-approval animate-pulse shrink-0" />
-                          )}
-                          {isStepInProgress && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-status-in-progress animate-ping shrink-0" />
-                          )}
-                          {isStopped && (
-                            <span className="w-1.5 h-1.5 rounded-full bg-status-stopped shrink-0" />
-                          )}
-
-                          <span
-                            role="button"
-                            tabIndex={0}
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleOpenLogs(stepItem);
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" || e.key === " ") {
-                                e.stopPropagation();
-                                handleOpenLogs(stepItem);
-                              }
-                            }}
-                            className="opacity-0 group-hover:opacity-100 hover:opacity-100 p-1 rounded bg-white hover:bg-slate-50 text-primary border border-primary/50 dark:bg-surface dark:text-primary-foreground dark:border-primary/60 transition-all cursor-pointer shadow-xs"
-                            title={`View logs for ${stepItem.title}`}
-                          >
-                            <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2">
-                              <polyline points="4 17 10 11 4 5" />
-                              <line x1="12" y1="19" x2="20" y2="19" />
-                            </svg>
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
+      <div className="relative w-[97vw] h-[95vh] overflow-hidden rounded-xl border border-border bg-surface shadow-2xl flex flex-col animate-scale-up">
 
         <div className="flex-1 flex flex-col min-h-0 bg-background/30 relative overflow-hidden">
 
@@ -696,7 +479,7 @@ function CardModalContent({
               )
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center text-center text-muted-foreground p-8 select-none">
-                <p className="text-sm">Please select a step from the left side panel.</p>
+                <p className="text-sm">No workflow step is available to display.</p>
               </div>
             )}
           </div>
@@ -717,11 +500,7 @@ function CardModalContent({
         agentState={agentState}
         runStatus={runStatus}
         onSelectSubstep={(st) => {
-          const targetIdx = stepsList.findIndex((s) => s.id === st.id);
-          if (targetIdx !== -1) {
-            setActiveStepIndex(targetIdx);
-            onSubstepChange?.(st.id);
-          }
+          onSubstepChange?.(st.id);
           setLogModalSubstep(st);
         }}
       />

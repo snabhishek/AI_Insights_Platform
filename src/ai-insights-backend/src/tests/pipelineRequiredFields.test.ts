@@ -678,9 +678,9 @@ function resolveValidationDirection(ctx: {
     state?.modelSelection?.direction ||
     state?.stageOutputs?.modelSelectionNode?.direction ||
     state?.stageOutputs?.modelSelection?.direction ||
-    state?.modelTrainingExecNode?.direction ||
+    state?.modelTrainingCodeNode?.direction ||
     state?.modelTraining?.direction ||
-    state?.stageOutputs?.modelTrainingExecNode?.direction ||
+    state?.stageOutputs?.modelTrainingCodeNode?.direction ||
     state?.stageOutputs?.modelTraining?.direction ||
     state?.trainingConfigurationNode?.configuration?.objective?.direction ||
     state?.trainingConfiguration?.configuration?.objective?.direction ||
@@ -775,9 +775,9 @@ function buildValidationFrameworkMap(ctx: {
     ...((state?.stageOutputs?.modelSelection as any)?.candidates || []),
     ...((state?.stageOutputs?.modelSelectionNode as any)?.models || []),
     ...((state?.stageOutputs?.modelSelection as any)?.models || []),
-    ...((state?.modelTrainingExecNode as any)?.candidates || []),
+    ...((state?.modelTrainingCodeNode as any)?.candidates || []),
     ...((state?.modelTraining as any)?.candidates || []),
-    ...((state?.stageOutputs?.modelTrainingExecNode as any)?.candidates || []),
+    ...((state?.stageOutputs?.modelTrainingCodeNode as any)?.candidates || []),
     ...((state?.stageOutputs?.modelTraining as any)?.candidates || []),
     ...((state?.trainingConfigurationNode as any)?.configuration?.model_selection?.candidates || []),
     ...((state?.trainingConfiguration as any)?.configuration?.model_selection?.candidates || []),

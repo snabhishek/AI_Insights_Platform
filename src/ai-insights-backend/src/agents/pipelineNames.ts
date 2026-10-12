@@ -30,7 +30,6 @@ export const GRAPH_NODE_KEYS = [
   "trainingConfigurationNode",
   "preFlightNode",
   "modelTrainingCodeNode",
-  "modelTrainingExecNode",
 ] as const;
 
 export type GraphNodeKey = (typeof GRAPH_NODE_KEYS)[number];
@@ -63,7 +62,6 @@ export const STAGE_CONFIG = {
       "trainingConfigurationNode",
       "preFlightNode",
       "modelTrainingCodeNode",
-      "modelTrainingExecNode",
     ],
   },
 } as const satisfies Record<StageKey, {
@@ -84,7 +82,6 @@ export const NODE_CONFIG = {
   trainingConfigurationNode: { id: "trainingConfigurationNode", stage: "modelTrainingValidation", displayName: "Training Configuration", metric: "Configure" },
   preFlightNode: { id: "preFlightNode", stage: "modelTrainingValidation", displayName: "Pre Flight", metric: "Validate" },
   modelTrainingCodeNode: { id: "modelTrainingCodeNode", stage: "modelTrainingValidation", displayName: "Model Training Code Generation", metric: "Generate Code" },
-  modelTrainingExecNode: { id: "modelTrainingExecNode", stage: "modelTrainingValidation", displayName: "Model Training Execution", metric: "Train" },
 } as const satisfies Record<TrackedAgentKey, {
   id: TrackedAgentKey;
   stage: StageKey;
@@ -183,8 +180,7 @@ export type StageOutputs = Partial<{
   modelSelectionNode: AgentOutput;
   trainingConfigurationNode: TrainingConfigurationOutput;
   preFlightNode: AgentOutput;
-  modelTrainingCodeNode: AgentOutput;
-  modelTrainingExecNode: ModelTrainingExecutionOutput;
+  modelTrainingCodeNode: ModelTrainingExecutionOutput | AgentOutput;
 }>;
 export type StageOutputsUpdate = StageOutputs & { __replaceStageOutputs?: true };
 
@@ -221,8 +217,7 @@ export interface WorkflowAgentState {
   modelSelectionNode?: AgentOutput;
   trainingConfigurationNode?: TrainingConfigurationOutput;
   preFlightNode?: AgentOutput;
-  modelTrainingCodeNode?: AgentOutput;
-  modelTrainingExecNode?: ModelTrainingExecutionOutput;
+  modelTrainingCodeNode?: ModelTrainingExecutionOutput | AgentOutput;
   modelSelection?: AgentOutput;
   trainingConfiguration?: TrainingConfigurationOutput;
   preFlight?: AgentOutput;
@@ -423,10 +418,8 @@ export const LEGACY_AGENT_KEY_ALIASES: Readonly<Record<string, TrackedAgentKey>>
   trainingConfiguration: "trainingConfigurationNode",
   preFlight: "preFlightNode",
   modelTrainingCode: "modelTrainingCodeNode",
-  modelTrainingExec: "modelTrainingExecNode",
-  modelTraining: "modelTrainingExecNode",
-  modelTrainingNode: "modelTrainingExecNode",
-  modelEvaluation: "modelTrainingExecNode",
+  modelTraining: "modelTrainingCodeNode",
+  modelTrainingNode: "modelTrainingCodeNode",
 };
 
 export function normalizePipelineStepStatus(value: unknown): PipelineStepStatus | undefined {
@@ -526,9 +519,9 @@ export function normalizeStageOutputs(value: unknown): StageOutputs {
       ...(isAgentOutput(raw.formBuilder) ? { formBuilder: raw.formBuilder } : {}),
     };
   }
-  const trainingOutput = normalized.modelTrainingExecNode;
+  const trainingOutput = normalized.modelTrainingCodeNode;
   if (trainingOutput && isAgentOutput(raw.modelValidation)) {
-    normalized.modelTrainingExecNode = {
+    normalized.modelTrainingCodeNode = {
       ...(trainingOutput as Record<string, unknown>),
       modelValidation: raw.modelValidation,
     };

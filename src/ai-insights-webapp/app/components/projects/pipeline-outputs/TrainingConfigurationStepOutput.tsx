@@ -28,9 +28,10 @@ const MONTH_NAMES = [
 
 interface TrainingConfigurationStepOutputProps {
   projectId?: string;
-  trainingConfiguration?: any;
   modelSelection?: any;
   activeRunTimestamp?: string;
+  isConfigurationComplete: boolean;
+  nextStepInProgress?: boolean;
   onConfigSaved?: (updatedConfig: Record<string, any>) => void;
   onApprove?: (selectedModels?: string[], splitEndDate?: string) => void;
   isApproving?: boolean;
@@ -38,9 +39,10 @@ interface TrainingConfigurationStepOutputProps {
 
 export default function TrainingConfigurationStepOutput({
   projectId,
-  trainingConfiguration,
   modelSelection,
   activeRunTimestamp,
+  isConfigurationComplete,
+  nextStepInProgress = false,
   onConfigSaved,
   onApprove,
   isApproving = false,
@@ -67,9 +69,10 @@ export default function TrainingConfigurationStepOutput({
     maxMonth?: number;
     availableYears?: number[];
   } | null>(null);
-  const [selectedYear, setSelectedYear] = useState<number>(2020);
-  const [selectedMonth, setSelectedMonth] = useState<number>(9);
+  const [selectedYear, setSelectedYear] = useState<number>(0);
+  const [selectedMonth, setSelectedMonth] = useState<number>(0);
   const [isLoadingDates, setIsLoadingDates] = useState<boolean>(false);
+  const [isSyncingSplitDate, setIsSyncingSplitDate] = useState<boolean>(false);
 
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
   const [hasUserEditedSelection, setHasUserEditedSelection] = useState<boolean>(false);
@@ -77,16 +80,11 @@ export default function TrainingConfigurationStepOutput({
   const [applySuccessMsg, setApplySuccessMsg] = useState<string | null>(null);
   const [expandedModelId, setExpandedModelId] = useState<string | null>(null);
 
-  const extractSplitDateParts = useCallback((data: any, fallbackConfig?: any) => {
+  const extractSplitDateParts = useCallback((data: any) => {
     const raw =
       data?.split?.split_date ||
       data?.splitDate ||
-      data?.splitEndDate ||
-      fallbackConfig?.configuration?.split?.split_date ||
-      fallbackConfig?.configuration?.splitDate ||
-      fallbackConfig?.configuration?.splitEndDate ||
-      fallbackConfig?.splitEndDate ||
-      fallbackConfig?.splitDate;
+      data?.splitEndDate;
     if (raw && typeof raw === "string") {
       const parts = raw.split("-");
       if (parts.length >= 2) {
@@ -100,17 +98,13 @@ export default function TrainingConfigurationStepOutput({
     return null;
   }, []);
 
-  const fetchContract = useCallback(async () => {
-    if (!projectId) {
-      const config = trainingConfiguration?.configuration || trainingConfiguration || {};
-      setParsedData(config);
-      const existing = extractSplitDateParts(config, trainingConfiguration);
-      if (existing) {
-        setSelectedYear(existing.year);
-        setSelectedMonth(existing.month);
-      }
+  const fetchContract = useCallback(async (): Promise<boolean> => {
+    if (!projectId || !isConfigurationComplete) {
+      setParsedData({});
+      setYamlContent("");
+      setOriginalYaml("");
       setIsLoading(false);
-      return;
+      return false;
     }
 
     setIsLoading(true);
@@ -123,77 +117,120 @@ export default function TrainingConfigurationStepOutput({
         throw new Error(`Failed to load training contract (${res.statusText})`);
       }
       const json = await res.json();
-      if (json.success && json.data) {
-        setYamlContent(json.data.yamlContent || "");
-        setOriginalYaml(json.data.yamlContent || "");
-        const parsed = json.data.parsedConfig || {};
-        setParsedData(parsed);
-        if (json.data.filename) {
-          setFileName(json.data.filename);
-        }
-        const existing = extractSplitDateParts(parsed, trainingConfiguration);
-        if (existing) {
-          setSelectedYear(existing.year);
-          setSelectedMonth(existing.month);
-        }
+      if (!json.success || !json.data) {
+        throw new Error(json.message || "Backend did not return a completed training configuration.");
       }
-    } catch (err: any) {
-      console.warn("[TrainingConfig] Could not fetch contract from API:", err);
-      const config = trainingConfiguration?.configuration || trainingConfiguration || {};
-      setParsedData(config);
-      const existing = extractSplitDateParts(config, trainingConfiguration);
+      setYamlContent(json.data.yamlContent || "");
+      setOriginalYaml(json.data.yamlContent || "");
+      const parsed = json.data.parsedConfig || {};
+      setParsedData(parsed);
+      if (json.data.filename) {
+        setFileName(json.data.filename);
+      }
+      const existing = extractSplitDateParts(parsed);
       if (existing) {
         setSelectedYear(existing.year);
         setSelectedMonth(existing.month);
+      } else {
+        setSelectedYear(0);
+        setSelectedMonth(0);
       }
-      setErrorMsg("Could not fetch remote YAML. Showing loaded memory configuration.");
+      return true;
+    } catch (err: any) {
+      console.warn("[TrainingConfig] Could not fetch contract from API:", err);
+      setParsedData({});
+      setYamlContent("");
+      setOriginalYaml("");
+      setErrorMsg(err instanceof Error ? err.message : "Could not fetch the backend training configuration.");
+      return false;
     } finally {
       setIsLoading(false);
     }
-  }, [projectId, activeRunTimestamp, trainingConfiguration, extractSplitDateParts]);
+  }, [projectId, activeRunTimestamp, isConfigurationComplete, extractSplitDateParts]);
 
   useEffect(() => {
     fetchContract();
   }, [fetchContract]);
 
   const fetchDateRange = useCallback(async () => {
-    if (!projectId) return;
+    if (!projectId || !isConfigurationComplete) return;
     setIsLoadingDates(true);
     try {
       const url = `${BACKEND_URL}/training-config/${projectId}/date-range${
         activeRunTimestamp ? `?timestamp=${encodeURIComponent(activeRunTimestamp)}` : ""
       }`;
       const res = await fetch(url);
-      if (res.ok) {
-        const json = await res.json();
-        if (json.success && json.data) {
-          setDateRangeInfo(json.data);
-          const existing = extractSplitDateParts(parsedData, trainingConfiguration);
-          if (existing) {
-            setSelectedYear(existing.year);
-            setSelectedMonth(existing.month);
-          } else if (json.data.availableYears && json.data.availableYears.length > 0) {
-            const defYear = json.data.maxYear || json.data.availableYears[json.data.availableYears.length - 1];
-            setSelectedYear(defYear);
-            setSelectedMonth(json.data.maxMonth || 12);
-          }
-        }
+      if (!res.ok) {
+        throw new Error(`Failed to load dataset date range (${res.statusText}).`);
+      }
+      const json = await res.json();
+      if (!json.success || !json.data) {
+        throw new Error(json.message || "Backend did not return the dataset date range.");
+      }
+      setDateRangeInfo(json.data);
+      const existing = extractSplitDateParts(parsedData);
+      if (existing) {
+        setSelectedYear(existing.year);
+        setSelectedMonth(existing.month);
+      } else if (json.data.availableYears && json.data.availableYears.length > 0) {
+        const defYear = json.data.maxYear || json.data.availableYears[json.data.availableYears.length - 1];
+        setSelectedYear(defYear);
+        setSelectedMonth(typeof json.data.maxMonth === "number" ? json.data.maxMonth : 0);
+      } else {
+        setSelectedYear(0);
+        setSelectedMonth(0);
       }
     } catch (err) {
       console.warn("[TrainingConfig] Failed to fetch date range:", err);
+      setDateRangeInfo(null);
+      setSelectedYear(0);
+      setSelectedMonth(0);
+      setErrorMsg(err instanceof Error ? err.message : "Could not fetch the backend dataset date range.");
     } finally {
       setIsLoadingDates(false);
     }
-  }, [projectId, activeRunTimestamp, parsedData, trainingConfiguration, extractSplitDateParts]);
+  }, [projectId, activeRunTimestamp, parsedData, isConfigurationComplete, extractSplitDateParts]);
 
   useEffect(() => {
     fetchDateRange();
   }, [fetchDateRange]);
 
   const handleApproveWithSplitDate = () => {
-    if (!onApprove) return;
+    if (!onApprove || selectedYear < 1 || selectedMonth < 1 || nextStepInProgress) return;
     const formattedSplit = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
     onApprove(selectedModelIds, formattedSplit);
+  };
+
+  const handleSyncSplitDate = async () => {
+    if (!projectId || !activeRunTimestamp || selectedYear < 1 || selectedMonth < 1) {
+      setErrorMsg("Project, active run, and split date are required to synchronize.");
+      return;
+    }
+    setIsSyncingSplitDate(true);
+    setErrorMsg(null);
+    setSaveSuccessMsg(null);
+    try {
+      const response = await fetch(`${BACKEND_URL}/training-config/${projectId}/split-date`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          splitDate: `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`,
+          timestamp: activeRunTimestamp,
+        }),
+      });
+      const result = await response.json();
+      if (!response.ok || !result.success) {
+        throw new Error(result.message || "Failed to synchronize the split date.");
+      }
+      if (!(await fetchContract())) {
+        throw new Error("Split date was synchronized, but the backend configuration could not be reloaded.");
+      }
+      setSaveSuccessMsg("Split date synchronized to the run configuration and agent state.");
+    } catch (error) {
+      setErrorMsg(error instanceof Error ? error.message : "Failed to synchronize split date.");
+    } finally {
+      setIsSyncingSplitDate(false);
+    }
   };
 
   const handleSaveYaml = async () => {
@@ -220,7 +257,7 @@ export default function TrainingConfigurationStepOutput({
       }
 
       setOriginalYaml(yamlContent);
-      setParsedData(data.data?.parsedConfig || parsedData);
+      setParsedData(data.data?.parsedConfig || {});
       if (data.data?.filename) {
         setFileName(data.data.filename);
       }
@@ -258,83 +295,35 @@ export default function TrainingConfigurationStepOutput({
   const hpo = parsedData.hyperparameter_optimization || {};
   const evaluation = parsedData.evaluation || {};
   const validationGates = parsedData.validation_gates || {};
-  const modelSel = parsedData.model_selection || modelSelection || {};
+  const modelSel = parsedData.model_selection || {};
   const confirmedModels = useMemo(() => {
-    if (Array.isArray(parsedData.model_selection?.models) && parsedData.model_selection.models.length > 0) {
-      return parsedData.model_selection.models;
-    }
-    if (Array.isArray(modelSelection?.userSelection?.selectedModelIds) && modelSelection.userSelection.selectedModelIds.length > 0) {
-      return modelSelection.userSelection.selectedModelIds;
-    }
-    if (Array.isArray(trainingConfiguration?.models) && trainingConfiguration.models.length > 0) {
-      return trainingConfiguration.models;
-    }
-    if (Array.isArray(modelSelection?.selectedModelIds) && modelSelection.selectedModelIds.length > 0) {
-      return modelSelection.selectedModelIds;
-    }
-    if (Array.isArray(modelSelection?.models) && modelSelection.models.length > 0) {
-      return modelSelection.models;
-    }
-    return [];
-  }, [parsedData.model_selection?.models, modelSelection, trainingConfiguration]);
+    return Array.isArray(parsedData.model_selection?.models)
+      ? parsedData.model_selection.models
+      : [];
+  }, [parsedData.model_selection?.models]);
 
   const artifacts = parsedData.artifacts || {};
+  const hasSelectedSplitDate = Boolean(
+    activeRunTimestamp &&
+      dateRangeInfo &&
+      dateRangeInfo.availableYears?.includes(selectedYear) &&
+      selectedMonth >= 1 &&
+      selectedMonth <= 12 &&
+      !(selectedYear === dateRangeInfo.minYear && dateRangeInfo.minMonth && selectedMonth < dateRangeInfo.minMonth) &&
+      !(selectedYear === dateRangeInfo.maxYear && dateRangeInfo.maxMonth && selectedMonth > dateRangeInfo.maxMonth)
+  );
 
   const candidatePool = useMemo(() => {
-    const rawCandidates: any[] =
-      modelSelection?.decision?.candidates ||
-      modelSelection?.candidates ||
-      modelSelection?.decision?.all_candidates ||
-      [];
-
     const map = new Map<string, any>();
-    for (const c of rawCandidates) {
-      const id = c?.model_id || c?.id;
-      if (id) {
-        map.set(id, {
-          ...c,
-          model_id: id,
-          algorithm: c.algorithm || c.displayName || id,
-          framework: c.framework || "custom",
-          suitability_score: c.suitability_score ?? c.score,
-        });
-      }
-    }
-
-    if (Array.isArray(parsedData.model_selection?.models)) {
-      for (const m of parsedData.model_selection.models) {
+    for (const m of [
+      ...(Array.isArray(parsedData.model_selection?.models) ? parsedData.model_selection.models : []),
+      ...(Array.isArray(parsedData.model_selection?.candidates) ? parsedData.model_selection.candidates : []),
+    ]) {
         const id = typeof m === "string" ? m : (m?.model_id || m?.id);
-        if (id) {
-          if (!map.has(id)) {
-            map.set(id, {
-              ...(typeof m === "string" ? {} : m),
-              model_id: id,
-              algorithm: typeof m === "string" ? m : (m.algorithm || id),
-              framework: typeof m === "string" ? "custom" : (m.framework || "custom"),
-              suitability_score: typeof m === "string" ? 0.9 : m.suitability_score,
-            });
-          }
-        }
-      }
+        if (id && !map.has(id)) map.set(id, typeof m === "string" ? { model_id: id } : { ...m, model_id: id });
     }
-
-    if (Array.isArray(confirmedModels)) {
-      for (const m of confirmedModels) {
-        const id = typeof m === "string" ? m : (m?.model_id || m?.id);
-        if (id && !map.has(id)) {
-          map.set(id, {
-            ...(typeof m === "string" ? {} : m),
-            model_id: id,
-            algorithm: typeof m === "string" ? m : (m.algorithm || m.displayName || id),
-            framework: typeof m === "string" ? "custom" : (m.framework || "custom"),
-            suitability_score: typeof m === "string" ? 0.9 : m.suitability_score,
-          });
-        }
-      }
-    }
-
     return Array.from(map.values());
-  }, [modelSelection, parsedData.model_selection, confirmedModels]);
+  }, [parsedData.model_selection]);
 
   useEffect(() => {
     if (hasUserEditedSelection) return;
@@ -342,24 +331,6 @@ export default function TrainingConfigurationStepOutput({
     if (Array.isArray(parsedData.model_selection?.models) && parsedData.model_selection.models.length > 0) {
       const ids = parsedData.model_selection.models
         .filter((m: any) => m.enabled !== false)
-        .map((m: any) => (typeof m === "string" ? m : (m.model_id || m.id)))
-        .filter(Boolean);
-      if (ids.length > 0) {
-        setSelectedModelIds(ids);
-        return;
-      }
-    }
-
-    const msUserSelection =
-      modelSelection?.userSelection?.selectedModelIds ||
-      modelSelection?.selectedModelIds;
-    if (Array.isArray(msUserSelection) && msUserSelection.length > 0) {
-      setSelectedModelIds(msUserSelection);
-      return;
-    }
-
-    if (Array.isArray(trainingConfiguration?.models) && trainingConfiguration.models.length > 0) {
-      const ids = trainingConfiguration.models
         .map((m: any) => (typeof m === "string" ? m : (m.model_id || m.id)))
         .filter(Boolean);
       if (ids.length > 0) {
@@ -386,7 +357,7 @@ export default function TrainingConfigurationStepOutput({
         setSelectedModelIds([candidatePool[0].model_id]);
       }
     }
-  }, [parsedData.model_selection, modelSelection, trainingConfiguration, confirmedModels, candidatePool, hasUserEditedSelection]);
+  }, [parsedData.model_selection, confirmedModels, candidatePool, hasUserEditedSelection]);
 
   const toggleModel = (modelId: string) => {
     setHasUserEditedSelection(true);
@@ -499,6 +470,20 @@ export default function TrainingConfigurationStepOutput({
   const valRatio = split.validation_ratio != null ? Math.round(split.validation_ratio * 100) : 15;
   const testRatio = split.test_ratio != null ? Math.round(split.test_ratio * 100) : 15;
 
+  if (!isConfigurationComplete) {
+    return (
+      <div className="p-8 text-center text-sm text-muted-foreground">
+        Training configuration will be available after the backend completes this step.
+      </div>
+    );
+  }
+  if (isLoading) {
+    return <div className="p-8 text-center text-sm text-muted-foreground">Loading training configuration from the backend...</div>;
+  }
+  if (errorMsg && !yamlContent) {
+    return <div role="alert" className="p-6 text-center text-sm text-rose-600">{errorMsg}</div>;
+  }
+
   return (
     <div className="space-y-6 animate-fadeIn text-foreground">
 
@@ -528,6 +513,7 @@ export default function TrainingConfigurationStepOutput({
           <button
             type="button"
             onClick={() => setActiveTab("view")}
+            disabled={nextStepInProgress}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${activeTab === "view"
                 ? "bg-surface text-foreground shadow-xs font-bold"
                 : "text-muted-foreground hover:text-foreground"
@@ -542,6 +528,7 @@ export default function TrainingConfigurationStepOutput({
           <button
             type="button"
             onClick={() => setActiveTab("edit")}
+            disabled={nextStepInProgress}
             className={`flex items-center gap-2 px-3.5 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${activeTab === "edit"
                 ? "bg-surface text-foreground shadow-xs font-bold"
                 : "text-muted-foreground hover:text-foreground"
@@ -772,6 +759,7 @@ export default function TrainingConfigurationStepOutput({
                     <button
                       type="button"
                       onClick={selectAllCandidates}
+                      disabled={nextStepInProgress}
                       className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-surface-muted hover:bg-surface border border-border text-muted-foreground hover:text-foreground transition-all cursor-pointer"
                     >
                       Select All ({candidatePool.length})
@@ -779,6 +767,7 @@ export default function TrainingConfigurationStepOutput({
                     <button
                       type="button"
                       onClick={selectRecommendedCandidates}
+                      disabled={nextStepInProgress}
                       className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-surface-muted hover:bg-surface border border-border text-muted-foreground hover:text-foreground transition-all cursor-pointer"
                     >
                       Recommended Only
@@ -788,7 +777,7 @@ export default function TrainingConfigurationStepOutput({
                 <button
                   type="button"
                   onClick={handleApplyModels}
-                  disabled={isApplyingModels || !hasSelectionChanged}
+                  disabled={nextStepInProgress || isApplyingModels || !hasSelectionChanged}
                   className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-xs ${hasSelectionChanged
                       ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md ring-2 ring-primary/40 animate-pulse"
                       : "bg-surface-muted text-muted-foreground border border-border cursor-not-allowed opacity-60"
@@ -917,6 +906,7 @@ export default function TrainingConfigurationStepOutput({
                         <div className="mt-3 pt-2.5 border-t border-border/40">
                           <button
                             type="button"
+                            disabled={nextStepInProgress}
                             onClick={(e) => {
                               e.stopPropagation();
                               setExpandedModelId(isExpanded ? null : modelId);
@@ -1097,7 +1087,7 @@ export default function TrainingConfigurationStepOutput({
                 <ModernSelect
                   value={String(selectedMonth)}
                   onChange={(val) => setSelectedMonth(parseInt(val, 10))}
-                  disabled={isLoadingDates}
+                  disabled={isLoadingDates || nextStepInProgress || !dateRangeInfo}
                   options={MONTH_NAMES.map((name, idx) => {
                     const monthNum = idx + 1;
                     const isMinYear = dateRangeInfo?.minYear != null && selectedYear === dateRangeInfo.minYear;
@@ -1123,11 +1113,8 @@ export default function TrainingConfigurationStepOutput({
                 <ModernSelect
                   value={String(selectedYear)}
                   onChange={(val) => setSelectedYear(parseInt(val, 10))}
-                  disabled={isLoadingDates}
-                  options={(dateRangeInfo?.availableYears && dateRangeInfo.availableYears.length > 0
-                    ? dateRangeInfo.availableYears
-                    : [2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
-                  ).map((yr) => ({
+                  disabled={isLoadingDates || nextStepInProgress || !dateRangeInfo}
+                  options={(dateRangeInfo?.availableYears || []).map((yr) => ({
                     value: String(yr),
                     label: String(yr),
                   }))}
@@ -1136,16 +1123,23 @@ export default function TrainingConfigurationStepOutput({
               </div>
             </div>
 
-            <div className="p-3 rounded-xl bg-surface/80 border border-border/80 flex items-center justify-between text-xs">
+            <div className="p-3 rounded-xl bg-surface/80 border border-border/80 flex items-center justify-between gap-3 text-xs">
               <div className="flex items-center gap-2">
                 <span className="text-muted-foreground">Calculated Split Boundary:</span>
                 <span className="font-bold text-foreground font-mono bg-surface-muted px-2 py-0.5 rounded border border-border">
-                  {selectedYear}-{String(selectedMonth).padStart(2, "0")} ({MONTH_NAMES[selectedMonth - 1]} {selectedYear})
+                  {selectedYear > 0 && selectedMonth > 0
+                    ? `${selectedYear}-${String(selectedMonth).padStart(2, "0")} (${MONTH_NAMES[selectedMonth - 1]} ${selectedYear})`
+                    : "Not available from backend"}
                 </span>
               </div>
-              <span className="text-[11px] text-emerald-600 dark:text-emerald-400 font-semibold">
-                ✓ Dynamic range verified from dataset
-              </span>
+              <button
+                type="button"
+                onClick={handleSyncSplitDate}
+                disabled={!hasSelectedSplitDate || isSyncingSplitDate || isLoadingDates || nextStepInProgress}
+                className="shrink-0 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSyncingSplitDate ? "Syncing..." : "Sync Split Date"}
+              </button>
             </div>
           </div>
 
@@ -1167,7 +1161,7 @@ export default function TrainingConfigurationStepOutput({
 
               <button
                 type="button"
-                disabled={isApproving || isSaving || isApplyingModels}
+                disabled={!hasSelectedSplitDate || nextStepInProgress || isApproving || isSaving || isApplyingModels}
                 onClick={handleApproveWithSplitDate}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >
@@ -1212,6 +1206,7 @@ export default function TrainingConfigurationStepOutput({
               <button
                 type="button"
                 onClick={handleCopy}
+                disabled={nextStepInProgress}
                 className="px-3 py-1.5 rounded-lg bg-surface hover:bg-surface/80 border border-border text-xs font-semibold text-foreground transition-all cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
               >
                 {copied ? (
@@ -1234,7 +1229,7 @@ export default function TrainingConfigurationStepOutput({
 
               <button
                 type="button"
-                disabled={!isDirty || isSaving}
+                disabled={nextStepInProgress || !isDirty || isSaving}
                 onClick={handleReset}
                 className="px-3 py-1.5 rounded-lg bg-surface hover:bg-surface/80 border border-border text-xs font-semibold text-muted-foreground hover:text-foreground transition-all cursor-pointer shadow-2xs disabled:opacity-40 disabled:cursor-not-allowed"
               >
@@ -1243,7 +1238,7 @@ export default function TrainingConfigurationStepOutput({
 
               <button
                 type="button"
-                disabled={isSaving}
+                disabled={nextStepInProgress || isSaving}
                 onClick={handleSaveYaml}
                 className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-bold tracking-wide transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
               >
@@ -1309,7 +1304,7 @@ export default function TrainingConfigurationStepOutput({
 
               <button
                 type="button"
-                disabled={isApproving || isSaving || isApplyingModels}
+                disabled={!hasSelectedSplitDate || nextStepInProgress || isApproving || isSaving || isApplyingModels}
                 onClick={handleApproveWithSplitDate}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
               >

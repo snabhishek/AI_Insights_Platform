@@ -79,7 +79,6 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
       "trainingConfigurationNode",
       "preFlightNode",
       "modelTrainingCodeNode",
-      "modelTrainingExecNode",
     ],
   },
   {
@@ -118,7 +117,6 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
       "trainingConfigurationNode",
       "preFlightNode",
       "modelTrainingCodeNode",
-      "modelTrainingExecNode",
     ],
   },
   {
@@ -141,7 +139,6 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
       "trainingConfigurationNode",
       "preFlightNode",
       "modelTrainingCodeNode",
-      "modelTrainingExecNode",
     ],
   },
   {
@@ -162,7 +159,6 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     downstreamOutputsToClearOnRetry: [
       "preFlightNode",
       "modelTrainingCodeNode",
-      "modelTrainingExecNode",
     ],
   },
   {
@@ -182,27 +178,6 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     ),
     downstreamOutputsToClearOnRetry: [
       "modelTrainingCodeNode",
-      "modelTrainingExecNode",
-    ],
-  },
-  {
-    id: "modelTrainingExecNode",
-    displayName: "Model Training Execution",
-    pipeline: "Model Training & Validation",
-    predecessorNode: "modelTrainingCodeNode",
-    interruptBefore: true,
-    requiresApproval: true,
-    statusWhileWaiting: "User Input",
-    approvalPrompt: "Training code generated successfully. Select the candidate models to train and click Execute Training in Docker.",
-    nextStepOnApproval: "modelTrainingExecNode",
-    requiredInputsOnApproval: ["selectedModels"],
-    prerequisites: (state) => Boolean(
-      nodeOutput(state, "modelTrainingCodeNode") ||
-      ((nodeOutput(state, "modelTrainingExecNode") as any)?.filesCreated) ||
-      ((nodeOutput(state, "modelTrainingExecNode") as any)?.projectDirectory)
-    ),
-    downstreamOutputsToClearOnRetry: [
-      "modelTrainingExecNode",
     ],
   },
 ] as const;
@@ -266,19 +241,15 @@ const SUBSTEP_TO_NODE_RULE_KEY: Record<string, GraphNodeKey> = {
   preFlight: "preFlightNode",
   "Pre Flight": "preFlightNode",
   modelTrainingCodeNode: "modelTrainingCodeNode",
+  modelTrainingExecutionNode: "modelTrainingCodeNode",
   modelTrainingCode: "modelTrainingCodeNode",
   "Model Training Code Generation": "modelTrainingCodeNode",
-  modelTrainingExecNode: "modelTrainingExecNode",
-  modelTrainingExec: "modelTrainingExecNode",
-  modelTraining: "modelTrainingExecNode",
-  modelTrainingNode: "modelTrainingExecNode",
-  "Model Training Execution": "modelTrainingExecNode",
-  "Model Training": "modelTrainingExecNode",
-  modelEvaluation: "modelTrainingExecNode",
-  modelEvaluationNode: "modelTrainingExecNode",
-  modelValidation: "modelTrainingExecNode",
-  modelValidationNode: "modelTrainingExecNode",
-  "Model Validation": "modelTrainingExecNode",
+  modelTraining: "modelTrainingCodeNode",
+  modelTrainingNode: "modelTrainingCodeNode",
+  "Model Training": "modelTrainingCodeNode",
+  modelValidation: "modelTrainingCodeNode",
+  modelValidationNode: "modelTrainingCodeNode",
+  "Model Validation": "modelTrainingCodeNode",
 };
 
 export function getStageRuleByNode(nodeId?: string | null): StageRuleConfig | undefined {

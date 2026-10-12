@@ -175,6 +175,21 @@ th {
     animation: scaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+@keyframes approvalGlow {
+    0%, 100% {
+        box-shadow: 0 0 16px rgba(245, 158, 11, 0.45), 0 0 32px rgba(245, 158, 11, 0.25);
+        border-color: rgba(245, 158, 11, 0.85);
+    }
+    50% {
+        box-shadow: 0 0 28px rgba(245, 158, 11, 0.85), 0 0 55px rgba(245, 158, 11, 0.45);
+        border-color: #f59e0b;
+    }
+}
+
+.animate-approval-glow {
+    animation: approvalGlow 1.8s ease-in-out infinite;
+}
+
 .hover-lift {
     transition: transform 0.25s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.25s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.25s ease;
 }

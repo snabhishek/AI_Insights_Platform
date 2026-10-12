@@ -132,7 +132,6 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
       trainingConfigurationNode: "Pending",
       preFlightNode: "Pending",
       modelTrainingCodeNode: "Pending",
-      modelTrainingExecNode: "Pending",
     },
     steps: [
       {
@@ -237,7 +236,6 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
       trainingConfigurationNode: "Completed",
       preFlightNode: "Pending",
       modelTrainingCodeNode: "Pending",
-      modelTrainingExecNode: "Pending",
     },
     steps: [
       {
@@ -288,7 +286,6 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
       stageStatuses: {
         preFlightNode: "Failed",
         modelTrainingCodeNode: "Pending",
-        modelTrainingExecNode: "Pending",
       },
       steps: [
         {
@@ -308,7 +305,6 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
     stageStatuses: {
       preFlightNode: "Completed",
       modelTrainingCodeNode: "Pending",
-      modelTrainingExecNode: "Pending",
     },
     steps: [
       {
@@ -330,33 +326,46 @@ export async function modelTrainingCodeNode(state: State, config?: RunnableConfi
   const output = await ModelTrainingAgent.generateProjectCode(state, services);
 
   if (output.status === "Failed") {
-    return {
-      modelTrainingCodeNode: output,
-      status: "Failed",
-      summary: output.summary,
-      stageOutputs: { modelTrainingCodeNode: output },
-      stageStatuses: {
-        modelTrainingCodeNode: "Failed",
-        modelTrainingExecNode: "Pending",
-      },
-      steps: [
-        {
-          name: "Model Training Code Generation",
-          status: "Failed",
-          summary: output.summary,
-        },
-      ],
-    };
+    throw new Error(`Model training code generation failed: ${output.summary}`);
   }
 
   return {
     modelTrainingCodeNode: output,
-    status: "In-Progress",
+    status: "User Input",
+    summary: "Model training code is ready. Select the models to train.",
+    stageOutputs: { modelTrainingCodeNode: output },
+    stageStatuses: {
+      modelTrainingCodeNode: "User Input",
+    },
+    steps: [
+      {
+        name: "Model Training Code Generation",
+        status: "User Input",
+        summary: output.summary,
+      },
+    ],
+  };
+}
+
+export async function modelTrainingExecutionNode(state: State, config?: RunnableConfig) {
+  const services = servicesFrom(config);
+  if (services.isCancelled?.() || services.abortSignal?.aborted) {
+    console.info("[Workflow] modelTrainingExecutionNode skipping execution because workflow is stopped/paused.");
+    return { status: "Stopped" };
+  }
+
+  const output = await ModelTrainingAgent.executeContainerTraining(state, services);
+  if (output.status === "Failed") {
+    throw new Error(`Model training execution failed: ${output.summary}`);
+  }
+
+  return {
+    modelTrainingCodeNode: output,
+    status: "Completed",
     summary: output.summary,
     stageOutputs: { modelTrainingCodeNode: output },
     stageStatuses: {
       modelTrainingCodeNode: "Completed",
-      modelTrainingExecNode: "Pending",
     },
     steps: [
       {
@@ -368,67 +377,8 @@ export async function modelTrainingCodeNode(state: State, config?: RunnableConfi
   };
 }
 
-export async function modelTrainingExecNode(state: State, config?: RunnableConfig) {
-  const services = servicesFrom(config);
-  if (services.isCancelled?.() || services.abortSignal?.aborted) {
-    console.info("[Workflow] modelTrainingExecNode skipping execution because workflow is stopped/paused.");
-    return { status: "Stopped" };
-  }
-
-  const output = await ModelTrainingAgent.executeContainerTraining(state, services, {maxRetries: 20});
-
-  if (output.status === "Failed") {
-    return {
-      modelTrainingExecNode: output,
-      status: "Failed",
-      summary: output.summary,
-      stageOutputs: { modelTrainingExecNode: output },
-      stageStatuses: {
-        modelTrainingExecNode: "Failed",
-      },
-      steps: [
-        {
-          name: "Model Training Execution",
-          status: "Failed",
-          summary: output.summary,
-        },
-      ],
-    };
-  }
-
-  return {
-    modelTrainingExecNode: output,
-    status: "Completed",
-    summary: output.summary,
-    stageOutputs: { modelTrainingExecNode: output },
-    stageStatuses: {
-      modelTrainingExecNode: "Completed",
-    },
-    steps: [
-      {
-        name: "Model Training Execution",
-        status: "Completed",
-        summary: output.summary,
-      },
-    ],
-  };
-}
-
 export async function modelTrainingNode(state: State, config?: RunnableConfig) {
-  const services = servicesFrom(config);
-  if (services.isCancelled?.() || services.abortSignal?.aborted) {
-    return { status: state.status || ("Failed" as PipelineStepStatus) };
-  }
-  const output = await ModelTrainingAgent.execute(state, services);
-  const isFailed = output.status === "Failed";
-  return {
-    modelTrainingExecNode: output,
-    status: (isFailed ? "Failed" : "Completed") as PipelineStepStatus,
-    summary: output.summary,
-    stageOutputs: { modelTrainingExecNode: output },
-    stageStatuses: { modelTrainingExecNode: isFailed ? ("Failed" as PipelineStepStatus) : ("Completed" as PipelineStepStatus) },
-    steps: [{ name: "Model Training", status: (isFailed ? "Failed" : "Completed") as PipelineStepStatus, summary: output.summary }],
-  };
+  return await modelTrainingCodeNode(state, config);
 }
 
 export async function modelValidationNode(state: State, config?: RunnableConfig) {
@@ -465,16 +415,16 @@ export async function modelValidationNode(state: State, config?: RunnableConfig)
   const isFailed = output.status === "Failed";
 
   return {
-    modelTrainingExecNode: { modelValidation: output },
+    modelTrainingCodeNode: { modelValidation: output },
     status: isFailed ? "failed" : "completed",
     summary: output.summary,
     stageOutputs: {
-      modelTrainingExecNode: { modelValidation: output },
+      modelTrainingCodeNode: { modelValidation: output },
     },
     stageStatuses: {
       modelSelectionNode: "Completed",
       trainingConfigurationNode: "Completed",
-      modelTrainingExecNode: isFailed ? "Failed" : "Completed",
+      modelTrainingCodeNode: isFailed ? "Failed" : "Completed",
     },
     steps: [
       {

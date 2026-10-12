@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState } from "react";
 import { BACKEND_URL } from "../../providers/AppContext";
 import { VALIDATION_UI_STRINGS } from "../validationConstants";
 
@@ -28,6 +28,7 @@ export interface ModelTrainingStepOutputProps {
   onApproveTraining?: (selectedModels: string[], splitEndDate?: string) => void;
   onApproveValidation?: (selectedModels: string[]) => void;
   onNavigateToValidation?: (selectedModels: string[]) => void;
+  nextStepInProgress?: boolean;
   isApproving?: boolean;
 }
 
@@ -99,33 +100,6 @@ function MaximizeIcon({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
-const MONTHS = [
-  { value: 1, name: "January", short: "Jan" },
-  { value: 2, name: "February", short: "Feb" },
-  { value: 3, name: "March", short: "Mar" },
-  { value: 4, name: "April", short: "Apr" },
-  { value: 5, name: "May", short: "May" },
-  { value: 6, name: "June", short: "Jun" },
-  { value: 7, name: "July", short: "Jul" },
-  { value: 8, name: "August", short: "Aug" },
-  { value: 9, name: "September", short: "Sep" },
-  { value: 10, name: "October", short: "Oct" },
-  { value: 11, name: "November", short: "Nov" },
-  { value: 12, name: "December", short: "Dec" },
-];
-
-export interface DateRangeInfo {
-  hasTemporalData: boolean;
-  timeColumn: string | null;
-  minDate?: string;
-  maxDate?: string;
-  minYear?: number;
-  maxYear?: number;
-  minMonth?: number;
-  maxMonth?: number;
-  availableYears?: number[];
-}
-
 const fileServerBase = BACKEND_URL.replace(/\/api\/?$/, "");
 
 function resolvePlotUrl(rawUrl: string): string {
@@ -139,18 +113,13 @@ export default function ModelTrainingStepOutput({
   modelTraining,
   trainingConfiguration,
   modelSelection,
-  projectId,
-  activeRunTimestamp,
   onApproveTraining,
-  onApproveValidation,
   onNavigateToValidation,
+  nextStepInProgress = false,
   isApproving = false,
 }: ModelTrainingStepOutputProps) {
   const [copiedArtifact, setCopiedArtifact] = useState<string | null>(null);
   const [activePlotModal, setActivePlotModal] = useState<{ title: string; url: string } | null>(null);
-
-  const [dateRangeInfo, setDateRangeInfo] = useState<DateRangeInfo | null>(null);
-  const [isLoadingDateRange, setIsLoadingDateRange] = useState<boolean>(true);
 
   let reportCandidates: any[] = [];
   const rawReportPayload =
@@ -180,28 +149,15 @@ export default function ModelTrainingStepOutput({
   }
 
   const sourceCandidates: any[] =
-    reportCandidates.length > 0
-      ? reportCandidates
-      : Array.isArray(modelTraining?.rankedCandidates) && modelTraining.rankedCandidates.length > 0
-        ? modelTraining.rankedCandidates
-        : Array.isArray(modelTraining?.candidates) && modelTraining.candidates.length > 0
-          ? modelTraining.candidates
-          : Array.isArray(trainingConfiguration?.configuration?.model_selection?.models) && trainingConfiguration.configuration.model_selection.models.length > 0
-            ? trainingConfiguration.configuration.model_selection.models
-            : Array.isArray(trainingConfiguration?.configuration?.model_selection?.candidates) && trainingConfiguration.configuration.model_selection.candidates.length > 0
-              ? trainingConfiguration.configuration.model_selection.candidates
-              : Array.isArray(modelSelection?.candidates) && modelSelection.candidates.length > 0
-                ? modelSelection.candidates
-                : Array.isArray(modelSelection?.models) && modelSelection.models.length > 0
-                  ? modelSelection.models
-                  : [];
-
-  const catalogCandidates: any[] = [
-    ...(Array.isArray(trainingConfiguration?.configuration?.model_selection?.candidates) ? trainingConfiguration.configuration.model_selection.candidates : []),
-    ...(Array.isArray(trainingConfiguration?.configuration?.model_selection?.models) ? trainingConfiguration.configuration.model_selection.models : []),
-    ...(Array.isArray(modelSelection?.candidates) ? modelSelection.candidates : []),
-    ...(Array.isArray(modelSelection?.models) ? modelSelection.models : []),
-  ];
+    (Array.isArray(modelTraining?.executedModels) && modelTraining.executedModels.length > 0
+      ? modelTraining.executedModels
+      : reportCandidates.length > 0
+        ? reportCandidates
+        : Array.isArray(modelTraining?.rankedCandidates) && modelTraining.rankedCandidates.length > 0
+          ? modelTraining.rankedCandidates
+          : Array.isArray(modelTraining?.candidates)
+            ? modelTraining.candidates
+            : []);
 
   const primaryMetricKey =
     modelTraining?.report?.primary_metric ||
@@ -213,23 +169,20 @@ export default function ModelTrainingStepOutput({
       : trainingConfiguration?.configuration?.["x-primary-metric-def"]) ||
     modelSelection?.primary_metric;
 
-  const rawCandidateList: CandidateModelItem[] = sourceCandidates.map((c: any, idx: number) => {
-    const modelId = String(typeof c === "string" ? c : (c.model_id || c.id || c.name || c.model_name || `candidate_${idx + 1}`));
-    const configuredMeta = catalogCandidates.find(
-      (item) => String(item?.model_id || item?.id || "").toLowerCase() === modelId.toLowerCase()
-    );
+  const rawCandidateList: CandidateModelItem[] = sourceCandidates.flatMap((c: any) => {
+    const modelId = String(typeof c === "string" ? c : (c.model_id || c.id || c.name || c.model_name || "")).trim();
+    if (!modelId) return [];
     const displayName = String(
-      (typeof c === "object" ? c.displayName || c.display_name || c.algorithm || c.name : null) ||
-      configuredMeta?.displayName ||
-      configuredMeta?.algorithm ||
-      modelId
+      (typeof c === "object" ? c.displayName || c.display_name || c.algorithm || c.name : null) || modelId
     );
     const framework = String(
-      (typeof c === "object" ? c.framework : null) ||
-      configuredMeta?.framework ||
-      "sklearn"
+      (typeof c === "object" ? c.framework : null) || ""
     );
-    const status = c.status === "SUCCESS" || c.status === "Completed" ? "Completed" : c.status || (c.error ? "Failed" : "Completed");
+    const status = c.status === "SUCCESS" || c.status === "Completed"
+      ? "Completed"
+      : c.status === "FAILED" || c.status === "Failed" || c.error
+        ? "Failed"
+        : undefined;
 
     const validationMetrics = c.validationMetrics || c.validation_metrics || c.metrics || c.val_metrics || {};
     const testMetrics = c.testMetrics || c.test_metrics || {};
@@ -298,7 +251,7 @@ export default function ModelTrainingStepOutput({
     const artifact = c.artifact || c.model_path || c.artifact_path || c.model_artifact;
     const plots = c.plots || c.comparison_plots || c.plot_paths;
 
-    return {
+    return [{
       model_id: modelId,
       displayName,
       framework,
@@ -310,7 +263,7 @@ export default function ModelTrainingStepOutput({
       artifact,
       plots,
       error: c.error,
-    };
+    }];
   });
 
   const uniqueCandidateMap = new Map<string, CandidateModelItem>();
@@ -321,112 +274,34 @@ export default function ModelTrainingStepOutput({
   }
   const candidateModels = Array.from(uniqueCandidateMap.values());
 
-  const [selectedModelIds, setSelectedModelIds] = useState<string[]>(() => {
-    return candidateModels.map((candidate) => candidate.model_id);
-  });
-
-  const [selectedModelsForValidation, setSelectedModelsForValidation] = useState<string[]>(() => {
-    return candidateModels.map((c) => c.model_id);
-  });
-
-  useEffect(() => {
-    if (candidateModels.length > 0) {
-      setSelectedModelsForValidation((prev) => (prev.length === 0 ? candidateModels.map((c) => c.model_id) : prev));
-    }
-  }, [candidateModels]);
-
-  const [selectedYear, setSelectedYear] = useState<number>(() => {
-    const existing = modelTraining?.splitEndDate || modelTraining?.splitDate;
-    if (existing && typeof existing === "string") {
-      const y = parseInt(existing.split("-")[0], 10);
-      if (!isNaN(y)) return y;
-    }
-    return new Date().getFullYear();
-  });
-
-  const [selectedMonth, setSelectedMonth] = useState<number>(() => {
-    const existing = modelTraining?.splitEndDate || modelTraining?.splitDate;
-    if (existing && typeof existing === "string") {
-      const parts = existing.split("-");
-      if (parts.length >= 2) {
-        const m = parseInt(parts[1], 10);
-        if (!isNaN(m)) return m;
-      }
-    }
-    return 9;
-  });
-
-  useEffect(() => {
-    if (!projectId) {
-      setIsLoadingDateRange(false);
-      return;
-    }
-    let isCancelled = false;
-    async function loadDateRange() {
-      setIsLoadingDateRange(true);
-      try {
-        const url = `${BACKEND_URL}/training-config/${projectId}/date-range${
-          activeRunTimestamp ? `?timestamp=${encodeURIComponent(activeRunTimestamp)}` : ""
-        }`;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to load date range");
-        const json = await res.json();
-        if (!isCancelled && json.success && json.data) {
-          const data: DateRangeInfo = json.data;
-          setDateRangeInfo(data);
-          if (data.hasTemporalData && data.minYear && data.maxYear) {
-
-            const defaultY = data.maxYear;
-            setSelectedYear((prev) => {
-              if (prev >= data.minYear! && prev <= data.maxYear!) return prev;
-              return defaultY;
-            });
-            if (data.maxMonth) {
-              setSelectedMonth((prev) => prev || data.maxMonth || 9);
-            }
-          }
-        }
-      } catch (e) {
-        console.warn("[ModelTrainingStepOutput] Date range fetch error:", e);
-      } finally {
-        if (!isCancelled) setIsLoadingDateRange(false);
-      }
-    }
-
-    loadDateRange();
-    return () => {
-      isCancelled = true;
-    };
-  }, [projectId, activeRunTimestamp]);
-
-  const toggleModelSelection = (modelId: string) => {
-    setSelectedModelIds((prev) =>
-      prev.includes(modelId) ? prev.filter((id) => id !== modelId) : [...prev, modelId]
-    );
-  };
+  const configuredModelLists = [
+    trainingConfiguration?.models,
+    trainingConfiguration?.configuration?.model_selection?.models,
+    trainingConfiguration?.configuration?.models,
+  ];
+  const configuredModels = configuredModelLists.find(
+    (models: unknown): models is unknown[] => Array.isArray(models) && models.length > 0
+  );
+  const configuredTrainingModelIds: string[] = configuredModels
+    ? Array.from(new Set(
+        configuredModels
+          .filter(
+            (model): model is string | Record<string, unknown> =>
+              typeof model === "string" ||
+              Boolean(model && typeof model === "object" && !Array.isArray(model))
+          )
+          .filter((model) => typeof model === "string" || model.enabled !== false)
+          .map((model) => typeof model === "string" ? model : model.model_id || model.id)
+          .filter((modelId: unknown): modelId is string => typeof modelId === "string" && modelId.trim().length > 0)
+          .map((modelId) => modelId.trim())
+      ))
+    : [];
 
   const handleCopyPath = (text: string) => {
     navigator.clipboard.writeText(text);
     setCopiedArtifact(text);
     setTimeout(() => setCopiedArtifact(null), 2000);
   };
-
-  const selectAll = () => setSelectedModelIds(candidateModels.map((candidate) => candidate.model_id));
-  const deselectAll = () => setSelectedModelIds([]);
-
-  const minYearLimit = dateRangeInfo?.minYear ?? 2000;
-  const maxYearLimit = dateRangeInfo?.maxYear ?? new Date().getFullYear();
-  const availableYearsList = dateRangeInfo?.availableYears && dateRangeInfo.availableYears.length > 0
-    ? dateRangeInfo.availableYears
-    : Array.from({ length: maxYearLimit - minYearLimit + 1 }, (_, i) => minYearLimit + i);
-  const availableMonthsList = MONTHS.filter((month) => {
-    if (!dateRangeInfo?.hasTemporalData) return true;
-    if (selectedYear === dateRangeInfo.minYear && dateRangeInfo.minMonth && month.value < dateRangeInfo.minMonth) return false;
-    if (selectedYear === dateRangeInfo.maxYear && dateRangeInfo.maxMonth && month.value > dateRangeInfo.maxMonth) return false;
-    return true;
-  });
-  const selectedMonthObj = MONTHS.find((month) => month.value === selectedMonth) || MONTHS[8];
-  const formattedSplitCutoff = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
 
   const hasExecutionReport = Boolean(modelTraining?.report || modelTraining?.selectedModel || (modelTraining?.status === "Completed" && modelTraining?.validationMetrics));
   const hasCodeGenerated = Boolean(
@@ -443,18 +318,18 @@ export default function ModelTrainingStepOutput({
     report?.champion_model_id ||
     modelTraining?.selectedModel ||
     report?.selectedModel ||
-    report?.champion_model ||
-    candidateModels[0]?.model_id;
+    report?.champion_model;
 
   const championArtifact =
     modelTraining?.selectedModelArtifact ||
     report?.selectedModelArtifact ||
     report?.champion_artifact ||
     report?.artifacts?.selected_model ||
-    candidateModels.find((c) => c.model_id === championModelId)?.artifact ||
-    `artifacts/models/${championModelId || "model"}.joblib`;
+    candidateModels.find((c) => c.model_id === championModelId)?.artifact;
 
-  const championCandidate = candidateModels.find((c) => c.model_id === championModelId) || candidateModels[0];
+  const championCandidate = championModelId
+    ? candidateModels.find((candidate) => candidate.model_id === championModelId)
+    : undefined;
 
   const direction = String(
     report?.direction ||
@@ -557,85 +432,29 @@ export default function ModelTrainingStepOutput({
                   ✓ Ready for Execution
                 </span>
                 <span className="text-xs font-bold text-foreground">
-                  Select Models to Train in Docker Sandbox
+                  Training Configuration Models
                 </span>
               </div>
               <p className="text-xs text-muted-foreground mt-1">
-                Choose which candidate models to execute inside the isolated Docker container. Selected models will be fit and scored against the evaluation dataset.
+                Model selection is controlled by the completed backend training configuration.
               </p>
             </div>
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={selectAll}
-                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
-              >
-                Select All ({candidateModels.length})
-              </button>
-              <button
-                type="button"
-                onClick={deselectAll}
-                className="px-2.5 py-1 text-xs font-medium rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer"
-              >
-                Deselect All
-              </button>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
-            {candidateModels.map((candidate) => {
-              const isChecked = selectedModelIds.includes(candidate.model_id);
-              return (
-                <div
-                  key={candidate.model_id}
-                  onClick={() => toggleModelSelection(candidate.model_id)}
-                  className={`p-4 rounded-xl border transition-all cursor-pointer select-none flex items-start gap-3.5 ${
-                    isChecked
-                      ? "border-primary/50 bg-surface dark:bg-surface shadow-xs ring-1 ring-primary/30"
-                      : "border-border bg-surface/70 hover:border-border/80 opacity-70"
-                  }`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={() => {}}
-                    className="mt-0.5 w-4 h-4 rounded-md border-border text-primary focus:ring-0 cursor-pointer"
-                  />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-bold text-foreground truncate">
-                        {candidate.displayName || candidate.model_id}
-                      </span>
-                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-surface-muted border border-border text-muted-foreground">
-                        {candidate.framework || "sklearn"}
-                      </span>
-                    </div>
-
-                    <div className="mt-2 flex items-center gap-3 text-xs text-muted-foreground">
-                      <span className="font-mono text-[11px] truncate">ID: {candidate.model_id}</span>
-                      {typeof candidate.score === "number" && (
-                        <span className="text-emerald-600 dark:text-emerald-400 font-semibold ml-auto">
-                          Suitability: {(candidate.score * 100).toFixed(0)}%
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
+            <p className="text-xs font-semibold text-foreground">
+              {configuredTrainingModelIds.length} enabled model(s) in the training configuration.
+            </p>
           </div>
 
           <div className="pt-3 border-t border-border/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
-              {selectedModelIds.length} candidate model(s) selected for containerized training.
+              Model details will be shown after the backend records the execution output.
             </p>
 
             <button
               type="button"
-              disabled={selectedModelIds.length === 0 || isApproving}
+              disabled={configuredTrainingModelIds.length === 0 || isApproving || nextStepInProgress}
               onClick={() => {
                 if (onApproveTraining) {
-                  onApproveTraining(selectedModelIds);
+                  onApproveTraining(configuredTrainingModelIds);
                 }
               }}
               className="px-5 py-2.5 rounded-xl bg-primary text-primary-foreground font-semibold text-xs tracking-wide hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-md cursor-pointer transition-all flex items-center justify-center gap-2"
@@ -648,7 +467,7 @@ export default function ModelTrainingStepOutput({
               ) : (
                 <>
                   <CpuIcon className="w-4 h-4" />
-                  <span>Execute Training in Docker ({selectedModelIds.length} Models)</span>
+                  <span>Execute Training in Docker ({configuredTrainingModelIds.length} Models)</span>
                 </>
               )}
             </button>
@@ -665,9 +484,11 @@ export default function ModelTrainingStepOutput({
                   <TrophyIcon className="w-3.5 h-3.5" />
                   Champion Model
                 </span>
-                <span className="text-xs font-mono text-muted-foreground">
-                  Framework: {championCandidate.framework || "sklearn"}
-                </span>
+                {championCandidate.framework && (
+                  <span className="text-xs font-mono text-muted-foreground">
+                    Framework: {championCandidate.framework}
+                  </span>
+                )}
               </div>
 
               <h4 className="text-xl font-bold text-foreground">
@@ -719,6 +540,7 @@ export default function ModelTrainingStepOutput({
 
               <button
                 type="button"
+                disabled={nextStepInProgress}
                 onClick={() => handleCopyPath(championArtifact)}
                 className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer font-medium"
               >
@@ -822,7 +644,7 @@ export default function ModelTrainingStepOutput({
                       <td className="py-3 px-4 text-right">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                           <CheckCircleIcon className="w-3 h-3" />
-                          {m.status || "Completed"}
+                          {m.status || "Status unavailable"}
                         </span>
                       </td>
                     </tr>
@@ -854,6 +676,7 @@ export default function ModelTrainingStepOutput({
             {onNavigateToValidation && (
               <button
                 type="button"
+                disabled={nextStepInProgress}
                 onClick={() => onNavigateToValidation([])}
                 className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide shadow-sm hover:bg-primary/90 transition-all cursor-pointer shrink-0"
               >
@@ -882,6 +705,7 @@ export default function ModelTrainingStepOutput({
               </h4>
               <button
                 type="button"
+                disabled={nextStepInProgress}
                 onClick={() => setActivePlotModal(null)}
                 className="px-2 py-1 rounded-lg border border-border text-xs text-muted-foreground hover:bg-surface-muted cursor-pointer font-bold"
               >

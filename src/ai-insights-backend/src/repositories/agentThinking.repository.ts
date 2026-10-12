@@ -66,14 +66,12 @@ const SUBSTEP_ALIASES: Record<string, string[]> = {
   preFlightNode: ["preFlightNode", "Pre Flight", "preFlight"],
   "Pre Flight": ["Pre Flight", "preFlightNode", "preFlight"],
   preFlight: ["preFlight", "Pre Flight", "preFlightNode"],
-  modelTrainingCodeNode: ["modelTrainingCodeNode", "Model Training Code Generation", "modelTrainingCode"],
-  "Model Training Code Generation": ["Model Training Code Generation", "modelTrainingCodeNode", "modelTrainingCode"],
-  modelTrainingCode: ["modelTrainingCode", "Model Training Code Generation", "modelTrainingCodeNode"],
-  modelTrainingExecNode: ["modelTrainingExecNode", "Model Training Execution", "Model Training", "modelTrainingExec", "modelTraining", "modelTrainingNode", "modelEvaluation"],
-  "Model Training Execution": ["Model Training Execution", "Model Training", "modelTrainingExecNode", "modelTrainingExec", "modelTraining", "modelTrainingNode"],
-  "Model Training": ["Model Training", "Model Training Execution", "modelTrainingExecNode", "modelTrainingExec", "modelTraining", "modelTrainingNode"],
-  modelTrainingExec: ["modelTrainingExec", "Model Training Execution", "Model Training", "modelTrainingExecNode"],
-  modelTraining: ["modelTraining", "Model Training Execution", "Model Training", "modelTrainingExecNode"],
+  modelTrainingCodeNode: ["modelTrainingCodeNode", "Model Training Code Generation", "modelTrainingCode", "Model Training", "modelTraining", "modelTrainingNode"],
+  "Model Training Code Generation": ["Model Training Code Generation", "modelTrainingCodeNode", "modelTrainingCode", "Model Training", "modelTraining", "modelTrainingNode"],
+  modelTrainingCode: ["modelTrainingCode", "Model Training Code Generation", "modelTrainingCodeNode", "Model Training", "modelTraining", "modelTrainingNode"],
+  "Model Training": ["Model Training", "modelTrainingCodeNode", "modelTrainingCode", "modelTraining", "modelTrainingNode"],
+  modelTraining: ["modelTraining", "modelTrainingCodeNode", "modelTrainingCode", "Model Training", "modelTrainingNode"],
+  modelTrainingNode: ["modelTrainingNode", "modelTrainingCodeNode", "modelTrainingCode", "Model Training", "modelTraining"],
   modelValidationNode: ["modelValidationNode", "Model Validation", "modelValidation"],
   "Model Validation": ["Model Validation", "modelValidationNode", "modelValidation"],
   modelValidation: ["modelValidation", "Model Validation", "modelValidationNode"],
@@ -242,9 +240,9 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
       }
 
       // Aggregate Model Training
-      const mtWorkers = ["modelTrainingCodeNode", "modelTrainingExecNode", "modelTrainingCode", "modelTrainingExec"];
+      const mtWorkers = ["modelTrainingCodeNode", "modelTrainingCode", "modelTrainingNode", "modelTraining"];
       const aggregatedMtLogs: ThinkingLog[] = [
-        ...(map["Model Training"] || map["modelTrainingExecNode"] || []),
+        ...(map["Model Training"] || map["modelTrainingCodeNode"] || []),
       ];
       for (const w of mtWorkers) {
         if (map[w] && Array.isArray(map[w])) {
@@ -257,7 +255,7 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
       }
       if (aggregatedMtLogs.length > 0) {
         map["Model Training"] = aggregatedMtLogs;
-        map["modelTrainingExecNode"] = aggregatedMtLogs;
+        map["modelTrainingCodeNode"] = aggregatedMtLogs;
       }
 
       return map;
@@ -348,7 +346,6 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
           ...getSubstepCandidates("Training Configuration"),
           ...getSubstepCandidates("Pre Flight"),
           ...getSubstepCandidates("Model Training Code Generation"),
-          ...getSubstepCandidates("Model Training Execution"),
           ...getSubstepCandidates("Model Validation")
         );
       }

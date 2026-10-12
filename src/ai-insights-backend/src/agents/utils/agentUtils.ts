@@ -416,6 +416,7 @@ export interface AgentInvocationOptions {
   maxOutputTokens?: number;
   useDeepAgent?: boolean;
   enableTodoList?: boolean;
+  throwOnError?: boolean;
   middlewareOptions?: {
     summarization?: {
       triggerTokens?: number;
@@ -484,6 +485,9 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
   options?: AgentInvocationOptions
 ): Promise<T> {
   if (!model) {
+    if (options?.throwOnError) {
+      throw new Error(`[Workflow] Cannot run agent "${stepName}": no language model is configured.`);
+    }
     return fallback;
   }
 
@@ -544,12 +548,8 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     "Pre Flight": "Pre Flight",
     modelTrainingCode: "Model Training",
     modelTrainingCodeNode: "Model Training",
-    modelTrainingExec: "Model Training",
-    modelTrainingExecNode: "Model Training",
     modelTraining: "Model Training",
     modelTrainingNode: "Model Training",
-    modelEvaluation: "Model Training",
-    modelEvaluationNode: "Model Training",
     modelValidation: "Model Validation",
     modelValidationNode: "Model Validation",
   };
@@ -624,6 +624,10 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     if (isAbort) {
       console.info(`[Workflow] Node [${stepName}] execution stopped by user.`);
       return fallback;
+    }
+    if (options?.throwOnError) {
+      console.error(`Agent ${stepName} execution failed`, error);
+      throw error;
     }
     console.warn(`Agent ${stepName} execution failed, returning fallback`, error);
     return fallback;
@@ -988,8 +992,7 @@ export function buildMessage(nextNodes: string[], status: string, stageStatuses?
     modelSelectionNode: "Selecting and ranking candidate models...",
     trainingConfigurationNode: "Configuring model training parameters...",
     preFlightNode: "Running pre-flight checks and hardware assessment...",
-    modelTrainingCodeNode: "Generating model training code...",
-    modelTrainingExecNode: "Training candidate models...",
+    modelTrainingCodeNode: "Generating and validating model training code...",
   };
   const activeNode = determineCurrentStage(nextNodes, stageStatuses || {});
   return messages[activeNode as TrackedAgentKey] || (normStatus === "Completed"
@@ -1019,14 +1022,15 @@ export function buildResultFromGraphState(
   const isAtTrainingConfigApproval = nextNodes.includes("trainingConfigurationNode") && stageStatuses.modelSelectionNode === "Completed";
   const isAtPreFlightInput = nextNodes.includes("preFlightNode") && stageStatuses.trainingConfigurationNode === "Completed";
   const isAtModelCodeInput = nextNodes.includes("modelTrainingCodeNode") && stageStatuses.preFlightNode === "Completed";
-  const isAtModelExecutionInput = nextNodes.includes("modelTrainingExecNode") && stageStatuses.modelTrainingCodeNode === "Completed";
+  const isAtModelExecutionInput =
+    nextNodes.includes("modelTrainingExecutionNode") &&
+    stageStatuses.modelTrainingCodeNode === "User Input";
   const awaitingNode = isAtFeatureApproval ? undefined
     : isAtModelApproval ? (status === "Awaiting Approval" ? undefined : "modelSelectionNode")
       : isAtTrainingConfigApproval ? "trainingConfigurationNode"
         : isAtPreFlightInput ? "preFlightNode"
-          : isAtModelCodeInput ? "modelTrainingCodeNode"
-            : isAtModelExecutionInput ? "modelTrainingExecNode"
-              : undefined;
+          : isAtModelCodeInput || isAtModelExecutionInput ? "modelTrainingCodeNode"
+            : undefined;
   if (awaitingNode) {
     stageStatuses[awaitingNode] = "User Input";
   }
@@ -1089,37 +1093,70 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
   if (!step) return "modelSelectionNode";
   const s = step.toLowerCase().trim();
 
-  if (
-    s === "inspect" ||
-    s === "data inspection" ||
-    s === "profiledata" ||
-    s === "data profiling" ||
-    s === "resolveschema" ||
-    s === "schema resolver" ||
-    s === "data ingestion"
-  ) {
+  if (["inspect", "data inspection", "datainspection", "inspection", "data ingestion"].includes(s)) {
     return "inspect";
   }
 
-  if (
-    s === "hierarchymapper" ||
-    s === "hierarchymappernode" ||
-    s === "hierarchy mapper" ||
-    s === "featurearchitect" ||
-    s === "featurearchitectnode" ||
-    s === "feature architect" ||
-    s === "featurevalidator" ||
-    s === "featurevalidatornode" ||
-    s === "feature validator" ||
-    s === "exogenous" ||
-    s === "exogenousscout" ||
-    s === "exogenous scout" ||
-    s === "feature engineering"
-  ) {
+  if (["profiledata", "data profile", "data profiling", "dataprofiling"].includes(s)) {
+    return "profileData";
+  }
+
+  if (["resolveschema", "schema resolution", "schema resolver", "schemaresolver"].includes(s)) {
+    return "resolveSchema";
+  }
+
+  if ([
+    "hierarchymapper",
+    "hierarchymappernode",
+    "hierarchy mapper",
+    "relationshipbuilder",
+    "relationship builder",
+    "formbuilder",
+    "form builder",
+    "feature engineering",
+  ].includes(s)) {
     return "hierarchyMapperNode";
   }
 
-  return "modelSelectionNode";
+  if (["featurearchitect", "featurearchitectnode", "feature architect"].includes(s)) {
+    return "featureArchitectNode";
+  }
+
+  if (["featurevalidator", "featurevalidatornode", "feature validator"].includes(s)) {
+    return "featureArchitectNode";
+  }
+
+  if (["exogenous", "exogenousscout", "exogenous scout"].includes(s)) {
+    return "exogenous";
+  }
+
+  if (["trainingconfiguration", "trainingconfigurationnode", "training configuration"].includes(s)) {
+    return "trainingConfigurationNode";
+  }
+
+  if (["preflight", "preflightnode", "pre flight"].includes(s)) {
+    return "preFlightNode";
+  }
+
+  if ([
+    "modeltraining",
+    "modeltrainingnode",
+    "modeltrainingcode",
+    "modeltrainingcodenode",
+    "model training",
+    "model training code generation",
+    "modelvalidation",
+    "modelvalidationnode",
+    "model validation",
+  ].includes(s)) {
+    return "modelTrainingCodeNode";
+  }
+
+  if (["modelselection", "modelselectionnode", "model selection"].includes(s)) {
+    return "modelSelectionNode";
+  }
+
+  throw new Error(`Cannot retry unknown workflow step "${step}".`);
 }
 
 export async function logMilestoneThinking(

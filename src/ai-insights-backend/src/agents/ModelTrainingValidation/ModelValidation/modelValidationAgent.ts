@@ -204,7 +204,7 @@ export class ModelValidationAgent {
       (state as any)?.validatedFeatures ||
       ((state as any).featureArchitectNode as any)?.validatedFeatureSet?.kept ||
       (state.featureArchitect as any)?.validatedFeatureSet?.kept ||
-      (state.stageOutputs?.modelTrainingExecNode as any)?.features ||
+      (state.stageOutputs?.modelTrainingCodeNode as any)?.features ||
       (state.stageOutputs as any)?.modelTraining?.features;
 
     if (Array.isArray(stateFeatures) && stateFeatures.length > 0) {
@@ -490,7 +490,7 @@ export class ModelValidationAgent {
       (state.modelSelection as any)?.direction ||
       (state.stageOutputs?.modelSelectionNode as any)?.direction ||
       (state.modelTraining as any)?.direction ||
-      (state.stageOutputs?.modelTrainingExecNode as any)?.direction ||
+      (state.stageOutputs?.modelTrainingCodeNode as any)?.direction ||
       (state.trainingConfiguration as any)?.configuration?.objective?.direction ||
       (state.trainingConfiguration as any)?.configuration?.["x-primary-metric-def"]?.direction ||
       (state.trainingConfiguration as any)?.direction;
@@ -1064,7 +1064,7 @@ export class ModelValidationAgent {
       ...((state.stageOutputs?.modelSelectionNode as any)?.candidates || []),
       ...((state.stageOutputs?.modelSelectionNode as any)?.models || []),
       ...((state.modelTraining as any)?.candidates || []),
-      ...((state.stageOutputs?.modelTrainingExecNode as any)?.candidates || []),
+      ...((state.stageOutputs?.modelTrainingCodeNode as any)?.candidates || []),
       ...((state.trainingConfiguration as any)?.configuration?.model_selection?.candidates || []),
       ...((state.trainingConfiguration as any)?.configuration?.model_selection?.models || []),
     ];

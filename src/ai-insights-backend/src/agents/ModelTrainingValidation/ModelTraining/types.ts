@@ -34,6 +34,8 @@ export interface ModelTrainingAgentOutput {
   direction?: string;
   candidates: CandidateModelRun[];
   rankedCandidates: CandidateModelRun[];
+  executedModels?: CandidateModelRun[];
+  executionCompleted?: boolean;
   selectedModel?: string;
   selectedModels?: string[];
   selectedModelArtifact?: string;

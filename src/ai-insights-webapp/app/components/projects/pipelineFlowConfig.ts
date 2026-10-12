@@ -49,14 +49,9 @@ export const SUBSTEP_TO_PIPELINE_MAP: Record<string, PipelinePhase> = {
   "Model Training Code Generation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelTrainingCode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelTrainingCodeNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "Model Training Execution": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "modelTrainingExec": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "modelTrainingExecNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "Model Training": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelTraining": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelTrainingNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "modelEvaluation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
-  "modelEvaluationNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "Model Validation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelValidation": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
   "modelValidationNode": PIPELINE_PHASES.MODEL_TRAINING_VALIDATION,
@@ -103,14 +98,9 @@ export const STEP_TO_NODE_MAP: Record<string, string> = {
   "Model Training Code Generation": "modelTrainingCodeNode",
   "modelTrainingCode": "modelTrainingCodeNode",
   "modelTrainingCodeNode": "modelTrainingCodeNode",
-  "Model Training Execution": "modelTrainingExecNode",
-  "modelTrainingExec": "modelTrainingExecNode",
-  "modelTrainingExecNode": "modelTrainingExecNode",
   "Model Training": "modelTrainingCodeNode",
   "modelTraining": "modelTrainingCodeNode",
   "modelTrainingNode": "modelTrainingCodeNode",
-  "modelEvaluation": "modelTrainingExecNode",
-  "modelEvaluationNode": "modelTrainingExecNode",
   "Model Validation": "modelValidationNode",
   "modelValidation": "modelValidationNode",
   "modelValidationNode": "modelValidationNode",
@@ -157,12 +147,6 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): string
       nextStepLower === "modeltrainingnode"
     ) {
       targetPhase = "Model Training Code Generation";
-    } else if (
-      nextStepLower === "model training execution" ||
-      nextStepLower === "modeltrainingexec" ||
-      nextStepLower === "modeltrainingexecnode"
-    ) {
-      targetPhase = "Model Training Execution";
     } else if (
       nextStepLower === "model selection" ||
       nextStepLower === "modelselection" ||

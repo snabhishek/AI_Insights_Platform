@@ -62,6 +62,38 @@ function renderConnectorIcon(type: string): React.ReactNode {
 
 type View = "list" | "project";
 
+function getWorkflowErrorMessage(value: unknown, fallback: string): string {
+  if (typeof value === "string" && value.trim()) return value.trim();
+  if (value instanceof Error && value.message) return value.message;
+  if (value && typeof value === "object") {
+    const details = value as Record<string, unknown>;
+    for (const key of ["message", "error", "detail"]) {
+      if (typeof details[key] === "string" && details[key].trim()) {
+        return details[key].trim();
+      }
+    }
+    return JSON.stringify(value);
+  }
+  return fallback;
+}
+
+function getStageOutputError(stageOutputs: unknown): string | null {
+  if (!stageOutputs || typeof stageOutputs !== "object" || Array.isArray(stageOutputs)) {
+    return null;
+  }
+
+  for (const [stage, value] of Object.entries(stageOutputs)) {
+    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
+    const output = value as Record<string, unknown>;
+    const message = getWorkflowErrorMessage(output.error, "");
+    if (message) return message;
+    if (typeof output.status === "string" && output.status.toLowerCase() === "failed") {
+      return getWorkflowErrorMessage(output.message || output.summary, `${stage} failed`);
+    }
+  }
+  return null;
+}
+
 export default function ProjectsPage() {
   const {
     projects,
@@ -103,6 +135,7 @@ export default function ProjectsPage() {
   const [stageOutputs, setStageOutputs] = useState<StageOutputs>({});
   const [agentThinking, setAgentThinking] = useState<Record<string, Array<{ time: string; text: string; done: boolean }>>>({});
   const [workflowMessage, setWorkflowMessage] = useState<string>("None");
+  const [workflowError, setWorkflowError] = useState<string | null>(null);
   const [approvalNextStep, setApprovalNextStep] = useState<string | null>(null);
   const [isApproving, setIsApproving] = useState(false);
   const [isSubmittingWorkflow, setIsSubmittingWorkflow] = useState(false);
@@ -133,6 +166,7 @@ export default function ProjectsPage() {
     setStageOutputs({});
     setAgentThinking({});
     setWorkflowMessage("None");
+    setWorkflowError(null);
     setApprovalNextStep(null);
     setIsAwaitingResponse(false);
 
@@ -179,12 +213,9 @@ export default function ProjectsPage() {
       return "Model Validation";
     }
     if (
-      currentNode === "modelTrainingExecNode" ||
       currentNode === "modelTrainingCodeNode" ||
       currentNode === "modelTraining" ||
-      currentNode === "modelTrainingNode" ||
-      currentNode === "modelEvaluation" ||
-      currentNode === "modelEvaluationNode"
+      currentNode === "modelTrainingNode"
     ) {
       return "Model Training";
     }
@@ -247,7 +278,6 @@ export default function ProjectsPage() {
         status === "Awaiting Approval" || status === "User Input";
     };
     const activeNodes: Array<[TrackedAgentKey, string]> = [
-      ["modelTrainingExecNode", "Model Training"],
       ["modelTrainingCodeNode", "Model Training"],
       ["preFlightNode", "Pre Flight"],
       ["trainingConfigurationNode", "Training Configuration"],
@@ -262,9 +292,8 @@ export default function ProjectsPage() {
     ];
     const activeStep = activeNodes.find(([node]) => hasProgress(node));
     if (activeStep) return activeStep[1];
-    if (stageOutputs?.modelTrainingExecNode?.modelValidation) return "Model Validation";
+    if (stageOutputs?.modelTrainingCodeNode?.modelValidation) return "Model Validation";
     const outputNodes: Array<[TrackedAgentKey, string]> = [
-      ["modelTrainingExecNode", "Model Training"],
       ["modelTrainingCodeNode", "Model Training"],
       ["preFlightNode", "Pre Flight"],
       ["trainingConfigurationNode", "Training Configuration"],
@@ -379,6 +408,11 @@ export default function ProjectsPage() {
       }
 
       setWorkflowMessage(state.message || state.summary || "Workflow loaded from DB");
+      setWorkflowError(
+        rawStatus === "failed"
+          ? state.error || state.message || state.summary || "Workflow failed"
+          : null
+      );
       if (state.stageOutputs) {
         setStageOutputs(state.stageOutputs);
       }
@@ -479,6 +513,12 @@ export default function ProjectsPage() {
               setRunStatus("Failed");
               setIsPaused(false);
               setApprovalNextStep(null);
+              setWorkflowError(
+                getWorkflowErrorMessage(
+                  freshState.error || freshState.message || freshState.summary,
+                  "Workflow failed"
+                )
+              );
             } else if (freshStatus === "stopped") {
               setRunStatus("Stopped");
               setIsPaused(false);
@@ -517,6 +557,7 @@ export default function ProjectsPage() {
             if (freshState.stageOutputs) setStageOutputs(freshState.stageOutputs);
             if (freshState.agentThinking) setAgentThinking((prev) => ({ ...prev, ...freshState.agentThinking }));
             if (freshState.message || freshState.summary) setWorkflowMessage(freshState.message || freshState.summary);
+            if (freshStatus !== "failed") setWorkflowError(null);
             if (freshState.sessionId) setWorkflowSessionId(freshState.sessionId);
             if (freshState.currentStage || freshState.currentNode || freshState.stageStatuses) {
               setActiveStage(determineActiveStage(freshState));
@@ -565,6 +606,14 @@ export default function ProjectsPage() {
         setStageOutputs(freshState.stageOutputs || {});
         setAgentThinking(freshState.agentThinking || {});
         setWorkflowMessage(freshState.message || freshState.summary || "Workflow loaded from backend");
+        setWorkflowError(
+          freshStatus === "failed"
+            ? getWorkflowErrorMessage(
+                freshState.error || freshState.message || freshState.summary,
+                "Workflow failed"
+              )
+            : null
+        );
         setWorkflowSessionId(typeof freshState.sessionId === "string" ? freshState.sessionId : null);
         setActiveStage(determineActiveStage(freshState));
         setIsAwaitingResponse(false);
@@ -680,6 +729,7 @@ export default function ProjectsPage() {
     predictionObjectiveStartDate?: string
   ) => {
     if (!selectedProject) return;
+    setWorkflowError(null);
 
     if (!workflowConnectorIds || workflowConnectorIds.length === 0) {
       showAlert({
@@ -700,8 +750,9 @@ export default function ProjectsPage() {
         });
         return;
       }
-    } catch {
-
+    } catch (error) {
+      console.warn("Failed to check for an active workflow", error);
+      setWorkflowError(getWorkflowErrorMessage(error, "Unable to check for an active workflow"));
     }
 
     if (isExecutingRef.current) return;
@@ -788,6 +839,7 @@ export default function ProjectsPage() {
               if (chunk.success && chunk.data) {
                 const update = chunk.data;
                 lastData = update;
+                setWorkflowError(null);
 
                 const statusStr = String(update.status || "").toLowerCase();
                 const isChunkAwaitingApproval =
@@ -833,6 +885,12 @@ export default function ProjectsPage() {
                   setRunStatus("Failed");
                   setIsPaused(false);
                   setApprovalNextStep(null);
+                  setWorkflowError(
+                    getWorkflowErrorMessage(
+                      update.error || update.message || update.summary,
+                      "Workflow failed"
+                    )
+                  );
                 }
 
                 if (update.stageStatuses) {
@@ -844,6 +902,15 @@ export default function ProjectsPage() {
                       ? update.stageOutputs
                       : { ...prev, ...update.stageOutputs }
                   );
+                  const stageOutputError = getStageOutputError(update.stageOutputs);
+                  if (stageOutputError) {
+                    setRunStatus("Failed");
+                    setWorkflowError(stageOutputError);
+                  }
+                }
+                if (update.error) {
+                  setRunStatus("Failed");
+                  setWorkflowError(getWorkflowErrorMessage(update.error, "Workflow failed"));
                 }
                 if (update.agentThinking) {
                   setAgentThinking((prev) => ({ ...prev, ...update.agentThinking }));
@@ -890,10 +957,15 @@ export default function ProjectsPage() {
                 setIsSubmittingWorkflow(false);
                 setIsResumingWorkflow(false);
                 setIsRetryingWorkflow(false);
-                throw new Error(chunk.message || "AI workflow failed");
+                const message = getWorkflowErrorMessage(chunk.message, "AI workflow failed");
+                setRunStatus("Failed");
+                setWorkflowError(message);
+                setWorkflowMessage(message);
               }
             } catch (err: any) {
-              console.warn("Failed to parse stream chunk", err);
+              console.warn("Failed to process workflow stream update", err);
+              setRunStatus("Failed");
+              setWorkflowError(getWorkflowErrorMessage(err, "Unable to process workflow update"));
             }
           }
         }
@@ -921,6 +993,7 @@ export default function ProjectsPage() {
         return;
       }
       console.error("Workflow execution stream error", error);
+      const errorMessage = getWorkflowErrorMessage(error, "Workflow stream was interrupted");
       if (error.message?.includes("Another pipeline is currently running")) {
         showAlert({
           title: "Another pipeline is currently running and wait until the current progress is completed to run the workflow.",
@@ -931,7 +1004,9 @@ export default function ProjectsPage() {
         return;
       }
 
-      showAlert({ title: error.message || "Workflow stream was interrupted", type: "error" });
+      setRunStatus("Failed");
+      setWorkflowError(errorMessage);
+      showAlert({ title: errorMessage, type: "error" });
     } finally {
       setIsApproving(false);
       setIsSubmittingWorkflow(false);
@@ -969,6 +1044,7 @@ export default function ProjectsPage() {
       }
       if (currentProjectId) await refreshProjects();
     } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "Failed to stop workflow");
       showAlert({
         title: error instanceof Error ? error.message : "Failed to stop workflow",
         type: "error",
@@ -1013,15 +1089,18 @@ export default function ProjectsPage() {
 
   const handleRetry = (step?: string) => {
     if (runStatus === "Stopped" || runStatus === "Failed" || isExecutingRef.current || isRetryingWorkflow) return;
-    setIsRetryingWorkflow(true);
     const rawStep = step || activeStage || "inspect";
-    const phase = SUBSTEP_TO_PIPELINE_MAP[rawStep] || PIPELINE_PHASES.MODEL_TRAINING_VALIDATION;
-    const rootNode = phase === PIPELINE_PHASES.DATA_INGESTION
-      ? "inspect"
-      : phase === PIPELINE_PHASES.FEATURE_ENGINEERING
-        ? "hierarchyMapperNode"
-        : "modelSelectionNode";
-    void runWorkflow("retry", rootNode);
+    showConfirm({
+      title: "Retry workflow step",
+      message: "Retrying this step will reset all successor steps in the workflow. Do you want to continue retrying?",
+      confirmText: "Retry",
+      cancelText: "Cancel",
+      onConfirm: () => {
+        if (isExecutingRef.current || isRetryingWorkflow) return;
+        setIsRetryingWorkflow(true);
+        void runWorkflow("retry", rawStep);
+      },
+    });
   };
 
   const handlePauseWorkflow = async () => {
@@ -1047,6 +1126,7 @@ export default function ProjectsPage() {
       }
       if (currentProjectId) await refreshProjects();
     } catch (error) {
+      setWorkflowError(error instanceof Error ? error.message : "Failed to pause workflow");
       showAlert({
         title: error instanceof Error ? error.message : "Failed to pause workflow",
         type: "error",
@@ -1156,6 +1236,7 @@ export default function ProjectsPage() {
         activeStage={activeStage}
         stageOutputs={stageOutputs}
         workflowMessage={workflowMessage}
+        workflowError={workflowError}
         isApproving={isApproving}
         isSubmittingWorkflow={isSubmittingWorkflow}
         isPausing={isPausingWorkflow}

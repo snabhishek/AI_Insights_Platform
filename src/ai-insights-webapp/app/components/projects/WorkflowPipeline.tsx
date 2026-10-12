@@ -14,6 +14,7 @@ interface WorkflowPipelineProps {
   activeStage: string | null;
   stageOutputs: Record<string, unknown>;
   workflowMessage: string;
+  workflowError: string | null;
   onRunWorkflow: () => void;
   onReRunWorkflow?: () => void;
   onStopWorkflow?: () => void;
@@ -67,7 +68,7 @@ export function toDisplayStatuses(pipelineStatuses: PipelineStatuses): Record<st
     result[nodeKey] = status;
     result[config.displayName] = status;
   }
-  result.modelTraining = displayStatus(flatStatuses.modelTrainingExecNode);
+  result.modelTraining = displayStatus(flatStatuses.modelTrainingCodeNode);
   result["Model Training"] = result.modelTraining;
   result["Model Validation"] = result.modelTraining;
   return result;
@@ -153,6 +154,7 @@ export default function WorkflowPipeline({
   activeStage,
   stageOutputs,
   workflowMessage,
+  workflowError,
   onRunWorkflow,
   onReRunWorkflow,
   onStopWorkflow,
@@ -225,7 +227,11 @@ export default function WorkflowPipeline({
     return "Feature Engineering";
   })();
 
-  const isWorkflowStoppedOrFailed = effectiveRunStatus === "Stopped" || effectiveRunStatus === "Failed" || effectiveRunStatus === 'In-Progress';
+  const isWorkflowStoppedOrFailed =
+    effectiveRunStatus === "Stopped" ||
+    effectiveRunStatus === "Failed" ||
+    effectiveRunStatus === "Paused" ||
+    effectiveRunStatus === "In-Progress";
   const isAnyActionLoading = Boolean(
     isApproving || isSubmittingWorkflow || isPausing || isStopping || isResuming || isRetrying
   );  
@@ -275,8 +281,6 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
   "Model Training Code Generation",
   "modelTrainingNode",
   "Model Training",
-  "modelTrainingExecNode",
-  "Model Training Execution",
   "modelValidationNode",
   "Model Validation",
 ]);
@@ -349,6 +353,31 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
   return (
     <div className="col-span-12 lg:col-span-8 xl:col-span-9 flex flex-col bg-background border border-border rounded-lg p-6 shadow-soft">
 
+      {workflowError && (
+        <div
+          role="alert"
+          className="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-red-500/15 via-red-500/5 to-surface border border-red-500/30 text-red-800 dark:text-red-300 shadow-sm animate-fadeIn"
+        >
+          <svg
+            className="mt-0.5 shrink-0"
+            viewBox="0 0 24 24"
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="10" />
+            <path d="M12 8v4m0 4h.01" />
+          </svg>
+          <div className="min-w-0">
+            <p className="text-xs font-bold tracking-wide">Workflow error</p>
+            <p className="mt-1 text-xs whitespace-pre-wrap break-words">{workflowError}</p>
+          </div>
+        </div>
+      )}
+
       {isAwaitingApprovalWorkflow && (
         <div className="mb-5 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-surface border border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-sm animate-fadeIn">
           <div className="flex items-center gap-2.5">
@@ -387,9 +416,6 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
               ) {
                 return "Pre-flight checks passed. Please review and approve to start model training.";
               }
-              if (step === "modelTrainingExecNode" || step === "Model Training Execution") {
-                return "Please review training code and approve to execute training.";
-              }
               if (step === "modelValidationNode" || step === "Model Validation") {
                 return "Please review model validation metrics to proceed.";
               }
@@ -425,8 +451,6 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
                   effectiveApprovalNextStep === "modelTrainingNode" ||
                   effectiveApprovalNextStep === "modelTrainingCodeNode" ||
                   effectiveApprovalNextStep === "Model Training Code Generation" ||
-                  effectiveApprovalNextStep === "Model Training Execution" ||
-                  effectiveApprovalNextStep === "modelTrainingExecNode" ||
                   effectiveApprovalNextStep === "Model Validation" ||
                   effectiveApprovalNextStep === "modelValidationNode" ||
                   pausedAtPhase === "Training Configuration" ||
@@ -442,9 +466,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
                     step === "modelTrainingCodeNode" ||
                     step === "Model Training Code Generation" ||
                     step === "modelTrainingNode" ||
-                    step === "Model Training" ||
-                    step === "modelTrainingExecNode" ||
-                    step === "Model Training Execution"
+                    step === "Model Training"
                   ) {
                     buttonLabel = "Review Pre-Flight Verification";
                   } else if (step === "preFlightNode" || step === "Pre Flight") {

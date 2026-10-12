@@ -222,8 +222,6 @@ export class PostgresProjectRepository implements IProjectRepository {
         modelTrainingCode: preserveIfIncomingEmpty("modelTrainingCode"),
         modelTrainingCodeNode: preserveIfIncomingEmpty("modelTrainingCodeNode"),
         modelTraining: preserveIfIncomingEmpty("modelTraining"),
-        modelTrainingExec: preserveIfIncomingEmpty("modelTrainingExec"),
-        modelTrainingExecNode: preserveIfIncomingEmpty("modelTrainingExecNode"),
         modelValidation: preserveIfIncomingEmpty("modelValidation"),
       };
       return merged as AgentStateType;
@@ -241,19 +239,14 @@ export class PostgresProjectRepository implements IProjectRepository {
         .set(projectUpdates)
         .where(eq(schema.projects.id, id));
 
-      try {
-        const runId = `run-${uuidv4()}`;
-        await tx.insert(schema.projectRuns).values({
-          id: runId,
-          projectId: id,
-          useCase: effectiveUseCase || null,
-          status: effectiveStatus,
-          agentState: getAgentState(),
-        });
-      }
-      catch (err) {
-        console.error("Error inserting project run:", err);
-      }
+      const runId = `run-${uuidv4()}`;
+      await tx.insert(schema.projectRuns).values({
+        id: runId,
+        projectId: id,
+        useCase: effectiveUseCase || null,
+        status: effectiveStatus,
+        agentState: getAgentState(),
+      });
     })
 
     const updatedProj = await this.getById(id);
