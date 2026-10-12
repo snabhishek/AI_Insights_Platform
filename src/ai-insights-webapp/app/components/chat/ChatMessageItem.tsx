@@ -109,21 +109,21 @@ export default function ChatMessageItem({
                 key={tIdx}
                 className="overflow-x-auto rounded-xl border border-border/80 bg-surface/60 shadow-inner"
               >
-                <table className="w-full text-left text-[11px]">
-                  <thead className="bg-surface-muted/60 text-muted-foreground border-b border-border/80 font-bold uppercase text-[9px] tracking-wider">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-surface-muted/60 text-muted-foreground border-b border-border/80 font-bold uppercase text-[11px] tracking-wider">
                     <tr>
                       {table.columns.map((col, cIdx) => (
-                        <th key={cIdx} className="px-3 py-2">
+                        <th key={cIdx} className="px-3.5 py-2.5 font-bold">
                           {col}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/40 font-mono">
+                  <tbody className="divide-y divide-border/40 font-mono text-xs">
                     {table.rows.map((row, rIdx) => (
                       <tr key={rIdx} className="hover:bg-surface-muted/30 transition-colors">
                         {table.columns.map((col, cIdx) => (
-                          <td key={cIdx} className="px-3 py-1.5 whitespace-nowrap text-foreground/85">
+                          <td key={cIdx} className="px-3.5 py-2 whitespace-nowrap text-foreground/85">
                             {row[col] ?? "-"}
                           </td>
                         ))}
