@@ -243,7 +243,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     confirmText?: string;
     cancelText?: string;
     onConfirm: () => void;
-  }>({ title: "", message: "", onConfirm: () => { } });
+  }>({ title: "", message: "", onConfirm: () => {} });
 
   const [createWsOpen, setCreateWsOpen] = useState(false);
 
