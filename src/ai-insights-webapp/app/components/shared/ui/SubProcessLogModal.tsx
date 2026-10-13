@@ -278,6 +278,11 @@ export default function SubProcessLogModal({
 
             <div className="ml-3 pl-3 border-l border-slate-800 flex items-center gap-2">
               <span className="text-emerald-400 font-mono text-xs font-bold select-none">&gt;_</span>
+              {currentStep?.icon && (
+                <span className="w-3.5 h-3.5 flex items-center justify-center shrink-0 text-slate-400 [&>svg]:w-3.5 [&>svg]:h-3.5">
+                  {currentStep.icon}
+                </span>
+              )}
               <span className="font-mono text-xs text-slate-300 font-semibold tracking-wide truncate max-w-[200px] sm:max-w-md">
                 logs: ~/{pipelineTitle.toLowerCase().replace(/\s+/g, "-")}/{currentStep?.title || "subprocess"}.log
               </span>
@@ -392,6 +397,11 @@ export default function SubProcessLogModal({
                                     : "bg-status-none"
                     }`}
                   />
+                  {st.icon && (
+                    <span className="w-3.5 h-3.5 flex items-center justify-center shrink-0 opacity-80 [&>svg]:w-3.5 [&>svg]:h-3.5">
+                      {st.icon}
+                    </span>
+                  )}
                   <span>{st.title}</span>
                   {stepLogsCount > 0 && (
                     <span className="text-[10px] font-mono text-slate-400 bg-slate-950/60 px-1.5 py-0.2 rounded">

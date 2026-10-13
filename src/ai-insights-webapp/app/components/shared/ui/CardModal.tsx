@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { Inbox } from "lucide-react";
 import { Workflow, WorkflowStep, PipelineStatus, WorkflowAgentState } from "../../projects/types";
 import SubProcessLogModal from "./SubProcessLogModal";
 
@@ -333,6 +334,11 @@ function CardModalContent({
           {activeStep && (
             <div className="flex items-center justify-between px-6 py-2.5 bg-surface/90 dark:bg-slate-900/60 border-b border-border/70 shrink-0 select-none">
               <div className="flex items-center gap-2.5 min-w-0">
+                {activeStep.icon && (
+                  <span className="w-4 h-4 flex items-center justify-center shrink-0 text-primary [&>svg]:w-4 [&>svg]:h-4">
+                    {activeStep.icon}
+                  </span>
+                )}
                 <span className="text-xs font-bold text-foreground truncate">
                   {activeStep.title}
                 </span>
@@ -464,7 +470,7 @@ function CardModalContent({
                     </div>
                   ) : (
                     <>
-                      <span className="text-3xl mb-2">📥</span>
+                      <Inbox className="w-8 h-8 mb-2 text-muted-foreground/60" strokeWidth={1.5} />
                       <strong className="text-foreground">Output is not received yet.</strong>
                       <span className="text-xs max-w-sm mt-1 leading-normal">
                         The execution results will be displayed here as soon as this pipeline step completes and provides output.

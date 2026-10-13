@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { ScanSearch } from "lucide-react";
 import { Badge, DataTypeIcon, SectionHeader, DynamicTable } from "./utils";
 import ModernSelect from "../../shared/ui/ModernSelect";
 
@@ -44,7 +45,7 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
   if (sources.length === 0) {
     return (
       <div className="p-6 text-center border border-dashed border-border bg-surface-muted/20 select-none">
-        <span className="text-xl block mb-1">🔍</span>
+        <ScanSearch className="w-6 h-6 mx-auto mb-1.5 text-muted-foreground/60" />
         <p className="text-xs text-muted-foreground">No ingestion details found in payload.</p>
       </div>
     );

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { TableProperties } from "lucide-react";
 import { Badge, SectionHeader, DynamicTable } from "./utils";
 
 interface SchemaResolverStepOutputProps {
@@ -30,7 +31,7 @@ export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolv
   if (sources.length === 0) {
     return (
       <div className="p-6 text-center border border-dashed border-border bg-surface-muted/20 select-none">
-        <span className="text-xl block mb-1">🔗</span>
+        <TableProperties className="w-6 h-6 mx-auto mb-1.5 text-muted-foreground/60" />
         <p className="text-xs text-muted-foreground">No schema mappings found in payload.</p>
       </div>
     );
