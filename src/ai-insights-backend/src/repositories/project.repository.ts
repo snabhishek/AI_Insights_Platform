@@ -132,8 +132,6 @@ export class PostgresProjectRepository implements IProjectRepository {
     const currentProj = await this.getById(id);
 
     const effectiveUseCase = useCase ?? currentProj?.useCase;
-    const rawStatus = (agentState?.status as string) || currentProj?.status;
-    const effectiveStatus: PipelineStepStatus = normalizePipelineStepStatus(rawStatus) || "None";
 
     const existingState = replaceState ? {} : ((currentProj?.agentState as Record<string, unknown>) || {});
     const existingOutputs: Record<string, unknown> = { ...normalizeStageOutputs(existingState.stageOutputs) };
@@ -152,8 +150,12 @@ export class PostgresProjectRepository implements IProjectRepository {
     const preserveIfIncomingEmpty = (key: string) => {
       const incoming = agentState?.[key];
       const existing = existingState?.[key];
-      const isIncEmpty = !incoming || (typeof incoming === "object" && Object.keys(incoming as object).length === 0);
-      const isExtPopulated = existing && typeof existing === "object" && Object.keys(existing as object).length > 0;
+      const isIncEmpty = !incoming ||
+        (typeof incoming === "object" && Object.keys(incoming as object).length === 0) ||
+        (typeof incoming === "string" && incoming.trim().length === 0);
+      const isExtPopulated = existing &&
+        ((typeof existing === "object" && Object.keys(existing as object).length > 0) ||
+        (typeof existing === "string" && existing.trim().length > 0));
       if (isIncEmpty && isExtPopulated) {
         return existing;
       }
@@ -196,6 +198,25 @@ export class PostgresProjectRepository implements IProjectRepository {
       ? buildGroupedStageStatuses(mergedFlat, incomingStageOverrides)
       : existingStatuses;
 
+    let computedStatus: PipelineStepStatus | undefined = normalizePipelineStepStatus(agentState?.status as string);
+    if (!computedStatus) {
+      const flatValues = Object.values(mergedFlat);
+      if (flatValues.some((s) => s === "In-Progress")) {
+        computedStatus = "In-Progress";
+      } else if (flatValues.some((s) => s === "Awaiting Approval")) {
+        computedStatus = "Awaiting Approval";
+      } else if (flatValues.some((s) => s === "Paused")) {
+        computedStatus = "Paused";
+      } else if (flatValues.some((s) => s === "Failed")) {
+        computedStatus = "Failed";
+      } else if (flatValues.length > 0 && flatValues.every((s) => s === "Completed")) {
+        computedStatus = "Completed";
+      } else {
+        computedStatus = normalizePipelineStepStatus(currentProj?.status) || "None";
+      }
+    }
+    const effectiveStatus: PipelineStepStatus = computedStatus;
+
     const getAgentState = () => {
       const merged: Record<string, unknown> = {
         ...existingState,
@@ -203,6 +224,8 @@ export class PostgresProjectRepository implements IProjectRepository {
         status: effectiveStatus,
         stageStatuses: mergedStageStatuses,
         stageOutputs: mergedStageOutputs,
+        prediction_target_column: preserveIfIncomingEmpty("prediction_target_column"),
+        targetColumn: preserveIfIncomingEmpty("targetColumn"),
         formBuilder: preserveIfIncomingEmpty("formBuilder"),
         hierarchyMapper: preserveIfIncomingEmpty("hierarchyMapper"),
         hierarchyMapperNode: preserveIfIncomingEmpty("hierarchyMapperNode"),
@@ -247,7 +270,7 @@ export class PostgresProjectRepository implements IProjectRepository {
         status: effectiveStatus,
         agentState: getAgentState(),
       });
-    })
+    });
 
     const updatedProj = await this.getById(id);
     if (updatedProj) {

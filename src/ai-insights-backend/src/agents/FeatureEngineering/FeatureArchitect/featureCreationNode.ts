@@ -69,11 +69,16 @@ export async function featureCreationNode(
   const scriptPath = path.join(pythonScriptDir, scriptName);
   const userPromptText = state.userPrompt ?? DEFAULT_USER_PROMPT;
 
+  const targetCandidate = state.prediction_target_column.length > 0
+    ? state.prediction_target_column
+    : (state.orchestrationDecision?.prediction_target_column || state.orchestrationDecision?.targetColumn || "");
+
   const userMessage = [
     "Design and generate feature creation recommendations for the tables and targets determined by the Orchestrator.",
     `User Requirements: ${userPromptText}`,
     `Tables List: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
     `Orchestrator Decisions: ${JSON.stringify(state.orchestrationDecision)}`,
+    ...(targetCandidate ? [`Prediction Target Column: ${targetCandidate} (CRITICAL: Do not create targets or leaky duplicates of this target column)`] : []),
     `Target Pipeline File: ${scriptPath}`,
     `Region to Edit: ${REGION_FEATURE_CREATION}`,
     `Output Artifact: ${ARTIFACT_FEATURE_CREATED}`,
@@ -104,13 +109,16 @@ export async function featureCreationNode(
           }
         ),
       fallback,
-      services
+      services,
+      10
     );
 
     const summaryText = result.summary.length > 0 ? result.summary : DEFAULT_CREATION_SUCCESS;
+    const resolvedTarget = (result as any)?.prediction_target_column || (result as any)?.targetColumn || targetCandidate;
 
     return {
       featureCreation: result,
+      ...(resolvedTarget ? { prediction_target_column: resolvedTarget } : {}),
       history: [
         {
           worker: WORKER_FEATURE_CREATION,
@@ -122,6 +130,7 @@ export async function featureCreationNode(
     console.warn("[featureCreationNode] Execution failed, using fallback", error);
     return {
       featureCreation: fallback,
+      ...(targetCandidate ? { prediction_target_column: targetCandidate } : {}),
       history: [
         {
           worker: WORKER_FEATURE_CREATION,

@@ -215,7 +215,23 @@ export default function ProjectDetailPage({
       return "Model Training & Validation";
     }
     if (mtvStatus === "Awaiting Approval") {
-      return "Model Selection";
+      const mtv = displayPipelineStatuses;
+      if (mtv.modelTrainingCodeNode === "User Input" || mtv.modelTrainingCodeNode === "Awaiting Approval") {
+        return "Model Training";
+      }
+      if (mtv.preFlightNode === "User Input" || mtv.preFlightNode === "Awaiting Approval") {
+        return "Pre Flight";
+      }
+      if (mtv.trainingConfigurationNode === "User Input" || mtv.trainingConfigurationNode === "Awaiting Approval") {
+        return "Training Configuration";
+      }
+      if (mtv.modelSelectionNode === "User Input" || mtv.modelSelectionNode === "Awaiting Approval") {
+        return "Model Selection";
+      }
+      if (mtv.modelSelectionNode !== "Completed") return "Model Selection";
+      if (mtv.trainingConfigurationNode !== "Completed") return "Training Configuration";
+      if (mtv.preFlightNode !== "Completed") return "Pre Flight";
+      return "Model Training";
     }
     return "Feature Engineering";
   })();
@@ -328,20 +344,27 @@ export default function ProjectDetailPage({
   const isStepAwaitingApproval = (stepId: string, stageId: string): boolean => {
     if (!isAwaitingApprovalWorkflow) return false;
     const rawStatus = displayPipelineStatuses[stepId];
+    if (rawStatus === "Completed") return false;
     if (rawStatus === "Awaiting Approval" || rawStatus === "User Input") return true;
 
     if (stageId === "modelTrainingValidation") {
       const next = (effectiveApprovalNextStep || pausedAtPhase || "").trim();
       if (
-        (next === "Training Configuration" ||
-          next === "trainingConfigurationNode" ||
-          next === "Model Selection" ||
-          next === "modelSelectionNode") &&
+        (next === "Model Selection" || next === "modelSelectionNode") &&
         stepId === "modelSelectionNode"
       ) {
         return true;
       }
-      if ((next === "Pre Flight" || next === "preFlightNode") && stepId === "trainingConfigurationNode") {
+      if (
+        (next === "Training Configuration" || next === "trainingConfigurationNode") &&
+        stepId === "trainingConfigurationNode"
+      ) {
+        return true;
+      }
+      if (
+        (next === "Pre Flight" || next === "preFlightNode") &&
+        stepId === "preFlightNode"
+      ) {
         return true;
       }
       if (
@@ -349,7 +372,7 @@ export default function ProjectDetailPage({
           next === "modelTrainingNode" ||
           next === "modelTrainingCodeNode" ||
           next === "Model Training Code Generation") &&
-        stepId === "preFlightNode"
+        stepId === "modelTrainingCodeNode"
       ) {
         return true;
       }
@@ -383,11 +406,16 @@ export default function ProjectDetailPage({
           ["trainingConfigurationNode", "Training Configuration"],
           ["modelSelectionNode", "Model Selection"],
         ] as const;
+        const awaiting = substeps.find(
+          ([key]) =>
+            displayPipelineStatuses[key] === "User Input" ||
+            displayPipelineStatuses[key] === "Awaiting Approval"
+        );
         const inProgress = substeps.find(([key]) => displayPipelineStatuses[key] === "In-Progress");
         const withOutput = substeps.find(
           ([key]) => stageOutputs?.[key] != null || displayPipelineStatuses[key] === "Completed"
         );
-        setSelectedSubstepId(inProgress?.[0] || withOutput?.[0] || "modelSelectionNode");
+        setSelectedSubstepId(inProgress?.[0] || awaiting?.[0] || withOutput?.[0] || "modelSelectionNode");
       } else {
         setSelectedSubstepId(null);
       }
@@ -397,15 +425,12 @@ export default function ProjectDetailPage({
 
   const renderStepCircleIcon = (stepItem: WorkflowStep, stageId: string) => {
     const stepStatus = displayPipelineStatuses[stepItem.id] ?? "Pending";
+    const isCompleted = stepStatus === "Completed";
     const isAwaiting =
-      stepStatus === "Awaiting Approval" ||
-      stepStatus === "User Input" ||
-      isStepAwaitingApproval(stepItem.id, stageId);
-    const isNonterminalModelTrainingStep =
-      stageId === "modelTrainingValidation" &&
-      (stepItem.id === "trainingConfigurationNode" || stepItem.id === "preFlightNode") &&
-      (stepStatus === "Pending" || stepStatus === "In-Progress");
-    const isCompleted = !isNonterminalModelTrainingStep && !isAwaiting && stepStatus === "Completed";
+      !isCompleted &&
+      (stepStatus === "Awaiting Approval" ||
+        stepStatus === "User Input" ||
+        isStepAwaitingApproval(stepItem.id, stageId));
     const isStepInProgress =
       !isAwaiting &&
       !isCompleted &&
@@ -551,10 +576,12 @@ export default function ProjectDetailPage({
                       step === "modelTrainingNode" ||
                       step === "Model Training"
                     ) {
-                      buttonLabel = "Review Pre-Flight Verification";
+                      buttonLabel = "Execute Model Training";
                     } else if (step === "preFlightNode" || step === "Pre Flight") {
-                      buttonLabel = "Review Training Configuration";
+                      buttonLabel = "Review Pre-Flight Verification";
                     } else if (step === "trainingConfigurationNode" || step === "Training Configuration") {
+                      buttonLabel = "Review Training Configuration";
+                    } else if (step === "modelSelectionNode" || step === "Model Selection") {
                       buttonLabel = "Review Model Selection";
                     }
 
@@ -1102,9 +1129,8 @@ export default function ProjectDetailPage({
               activeRunTimestamp={effectiveRunTimestamp}
               selectedModels={savedAgentState.selectedModels}
               isExecuting={
-                (isApproving && displayPipelineStatuses.modelTrainingCodeNode === "User Input") ||
-                (displayPipelineStatuses.modelTrainingCodeNode === "In-Progress" &&
-                  effectiveModelTraining?.status === "Completed")
+                (isApproving && (displayPipelineStatuses.modelTrainingCodeNode === "User Input" || displayPipelineStatuses.modelTrainingCodeNode === "Completed")) ||
+                displayPipelineStatuses.modelTrainingCodeNode === "In-Progress"
               }
               onExecute={(selectedModels) => {
                 if (onApprove) {

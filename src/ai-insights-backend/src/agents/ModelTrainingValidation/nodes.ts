@@ -1,7 +1,7 @@
 import { RunnableConfig } from "@langchain/core/runnables";
 import * as fs from "fs";
 import * as path from "path";
-import { AgentState, IngestionServices } from "../state";
+import { AgentState, IngestionServices, checkWorkflowInterrupt } from "../state";
 import { cleanupRunContainer, executePythonScript } from "../tools/helpers/pythonExecutor";
 import { getPythonScriptDirectory } from "../tools/filesystem";
 
@@ -33,7 +33,7 @@ function featureMetadata(state: State) {
   const decision = architect.orchestrationDecision || architect.finalOutput?.orchestrationDecision || {};
   const validator = (state.featureValidator || architect.featureValidator || {}) as any;
   return {
-    targetColumn: decision.targetColumn || architect.targetColumn || "",
+    targetColumn: state.prediction_target_column || decision.prediction_target_column || decision.targetColumn || architect.prediction_target_column || architect.targetColumn || "",
     problemType: decision.problemType || architect.problemType || "regression",
     features: validator.validatedFeatureSet?.kept || [],
   };
@@ -121,6 +121,7 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
     modelSelectionNode: decision,
     problemType: decision.problem_type || metadata.problemType,
     targetColumn: decision.target_entity?.name || metadata.targetColumn,
+    prediction_target_column: decision.target_entity?.name || metadata.targetColumn || state.prediction_target_column,
     primaryMetric: decision.primary_metric,
     direction: decision.direction,
     runTimestamp: effectiveRunTimestamp,
@@ -146,10 +147,8 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
 export async function trainingConfigurationNode(state: State, config?: RunnableConfig) {
 
   const services = servicesFrom(config);
-  if (services.isCancelled?.() || services.abortSignal?.aborted) {
-    console.info("[Workflow] trainingConfigurationNode skipping execution because workflow is stopped/paused.");
-    return { status: "Stopped" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "trainingConfigurationNode");
+  if (interrupt) return interrupt;
 
   const meta = featureMetadata(state);
   const effectiveProblemType = (state as any).problemType || (state.modelSelection as any)?.problem_type || meta.problemType || "";
@@ -250,10 +249,8 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
 export async function preFlightNode(state: State, config?: RunnableConfig) {
 
   const services = servicesFrom(config);
-  if (services.isCancelled?.() || services.abortSignal?.aborted) {
-    console.info("[Workflow] preFlightNode skipping execution because workflow is stopped/paused.");
-    return { status: "Stopped" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "preFlightNode");
+  if (interrupt) return interrupt;
 
   const trainingConfig = (state.trainingConfiguration || {}) as any;
   const runDir = runDirectory(state, services);
@@ -318,10 +315,8 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
 
 export async function modelTrainingCodeNode(state: State, config?: RunnableConfig) {
   const services = servicesFrom(config);
-  if (services.isCancelled?.() || services.abortSignal?.aborted) {
-    console.info("[Workflow] modelTrainingCodeNode skipping execution because workflow is stopped/paused.");
-    return { status: "Stopped" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "modelTrainingCodeNode");
+  if (interrupt) return interrupt;
 
   const output = await ModelTrainingAgent.generateProjectCode(state, services);
 
@@ -349,10 +344,8 @@ export async function modelTrainingCodeNode(state: State, config?: RunnableConfi
 
 export async function modelTrainingExecutionNode(state: State, config?: RunnableConfig) {
   const services = servicesFrom(config);
-  if (services.isCancelled?.() || services.abortSignal?.aborted) {
-    console.info("[Workflow] modelTrainingExecutionNode skipping execution because workflow is stopped/paused.");
-    return { status: "Stopped" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "modelTrainingExecutionNode");
+  if (interrupt) return interrupt;
 
   const output = await ModelTrainingAgent.executeContainerTraining(state, services);
   if (output.status === "Failed") {

@@ -326,7 +326,23 @@ export default function ProjectsPage() {
       return "Model Training & Validation";
     }
     if (isStageAwaiting("modelTrainingValidation") || isStageAwaiting("Model Training & Validation")) {
-      return "Model Selection";
+      const mtv = stageStatuses.modelTrainingValidation || {};
+      if (mtv.modelTrainingCodeNode === "User Input" || mtv.modelTrainingCodeNode === "Awaiting Approval") {
+        return "Model Training";
+      }
+      if (mtv.preFlightNode === "User Input" || mtv.preFlightNode === "Awaiting Approval") {
+        return "Pre Flight";
+      }
+      if (mtv.trainingConfigurationNode === "User Input" || mtv.trainingConfigurationNode === "Awaiting Approval") {
+        return "Training Configuration";
+      }
+      if (mtv.modelSelectionNode === "User Input" || mtv.modelSelectionNode === "Awaiting Approval") {
+        return "Model Selection";
+      }
+      if (mtv.modelSelectionNode !== "Completed") return "Model Selection";
+      if (mtv.trainingConfigurationNode !== "Completed") return "Training Configuration";
+      if (mtv.preFlightNode !== "Completed") return "Pre Flight";
+      return "Model Training";
     }
     const diComplete =
       stageStatuses["dataIngestion"]?.status === "Completed" ||
@@ -785,8 +801,14 @@ export default function ProjectsPage() {
 
     let lastData: any = null;
     try {
-      const effectiveSplitDate = splitEndDate || selectedProject?.splitDate || selectedProject?.agentState?.splitDate;
-      const effectiveSplitEndDate = splitEndDate || selectedProject?.splitDate || selectedProject?.agentState?.splitEndDate;
+      const approvalTargetNode = step ? STEP_TO_NODE_MAP[step] || step : "";
+      const canSendSplitDate = action === "approve" && [
+        "preFlightNode",
+        "modelTrainingCodeNode",
+        "modelValidationNode",
+      ].includes(approvalTargetNode);
+      const effectiveSplitDate = canSendSplitDate ? splitEndDate : undefined;
+      const effectiveSplitEndDate = canSendSplitDate ? splitEndDate : undefined;
 
       const payload: WorkflowRequestPayload = {
         connectorId: workflowConnectorIds,

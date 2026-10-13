@@ -117,9 +117,11 @@ export async function featureExtractionNode(
     );
 
     const summaryText = result.summary.length > 0 ? result.summary : DEFAULT_EXTRACTION_SUCCESS;
+    const resolvedTarget = (result as any)?.prediction_target_column || (result as any)?.targetColumn || (targetCandidate !== DEFAULT_NONE_TARGET ? targetCandidate : "");
 
     return {
       featureExtraction: result,
+      ...(resolvedTarget ? { prediction_target_column: resolvedTarget } : {}),
       history: [
         {
           worker: WORKER_FEATURE_EXTRACTION,
@@ -129,8 +131,10 @@ export async function featureExtractionNode(
     };
   } catch (error) {
     console.warn("[featureExtractionNode] Execution failed, using fallback", error);
+    const resolvedFallbackTarget = targetCandidate !== DEFAULT_NONE_TARGET ? targetCandidate : "";
     return {
       featureExtraction: fallback,
+      ...(resolvedFallbackTarget ? { prediction_target_column: resolvedFallbackTarget } : {}),
       history: [
         {
           worker: WORKER_FEATURE_EXTRACTION,

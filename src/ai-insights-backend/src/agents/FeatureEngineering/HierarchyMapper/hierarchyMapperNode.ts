@@ -1,5 +1,5 @@
 import { RunnableConfig } from "@langchain/core/runnables";
-import { AgentState, IngestionServices } from "../../state";
+import { AgentState, IngestionServices, checkWorkflowInterrupt } from "../../state";
 import { logMilestoneThinking } from "../../utils/agentUtils";
 import { relationshipBuilderNode } from "./RelationshipBuilder/relationshipBuilderNode";
 import { formBuilderNode } from "./FormBuilder/formBuilderNode";
@@ -7,10 +7,8 @@ import { PipelineStepStatus } from "../../pipelineNames";
 
 export async function hierarchyMapperNode(state: typeof AgentState.State, config?: RunnableConfig) {
   const services = config?.configurable?.services as IngestionServices;
-  if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
-    console.info(`[Workflow] hierarchyMapperNode skipping execution because workflow is stopped/paused.`);
-    return { status: "Stopped" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "hierarchyMapperNode");
+  if (interrupt) return interrupt;
 
   await logMilestoneThinking(
     services,

@@ -29,7 +29,7 @@ export class ModelSelectionService implements IModelSelectionService {
     private projectService: ProjectService,
     private registry: ModelCapabilityRegistry = defaultModelCapabilityRegistry,
     private discoveryService: IModelDiscoveryService = new ModelDiscoveryService(repository)
-  ) {}
+  ) { }
 
   public getRegistry(): ModelCapabilityRegistry {
     return this.registry;
@@ -249,8 +249,8 @@ export class ModelSelectionService implements IModelSelectionService {
         }));
 
         const trainingConfigPayload = {
-          ...(existingState.trainingConfiguration || {}),
-          status: "Pending",
+          ...(existingState.stageOutputs.trainingConfigurationNode || {}),
+          status: existingState.stageStatuses.modelTrainingValidation?.trainingConfigurationNode === 'Completed' || existingState.stageStatuses.modelTrainingValidation?.trainingConfiguration === 'Completed' ? 'Completed' : 'Pending',
           models: selectedModelObjects,
           selectedModelIds: selectedModelIds,
           candidate_models: selectedModelIds,
@@ -269,8 +269,13 @@ export class ModelSelectionService implements IModelSelectionService {
         const cleanStageStatuses = { ...(existingState.stageStatuses || {}) };
         cleanStageStatuses.modelSelectionNode = "Completed";
         cleanStageStatuses.modelSelection = "Completed";
-        cleanStageStatuses.trainingConfigurationNode = "In-Progress";
-        cleanStageStatuses.trainingConfiguration = "In-Progress";
+        if (existingState.stageStatuses.modelTrainingValidation?.trainingConfigurationNode === "Completed" || existingState.stageStatuses.modelTrainingValidation?.trainingConfiguration === "Completed") {
+          cleanStageStatuses.trainingConfigurationNode = "Completed";
+          cleanStageStatuses.trainingConfiguration = "Completed";
+        } else {
+          cleanStageStatuses.trainingConfigurationNode = "In-Progress";
+          cleanStageStatuses.trainingConfiguration = "In-Progress";
+        }
         cleanStageStatuses.preFlightNode = "Pending";
         cleanStageStatuses.preFlight = "Pending";
         cleanStageStatuses.modelTrainingCodeNode = "Pending";
@@ -369,7 +374,7 @@ export class ModelSelectionService implements IModelSelectionService {
 
     const trainingConfigPayload = {
       ...(existingState.trainingConfiguration || {}),
-      status: "Pending",
+      status: existingState.stageStatuses.modelTrainingValidation?.trainingConfigurationNode === 'Completed' || existingState.stageStatuses.modelTrainingValidation?.trainingConfiguration === 'Completed' ? 'Completed' : 'Pending',
       models: selectedModelObjects,
       selectedModelIds: selectedModelIds,
       candidate_models: selectedModelIds,
@@ -394,8 +399,13 @@ export class ModelSelectionService implements IModelSelectionService {
     const cleanStageStatuses = { ...(existingState.stageStatuses || {}) };
     cleanStageStatuses.modelSelectionNode = "Completed";
     cleanStageStatuses.modelSelection = "Completed";
-    cleanStageStatuses.trainingConfigurationNode = "In-Progress";
-    cleanStageStatuses.trainingConfiguration = "In-Progress";
+    if (existingState.stageStatuses.trainingConfigurationNode === "Completed" || existingState.stageStatuses.trainingConfiguration === "Completed") {
+      cleanStageStatuses.trainingConfigurationNode = "Completed";
+      cleanStageStatuses.trainingConfiguration = "Completed";
+    } else {
+      cleanStageStatuses.trainingConfigurationNode = "In-Progress";
+      cleanStageStatuses.trainingConfiguration = "In-Progress";
+    }
     cleanStageStatuses.preFlightNode = "Pending";
     cleanStageStatuses.preFlight = "Pending";
     cleanStageStatuses.modelTrainingCodeNode = "Pending";
@@ -405,6 +415,8 @@ export class ModelSelectionService implements IModelSelectionService {
 
     const updatedState = {
       ...existingState,
+      status: "In-Progress",
+      summary: "Advancing workflow to Training Configuration stage",
       modelSelection: updatedModelSelection,
       modelSelectionNode: updatedModelSelection,
       trainingConfiguration: trainingConfigPayload,

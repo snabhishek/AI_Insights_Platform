@@ -179,19 +179,26 @@ function CardModalContent({
     );
     if (inProgressIndex !== -1) return inProgressIndex;
 
+    const awaitingIndex = stepsList.findIndex(
+      (step) =>
+        pipelineStatuses[step.id] === "User Input" ||
+        pipelineStatuses[step.id] === "Awaiting Approval"
+    );
+    if (awaitingIndex !== -1) return awaitingIndex;
+
     if (isWaitingForModelConfirmation) {
       const modelSelectionIndex = stepsList.findIndex((step) => step.id === "modelSelectionNode");
       if (modelSelectionIndex !== -1) return modelSelectionIndex;
     }
     if (isWaitingForPreFlightApproval) {
-      const trainingConfigurationIndex = stepsList.findIndex(
-        (step) => step.id === "trainingConfigurationNode"
+      const preFlightIndex = stepsList.findIndex(
+        (step) => step.id === "preFlightNode"
       );
-      if (trainingConfigurationIndex !== -1) return trainingConfigurationIndex;
+      if (preFlightIndex !== -1) return preFlightIndex;
     }
     if (isWaitingForTrainingApproval) {
-      const preFlightIndex = stepsList.findIndex((step) => step.id === "preFlightNode");
-      if (preFlightIndex !== -1) return preFlightIndex;
+      const trainingIndex = stepsList.findIndex((step) => step.id === "modelTrainingCodeNode");
+      if (trainingIndex !== -1) return trainingIndex;
     }
     if (isStageAwaitingApprovalToAdvance) return stepsList.length - 1;
 

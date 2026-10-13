@@ -66,7 +66,7 @@ export async function validateWithRetry<T extends Record<string, unknown>>(
   invokeFn: (feedbackPrompt?: string) => Promise<T>,
   fallback: T,
   services?: IngestionServices,
-  maxRetries = 1,
+  maxRetries = 10,
   validatorPrompt?: string,
   customValidator?: (output: T) => CustomValidatorResult | Promise<CustomValidatorResult>,
   retryOnError = true

@@ -51,6 +51,8 @@ export interface IngestionServices {
   runTimestamp?: string;
   onThinkingUpdate?: (substep: string) => Promise<void> | void;
   isCancelled?: () => boolean;
+  isStopped?: () => boolean;
+  isPaused?: () => boolean;
   abortSignal?: AbortSignal;
   predictionHorizon?: number;
   predictionFrequency?: string;
@@ -58,10 +60,24 @@ export interface IngestionServices {
   prediction_target_column?: string;
 }
 
+export function checkWorkflowInterrupt(services?: IngestionServices, nodeName?: string): Record<string, any> | null {
+  if (!services) return null;
+  if (services.isStopped?.()) {
+    console.info(`[Workflow] ${nodeName || "node"} skipping execution because workflow is stopped.`);
+    return { status: "Stopped" };
+  }
+  if (services.isPaused?.()) {
+    console.info(`[Workflow] ${nodeName || "node"} halting execution because workflow is paused.`);
+    return { status: "Paused" };
+  }
+  return null;
+}
+
 export type StageStatusKey = TrackedAgentKey;
 export type StageStatusValue = PipelineStepStatus;
 
 const OUTPUT_RESET_MARKER = "__resetOutput";
+export const SPLIT_DATE_RESET_MARKER = "__resetSplitDate";
 
 const mergeOutputOrReset = (
   left: Record<string, unknown> = {},
@@ -97,11 +113,19 @@ export const AgentState = Annotation.Root({
     default: () => "",
   }),
   splitDate: Annotation<string>({
-    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    reducer: (left, right) => right === SPLIT_DATE_RESET_MARKER
+      ? ""
+      : typeof right === "string" && right.trim().length > 0
+        ? right
+        : left,
     default: () => "",
   }),
   splitEndDate: Annotation<string>({
-    reducer: (left, right) => (typeof right === "string" && right.trim().length > 0 ? right : left),
+    reducer: (left, right) => right === SPLIT_DATE_RESET_MARKER
+      ? ""
+      : typeof right === "string" && right.trim().length > 0
+        ? right
+        : left,
     default: () => "",
   }),
   selectedModels: Annotation<string[]>({
@@ -225,4 +249,5 @@ export type AgentState = typeof AgentState.State & {
 };
 export type AgentStateType = Omit<GraphAgentStateType, "stageStatuses"> & {
   stageStatuses: GroupedStageStatuses;
+  sessionId?: string;
 };

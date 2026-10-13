@@ -70,11 +70,16 @@ export async function buildDatasetNode(
   const scriptPath = path.join(pythonScriptDir, scriptName);
   const userPromptText = state.userPrompt ?? DEFAULT_USER_PROMPT;
 
+  const targetCandidate = state.prediction_target_column.length > 0
+    ? state.prediction_target_column
+    : (state.orchestrationDecision?.prediction_target_column || state.orchestrationDecision?.targetColumn || "");
+
   const userMessage = [
     "Generate build dataset script based on source tables and transformed features.",
     `User Requirements: ${userPromptText}`,
     `Tables List: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
     `Orchestrator Decisions: ${JSON.stringify(state.orchestrationDecision)}`,
+    ...(targetCandidate ? [`Prediction Target Column: ${targetCandidate} (Include this target column in the assembled dataset.parquet)`] : []),
     `Feature Transformation Artifact: ${ARTIFACT_FEATURE_TRANSFORMATION}`,
     `Target Pipeline File: ${scriptPath}`,
     `Region to Edit: ${REGION_BUILD_DATASET}`,
@@ -110,9 +115,11 @@ export async function buildDatasetNode(
     );
 
     const summaryText = result.summary.length > 0 ? result.summary : DEFAULT_BUILD_SUCCESS;
+    const resolvedTarget = (result as any)?.prediction_target_column || (result as any)?.targetColumn || targetCandidate;
 
     return {
       buildDataset: result,
+      ...(resolvedTarget ? { prediction_target_column: resolvedTarget } : {}),
       history: [
         {
           worker: WORKER_BUILD_DATASET,
@@ -124,6 +131,7 @@ export async function buildDatasetNode(
     console.warn("[buildDatasetNode] Execution failed, using fallback", error);
     return {
       buildDataset: fallback,
+      ...(targetCandidate ? { prediction_target_column: targetCandidate } : {}),
       history: [
         {
           worker: WORKER_BUILD_DATASET,

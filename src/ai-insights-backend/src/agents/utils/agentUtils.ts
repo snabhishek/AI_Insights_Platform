@@ -1072,6 +1072,18 @@ export function buildResultFromGraphState(
   const groupedStageStatuses = buildGroupedStageStatuses(stageStatuses, stageOverrides);
   const stageOutputs = normalizeStageOutputs(values.stageOutputs);
 
+  const rawPredTarget = (typeof values.prediction_target_column === "string" && values.prediction_target_column.trim().length > 0)
+    ? values.prediction_target_column.trim()
+    : (typeof values.targetColumn === "string" && values.targetColumn.trim().length > 0)
+      ? values.targetColumn.trim()
+      : (values.stageOutputs?.featureArchitectNode?.prediction_target_column as string) ||
+        (values.featureArchitect?.prediction_target_column as string) ||
+        undefined;
+
+  const rawTargetCol = (typeof values.targetColumn === "string" && values.targetColumn.trim().length > 0)
+    ? values.targetColumn.trim()
+    : rawPredTarget;
+
   return {
     connectorId,
     status,
@@ -1084,6 +1096,8 @@ export function buildResultFromGraphState(
     currentStage: NODE_CONFIG[currentStage as TrackedAgentKey]?.stage,
     stageOutputs,
     stageStatuses: groupedStageStatuses,
+    prediction_target_column: rawPredTarget,
+    targetColumn: rawTargetCol,
     message: buildMessage(nextNodes, status, stageStatuses),
     runTimestamp: (typeof values.runTimestamp === "string" && values.runTimestamp.trim().length > 0) ? values.runTimestamp.trim() : undefined,
   };

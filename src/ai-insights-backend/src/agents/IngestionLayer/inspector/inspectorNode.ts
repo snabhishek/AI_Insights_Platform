@@ -1,7 +1,7 @@
 import { RunnableConfig } from "@langchain/core/runnables";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { AgentState, IngestionServices } from "../../state";
+import { AgentState, IngestionServices, checkWorkflowInterrupt } from "../../state";
 import { createGetSchemaTool, createInspectTool } from "../../tools/inspection";
 import {
   getModel,
@@ -251,10 +251,8 @@ export async function inspectorNode(state: typeof AgentState.State, config?: Run
   if (!services) {
     throw new Error("Services dependency is not provided in config");
   }
-  if (services.isCancelled?.() || services.abortSignal?.aborted) {
-    console.info(`[Workflow] inspectorNode skipping execution because workflow is stopped/paused.`);
-    return { status: "Stopped" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "inspectorNode");
+  if (interrupt) return interrupt;
   const { connectorService } = services;
   const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await connectorService.getById(connectorId)));
   const validConnectors = connectors.filter((connector) => !!connector);

@@ -19,6 +19,8 @@ export interface IngestionAgentRunResult {
   stageOutputs?: StageOutputs;
   replaceStageOutputs?: boolean;
   stageStatuses?: GroupedStageStatuses;
+  prediction_target_column?: string;
+  targetColumn?: string;
   message?: string;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   runTimestamp?: string;
@@ -39,10 +41,13 @@ export interface IIngestionAgentService {
       predictionHorizon?: number;
       predictionFrequency?: string;
       predictionObjectiveStartDate?: string;
+      streamId?: string;
     }
   ): AsyncGenerator<IngestionAgentRunResult, void, unknown>;
   stop(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
   pause(sessionId?: string, projectId?: string): Promise<IngestionAgentRunResult | { success: boolean; message: string }>;
+  setActiveStream?(streamId: string, sessionId?: string, projectId?: string): void;
+  isStreamActive?(streamId: string, sessionId?: string, projectId?: string): boolean;
   isProjectActive?(projectId?: string): boolean;
   findSessionIdForProject?(projectId?: string): string | undefined;
   getActiveWorkflow(): { active: boolean; projectId: string | null; sessionId: string | null; status: PipelineStepStatus };

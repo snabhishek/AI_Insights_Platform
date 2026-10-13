@@ -222,7 +222,23 @@ export default function WorkflowPipeline({
       return "Model Training & Validation";
     }
     if (mtvStatus === "Awaiting Approval") {
-      return "Model Selection";
+      const flat = normalizeFlatStageStatuses(pipelineStatuses);
+      if (flat.modelTrainingCodeNode === "User Input" || flat.modelTrainingCodeNode === "Awaiting Approval") {
+        return "Model Training";
+      }
+      if (flat.preFlightNode === "User Input" || flat.preFlightNode === "Awaiting Approval") {
+        return "Pre Flight";
+      }
+      if (flat.trainingConfigurationNode === "User Input" || flat.trainingConfigurationNode === "Awaiting Approval") {
+        return "Training Configuration";
+      }
+      if (flat.modelSelectionNode === "User Input" || flat.modelSelectionNode === "Awaiting Approval") {
+        return "Model Selection";
+      }
+      if (flat.modelSelectionNode !== "Completed") return "Model Selection";
+      if (flat.trainingConfigurationNode !== "Completed") return "Training Configuration";
+      if (flat.preFlightNode !== "Completed") return "Pre Flight";
+      return "Model Training";
     }
     return "Feature Engineering";
   })();
@@ -468,10 +484,12 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
                     step === "modelTrainingNode" ||
                     step === "Model Training"
                   ) {
-                    buttonLabel = "Review Pre-Flight Verification";
+                    buttonLabel = "Execute Model Training";
                   } else if (step === "preFlightNode" || step === "Pre Flight") {
-                    buttonLabel = "Review Training Configuration";
+                    buttonLabel = "Review Pre-Flight Verification";
                   } else if (step === "trainingConfigurationNode" || step === "Training Configuration") {
+                    buttonLabel = "Review Training Configuration";
+                  } else if (step === "modelSelectionNode" || step === "Model Selection") {
                     buttonLabel = "Review Model Selection";
                   }
 

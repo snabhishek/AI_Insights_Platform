@@ -165,11 +165,16 @@ export async function featureValidatorNode(
   const reportPath = path.join(pythonScriptDir, ARTIFACT_FEATURE_VALIDATION_REPORT);
   const userPromptText = state.userPrompt ?? DEFAULT_USER_PROMPT;
 
+  const targetCandidate = state.prediction_target_column.length > 0
+    ? state.prediction_target_column
+    : (state.orchestrationDecision?.prediction_target_column || state.orchestrationDecision?.targetColumn || "");
+
   const userMessage = [
     "Design and generate the feature validation Python code to audit the feature matrix.",
     `User Requirements: ${userPromptText}`,
     `Tables List: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
     `Orchestrator Decisions: ${JSON.stringify(state.orchestrationDecision)}`,
+    ...(targetCandidate ? [`Prediction Target Column: ${targetCandidate} (Target variable to compute leakage/correlations against)`] : []),
     `Feature Selection Recommendations: ${JSON.stringify(state.featureSelection?.recommendations)}`,
     `Input Feature File: ${ARTIFACT_FEATURE_SELECTION}`,
     `Target Pipeline File: ${scriptPath}`,
@@ -214,9 +219,11 @@ export async function featureValidatorNode(
 
     const finalResult = loadFeatureValidationReport(reportPath, agentResult);
     const summaryText = finalResult.summary.length > 0 ? finalResult.summary : DEFAULT_VALIDATION_SUCCESS;
+    const resolvedTarget = (agentResult as any)?.prediction_target_column || (agentResult as any)?.targetColumn || targetCandidate;
 
     return {
       featureValidator: finalResult,
+      ...(resolvedTarget ? { prediction_target_column: resolvedTarget } : {}),
       history: [
         {
           worker: WORKER_FEATURE_VALIDATOR,
@@ -228,6 +235,7 @@ export async function featureValidatorNode(
     console.warn("[featureValidatorNode] Execution failed, using fallback", error);
     return {
       featureValidator: fallback,
+      ...(targetCandidate ? { prediction_target_column: targetCandidate } : {}),
       history: [
         {
           worker: WORKER_FEATURE_VALIDATOR,

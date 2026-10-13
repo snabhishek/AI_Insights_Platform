@@ -1,5 +1,5 @@
 import { RunnableConfig } from "@langchain/core/runnables";
-import { AgentState, IngestionServices } from "../../state";
+import { AgentState, IngestionServices, checkWorkflowInterrupt } from "../../state";
 import { logMilestoneThinking } from "../../utils/agentUtils";
 import { createFeatureArchitectGraph } from "./graph";
 import { cleanupRunContainer } from "../../tools/helpers/pythonExecutor";
@@ -40,7 +40,9 @@ function resolveTargetColumn(
   graphOrchPredTarget: string | undefined,
   graphOrchTarget: string | undefined,
   finalOrchPredTarget: string | undefined,
-  finalOrchTarget: string | undefined
+  finalOrchTarget: string | undefined,
+  stateTarget?: string | undefined,
+  stateTargetColumn?: string | undefined
 ): string {
   const candidates = [
     graphTarget,
@@ -49,12 +51,14 @@ function resolveTargetColumn(
     graphOrchTarget,
     finalOrchPredTarget,
     finalOrchTarget,
+    stateTarget,
+    stateTargetColumn,
   ];
 
   for (const cand of candidates) {
     const isValid = typeof cand === "string" && cand.trim().length > 0;
     if (isValid) {
-      return cand;
+      return cand.trim();
     }
   }
 
@@ -92,13 +96,8 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
     throw new Error("Services dependency is not provided in config");
   }
 
-  const isCancelled = services.isCancelled?.() ?? false;
-  const isAborted = services.abortSignal?.aborted ?? false;
-
-  if (isCancelled || isAborted) {
-    console.info("[Workflow] featureArchitectNode skipping execution because workflow is stopped/paused.");
-    return { status: "Stopped" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "featureArchitectNode");
+  if (interrupt) return interrupt;
 
   await logMilestoneThinking(
     services,
@@ -119,6 +118,7 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
         userPrompt: state.userPrompt,
         connectorId: state.connectorId,
         runTimestamp: state.runTimestamp,
+        prediction_target_column: state.prediction_target_column || (state as any).targetColumn || "",
       },
       {
         configurable: { services },
@@ -133,10 +133,13 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
       (graphResult.orchestrationDecision as Record<string, unknown> | undefined)?.prediction_target_column as string | undefined,
       (graphResult.orchestrationDecision as Record<string, unknown> | undefined)?.targetColumn as string | undefined,
       (finalOutput.orchestrationDecision as Record<string, unknown> | undefined)?.prediction_target_column as string | undefined,
-      (finalOutput.orchestrationDecision as Record<string, unknown> | undefined)?.targetColumn as string | undefined
+      (finalOutput.orchestrationDecision as Record<string, unknown> | undefined)?.targetColumn as string | undefined,
+      state.prediction_target_column,
+      (state as any).targetColumn as string | undefined
     );
 
     finalOutput.prediction_target_column = predictionTargetColumn;
+    finalOutput.targetColumn = predictionTargetColumn;
 
     const baseValidatorOutput = (finalOutput.featureValidator as Record<string, unknown> | undefined) ??
       (graphResult.featureValidator as Record<string, unknown> | undefined) ??
@@ -158,6 +161,7 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
       featureArchitect: finalOutput,
       featureValidator: featureValidatorOutput,
       prediction_target_column: predictionTargetColumn,
+      targetColumn: predictionTargetColumn,
       status: STATUS_RUNNING,
       summary: DEFAULT_SUCCESS_SUMMARY,
       steps: [

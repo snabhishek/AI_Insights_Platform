@@ -118,9 +118,11 @@ export async function featureSelectionNode(
     );
 
     const summaryText = result.summary.length > 0 ? result.summary : DEFAULT_SELECTION_SUCCESS;
+    const resolvedTarget = (result as any)?.prediction_target_column || (result as any)?.targetColumn || (targetCandidate !== DEFAULT_NONE_TARGET ? targetCandidate : "");
 
     return {
       featureSelection: result,
+      ...(resolvedTarget ? { prediction_target_column: resolvedTarget } : {}),
       history: [
         {
           worker: WORKER_FEATURE_SELECTION,
@@ -130,8 +132,10 @@ export async function featureSelectionNode(
     };
   } catch (error) {
     console.warn("[featureSelectionNode] Execution failed, using fallback", error);
+    const resolvedFallbackTarget = targetCandidate !== DEFAULT_NONE_TARGET ? targetCandidate : "";
     return {
       featureSelection: fallback,
+      ...(resolvedFallbackTarget ? { prediction_target_column: resolvedFallbackTarget } : {}),
       history: [
         {
           worker: WORKER_FEATURE_SELECTION,

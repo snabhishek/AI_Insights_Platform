@@ -54,9 +54,14 @@ export class ModelSelectionContextNormalizer {
 
     const targetColumn =
       raw.targetColumn ||
+      raw.prediction_target_column ||
       raw.dataContext?.targetColumn ||
+      architect.prediction_target_column ||
       architect.targetColumn ||
+      architect.orchestrationDecision?.prediction_target_column ||
       architect.orchestrationDecision?.targetColumn ||
+      architect.finalOutput?.prediction_target_column ||
+      architect.finalOutput?.orchestrationDecision?.prediction_target_column ||
       architect.finalOutput?.orchestrationDecision?.targetColumn ||
       "";
 

@@ -113,25 +113,37 @@ export class AIController {
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
+    const streamId = crypto.randomUUID();
     let clientDisconnected = false;
     let isStreamCompleted = false;
     let runningSessionId = sessionId;
 
-    const handleClientDisconnect = async (reason: string) => {
+    this.ingestionAgentService.setActiveStream?.(streamId, sessionId, projectId);
+
+    const handleClientDisconnect = (reason: string) => {
       if (isStreamCompleted) return;
       clientDisconnected = true;
-      const resolvedSessionId = runningSessionId || this.ingestionAgentService.findSessionIdForProject?.(projectId);
-      console.warn(`[Workflow] Client disconnected (${reason}). Auto-pausing workflow for session: ${resolvedSessionId || "unknown"}, project: ${projectId || "unknown"}`);
-      try {
-        await this.ingestionAgentService.pause(resolvedSessionId, projectId);
-      } catch (err: any) {
-        console.error(`[Workflow] Failed to auto-pause on disconnect:`, err?.message || err);
-      }
+      // Allow brief grace period so stage advancement/approval can register the replacement stream
+      setTimeout(async () => {
+        if (isStreamCompleted) return;
+        const resolvedSessionId = runningSessionId || this.ingestionAgentService.findSessionIdForProject?.(projectId);
+        const isStillActive = this.ingestionAgentService.isStreamActive?.(streamId, resolvedSessionId, projectId);
+        if (isStillActive === false) {
+          console.info(`[Workflow] Disconnected stream ${streamId} superseded by a newer stream; skipping auto-pause.`);
+          return;
+        }
+        console.warn(`[Workflow] Client disconnected (${reason}). Auto-pausing workflow for session: ${resolvedSessionId || "unknown"}, project: ${projectId || "unknown"}`);
+        try {
+          await this.ingestionAgentService.pause(resolvedSessionId, projectId);
+        } catch (err: any) {
+          console.error(`[Workflow] Failed to auto-pause on disconnect:`, err?.message || err);
+        }
+      }, 500);
     };
 
     res.on("close", () => {
       if (!res.writableEnded && !isStreamCompleted) {
-        void handleClientDisconnect("response closed prematurely");
+        handleClientDisconnect("response closed prematurely");
       }
     });
 
@@ -140,7 +152,7 @@ export class AIController {
         try {
           res.write(": keep-alive\n\n");
         } catch {
-          void handleClientDisconnect("heartbeat write failed");
+          handleClientDisconnect("heartbeat write failed");
         }
       }
     }, 10000);
@@ -157,6 +169,7 @@ export class AIController {
         predictionHorizon,
         predictionFrequency,
         predictionObjectiveStartDate,
+        streamId,
       });
 
       for await (const update of stream) {

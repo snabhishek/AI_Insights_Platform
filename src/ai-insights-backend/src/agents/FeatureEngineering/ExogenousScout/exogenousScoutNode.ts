@@ -1,5 +1,5 @@
 import { RunnableConfig } from "@langchain/core/runnables";
-import { AgentState, IngestionServices, BatchedTableState } from "../../state";
+import { AgentState, IngestionServices, BatchedTableState, checkWorkflowInterrupt } from "../../state";
 import {
   getPromptFromFile,
   chunkInspectionTableNames,
@@ -48,10 +48,8 @@ export async function exogenousScoutNode(state: typeof AgentState.State, config?
   if (!services) {
     throw new Error("Services dependency is not provided in config");
   }
-  if (services.isCancelled?.() || services.abortSignal?.aborted) {
-    console.info(`[Workflow] exogenousScoutNode skipping execution because workflow is stopped/paused.`);
-    return { status: "Stopped" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "exogenousScoutNode");
+  if (interrupt) return interrupt;
 
   let tableNames: string[] = [];
   if (Array.isArray(state.batchedTables) && state.batchedTables.length > 0) {

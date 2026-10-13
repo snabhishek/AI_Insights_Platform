@@ -114,14 +114,25 @@ function cleanErrorMessage(msg: string | null): string {
     .trim();
 }
 
+function getFormSchemaSignature(schema: FormSchema | null | undefined): string {
+  if (!schema) return "";
+  const groups = schema.filterGroups || schema.forms || [];
+  const fields = groups.flatMap((g) => (g.fields || []).map((f) => f.fieldId)).join(",");
+  return `${schema.projectId || ""}:${schema.sourceId || ""}:${groups.length}:${fields}`;
+}
+
 function extractFormSchemaFromState(state: any, project: any): FormSchema | null {
   if (!state || typeof state !== "object") return null;
 
   const candidates = [
+    state?.stageOutputs?.hierarchyMapperNode?.formBuilder,
+    state?.hierarchyMapperNode?.formBuilder,
     state?.stageOutputs?.formBuilder,
+    state?.formBuilder,
+    state?.stageOutputs?.hierarchyMapperNode,
+    state?.hierarchyMapperNode,
     state?.stageOutputs?.hierarchyMapper?.formBuilder,
     state?.hierarchyMapper?.formBuilder,
-    state?.formBuilder,
     state?.stageOutputs?.hierarchyMapper,
     state?.hierarchyMapper,
   ];
@@ -158,6 +169,14 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
   const [activeSchema, setActiveSchema] = useState<FormSchema | null>(null);
   const [isLoadingSchema, setIsLoadingSchema] = useState<boolean>(false);
 
+  const lastFetchedSchemaProjectRef = useRef<string | null>(null);
+  const lastFetchedValidationProjectRef = useRef<string | null>(null);
+  const lastFetchedCandidatesProjectIdRef = useRef<string | null>(null);
+  const activeSchemaSignatureRef = useRef<string>("");
+
+  const [fallbackCandidates, setFallbackCandidates] = useState<any[]>([]);
+  const [fallbackChampionId, setFallbackChampionId] = useState<string | null>(null);
+
   const [filterValues, setFilterValues] = useState<Record<string, any>>({});
 
   const [selectedModels, setSelectedModels] = useState<string[]>([]);
@@ -185,38 +204,100 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
 
   const candidateModels = useMemo(() => {
     const state = currentProject?.agentState as any;
-    const report = state?.modelTraining?.report || state?.stageOutputs?.modelTraining?.report;
+    const mtOutput =
+      state?.stageOutputs?.modelTrainingCodeNode ||
+      state?.modelTrainingCodeNode ||
+      state?.stageOutputs?.modelTraining ||
+      state?.modelTraining ||
+      state?.stageOutputs?.modelTrainingExecutionNode ||
+      state?.modelTrainingExecutionNode ||
+      state?.stageOutputs?.modelTrainingNode ||
+      state?.modelTrainingNode;
+
+    const report =
+      mtOutput?.report ||
+      state?.report ||
+      state?.modelTrainingReport ||
+      state?.stageOutputs?.modelTrainingReport;
+
     const rawCandidates =
-      report?.ranked_models ||
-      report?.model_results ||
-      state?.modelSelection?.candidates ||
-      state?.stageOutputs?.modelSelection?.candidates ||
-      [];
+      (Array.isArray(mtOutput?.executedModels) && mtOutput.executedModels.length > 0 ? mtOutput.executedModels : null) ||
+      (Array.isArray(mtOutput?.rankedCandidates) && mtOutput.rankedCandidates.length > 0 ? mtOutput.rankedCandidates : null) ||
+      (Array.isArray(mtOutput?.candidates) && mtOutput.candidates.length > 0 ? mtOutput.candidates : null) ||
+      (Array.isArray(report?.models_evaluated) && report.models_evaluated.length > 0 ? report.models_evaluated : null) ||
+      (Array.isArray(report?.ranked_models) && report.ranked_models.length > 0 ? report.ranked_models : null) ||
+      (Array.isArray(report?.model_results) && report.model_results.length > 0 ? report.model_results : null) ||
+      (Array.isArray(report?.candidate_model_results) && report.candidate_model_results.length > 0 ? report.candidate_model_results : null) ||
+      (Array.isArray(report?.runs) && report.runs.length > 0 ? report.runs : null) ||
+      (Array.isArray(report?.leaderboard) && report.leaderboard.length > 0 ? report.leaderboard : null) ||
+      (Array.isArray(report?.candidates) && report.candidates.length > 0 ? report.candidates : null) ||
+      (Array.isArray(report?.trained_models) && report.trained_models.length > 0 ? report.trained_models : null) ||
+      (report?.model_results && typeof report.model_results === "object" ? report.model_results : null) ||
+      (report?.candidate_model_results && typeof report.candidate_model_results === "object" ? report.candidate_model_results : null) ||
+      (Array.isArray(report?.candidate_models_evaluated) && report.candidate_models_evaluated.length > 0 ? report.candidate_models_evaluated : null) ||
+      (Array.isArray(state?.stageOutputs?.modelSelectionNode?.candidates) && state.stageOutputs.modelSelectionNode.candidates.length > 0 ? state.stageOutputs.modelSelectionNode.candidates : null) ||
+      (Array.isArray(state?.modelSelectionNode?.candidates) && state.modelSelectionNode.candidates.length > 0 ? state.modelSelectionNode.candidates : null) ||
+      (Array.isArray(state?.stageOutputs?.modelSelection?.candidates) && state.stageOutputs.modelSelection.candidates.length > 0 ? state.stageOutputs.modelSelection.candidates : null) ||
+      (Array.isArray(state?.modelSelection?.candidates) && state.modelSelection.candidates.length > 0 ? state.modelSelection.candidates : null) ||
+      (fallbackCandidates.length > 0 ? fallbackCandidates : []);
+
+    const normalizeCandidate = (c: any, defaultKey?: string) => {
+      if (typeof c === "string") {
+        return {
+          model_id: c,
+          displayName: c,
+          framework: VALIDATION_UI_STRINGS.DEFAULT_UNKNOWN_FRAMEWORK,
+          score: undefined,
+        };
+      }
+      const model_id = String(c?.model_id || c?.id || c?.name || c?.model_name || defaultKey || "").trim();
+      const displayName = String(c?.displayName || c?.display_name || c?.algorithm || c?.name || model_id);
+      const framework = String(c?.framework || VALIDATION_UI_STRINGS.DEFAULT_UNKNOWN_FRAMEWORK);
+      const score = typeof c?.score === "number" ? c.score : c?.metrics?.score ?? c?.metrics?.test?.score ?? c?.metrics?.validation?.score;
+      return { model_id, displayName, framework, score };
+    };
 
     if (Array.isArray(rawCandidates)) {
-      return rawCandidates.map((c: any) => ({
-        model_id: c.model_id || c.id || String(c),
-        displayName: c.displayName || c.model_id || c.id || String(c),
-        framework: c.framework || VALIDATION_UI_STRINGS.DEFAULT_UNKNOWN_FRAMEWORK,
-        score: typeof c.score === "number" ? c.score : c.metrics?.score,
-      }));
+      return rawCandidates.map((c: any) => normalizeCandidate(c)).filter((c) => Boolean(c.model_id));
     }
     if (rawCandidates && typeof rawCandidates === "object") {
-      return Object.entries(rawCandidates).map(([k, v]: [string, any]) => ({
-        model_id: v?.model_id || k,
-        displayName: v?.displayName || v?.model_id || k,
-        framework: v?.framework || VALIDATION_UI_STRINGS.DEFAULT_UNKNOWN_FRAMEWORK,
-        score: typeof v?.score === "number" ? v?.score : v?.metrics?.score,
-      }));
+      return Object.entries(rawCandidates).map(([k, v]: [string, any]) =>
+        normalizeCandidate(v && typeof v === "object" ? v : { model_id: k }, k)
+      ).filter((c) => Boolean(c.model_id));
     }
     return [];
-  }, [currentProject?.agentState]);
+  }, [currentProject?.agentState, fallbackCandidates]);
 
   const championModelId = useMemo(() => {
     const state = currentProject?.agentState as any;
-    const report = state?.modelTraining?.report || state?.stageOutputs?.modelTraining?.report;
-    return report?.champion_model_id || report?.best_model_id || null;
-  }, [currentProject?.agentState]);
+    const mtOutput =
+      state?.stageOutputs?.modelTrainingCodeNode ||
+      state?.modelTrainingCodeNode ||
+      state?.stageOutputs?.modelTraining ||
+      state?.modelTraining;
+    const report = mtOutput?.report || state?.report || state?.modelTrainingReport;
+    return (
+      mtOutput?.selectedModel ||
+      report?.best_model_id ||
+      report?.champion_model_id ||
+      report?.selected_model ||
+      (typeof report?.best_model === "string" ? report.best_model : report?.best_model?.model_id) ||
+      (typeof report?.champion_model === "string" ? report.champion_model : report?.champion_model?.model_id) ||
+      (typeof report?.selected_model === "string" ? report.selected_model : report?.selected_model?.model_id) ||
+      fallbackChampionId ||
+      (candidateModels[0]?.model_id ?? null)
+    );
+  }, [currentProject?.agentState, fallbackChampionId, candidateModels]);
+
+  useEffect(() => {
+    if (candidateModels.length > 0 && selectedModels.length === 0) {
+      if (championModelId && candidateModels.some((c) => c.model_id === championModelId)) {
+        setSelectedModels([championModelId]);
+      } else {
+        setSelectedModels(candidateModels.map((c) => c.model_id));
+      }
+    }
+  }, [candidateModels, championModelId]);
 
   const trainingSplitStartDate = useMemo(() => {
     if (!currentProject) return "";
@@ -225,6 +306,11 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
       currentProject.splitDate ||
       state?.splitDate ||
       state?.splitEndDate ||
+      state?.stageOutputs?.modelTrainingCodeNode?.splitEndDate ||
+      state?.modelTrainingCodeNode?.splitEndDate ||
+      state?.stageOutputs?.modelTrainingCodeNode?.splitDate ||
+      state?.stageOutputs?.trainingConfigurationNode?.splitEndDate ||
+      state?.trainingConfigurationNode?.splitEndDate ||
       state?.trainingConfiguration?.splitDate ||
       state?.trainingConfiguration?.splitEndDate ||
       state?.trainingConfiguration?.configuration?.split?.split_date ||
@@ -270,82 +356,141 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
   useEffect(() => {
     if (!currentProject) {
       setActiveSchema(null);
+      activeSchemaSignatureRef.current = "";
       setIsLoadingSchema(false);
       setValidationResults(null);
+      lastFetchedSchemaProjectRef.current = null;
+      lastFetchedValidationProjectRef.current = null;
       return;
+    }
+
+    const projectId = currentProject.id;
+    const isNewProject = lastFetchedSchemaProjectRef.current !== projectId;
+
+    if (isNewProject) {
+      lastFetchedSchemaProjectRef.current = projectId;
+      if (activeSchema && activeSchema.projectId !== projectId) {
+        setActiveSchema(null);
+        activeSchemaSignatureRef.current = "";
+      }
     }
 
     const inMemorySchema = extractFormSchemaFromState(currentProject.agentState, currentProject);
     if (inMemorySchema) {
-      setActiveSchema(inMemorySchema);
+      const sig = getFormSchemaSignature(inMemorySchema);
+      if (sig !== activeSchemaSignatureRef.current) {
+        activeSchemaSignatureRef.current = sig;
+        setActiveSchema(inMemorySchema);
+      }
       setIsLoadingSchema(false);
     } else {
-      let isMounted = true;
-      setIsLoadingSchema(true);
+      const hasSchemaForProject = activeSchema && activeSchema.projectId === projectId;
+      if (isNewProject && !hasSchemaForProject) {
+        let isMounted = true;
+        setIsLoadingSchema(true);
 
-      async function fetchFormSchema() {
-        const wsId = currentProject!.workspaceId || "default";
+        async function fetchFormSchema() {
+          const wsId = currentProject!.workspaceId || "default";
+          try {
+            const schemaRes = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${projectId}/form-schema`);
+            if (schemaRes.ok) {
+              const contentType = schemaRes.headers.get("content-type") || "";
+              if (contentType.includes("application/json")) {
+                const json = await schemaRes.json();
+                if (json.success && json.schema && isMounted) {
+                  const fetchedSchema: FormSchema = {
+                    sourceId: json.schema.sourceId || currentProject!.dataSources?.[0] || "default_source",
+                    projectId: projectId,
+                    projectName: currentProject!.name,
+                    filterGroups: json.schema.filterGroups || json.schema.forms || [],
+                    forms: json.schema.forms || json.schema.filterGroups || [],
+                  };
+                  const sig = getFormSchemaSignature(fetchedSchema);
+                  if (sig !== activeSchemaSignatureRef.current) {
+                    activeSchemaSignatureRef.current = sig;
+                    setActiveSchema(fetchedSchema);
+                  }
+                  setIsLoadingSchema(false);
+                  return;
+                }
+              }
+            }
+          } catch (err) {
+            console.warn("[ValidationPage] Failed to fetch project form schema fallback:", err);
+          }
+
+          if (isMounted) {
+            setActiveSchema(null);
+            activeSchemaSignatureRef.current = "";
+            setIsLoadingSchema(false);
+          }
+        }
+
+        fetchFormSchema();
+      }
+    }
+
+    if (isNewProject) {
+      lastFetchedCandidatesProjectIdRef.current = null;
+      setFallbackCandidates([]);
+      setFallbackChampionId(null);
+    }
+
+    if (candidateModels.length === 0 && lastFetchedCandidatesProjectIdRef.current !== projectId) {
+      lastFetchedCandidatesProjectIdRef.current = projectId;
+      let isMountedCand = true;
+      async function fetchCandidates() {
         try {
-          const schemaRes = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${currentProject!.id}/form-schema`);
-          if (schemaRes.ok) {
-            const contentType = schemaRes.headers.get("content-type") || "";
-            if (contentType.includes("application/json")) {
-              const json = await schemaRes.json();
-              if (json.success && json.schema && isMounted) {
-                setActiveSchema({
-                  sourceId: json.schema.sourceId || currentProject!.dataSources?.[0] || "default_source",
-                  projectId: currentProject!.id,
-                  projectName: currentProject!.name,
-                  filterGroups: json.schema.filterGroups || json.schema.forms || [],
-                  forms: json.schema.forms || json.schema.filterGroups || [],
-                });
-                setIsLoadingSchema(false);
-                return;
+          const res = await fetch(`${BACKEND_URL}${VALIDATION_API_ENDPOINTS.CANDIDATES}/${projectId}/candidates`);
+          const contentType = res.headers.get("content-type") || "";
+          if (res.ok && contentType.includes("application/json")) {
+            const json = await res.json();
+            if (json.success && json.data && isMountedCand) {
+              if (Array.isArray(json.data.candidates) && json.data.candidates.length > 0) {
+                setFallbackCandidates(json.data.candidates);
+              }
+              if (json.data.championModelId) {
+                setFallbackChampionId(json.data.championModelId);
               }
             }
           }
         } catch (err) {
-          console.warn("[ValidationPage] Failed to fetch project form schema fallback:", err);
-        }
-
-        if (isMounted) {
-          setActiveSchema(null);
-          setIsLoadingSchema(false);
+          console.warn("[ValidationPage] Failed to fetch validation candidates fallback:", err);
         }
       }
 
-      fetchFormSchema();
-    }
-
-    let isMountedVal = true;
-    async function fetchValidation() {
-      try {
-        const res = await fetch(`${BACKEND_URL}${VALIDATION_API_ENDPOINTS.RESULTS}/${currentProject!.id}`);
-        const contentType = res.headers.get("content-type") || "";
-        if (res.ok && contentType.includes("application/json")) {
-          const json = await res.json();
-          if (json.success && json.data && isMountedVal) {
-            setValidationResults(json.data);
-          }
-        }
-      } catch (err) {
-        console.warn("[ValidationPage] Failed to fetch validation run results:", err);
-      }
+      fetchCandidates();
     }
 
     const inStateValidation =
       (currentProject.agentState as any)?.modelValidation ||
-      (currentProject.agentState as any)?.stageOutputs?.modelValidation;
+      (currentProject.agentState as any)?.stageOutputs?.modelValidation ||
+      (currentProject.agentState as any)?.stageOutputs?.modelTrainingCodeNode?.modelValidation ||
+      (currentProject.agentState as any)?.modelTrainingCodeNode?.modelValidation;
+
     if (inStateValidation) {
       setValidationResults(inStateValidation);
-    } else {
+    } else if (lastFetchedValidationProjectRef.current !== projectId) {
+      lastFetchedValidationProjectRef.current = projectId;
+      let isMountedVal = true;
+      async function fetchValidation() {
+        try {
+          const res = await fetch(`${BACKEND_URL}${VALIDATION_API_ENDPOINTS.RESULTS}/${projectId}`);
+          const contentType = res.headers.get("content-type") || "";
+          if (res.ok && contentType.includes("application/json")) {
+            const json = await res.json();
+            if (json.success && json.data && isMountedVal) {
+              setValidationResults(json.data);
+            }
+          }
+        } catch (err) {
+          console.warn("[ValidationPage] Failed to fetch validation run results:", err);
+        }
+      }
+
       fetchValidation();
     }
-
-    return () => {
-      isMountedVal = false;
-    };
-  }, [currentProject?.id, currentProject?.agentState]);
+  }, [currentProject?.id, currentProject?.agentState, candidateModels.length]);
 
   const handleValidateModels = async () => {
     if (

@@ -2,7 +2,7 @@ import { RunnableConfig } from "@langchain/core/runnables";
 import * as path from "path";
 import * as fsSync from "fs";
 import * as yaml from "js-yaml";
-import { AgentState, IngestionServices } from "../../state";
+import { AgentState, IngestionServices, checkWorkflowInterrupt } from "../../state";
 import {
   getModel,
   invokeAgentJson,
@@ -247,10 +247,8 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
   if (!services) {
     throw new Error("Services dependency is not provided in config");
   }
-  if (services.isCancelled?.() || services.abortSignal?.aborted) {
-    console.info(`[Workflow] schemaResolverNode skipping execution because workflow is stopped/paused.`);
-    return { status: "Stopped" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "schemaResolverNode");
+  if (interrupt) return interrupt;
   const { connectorService } = services;
   const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await connectorService.getById(connectorId)));
   const validConnectors = connectors.filter((connector) => !!connector);

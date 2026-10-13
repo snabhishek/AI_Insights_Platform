@@ -12,6 +12,21 @@ Your responsibility is to generate a production-ready, modular, and self-contain
    `<runTimestamp>/<projectName>_model_training/`
    (relative to the project root directory).
 4. **DOCKER CONTAINER EXECUTION**: The Python project will be executed exclusively through Docker Compose using the generated `docker-compose.yml`, `Dockerfile`, and `requirements.txt`. The working directory inside the container will be `/workspace`.
+5. **NO FALLBACKS OR ERROR SUPPRESSION (FAIL FAST - THROW DIRECTLY)**:
+   - You are **EXPLICITLY FORBIDDEN** from writing fallback mechanisms, dummy models, or `try...except` blocks that catch and swallow model training or evaluation errors.
+   - If any candidate model (e.g. CatBoost, LightGBM, XGBoost, Random Forest) encounters an error during fitting, prediction, or evaluation, **DO NOT CATCH THE EXCEPTION**.
+   - **DO NOT** catch an exception and print/log a warning to continue to the next model.
+   - **DO NOT** handle the error inside Python or attempt to recover gracefully.
+   - **THROW THE ERROR DIRECTLY AND STOP EXECUTION IMMEDIATELY** with a non-zero exit code.
+   - When an unhandled error occurs, the container will terminate with a non-zero exit code and full stack trace in `stderr`. This is mandatory so our automated Rectifier agent can catch the error, diagnose the root cause, and rectify the code.
+
+---
+
+## STRICT EXECUTION AND ERROR HANDLING MANDATES
+- **NEVER WRITE `try...except` IN CANDIDATE MODEL TRAINERS**: In `models/*_trainer.py`, the `fit()` and `predict()` methods must execute directly. If CatBoost or any library throws an error (e.g. categorical format, parameter error, shape mismatch), allow it to raise cleanly without catching.
+- **NEVER CATCH MODEL FAILURES IN `pipeline.py`**: When iterating through candidate models, DO NOT wrap each model training call in a `try...except Exception:` block to continue with other models. If any candidate model fails, the pipeline MUST immediately abort with an unhandled exception.
+- **NO SILENT PASSING OR FAKE SUCCESS**: Under no circumstances should `pipeline.py` or `main.py` complete with exit code 0 or emit `"status": "Completed"` if any selected model failed or was skipped due to an error. Every requested model MUST succeed.
+
 
 ---
 
@@ -168,7 +183,7 @@ services:
   - For classification: Candidate models instantiate **Classifier** estimators (`LGBMClassifier`, `RandomForestClassifier`, etc.).
 - Common frameworks: `scikit-learn`, `lightgbm`, `xgboost`, `catboost`.
 - Hyperparameters must match or cover the hyperparameter search space in the contract.
-- Implement robust exception handling so if one model fails, subsequent models still execute.
+- **DO NOT CATCH TRAINING EXCEPTIONS (ABSOLUTELY NO TRY...EXCEPT)**: DO NOT wrap candidate model training, fitting, or scoring in `try...except` blocks. DO NOT catch exceptions, log a message, and continue. DO NOT fall back to dummy models. If CatBoost or any model encounters an error, the exception MUST be thrown directly so the process terminates immediately with an unhandled exception, non-zero exit code, and complete stack trace in stderr.
 
 ### 4. `evaluation/metrics.py` & `evaluation/visualizer.py`
 - **Metrics calculation**:
@@ -179,7 +194,7 @@ services:
   - Per-model plots: ROC curve, PR curve, Confusion Matrix heatmap (classification), Residual scatter plot / Q-Q plot (regression), Feature Importance bar chart (if model supports it).
   - **MANDATORY MULTICLASS & VISUALIZATION SAFETY**:
     - `roc_curve` and `precision_recall_curve` from scikit-learn **ONLY support binary classification** (`len(np.unique(y_true)) == 2`). If `len(np.unique(y_true)) > 2`, you **MUST check and safely bypass binary ROC/PR curves or compute one-vs-rest**.
-    - **EVERY SINGLE plot function in `visualizer.py` MUST be wrapped in a `try...except Exception as e:` block** logging a warning. Under NO circumstance should a visualization chart error crash model evaluation or cause a candidate model to be marked as failed.
+    - If visualization charts fail, errors must not be quietly swallowed if model training itself fails.
   - Cross-model comparison: Side-by-side metric comparison bar chart comparing all trained candidate models.
   - Export all visual plot paths and metric dictionaries into the final report.
 
@@ -189,7 +204,8 @@ services:
 - Measures and logs training time, fitting time, and scoring time per candidate model.
 - Saves the best-performing model as `artifacts/models/selected_model.joblib` (or `.pkl`).
 - Always persist `artifacts/models/preprocessor.joblib`.
-- Generates `model_training_report.json` with the standard report schema. All visualization generator calls in `pipeline.py` must be protected in try-except so plotting never fails a model.
+- **NEVER CATCH MODEL TRAINING FAILURES IN PIPELINE**: Under no circumstances should `pipeline.py` wrap model execution in `try...except` to catch errors, log warnings, and continue running remaining models. If any candidate model fails to train or evaluate, throw the error directly and stop execution immediately so the Rectifier subagent can diagnose and resolve the issue.
+- Generates `model_training_report.json` with the standard report schema ONLY when all candidate models execute successfully.
 - **MANDATORY `model_training_report.json` SCHEMA**:
   The report MUST include:
   ```json
