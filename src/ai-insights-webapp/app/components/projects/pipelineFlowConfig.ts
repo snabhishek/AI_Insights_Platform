@@ -163,3 +163,65 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): string
 
   return targetPhase;
 }
+
+export interface ModelTrainingReviewInfo {
+  stepId: "modelSelectionNode" | "trainingConfigurationNode" | "preFlightNode" | "modelTrainingCodeNode";
+  title: string;
+  buttonLabel: string;
+}
+
+export function resolveModelTrainingReviewStep(
+  statuses: Record<string, any> = {},
+  approvalNextStep?: string | null
+): ModelTrainingReviewInfo {
+  const getStatus = (id: string) => {
+    const s = statuses[id];
+    return typeof s === "object" ? s?.status : s;
+  };
+
+  // 1. If approvalNextStep is provided, map from NEXT step to the COMPLETED step that needs review
+  const nextLower = (approvalNextStep || "").toLowerCase().trim();
+  if (nextLower.includes("pre flight") || nextLower.includes("preflight") || nextLower === "preflightnode") {
+    return { stepId: "trainingConfigurationNode", title: "Training Configuration", buttonLabel: "Review Training Configuration" };
+  }
+  if (nextLower.includes("training configuration") || nextLower.includes("trainingconfiguration") || nextLower === "trainingconfigurationnode") {
+    return { stepId: "modelSelectionNode", title: "Model Selection", buttonLabel: "Review Model Selection" };
+  }
+  if (nextLower.includes("model training") || nextLower.includes("modeltraining") || nextLower === "modeltrainingnode" || nextLower === "modeltrainingcodenode") {
+    return { stepId: "preFlightNode", title: "Pre Flight", buttonLabel: "Review Pre-Flight Verification" };
+  }
+  if (nextLower.includes("model validation") || nextLower.includes("modelvalidation") || nextLower.includes("modeltrainingexecution")) {
+    return { stepId: "modelTrainingCodeNode", title: "Model Training Code Generation", buttonLabel: "Review Model Training Code" };
+  }
+
+  // 2. Fallback based on completed statuses in database (reverse chronological order)
+  if (getStatus("modelTrainingCodeNode") === "Completed") {
+    return { stepId: "modelTrainingCodeNode", title: "Model Training Code Generation", buttonLabel: "Review Model Training Code" };
+  }
+  if (getStatus("preFlightNode") === "Completed") {
+    return { stepId: "preFlightNode", title: "Pre Flight", buttonLabel: "Review Pre-Flight Verification" };
+  }
+  if (getStatus("trainingConfigurationNode") === "Completed") {
+    return { stepId: "trainingConfigurationNode", title: "Training Configuration", buttonLabel: "Review Training Configuration" };
+  }
+  if (getStatus("modelSelectionNode") === "Completed") {
+    return { stepId: "modelSelectionNode", title: "Model Selection", buttonLabel: "Review Model Selection" };
+  }
+
+  // 3. Fallback: check if any node is explicitly "User Input" or "Awaiting Approval"
+  if (getStatus("modelTrainingCodeNode") === "User Input" || getStatus("modelTrainingCodeNode") === "Awaiting Approval") {
+    return { stepId: "modelTrainingCodeNode", title: "Model Training Code Generation", buttonLabel: "Review Model Training Code" };
+  }
+  if (getStatus("trainingConfigurationNode") === "User Input" || getStatus("trainingConfigurationNode") === "Awaiting Approval") {
+    return { stepId: "trainingConfigurationNode", title: "Training Configuration", buttonLabel: "Review Training Configuration" };
+  }
+  if (getStatus("modelSelectionNode") === "User Input" || getStatus("modelSelectionNode") === "Awaiting Approval") {
+    return { stepId: "modelSelectionNode", title: "Model Selection", buttonLabel: "Review Model Selection" };
+  }
+  if (getStatus("preFlightNode") === "User Input" || getStatus("preFlightNode") === "Awaiting Approval") {
+    return { stepId: "preFlightNode", title: "Pre Flight", buttonLabel: "Review Pre-Flight Verification" };
+  }
+
+  return { stepId: "modelSelectionNode", title: "Model Selection", buttonLabel: "Review Model Selection" };
+}
+

@@ -471,6 +471,7 @@ export class ModelTrainingAgent {
     }
 
     const agentMessages: BaseMessage[] = [];
+    const rectifierMessages: BaseMessage[] = [];
     const codingFallback: CodingAgentResult = {
       status: "Completed",
       summary: "Python model training project scaffolded successfully.",
@@ -601,6 +602,13 @@ export class ModelTrainingAgent {
                 traceLabel: "modelTraining:rectifierAdvisor",
                 tools: readOnlyFsTools,
                 recursionLimit: 200,
+                messages: rectifierMessages,
+                middlewareOptions: {
+                  summarization: {
+                    triggerTokens: 200000,
+                    keepTokens: 25000,
+                  },
+                },
               }
             );
 
@@ -759,6 +767,7 @@ export class ModelTrainingAgent {
     }
 
     const agentMessages: BaseMessage[] = [];
+    const rectifierMessages: BaseMessage[] = [];
     const codingFallback: CodingAgentResult = {
       status: "Completed",
       summary: "Coding agent generated project files.",
@@ -940,7 +949,8 @@ export class ModelTrainingAgent {
           state.connectorId,
           accumulatedPackages,
           extraArgs,
-          resourceLimits
+          resourceLimits,
+          { mountMode: "project", serviceName: "model-training" }
         );
 
         lastExecResult = execResult;
@@ -1083,6 +1093,13 @@ export class ModelTrainingAgent {
               traceLabel: "modelTraining:rectifierAdvisor",
               tools: readOnlyFsTools,
               recursionLimit: 200,
+              messages: rectifierMessages,
+              middlewareOptions: {
+                summarization: {
+                  triggerTokens: 200000,
+                  keepTokens: 25000,
+                },
+              },
             }
           );
 

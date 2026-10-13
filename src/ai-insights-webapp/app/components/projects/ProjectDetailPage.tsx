@@ -6,6 +6,7 @@ import { PipelineStatus, PipelineStatuses, RunStatus, StageOutputs, Workflow, Wo
 import { getMainStepId, toDisplayStatuses } from "./WorkflowPipeline";
 import CardModal from "../shared/ui/CardModal";
 import { PIPELINE_STEPS } from "./constants";
+import { resolveModelTrainingReviewStep } from "./pipelineFlowConfig";
 import { normalizeStageOutputs, StageKey } from "./pipelineNames";
 import IngestionStepOutput from "./pipeline-outputs/IngestionStepOutput";
 import ProfilingStepOutput from "./pipeline-outputs/ProfilingStepOutput";
@@ -343,46 +344,18 @@ export default function ProjectDetailPage({
 
   const isStepAwaitingApproval = (stepId: string, stageId: string): boolean => {
     if (!isAwaitingApprovalWorkflow) return false;
-    const rawStatus = displayPipelineStatuses[stepId];
-    if (rawStatus === "Completed") return false;
-    if (rawStatus === "Awaiting Approval" || rawStatus === "User Input") return true;
 
     if (stageId === "modelTrainingValidation") {
-      const next = (effectiveApprovalNextStep || pausedAtPhase || "").trim();
-      if (
-        (next === "Model Selection" || next === "modelSelectionNode") &&
-        stepId === "modelSelectionNode"
-      ) {
-        return true;
-      }
-      if (
-        (next === "Training Configuration" || next === "trainingConfigurationNode") &&
-        stepId === "trainingConfigurationNode"
-      ) {
-        return true;
-      }
-      if (
-        (next === "Pre Flight" || next === "preFlightNode") &&
-        stepId === "preFlightNode"
-      ) {
-        return true;
-      }
-      if (
-        (next === "Model Training" ||
-          next === "modelTrainingNode" ||
-          next === "modelTrainingCodeNode" ||
-          next === "Model Training Code Generation") &&
-        stepId === "modelTrainingCodeNode"
-      ) {
-        return true;
-      }
-      if (
-        (next === "Model Validation" || next === "modelValidationNode") &&
-        stepId === "modelTrainingCodeNode"
-      ) {
-        return true;
-      }
+      const reviewInfo = resolveModelTrainingReviewStep(
+        displayPipelineStatuses,
+        effectiveApprovalNextStep || pausedAtPhase
+      );
+      return stepId === reviewInfo.stepId;
     }
+
+    const rawStatus = displayPipelineStatuses[stepId];
+    if (rawStatus === "Awaiting Approval" || rawStatus === "User Input") return true;
+    if (rawStatus === "Completed") return false;
     return false;
   };
 
@@ -400,22 +373,30 @@ export default function ProjectDetailPage({
       if (stepId !== mainId) {
         setSelectedSubstepId(stepId);
       } else if (mainId === "modelTrainingValidation") {
-        const substeps = [
-          ["modelTrainingCodeNode", "Model Training"],
-          ["preFlightNode", "Pre Flight"],
-          ["trainingConfigurationNode", "Training Configuration"],
-          ["modelSelectionNode", "Model Selection"],
-        ] as const;
-        const awaiting = substeps.find(
-          ([key]) =>
-            displayPipelineStatuses[key] === "User Input" ||
-            displayPipelineStatuses[key] === "Awaiting Approval"
-        );
-        const inProgress = substeps.find(([key]) => displayPipelineStatuses[key] === "In-Progress");
-        const withOutput = substeps.find(
-          ([key]) => stageOutputs?.[key] != null || displayPipelineStatuses[key] === "Completed"
-        );
-        setSelectedSubstepId(inProgress?.[0] || awaiting?.[0] || withOutput?.[0] || "modelSelectionNode");
+        if (isAwaitingApprovalWorkflow) {
+          const reviewInfo = resolveModelTrainingReviewStep(
+            displayPipelineStatuses,
+            effectiveApprovalNextStep || pausedAtPhase
+          );
+          setSelectedSubstepId(reviewInfo.stepId);
+        } else {
+          const substeps = [
+            ["modelTrainingCodeNode", "Model Training"],
+            ["preFlightNode", "Pre Flight"],
+            ["trainingConfigurationNode", "Training Configuration"],
+            ["modelSelectionNode", "Model Selection"],
+          ] as const;
+          const awaiting = substeps.find(
+            ([key]) =>
+              displayPipelineStatuses[key] === "User Input" ||
+              displayPipelineStatuses[key] === "Awaiting Approval"
+          );
+          const inProgress = substeps.find(([key]) => displayPipelineStatuses[key] === "In-Progress");
+          const withOutput = substeps.find(
+            ([key]) => stageOutputs?.[key] != null || displayPipelineStatuses[key] === "Completed"
+          );
+          setSelectedSubstepId(inProgress?.[0] || awaiting?.[0] || withOutput?.[0] || "modelSelectionNode");
+        }
       } else {
         setSelectedSubstepId(null);
       }
@@ -566,24 +547,11 @@ export default function ProjectDetailPage({
               <>
                 {isModelTrainingSubprocess ? (
                   (() => {
-                    let buttonLabel = "Review Model Selection";
-                    const step = (effectiveApprovalNextStep || pausedAtPhase || "").trim();
-                    if (step === "modelValidationNode" || step === "Model Validation") {
-                      buttonLabel = "Review & Validate Models";
-                    } else if (
-                      step === "modelTrainingCodeNode" ||
-                      step === "Model Training Code Generation" ||
-                      step === "modelTrainingNode" ||
-                      step === "Model Training"
-                    ) {
-                      buttonLabel = "Execute Model Training";
-                    } else if (step === "preFlightNode" || step === "Pre Flight") {
-                      buttonLabel = "Review Pre-Flight Verification";
-                    } else if (step === "trainingConfigurationNode" || step === "Training Configuration") {
-                      buttonLabel = "Review Training Configuration";
-                    } else if (step === "modelSelectionNode" || step === "Model Selection") {
-                      buttonLabel = "Review Model Selection";
-                    }
+                    const reviewInfo = resolveModelTrainingReviewStep(
+                      displayPipelineStatuses,
+                      effectiveApprovalNextStep || pausedAtPhase
+                    );
+                    const buttonLabel = reviewInfo.buttonLabel;
 
                     return (
                       <button

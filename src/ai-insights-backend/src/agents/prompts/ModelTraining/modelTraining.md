@@ -115,7 +115,8 @@ COPY . /workspace
     - `"${HOST_PYTHON_SCRIPT_DIR}:/workspace/python_script:ro"`
     - `"${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro"`
   - All test execution runs exclusively inside the container's ephemeral writable layer. No data or run artifacts should be stored in any Docker volume or host project folder.
-- Sets working directory to `/workspace`.
+- Sets working directory to `/workspace`. All project files reside directly in `/workspace` (copied via `COPY . /workspace` in `Dockerfile`). The container CLI entrypoint is `python main.py --out-dir /workspace`. In `main.py`, parse `--out-dir` (defaulting to `/workspace`).
+- **DO NOT** include top-level `version:` in `docker-compose.yml` (the version attribute is obsolete and deprecated in Docker Compose v2).
 - Configures environment variables (`PYTHONPATH=/workspace`).
 - **PreFlight Hardware Limits**: Configures runtime resource limits based on the host machine PreFlight assessment (available via `get_preflight_details` tool or prompt context). Set `cpus` and `memory` limits conservatively (e.g. up to 75% of host logical cores, 80% of host RAM). If GPU is enabled in PreFlight, configure GPU reservations.
 

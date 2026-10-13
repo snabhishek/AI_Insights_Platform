@@ -315,7 +315,22 @@ export function ensureDockerCompose(
   const composeYaml = path.join(targetDir, "docker-compose.yaml");
 
   if (!isPythonScriptOnly) {
-    if (fs.existsSync(composeYml)) return composeYml;
+    if (fs.existsSync(composeYml)) {
+      try {
+        const existingContent = fs.readFileSync(composeYml, "utf-8");
+        let updatedContent = existingContent.replace(/^version:\s*['"][^'"]+['"]\s*\r?\n/m, "");
+        if (!updatedContent.includes(".:/workspace") && !updatedContent.includes(". : /workspace")) {
+          updatedContent = updatedContent.replace(
+            /(volumes:\s*\r?\n)/,
+            `$1      - ".:/workspace"\n`
+          );
+        }
+        if (updatedContent !== existingContent) {
+          fs.writeFileSync(composeYml, updatedContent, "utf-8");
+        }
+      } catch {}
+      return composeYml;
+    }
     if (fs.existsSync(composeYaml)) return composeYaml;
   }
 
@@ -337,7 +352,9 @@ export function ensureDockerCompose(
         "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro\"",
       ]
     : [
-        "      - \"${HOST_PROJECT_ROOT:-.}:/workspace\"",
+        "      - \".:/workspace\"",
+        "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/python_script:ro\"",
+        "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro\"",
       ];
 
   const content = [
@@ -560,13 +577,10 @@ export async function executePythonScript(
     duplicateIndex++;
   }
 
-  const scriptInContainer = isPythonScriptOnly
-    ? path.relative(execDir, scriptPath).replace(/\\/g, "/") || "main.py"
-    : relFromProjectRoot;
+  const relScript = path.relative(execDir, scriptPath).replace(/\\/g, "/");
+  const scriptInContainer = relScript && !relScript.startsWith("..") ? relScript : "main.py";
 
-  const effectiveArgs = isPythonScriptOnly
-    ? args.map((arg) => (arg.startsWith("--out-dir") ? '--out-dir "/workspace"' : arg))
-    : args;
+  const effectiveArgs = args.map((arg) => (arg.startsWith("--out-dir") ? '--out-dir "/workspace"' : arg));
 
   const initLogHeader = [
     "=".repeat(80),
