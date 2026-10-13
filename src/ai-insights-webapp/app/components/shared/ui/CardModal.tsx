@@ -4,6 +4,7 @@ import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { Inbox } from "lucide-react";
 import { Workflow, WorkflowStep, PipelineStatus, WorkflowAgentState } from "../../projects/types";
+import { resolveModelTrainingReviewStep } from "../../projects/pipelineFlowConfig";
 import SubProcessLogModal from "./SubProcessLogModal";
 
 export type CardModalTabType = "output" | "thinking";
@@ -180,6 +181,12 @@ function CardModalContent({
     );
     if (inProgressIndex !== -1) return inProgressIndex;
 
+    if (isModelTrainingCard && (runStatus === "Awaiting Approval" || isCardAwaitingApproval)) {
+      const reviewInfo = resolveModelTrainingReviewStep(pipelineStatuses, approvalNextStep);
+      const reviewIndex = stepsList.findIndex((step) => step.id === reviewInfo.stepId);
+      if (reviewIndex !== -1) return reviewIndex;
+    }
+
     const awaitingIndex = stepsList.findIndex(
       (step) =>
         pipelineStatuses[step.id] === "User Input" ||
@@ -192,14 +199,14 @@ function CardModalContent({
       if (modelSelectionIndex !== -1) return modelSelectionIndex;
     }
     if (isWaitingForPreFlightApproval) {
-      const preFlightIndex = stepsList.findIndex(
-        (step) => step.id === "preFlightNode"
+      const trainingConfigIndex = stepsList.findIndex(
+        (step) => step.id === "trainingConfigurationNode"
       );
-      if (preFlightIndex !== -1) return preFlightIndex;
+      if (trainingConfigIndex !== -1) return trainingConfigIndex;
     }
     if (isWaitingForTrainingApproval) {
-      const trainingIndex = stepsList.findIndex((step) => step.id === "modelTrainingCodeNode");
-      if (trainingIndex !== -1) return trainingIndex;
+      const preFlightIndex = stepsList.findIndex((step) => step.id === "preFlightNode");
+      if (preFlightIndex !== -1) return preFlightIndex;
     }
     if (isStageAwaitingApprovalToAdvance) return stepsList.length - 1;
 

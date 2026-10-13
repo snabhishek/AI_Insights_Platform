@@ -3,6 +3,7 @@
 import React from "react";
 import { PipelineStatus, PipelineStatuses, RunStatus } from "./types";
 import { PIPELINE_STEPS } from "./constants";
+import { resolveModelTrainingReviewStep } from "./pipelineFlowConfig";
 import WorkflowCard from "./WorkflowCard";
 import { NODE_CONFIG, normalizeFlatStageStatuses, StageKey, STAGE_CONFIG, TrackedAgentKey } from "./pipelineNames";
 
@@ -474,24 +475,11 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
                   pausedAtPhase === "Model Training";
 
                 if (isModelTrainingSubprocess) {
-                  let buttonLabel = "Review Model Selection";
-                  const step = (effectiveApprovalNextStep || pausedAtPhase || "").trim();
-                  if (step === "modelValidationNode" || step === "Model Validation") {
-                    buttonLabel = "Review & Validate Models";
-                  } else if (
-                    step === "modelTrainingCodeNode" ||
-                    step === "Model Training Code Generation" ||
-                    step === "modelTrainingNode" ||
-                    step === "Model Training"
-                  ) {
-                    buttonLabel = "Execute Model Training";
-                  } else if (step === "preFlightNode" || step === "Pre Flight") {
-                    buttonLabel = "Review Pre-Flight Verification";
-                  } else if (step === "trainingConfigurationNode" || step === "Training Configuration") {
-                    buttonLabel = "Review Training Configuration";
-                  } else if (step === "modelSelectionNode" || step === "Model Selection") {
-                    buttonLabel = "Review Model Selection";
-                  }
+                  const reviewInfo = resolveModelTrainingReviewStep(
+                    pipelineStatuses,
+                    effectiveApprovalNextStep || pausedAtPhase
+                  );
+                  const buttonLabel = reviewInfo.buttonLabel;
 
                   return (
                     <button
