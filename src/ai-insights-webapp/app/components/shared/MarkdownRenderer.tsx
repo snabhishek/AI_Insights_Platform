@@ -3,6 +3,8 @@
 import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 
 interface MarkdownRendererProps {
   content: string;
@@ -11,9 +13,10 @@ interface MarkdownRendererProps {
 
 export default function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
   return (
-    <div className={`prose prose-sm dark:prose-invert max-w-none text-sm leading-relaxed text-foreground/90 space-y-2.5 select-text ${className}`}>
+    <div className={`markdown-content prose prose-sm dark:prose-invert min-w-0 max-w-none text-sm leading-relaxed text-foreground/90 space-y-2.5 select-text ${className}`}>
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath]}
+        rehypePlugins={[[rehypeKatex, { strict: "ignore", trust: false }]]}
         components={{
           h1: ({ children }) => (
             <h1 className="text-xl sm:text-2xl font-bold text-foreground mt-4 mb-2 pb-1.5 border-b border-border/60">

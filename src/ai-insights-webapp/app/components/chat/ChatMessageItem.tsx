@@ -42,7 +42,7 @@ export default function ChatMessageItem({
   return (
     <div className={`w-full flex ${isUser ? "justify-end" : "justify-start"} animate-fade-in`}>
       <div
-        className={`rounded-2xl transition-all ${
+        className={`min-w-0 rounded-2xl transition-all ${
           isUser
             ? "bg-primary text-white border border-transparent shadow-md max-w-[85%] sm:max-w-[75%] lg:max-w-[65%] p-3.5 sm:p-4 space-y-2"
             : "max-w-full p-4 sm:p-5 w-full space-y-3"

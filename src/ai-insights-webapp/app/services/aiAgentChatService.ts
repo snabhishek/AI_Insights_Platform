@@ -2,9 +2,11 @@ import { ChatMessage, ChatSession, AgentPersonaId, ThinkingStep } from "../compo
 import { INITIAL_CHAT_SESSIONS } from "../components/chat/constants";
 import { Project, DataSource, BACKEND_URL } from "../components/providers/AppContext";
 import { readSparrowStream } from "./sparrowStream";
+import { normalizeChatSessions, resolveActiveSessionKey } from "./chatSessionHistory";
 
 const CHAT_STORAGE_KEY = "ai_insights_chat_sessions_v1";
 const ACTIVE_SESSION_ID_KEY = "ai_insights_active_session_id_v1";
+const ACTIVE_SESSION_KEY = "ai_insights_active_session_key_v2";
 
 export interface ChatRequestContext {
   requestId: string; messageId: string; userMessageId: string; userContent: string;
@@ -18,9 +20,9 @@ async function chatApi(path: string, options?: RequestInit) {
   return json.data;
 }
 export async function loadDatabaseChatSessions(projectIds: string[], cached: ChatSession[]): Promise<ChatSession[]> {
-  const legacy = cached.filter(session => session.projectId && projectIds.includes(session.projectId));
+  const legacy = normalizeChatSessions(cached).filter(session => session.projectId && projectIds.includes(session.projectId));
   if (legacy.length) await chatApi("/sessions/import", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ sessions: legacy }) });
-  return chatApi(`/sessions?${new URLSearchParams({ projectIds: projectIds.join(",") })}`);
+  return normalizeChatSessions(await chatApi(`/sessions?${new URLSearchParams({ projectIds: projectIds.join(",") })}`));
 }
 export async function saveChatSessionMetadata(session: ChatSession): Promise<void> {
   if (!session.projectId) return;
@@ -46,7 +48,7 @@ export function loadSavedChatSessions(): ChatSession[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+        return normalizeChatSessions(parsed);
       }
     }
   } catch (err) {
@@ -58,20 +60,20 @@ export function loadSavedChatSessions(): ChatSession[] {
 export function saveChatSessions(sessions: ChatSession[]): void {
   if (typeof window === "undefined") return;
   try {
-    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(sessions));
+    localStorage.setItem(CHAT_STORAGE_KEY, JSON.stringify(normalizeChatSessions(sessions)));
   } catch (err) {
     console.warn("Failed to persist chat sessions:", err);
   }
 }
 
-export function loadActiveSessionId(): string | null {
-  if (typeof window === "undefined") return null;
-  return localStorage.getItem(ACTIVE_SESSION_ID_KEY);
+export function loadActiveSessionKey(sessions: ChatSession[]): string {
+  if (typeof window === "undefined") return resolveActiveSessionKey(sessions, null);
+  return resolveActiveSessionKey(sessions, localStorage.getItem(ACTIVE_SESSION_KEY) ?? localStorage.getItem(ACTIVE_SESSION_ID_KEY));
 }
 
-export function saveActiveSessionId(id: string): void {
+export function saveActiveSessionKey(key: string): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(ACTIVE_SESSION_ID_KEY, id);
+  localStorage.setItem(ACTIVE_SESSION_KEY, key);
 }
 
 export async function generateAgentChatResponse(

@@ -76,6 +76,18 @@ th {
     font-weight: 700 !important;
 }
 
+/* Keep long equations readable within chat bubbles on narrow screens. */
+.markdown-content .katex-display {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.5rem 0;
+}
+
+.markdown-content .katex {
+    font-size: 1.1em;
+}
+
 @keyframes slideUp {
     from {
         opacity: 0;

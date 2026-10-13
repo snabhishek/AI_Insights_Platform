@@ -6,15 +6,16 @@ import { ChatSession, AgentPersonaId } from "./types";
 import { Project } from "../providers/AppContext";
 import ModernSelect from "../shared/ui/ModernSelect";
 import PersonaIcon from "./PersonaIcon";
+import { chatSessionKey } from "../../services/chatSessionHistory";
 
 interface ChatSidebarProps {
   sessions: ChatSession[];
-  activeSessionId: string;
-  onSelectSession: (id: string) => void;
+  activeSessionKey: string;
+  onSelectSession: (key: string) => void;
   onNewSession: () => void;
-  onDeleteSession: (id: string) => void;
-  onTogglePinSession: (id: string) => void;
-  onRenameSession?: (id: string, newTitle: string) => void;
+  onDeleteSession: (key: string) => void;
+  onTogglePinSession: (key: string) => void;
+  onRenameSession?: (key: string, newTitle: string) => void;
   selectedPersonaId: AgentPersonaId;
   onSelectPersona: (id: AgentPersonaId) => void;
   projects?: Project[];
@@ -24,7 +25,7 @@ interface ChatSidebarProps {
 
 export default function ChatSidebar({
   sessions,
-  activeSessionId,
+  activeSessionKey,
   onSelectSession,
   onNewSession,
   onDeleteSession,
@@ -111,13 +112,13 @@ export default function ChatSidebar({
             <div className="space-y-1">
               {pinnedSessions.map((session) => (
                 <SessionItem
-                  key={session.id}
+                  key={chatSessionKey(session)}
                   session={session}
-                  isActive={session.id === activeSessionId}
-                  onSelect={() => onSelectSession(session.id)}
-                  onDelete={() => onDeleteSession(session.id)}
-                  onTogglePin={() => onTogglePinSession(session.id)}
-                  onRename={(newTitle) => onRenameSession?.(session.id, newTitle)}
+                  isActive={chatSessionKey(session) === activeSessionKey}
+                  onSelect={() => onSelectSession(chatSessionKey(session))}
+                  onDelete={() => onDeleteSession(chatSessionKey(session))}
+                  onTogglePin={() => onTogglePinSession(chatSessionKey(session))}
+                  onRename={(newTitle) => onRenameSession?.(chatSessionKey(session), newTitle)}
                 />
               ))}
             </div>
@@ -137,13 +138,13 @@ export default function ChatSidebar({
             <div className="space-y-1">
               {recentSessions.map((session) => (
                 <SessionItem
-                  key={session.id}
+                  key={chatSessionKey(session)}
                   session={session}
-                  isActive={session.id === activeSessionId}
-                  onSelect={() => onSelectSession(session.id)}
-                  onDelete={() => onDeleteSession(session.id)}
-                  onTogglePin={() => onTogglePinSession(session.id)}
-                  onRename={(newTitle) => onRenameSession?.(session.id, newTitle)}
+                  isActive={chatSessionKey(session) === activeSessionKey}
+                  onSelect={() => onSelectSession(chatSessionKey(session))}
+                  onDelete={() => onDeleteSession(chatSessionKey(session))}
+                  onTogglePin={() => onTogglePinSession(chatSessionKey(session))}
+                  onRename={(newTitle) => onRenameSession?.(chatSessionKey(session), newTitle)}
                 />
               ))}
             </div>
@@ -174,10 +175,6 @@ function SessionItem({
   const [editTitle, setEditTitle] = useState(session.title);
   const menuRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-
-  useEffect(() => {
-    setEditTitle(session.title);
-  }, [session.title]);
 
   useEffect(() => {
     if (isEditing) {
@@ -319,6 +316,7 @@ function SessionItem({
               type="button"
               onClick={() => {
                 setIsMenuOpen(false);
+                setEditTitle(session.title);
                 setIsEditing(true);
               }}
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-medium text-foreground hover:bg-surface-muted hover:text-primary transition-colors cursor-pointer group/item text-left"
