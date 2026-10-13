@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Project, DataSource, UserProfile } from "../providers/AppContext";
-import { PipelineStatuses, RunStatus, Workflow } from "./types";
-import WorkflowPipeline, { getMainStepId } from "./WorkflowPipeline";
+import { PipelineStatus, PipelineStatuses, RunStatus, StageOutputs, Workflow, WorkflowStep, WorkflowAgentState } from "./types";
+import { getMainStepId, toDisplayStatuses } from "./WorkflowPipeline";
 import CardModal from "../shared/ui/CardModal";
 import { PIPELINE_STEPS } from "./constants";
+import { normalizeStageOutputs, StageKey } from "./pipelineNames";
 import IngestionStepOutput from "./pipeline-outputs/IngestionStepOutput";
 import ProfilingStepOutput from "./pipeline-outputs/ProfilingStepOutput";
 import SchemaResolverStepOutput from "./pipeline-outputs/SchemaResolverStepOutput";
@@ -14,6 +15,8 @@ import HierarchyMapperStepOutput from "./pipeline-outputs/HierarchyMapperStepOut
 import FeatureArchitectStepOutput from "./pipeline-outputs/FeatureArchitectStepOutput";
 import FeatureValidatorStepOutput from "./pipeline-outputs/FeatureValidatorStepOutput";
 import ModelTrainingValidationStepOutput from "./pipeline-outputs/ModelTrainingValidationStepOutput";
+import ModelTrainingExecutionStepOutput from "./pipeline-outputs/ModelTrainingExecutionStepOutput";
+import SignalStrip, { toStripStages, type StepStatus } from "./SignalStrip";
 
 type AlertType = "error" | "success" | "info";
 
@@ -36,9 +39,9 @@ interface ProjectDetailPageProps {
   onManageSources: () => void;
   onAddTag: () => void;
   activeStage: string | null;
-  stageOutputs: Record<string, unknown>;
-  requiresApproval: boolean;
+  stageOutputs: StageOutputs;
   workflowMessage: string;
+  workflowError: string | null;
   onSelectStage: (stepId: string) => void;
   onApprove: (
     overrideTargetPhase?: string,
@@ -56,9 +59,53 @@ interface ProjectDetailPageProps {
   approvalNextStep?: string | null;
   isApproving?: boolean;
   isAwaitingResponse?: boolean;
+  isSubmittingWorkflow?: boolean;
+  isPausing?: boolean;
+  isStopping?: boolean;
+  isResuming?: boolean;
+  isRetrying?: boolean;
   agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   showAlert: (opts: { title: string; message?: string; type: AlertType; logs?: string }) => void;
 }
+
+const ADVANCE_TO_FE_STEPS = new Set([
+  "hierarchyMapperNode",
+  "Hierarchy Mapper",
+  "featureEngineering",
+  "Feature Engineering",
+]);
+
+const ADVANCE_TO_MODEL_SELECTION_STEPS = new Set([
+  "modelSelectionNode",
+  "Model Selection",
+  "modelTrainingValidation",
+  "Model Training & Validation",
+]);
+
+const MODEL_TRAINING_VALIDATION_STEPS = new Set([
+  "trainingConfigurationNode",
+  "Training Configuration",
+  "preFlightNode",
+  "Pre Flight",
+  "modelTrainingCodeNode",
+  "Model Training Code Generation",
+  "modelTrainingNode",
+  "Model Training",
+  "modelValidationNode",
+  "Model Validation",
+]);
+
+const SIGNAL_STRIP_STAGES = toStripStages(
+  PIPELINE_STEPS.map((stage) => ({
+    ...stage,
+    short:
+      stage.id === "dataIngestion"
+        ? "Raw signal"
+        : stage.id === "featureEngineering"
+          ? "Shaped features"
+          : "Model-ready",
+  }))
+);
 
 export default function ProjectDetailPage({
   project,
@@ -80,8 +127,8 @@ export default function ProjectDetailPage({
   onAddTag,
   activeStage,
   stageOutputs,
-  requiresApproval,
   workflowMessage,
+  workflowError,
   onSelectStage,
   onApprove,
   onRetry,
@@ -92,18 +139,257 @@ export default function ProjectDetailPage({
   approvalNextStep,
   isApproving,
   isAwaitingResponse,
+  isSubmittingWorkflow,
+  isPausing,
+  isStopping,
+  isResuming,
+  isRetrying,
   agentThinking,
   showAlert,
 }: ProjectDetailPageProps) {
-  const [isEditingUseCase, setIsEditingUseCase] = React.useState(false);
-  const [editedUseCaseText, setEditedUseCaseText] = React.useState(project.useCase || "");
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState<boolean>(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [selectedSubstepId, setSelectedSubstepId] = useState<string | null>(null);
+  const [retryingStepId, setRetryingStepId] = useState<string | null>(null);
 
-  React.useEffect(() => {
-    setEditedUseCaseText(project.useCase || "");
-  }, [project.useCase]);
+  const displayPipelineStatuses = toDisplayStatuses(pipelineStatuses);
+  const signalStatus: Record<string, StepStatus> = Object.fromEntries(
+    PIPELINE_STEPS.flatMap((stage) =>
+      (stage.step ?? []).map((step) => {
+        const status = displayPipelineStatuses[step.id];
+        const stripStatus: StepStatus =
+          status === "Completed"
+            ? "done"
+            : status === "In-Progress" ||
+                status === "Awaiting Approval" ||
+                status === "User Input" ||
+                status === "Paused"
+              ? "running"
+              : "pending";
+        return [step.id, stripStatus];
+      })
+    )
+  );
+
+  useEffect(() => {
+    if (!isRetrying) {
+      setRetryingStepId(null);
+    }
+  }, [isRetrying]);
+
+  const hasInProgressGroup = Object.values(pipelineStatuses || {}).some(
+    (g: any) => g?.status === "In-Progress"
+  );
+  const hasInProgressFlat = Object.values(displayPipelineStatuses).some(
+    (s) => s === "In-Progress"
+  );
+  const hasInProgress = hasInProgressGroup || hasInProgressFlat;
+
+  const hasAwaitingApproval = runStatus === "Awaiting Approval";
+
+  const effectiveRunStatus: RunStatus =
+    hasAwaitingApproval
+      ? "Awaiting Approval"
+      : runStatus === "In-Progress"
+        ? "In-Progress"
+        : runStatus === "Paused" || isPaused
+          ? "Paused"
+          : runStatus === "Stopped"
+            ? "Stopped"
+            : runStatus === "Failed"
+              ? "Failed"
+              : hasInProgress
+                ? "In-Progress"
+                : runStatus;
+
+  const isAwaitingApprovalWorkflow = hasAwaitingApproval || effectiveRunStatus === "Awaiting Approval";
+
+  const effectiveApprovalNextStep = approvalNextStep || (() => {
+    const diStatus = displayPipelineStatuses["dataIngestion"] || displayPipelineStatuses["Data Ingestion"];
+    const feStatus = displayPipelineStatuses["featureEngineering"] || displayPipelineStatuses["Feature Engineering"];
+    const mtvStatus = displayPipelineStatuses["modelTrainingValidation"] || displayPipelineStatuses["Model Training & Validation"];
+    if (diStatus === "Awaiting Approval" || (diStatus === "Completed" && (feStatus === "Pending" || feStatus === "None"))) {
+      return "Feature Engineering";
+    }
+    if (feStatus === "Awaiting Approval" || (feStatus === "Completed" && (mtvStatus === "Pending" || mtvStatus === "None"))) {
+      return "Model Training & Validation";
+    }
+    if (mtvStatus === "Awaiting Approval") {
+      const mtv = displayPipelineStatuses;
+      if (mtv.modelTrainingCodeNode === "User Input" || mtv.modelTrainingCodeNode === "Awaiting Approval") {
+        return "Model Training";
+      }
+      if (mtv.preFlightNode === "User Input" || mtv.preFlightNode === "Awaiting Approval") {
+        return "Pre Flight";
+      }
+      if (mtv.trainingConfigurationNode === "User Input" || mtv.trainingConfigurationNode === "Awaiting Approval") {
+        return "Training Configuration";
+      }
+      if (mtv.modelSelectionNode === "User Input" || mtv.modelSelectionNode === "Awaiting Approval") {
+        return "Model Selection";
+      }
+      if (mtv.modelSelectionNode !== "Completed") return "Model Selection";
+      if (mtv.trainingConfigurationNode !== "Completed") return "Training Configuration";
+      if (mtv.preFlightNode !== "Completed") return "Pre Flight";
+      return "Model Training";
+    }
+    return "Feature Engineering";
+  })();
+
+  const isWorkflowStoppedOrFailed =
+    effectiveRunStatus === "Stopped" ||
+    effectiveRunStatus === "Failed" ||
+    effectiveRunStatus === "Paused" ||
+    effectiveRunStatus === "In-Progress";
+
+  const isAnyActionLoading = Boolean(
+    isApproving || isSubmittingWorkflow || isPausing || isStopping || isResuming || isRetrying
+  );
+
+  const hasExistingRun =
+    (lastRunTime !== "Not run yet" ||
+      effectiveRunStatus === "Completed" ||
+      effectiveRunStatus === "Failed" ||
+      Object.values(displayPipelineStatuses).some((s) => s === "Completed" || s === "In-Progress")) &&
+    effectiveRunStatus !== "Stopped";
+
+  const runButtonText = hasExistingRun ? "Re-Run Workflow" : "Run Workflow";
+
+  const handleRunClick = () => {
+    if (isSubmittingWorkflow) return;
+    if (hasExistingRun && onReRunWorkflow) {
+      onReRunWorkflow();
+    } else {
+      onRunWorkflow();
+    }
+  };
+
+  const getWorkflowStageStatus = (stage: string): PipelineStatus => {
+    let status = displayPipelineStatuses[stage] ?? "None";
+
+    if (isAwaitingApprovalWorkflow) {
+      const nextStep = (effectiveApprovalNextStep || "").trim();
+      const isDataIngestion = stage === "dataIngestion" || stage === "Data Ingestion";
+      const isFeatureEngineering = stage === "featureEngineering" || stage === "Feature Engineering";
+      const isModelTraining = stage === "modelTrainingValidation" || stage === "Model Training & Validation";
+
+      if (isDataIngestion) {
+        const isAwaitingFeAdvance =
+          ADVANCE_TO_FE_STEPS.has(nextStep) ||
+          (!nextStep &&
+            (displayPipelineStatuses["featureEngineering"] === "Pending" ||
+              displayPipelineStatuses["featureEngineering"] === "None" ||
+              displayPipelineStatuses["Feature Engineering"] === "Pending" ||
+              displayPipelineStatuses["Feature Engineering"] === "None") &&
+            (displayPipelineStatuses["dataIngestion"] === "Completed" ||
+              displayPipelineStatuses["Data Ingestion"] === "Completed" ||
+              status === "Completed"));
+        if (isAwaitingFeAdvance) {
+          return "Awaiting Approval";
+        }
+      }
+
+      if (isFeatureEngineering) {
+        const isAwaitingModelAdvance =
+          ADVANCE_TO_MODEL_SELECTION_STEPS.has(nextStep) &&
+          (displayPipelineStatuses["modelTrainingValidation"] === "Pending" ||
+            displayPipelineStatuses["modelTrainingValidation"] === "None" ||
+            displayPipelineStatuses["Model Training & Validation"] === "Pending" ||
+            displayPipelineStatuses["Model Training & Validation"] === "None");
+        if (isAwaitingModelAdvance) {
+          return "Awaiting Approval";
+        }
+      }
+
+      if (isModelTraining) {
+        const isModelPhaseActive =
+          MODEL_TRAINING_VALIDATION_STEPS.has(nextStep) ||
+          (ADVANCE_TO_MODEL_SELECTION_STEPS.has(nextStep) &&
+            (displayPipelineStatuses["featureEngineering"] === "Completed" ||
+              displayPipelineStatuses["Feature Engineering"] === "Completed") &&
+            (displayPipelineStatuses["modelTrainingValidation"] === "In-Progress" ||
+              displayPipelineStatuses["Model Training & Validation"] === "In-Progress"));
+        if (isModelPhaseActive) {
+          return "Awaiting Approval";
+        }
+      }
+    }
+
+    const hasAnyWorkStarted =
+      Object.values(displayPipelineStatuses).some((s) => s === "Completed" || s === "In-Progress") ||
+      effectiveRunStatus === "In-Progress" ||
+      effectiveRunStatus === "Paused" ||
+      effectiveRunStatus === "Completed";
+
+    if (status === "Pending" && !hasAnyWorkStarted && effectiveRunStatus === "None") return "None";
+    if (status !== "Completed" && effectiveRunStatus === "Stopped") return "Stopped";
+    return status;
+  };
+
+  const isModelTrainingSubprocess =
+    effectiveApprovalNextStep === "Training Configuration" ||
+    effectiveApprovalNextStep === "trainingConfigurationNode" ||
+    effectiveApprovalNextStep === "Pre Flight" ||
+    effectiveApprovalNextStep === "preFlightNode" ||
+    effectiveApprovalNextStep === "Model Training" ||
+    effectiveApprovalNextStep === "modelTrainingNode" ||
+    effectiveApprovalNextStep === "modelTrainingCodeNode" ||
+    effectiveApprovalNextStep === "Model Training Code Generation" ||
+    effectiveApprovalNextStep === "Model Validation" ||
+    effectiveApprovalNextStep === "modelValidationNode" ||
+    pausedAtPhase === "Training Configuration" ||
+    pausedAtPhase === "Pre Flight" ||
+    pausedAtPhase === "Model Training";
+
+  const isStepAwaitingApproval = (stepId: string, stageId: string): boolean => {
+    if (!isAwaitingApprovalWorkflow) return false;
+    const rawStatus = displayPipelineStatuses[stepId];
+    if (rawStatus === "Completed") return false;
+    if (rawStatus === "Awaiting Approval" || rawStatus === "User Input") return true;
+
+    if (stageId === "modelTrainingValidation") {
+      const next = (effectiveApprovalNextStep || pausedAtPhase || "").trim();
+      if (
+        (next === "Model Selection" || next === "modelSelectionNode") &&
+        stepId === "modelSelectionNode"
+      ) {
+        return true;
+      }
+      if (
+        (next === "Training Configuration" || next === "trainingConfigurationNode") &&
+        stepId === "trainingConfigurationNode"
+      ) {
+        return true;
+      }
+      if (
+        (next === "Pre Flight" || next === "preFlightNode") &&
+        stepId === "preFlightNode"
+      ) {
+        return true;
+      }
+      if (
+        (next === "Model Training" ||
+          next === "modelTrainingNode" ||
+          next === "modelTrainingCodeNode" ||
+          next === "Model Training Code Generation") &&
+        stepId === "modelTrainingCodeNode"
+      ) {
+        return true;
+      }
+      if (
+        (next === "Model Validation" || next === "modelValidationNode") &&
+        stepId === "modelTrainingCodeNode"
+      ) {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  const isStageAwaitingApproval = (stageId: string): boolean => {
+    if (!isAwaitingApprovalWorkflow) return false;
+    return getWorkflowStageStatus(stageId) === "Awaiting Approval";
+  };
 
   const handleSelectStage = (stepId: string) => {
     const mainId = getMainStepId(stepId);
@@ -113,11 +399,23 @@ export default function ProjectDetailPage({
       setSelectedWorkflow(match);
       if (stepId !== mainId) {
         setSelectedSubstepId(stepId);
-      } else if (mainId === "Model Training & Validation") {
-        const substeps = ["Model Training", "Pre Flight", "Training Configuration", "Model Selection"];
-        const inProgress = substeps.find((s) => pipelineStatuses[s] === "In Progress");
-        const withOutput = substeps.find((s) => stageOutputs?.[s] != null || pipelineStatuses[s] === "Completed");
-        setSelectedSubstepId(inProgress || withOutput || "Model Selection");
+      } else if (mainId === "modelTrainingValidation") {
+        const substeps = [
+          ["modelTrainingCodeNode", "Model Training"],
+          ["preFlightNode", "Pre Flight"],
+          ["trainingConfigurationNode", "Training Configuration"],
+          ["modelSelectionNode", "Model Selection"],
+        ] as const;
+        const awaiting = substeps.find(
+          ([key]) =>
+            displayPipelineStatuses[key] === "User Input" ||
+            displayPipelineStatuses[key] === "Awaiting Approval"
+        );
+        const inProgress = substeps.find(([key]) => displayPipelineStatuses[key] === "In-Progress");
+        const withOutput = substeps.find(
+          ([key]) => stageOutputs?.[key] != null || displayPipelineStatuses[key] === "Completed"
+        );
+        setSelectedSubstepId(inProgress?.[0] || awaiting?.[0] || withOutput?.[0] || "modelSelectionNode");
       } else {
         setSelectedSubstepId(null);
       }
@@ -125,273 +423,663 @@ export default function ProjectDetailPage({
     }
   };
 
-  const projectSources = allDataSources.filter((ds) =>
-    project.dataSources.includes(ds.id)
-  );
-  const displaySources = projectSources;
+  const renderStepCircleIcon = (stepItem: WorkflowStep, stageId: string) => {
+    const stepStatus = displayPipelineStatuses[stepItem.id] ?? "Pending";
+    const isCompleted = stepStatus === "Completed";
+    const isAwaiting =
+      !isCompleted &&
+      (stepStatus === "Awaiting Approval" ||
+        stepStatus === "User Input" ||
+        isStepAwaitingApproval(stepItem.id, stageId));
+    const isStepInProgress =
+      !isAwaiting &&
+      !isCompleted &&
+      stepStatus === "In-Progress" &&
+      effectiveRunStatus === "In-Progress";
+    const isPausedStep =
+      !isCompleted &&
+      (stepStatus === "Paused" ||
+        (effectiveRunStatus === "Paused" && stepStatus === "In-Progress"));
+    const isStopped =
+      stepStatus === "Stopped" ||
+      (effectiveRunStatus === "Stopped" && !isCompleted && stepStatus === "In-Progress");
+
+    if (isCompleted) {
+      return (
+        <div className="w-10 h-10 rounded-full bg-status-completed border-2 border-status-completed text-white flex items-center justify-center shrink-0 shadow-sm">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="4.5" aria-label="Completed">
+            <polyline points="20 6 9 17 4 12" />
+          </svg>
+        </div>
+      );
+    }
+
+    if (isPausedStep) {
+      return (
+        <div className="w-10 h-10 rounded-full bg-status-paused border-2 border-status-paused text-white flex items-center justify-center shrink-0 shadow-sm">
+          <div className="flex items-center gap-0.5">
+            <div className="w-0.5 h-2.5 bg-white rounded-full" />
+            <div className="w-0.5 h-2.5 bg-white rounded-full" />
+          </div>
+        </div>
+      );
+    }
+
+    if (isAwaiting) {
+      return (
+        <div className="w-10 h-10 rounded-full bg-status-awaiting-approval border-2 border-status-awaiting-approval text-white flex items-center justify-center shrink-0 shadow-md animate-pulse">
+          <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="4.5">
+            <polygon points="5 3 19 12 5 21 5 3" />
+          </svg>
+        </div>
+      );
+    }
+
+    if (isStepInProgress) {
+      return (
+        <div className="w-10 h-10 rounded-full bg-status-in-progress border-2 border-status-in-progress text-white flex items-center justify-center shrink-0 shadow-md animate-pulse">
+          <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+          </svg>
+        </div>
+      );
+    }
+
+    if (isStopped) {
+      return (
+        <div className="w-10 h-10 rounded-full bg-status-stopped border-2 border-status-stopped text-white flex items-center justify-center shrink-0 shadow-sm">
+          <div className="w-2 h-2 rounded-xs bg-white" />
+        </div>
+      );
+    }
+
+    if (stepStatus === "Failed") {
+      return (
+        <div className="w-10 h-10 rounded-full bg-status-failed border-2 border-status-failed text-white flex items-center justify-center shrink-0 shadow-sm">
+          <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="3.5" aria-label="Failed">
+            <path d="M18 6 6 18M6 6l12 12" />
+          </svg>
+        </div>
+      );
+    }
+
+    const colorMap: Record<string, string> = {
+      green: "bg-emerald-600 text-white border-emerald-600",
+      blue: "bg-blue-600 text-white border-blue-600",
+      purple: "bg-purple-600 text-white border-purple-600",
+      yellow: "bg-amber-600 text-white border-amber-600",
+      teal: "bg-teal-600 text-white border-teal-600",
+      pink: "bg-pink-600 text-white border-pink-600",
+    };
+    const cClass = colorMap[stepItem.color] || "bg-primary text-white border-primary";
+
+    return (
+      <div className={`w-10 h-10 rounded-full flex items-center justify-center shrink-0 border-2 font-black text-xs transition-all shadow-xs ${cClass}`}>
+        {stepItem.icon}
+      </div>
+    );
+  };
 
   return (
     <>
-      <div className="p-4 w-full flex flex-col min-h-full bg-background animate-fade-in select-none">
+      <div className="p-4 sm:p-6 w-full flex flex-col min-h-full bg-background animate-fade-in select-none">
 
-        <div className="flex flex-col lg:flex-row lg:items-start justify-between gap-6">
-          <div className="flex-1">
-            <div className="flex items-center gap-3 mb-2 flex-wrap">
-              <h1 className="text-3xl font-extrabold tracking-tight text-foreground">
-                {project.projectName || project.name}
-              </h1>
+        {/* 1. Header: Project Title, Subtitle, Pills on Left; Workflow Buttons on Right */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 mb-6">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl sm:text-3xl font-extrabold tracking-tight text-foreground">
+              {project.projectName || project.name}
+            </h1>
 
-              {project.projectName && (
-                <span className="text-sm text-muted-foreground font-medium">
-                  {project.name}
-                </span>
-              )}
+            {project.projectName && (
+              <span className="text-sm text-muted-foreground font-medium">
+                {project.name}
+              </span>
+            )}
 
-              {(project.domain || project.subDomain) && (
-                <div className="flex items-center gap-2 flex-wrap mt-1.5">
-                  {project.domain && (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary text-white shadow-sm">
-                      <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-white">
-                        <circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
-                      </svg>
-                      {project.domain}
+            {(project.domain || project.subDomain) && (
+              <div className="flex items-center gap-2 flex-wrap">
+                {project.domain && (
+                  <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary text-white shadow-sm">
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5" className="shrink-0 text-white">
+                      <circle cx="12" cy="12" r="10" /><path d="M2 12h20M12 2a15.3 15.3 0 0 1 0 20M12 2a15.3 15.3 0 0 0 0 20" />
+                    </svg>
+                    {project.domain}
+                  </span>
+                )}
+                {project.subDomain && (
+                  <>
+                    <span className="text-muted-foreground/40 text-xs select-none">›</span>
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/90 text-white shadow-sm">
+                      {project.subDomain}
                     </span>
-                  )}
-                  {project.subDomain && (
-                    <>
-                      <span className="text-muted-foreground/40 text-xs select-none">›</span>
-                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold bg-primary/90 text-white shadow-sm">
-                        {project.subDomain}
-                      </span>
-                    </>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 items-start gap-3">
-
-          <div className="col-span-12 lg:col-span-4 xl:col-span-3 flex flex-col gap-3">
-
-            <div className="border border-border rounded-lg shadow-sm bg-background p-5">
-              <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
-                <div>
-                  <h2 className="text-base font-bold text-foreground leading-tight">
-                    Connectors ({displaySources.length})
-                  </h2>
-                  <p className="text-xs text-muted-foreground mt-0.5">Connected to this project.</p>
-                </div>
-              </div>
-
-              <div className="space-y-2 mb-4">
-                {displaySources.map((ds) => {
-                  const category = (() => {
-                    const s = ds.subtext.toLowerCase();
-                    if (s.includes("warehouse")) return "Warehouse";
-                    if (s.includes("database")) return "Database";
-                    if (s.includes("api")) return "API";
-                    if (s.includes("cloud") || s.includes("storage")) return "Cloud";
-                    if (s.includes("file")) return "File";
-                    return "Database";
-                  })();
-                  const detail = ds.connectionConfig?.host
-                    ? `${ds.connectionConfig.database ?? "Database"} · ${ds.connectionConfig.host}${ds.connectionConfig.port ? `:${ds.connectionConfig.port}` : ""}`
-                    : ds.connectionConfig?.fileName ?? category;
-
-                  return (
-                    <div
-                      key={ds.id}
-                      className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-border hover:border-border/80 transition-colors"
-                    >
-                      <div className="flex items-center gap-3 overflow-hidden">
-                        <div className="w-8 h-8 rounded-lg bg-surface-muted border border-border flex items-center justify-center shrink-0 text-[10px] font-bold text-muted-foreground uppercase">
-                          {ds.name.slice(0, 2)}
-                        </div>
-                        <div className="flex flex-col overflow-hidden">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs font-semibold text-foreground truncate max-w-[120px]" title={ds.name}>
-                              {ds.name}
-                            </span>
-                            <span className="px-1.5 py-0.5 rounded bg-surface-muted border border-border text-[9px] font-semibold text-muted-foreground uppercase shrink-0">
-                              {category}
-                            </span>
-                          </div>
-                          <span className="text-[10px] text-muted-foreground truncate mt-0.5" title={detail}>{detail}</span>
-                          <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold mt-0.5 flex items-center gap-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
-                            Connected
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="pt-4 mt-1 border-t border-border">
-                <button
-                  onClick={onManageSources}
-                  className="w-full py-2 border border-dashed border-border hover:border-primary text-muted-foreground hover:text-primary rounded-xl text-xs font-semibold cursor-pointer transition-colors flex items-center justify-center gap-2"
-                >
-                  <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.62V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-                  </svg>
-                  Manage Connectors
-                </button>
-              </div>
-            </div>
-
-            <div className="border border-border rounded-lg shadow-sm bg-background p-5">
-              <div className="flex items-center justify-between pb-4 mb-4 border-b border-border">
-                <h2 className="text-base font-bold text-foreground leading-tight">Project Use Case</h2>
-                {!isEditingUseCase && (
-                  <button
-                    onClick={() => {
-                      setEditedUseCaseText(project.useCase || "");
-                      setIsEditingUseCase(true);
-                    }}
-                    className="px-3 py-1 text-xs font-semibold rounded-lg bg-primary text-white hover:bg-primary/90 cursor-pointer transition-colors shadow-sm"
-                  >
-                    Edit
-                  </button>
+                  </>
                 )}
               </div>
-
-              {isEditingUseCase ? (
-                <div className="flex flex-col gap-3">
-                  <textarea
-                    value={editedUseCaseText}
-                    onChange={(e) => setEditedUseCaseText(e.target.value)}
-                    rows={4}
-                    className="w-full text-xs p-3 rounded-xl border border-border bg-surface-muted text-foreground focus:outline-none focus:ring-0 resize-y"
-                    placeholder="Describe your use case goals..."
-                  />
-                  <div className="flex items-center justify-end gap-2 flex-wrap">
-                    <button
-                      onClick={() => setIsEditingUseCase(false)}
-                      className="px-3 py-1.5 text-xs font-semibold text-muted-foreground hover:text-foreground cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (onSaveUseCase) await onSaveUseCase(editedUseCaseText);
-                        setIsEditingUseCase(false);
-                      }}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground cursor-pointer"
-                    >
-                      Save Only
-                    </button>
-                    <button
-                      onClick={async () => {
-                        if (onSaveUseCase) await onSaveUseCase(editedUseCaseText);
-                        setIsEditingUseCase(false);
-                        if (onReRunWorkflow) {
-                          onReRunWorkflow(editedUseCaseText);
-                        } else {
-                          onRunWorkflow();
-                        }
-                      }}
-                      className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-primary hover:bg-primary/90 text-primary-foreground cursor-pointer shadow-sm"
-                    >
-                      Save & Re-Run Workflow
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                  {project.useCase
-                    ? project.useCase.replace(/[#*`_[\]]/g, "")
-                    : "Analyze sales trends, top-performing regions, and product effectiveness across all channels."}
-                </p>
-              )}
-            </div>
+            )}
           </div>
 
-          <WorkflowPipeline
-            pipelineStatuses={pipelineStatuses}
-            completionPercentage={completionPercentage}
-            runStatus={runStatus}
-            lastRunTime={lastRunTime}
-            activeStage={activeStage}
-            stageOutputs={stageOutputs}
-            requiresApproval={requiresApproval}
-            workflowMessage={workflowMessage}
-            onRunWorkflow={onRunWorkflow}
-            onReRunWorkflow={onReRunWorkflow ? () => onReRunWorkflow() : undefined}
-            onStopWorkflow={onStopWorkflow}
+          {/* Workflow Action Buttons at the right end of the header */}
+          <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+            {isAwaitingApprovalWorkflow ? (
+              <>
+                {isModelTrainingSubprocess ? (
+                  (() => {
+                    let buttonLabel = "Review Model Selection";
+                    const step = (effectiveApprovalNextStep || pausedAtPhase || "").trim();
+                    if (step === "modelValidationNode" || step === "Model Validation") {
+                      buttonLabel = "Review & Validate Models";
+                    } else if (
+                      step === "modelTrainingCodeNode" ||
+                      step === "Model Training Code Generation" ||
+                      step === "modelTrainingNode" ||
+                      step === "Model Training"
+                    ) {
+                      buttonLabel = "Execute Model Training";
+                    } else if (step === "preFlightNode" || step === "Pre Flight") {
+                      buttonLabel = "Review Pre-Flight Verification";
+                    } else if (step === "trainingConfigurationNode" || step === "Training Configuration") {
+                      buttonLabel = "Review Training Configuration";
+                    } else if (step === "modelSelectionNode" || step === "Model Selection") {
+                      buttonLabel = "Review Model Selection";
+                    }
 
-            onSelectStage={handleSelectStage}
-            onApprove={() => onApprove()}
-            onRetry={onRetry}
-            isPaused={isPaused}
-            pausedAtPhase={pausedAtPhase}
-            onPause={onPause}
-            onResume={onResume}
-            isApproving={isApproving}
-            isAwaitingResponse={isAwaitingResponse}
-            approvalNextStep={approvalNextStep}
-          />
+                    return (
+                      <button
+                        type="button"
+                        onClick={() => handleSelectStage("modelTrainingValidation")}
+                        disabled={isAnyActionLoading}
+                        className={`inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+                          isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"
+                        }`}
+                        title="Open Model Training & Validation to review the active sub-process"
+                      >
+                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <path d="M9 11l3 3L22 4" />
+                          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                        </svg>
+                        <span>{buttonLabel}</span>
+                      </button>
+                    );
+                  })()
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => onApprove()}
+                    disabled={isAnyActionLoading}
+                    className={`inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 disabled:opacity-75 disabled:cursor-not-allowed ${
+                      isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"
+                    }`}
+                  >
+                    {isApproving ? (
+                      <>
+                        <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                          <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                        </svg>
+                        <span>Advancing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                        <span>Proceed to Next Phase</span>
+                      </>
+                    )}
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={onStopWorkflow}
+                  disabled={isAnyActionLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isStopping ? (
+                    <>
+                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                      </svg>
+                      <span>Stopping...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                        <rect x="5" y="5" width="14" height="14" rx="2" />
+                      </svg>
+                      <span>Stop Workflow</span>
+                    </>
+                  )}
+                </button>
+              </>
+            ) : effectiveRunStatus === "In-Progress" ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onPause}
+                  disabled={isAnyActionLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isPausing ? (
+                    <>
+                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                      </svg>
+                      <span>Pausing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                        <rect x="5" y="5" width="5" height="14" rx="1" />
+                        <rect x="14" y="5" width="5" height="14" rx="1" />
+                      </svg>
+                      <span>Pause</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onStopWorkflow}
+                  disabled={isAnyActionLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isStopping ? (
+                    <>
+                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                      </svg>
+                      <span>Stopping...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                        <rect x="5" y="5" width="14" height="14" rx="2" />
+                      </svg>
+                      <span>Stop Workflow</span>
+                    </>
+                  )}
+                </button>
+              </>
+            ) : (effectiveRunStatus === "Paused" || isPaused) && !isAwaitingApprovalWorkflow ? (
+              <>
+                <button
+                  type="button"
+                  onClick={onResume}
+                  disabled={isAnyActionLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:scale-105 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isResuming ? (
+                    <>
+                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                      </svg>
+                      <span>Resuming...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                        <polygon points="5 3 19 12 5 21 5 3" />
+                      </svg>
+                      <span>Resume</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={onStopWorkflow}
+                  disabled={isAnyActionLoading}
+                  className="inline-flex items-center gap-2 px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-rose-600/25 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isStopping ? (
+                    <>
+                      <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
+                        <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                      </svg>
+                      <span>Stopping...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+                        <rect x="5" y="5" width="14" height="14" rx="2" />
+                      </svg>
+                      <span>Stop Workflow</span>
+                    </>
+                  )}
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={handleRunClick}
+                disabled={isAnyActionLoading}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-primary hover:bg-primary/95 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md hover:shadow-primary/25 hover:scale-105 active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isSubmittingWorkflow ? (
+                  <>
+                    <svg className="animate-spin" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="3">
+                      <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                    </svg>
+                    <span>Starting Workflow...</span>
+                  </>
+                ) : (
+                  <>
+                    <svg viewBox="0 0 24 24" width="11" height="11" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3" />
+                    </svg>
+                    <span>{runButtonText}</span>
+                  </>
+                )}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Error or Awaiting Response Banners */}
+        {workflowError && (
+          <div
+            role="alert"
+            className="mb-5 flex items-start gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-red-500/15 via-red-500/5 to-surface border border-red-500/30 text-red-800 dark:text-red-300 shadow-sm animate-fadeIn"
+          >
+            <svg
+              className="mt-0.5 shrink-0"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 8v4m0 4h.01" />
+            </svg>
+            <div className="min-w-0">
+              <p className="text-xs font-bold tracking-wide">Workflow error</p>
+              <p className="mt-1 text-xs whitespace-pre-wrap break-words">{workflowError}</p>
+            </div>
+          </div>
+        )}
+
+        {isAwaitingApprovalWorkflow && (
+          <div className="mb-5 flex items-center justify-between gap-3 px-4 py-3 rounded-xl bg-gradient-to-r from-amber-500/15 via-amber-500/5 to-surface border border-amber-500/30 text-amber-800 dark:text-amber-300 shadow-sm animate-fadeIn">
+            <div className="flex items-center gap-2.5">
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-amber-500"></span>
+              </span>
+              <span className="text-xs font-bold tracking-wide">
+                This process is awaiting your response.
+              </span>
+            </div>
+            <span className="text-[11px] font-medium text-muted-foreground hidden sm:inline">
+              {workflowMessage || "Please review and approve to proceed to the next phase."}
+            </span>
+          </div>
+        )}
+
+        {/* <SignalStrip
+          stages={SIGNAL_STRIP_STAGES}
+          status={signalStatus}
+          selectedId={selectedSubstepId ?? undefined}
+          onSelect={handleSelectStage}
+          height={88}
+          className="mb-4"
+        /> */}
+
+        {/* 3. Three Stage Cards Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
+          {PIPELINE_STEPS.map((stage) => {
+            const stageId = stage.id;
+            const steps = stage.step || [];
+            const completedCount = steps.filter(
+              (s) => displayPipelineStatuses[s.id] === "Completed"
+            ).length;
+
+            const isStageGlowing = isStageAwaitingApproval(stageId);
+
+            // Per-stage accent colors
+            const stageColorTheme =
+              stageId === "dataIngestion"
+                ? {
+                    border: "border-t-emerald-600 dark:border-t-emerald-500",
+                    iconBg: "bg-emerald-600",
+                    counterText: "text-emerald-700 dark:text-emerald-400",
+                    bar: "bg-emerald-600 dark:bg-emerald-500",
+                  }
+                : stageId === "featureEngineering"
+                ? {
+                    border: "border-t-amber-500 dark:border-t-amber-400",
+                    iconBg: "bg-amber-500",
+                    counterText: "text-amber-600 dark:text-amber-400",
+                    bar: "bg-amber-500 dark:bg-amber-400",
+                  }
+                : {
+                    border: "border-t-pink-600 dark:border-t-pink-500",
+                    iconBg: "bg-pink-600",
+                    counterText: "text-pink-600 dark:text-pink-400",
+                    bar: "bg-pink-600 dark:bg-pink-500",
+                  };
+
+            return (
+              <div
+                key={stage.id}
+                className={`h-full min-h-[430px] rounded-2xl border border-border/80 border-t-4 bg-surface p-4 shadow-xs transition-all duration-300 ${stageColorTheme.border} ${
+                  isStageGlowing ? "animate-approval-glow ring-2 ring-amber-400 dark:ring-amber-500" : ""
+                }`}
+              >
+                {/* Stage Header */}
+                <div
+                  className="cursor-pointer select-none"
+                  onClick={() => handleSelectStage(stage.id)}
+                  title="Click to view stage details"
+                >
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <div
+                        className={`w-11 h-11 rounded-xl ${stageColorTheme.iconBg} text-white flex items-center justify-center font-bold text-base shadow-sm shrink-0`}
+                      >
+                        {stage.icon}
+                      </div>
+                      <h2 className="truncate text-lg font-extrabold text-foreground tracking-tight leading-snug">
+                        {stage.title}
+                      </h2>
+                    </div>
+
+                    <span className={`shrink-0 text-lg font-black tracking-tight ${stageColorTheme.counterText}`}>
+                      {completedCount}/{steps.length}
+                    </span>
+                  </div>
+                  <p className="mt-2 truncate text-sm leading-normal text-muted-foreground">
+                    {stage.description}
+                  </p>
+                </div>
+
+                {/* Accent Divider Line */}
+                <div className={`h-1.5 rounded-full mt-3 mb-3.5 ${stageColorTheme.bar}`} />
+
+                {/* Steps List */}
+                <div className="flex flex-col gap-2">
+                  {steps.map((stepItem) => {
+                    const isStepGlowing = isStepAwaitingApproval(stepItem.id, stageId);
+                    const isStepSelected = selectedSubstepId === stepItem.id;
+                    const stepStatus = displayPipelineStatuses[stepItem.id] ?? "Pending";
+                    const isAwaitingApprovalStepNotRetryable =
+                      isAwaitingApprovalWorkflow &&
+                      (stepStatus === "Pending" ||
+                        stepStatus === "None");
+
+                    return (
+                      <div
+                        key={stepItem.id}
+                        onClick={() => handleSelectStage(stepItem.id)}
+                        className={`group flex min-h-[66px] cursor-pointer items-center justify-between gap-3 rounded-xl border px-3 py-2.5 transition-all duration-200 ${
+                          isStepSelected
+                            ? "border-blue-500 bg-blue-50/40 dark:bg-blue-950/25 ring-1 ring-blue-500"
+                            : "border-transparent bg-slate-100 hover:border-border/80 hover:bg-slate-200/70 dark:bg-surface-muted dark:hover:bg-surface-muted/80"
+                        } ${
+                          isStepGlowing
+                            ? "animate-approval-glow ring-2 ring-amber-400 dark:ring-amber-500 bg-amber-500/10"
+                            : ""
+                        }`}
+                      >
+                        {/* Step status is reflected by the icon, while the icon shape identifies the step. */}
+                        <div className="shrink-0">
+                          {renderStepCircleIcon(stepItem, stageId)}
+                        </div>
+
+                        <div className="min-w-0 flex-1 pr-1">
+                          <h3 className="truncate text-sm font-bold leading-tight text-foreground">
+                            {stepItem.title}
+                          </h3>
+                          <p className="mt-1 truncate text-sm leading-tight text-muted-foreground" title={stepItem.description}>
+                            {stepItem.description}
+                          </p>
+                        </div>
+
+                        <div className="shrink-0">
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setRetryingStepId(stepItem.id);
+                              onRetry(stepItem.id);
+                            }}
+                            disabled={
+                              isRetrying ||
+                              isWorkflowStoppedOrFailed ||
+                              isAwaitingApprovalStepNotRetryable ||
+                              isAnyActionLoading
+                            }
+                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border hover:border-primary/60 bg-surface hover:bg-surface-muted text-xs font-bold text-foreground transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs shrink-0 select-none"
+                            title={`Retry ${stepItem.title}`}
+                          >
+                            {isRetrying && retryingStepId === stepItem.id ? (
+                              <>
+                                <svg className="animate-spin" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                  <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                                </svg>
+                                <span>Retrying...</span>
+                              </>
+                            ) : (
+                              <>
+                                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                  <path d="M21 12a9 9 0 1 1-3-6.7" />
+                                  <path d="M21 3v6h-6" />
+                                </svg>
+                                <span>Retry</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
-      {(() => {
-        const savedAgentState = (project.agentState as Record<string, any>) || {};
-        const savedOutputs = (savedAgentState.stageOutputs as Record<string, any>) || {};
 
-        const effectiveInspect = stageOutputs.inspect || stageOutputs.inspectNode || savedOutputs.inspect || savedOutputs.inspectNode;
-        const effectiveProfileData = stageOutputs.profileData || savedOutputs.profileData;
-        const effectiveResolveSchema = stageOutputs.resolveSchema || savedOutputs.resolveSchema;
-        const effectiveHierarchyMapper = stageOutputs.hierarchyMapper || savedOutputs.hierarchyMapper;
-        const effectiveRelationshipBuilder = stageOutputs.relationshipBuilder || savedOutputs.relationshipBuilder;
-        const effectiveFormBuilder = stageOutputs.formBuilder || savedOutputs.formBuilder;
-        const effectiveFeatureArchitect = stageOutputs.featureArchitect || savedOutputs.featureArchitect;
-        const effectiveFeatureValidator = stageOutputs.featureValidator || (stageOutputs.featureArchitect as any)?.featureValidator || savedOutputs.featureValidator || (savedOutputs.featureArchitect as any)?.featureValidator;
-        const effectiveExogenousScout = stageOutputs.exogenousScout || savedOutputs.exogenousScout;
-        const effectiveModelSelection = stageOutputs.modelSelection || savedOutputs.modelSelection || savedAgentState.modelSelection;
-        const effectiveTrainingConfig = stageOutputs.trainingConfiguration || savedOutputs.trainingConfiguration || savedAgentState.trainingConfiguration;
-        const effectivePreFlight = stageOutputs.preFlight || savedOutputs.preFlight || savedAgentState.preFlight;
-        const effectiveModelTraining = stageOutputs.modelTraining || savedOutputs.modelTraining || savedAgentState.modelTraining;
-        const effectiveModelValidation = stageOutputs.modelValidation || savedOutputs.modelValidation || savedAgentState.modelValidation;
-        const effectiveRunTimestamp = (project.agentState as any)?.runTimestamp;
+      {/* 4. Output Card Modal (Retained Item 3: opened when clicking any step) */}
+      {(() => {
+        const savedAgentState: WorkflowAgentState = project.agentState || {};
+        const savedOutputs = normalizeStageOutputs(savedAgentState.stageOutputs);
+        const currentOutputs = normalizeStageOutputs(stageOutputs);
+        const allowLegacyOutputFallback =
+          savedAgentState.stageOutputs === undefined && runStatus !== "In-Progress";
+
+        const effectiveInspect =
+          currentOutputs.inspect ||
+          savedOutputs.inspect ||
+          (allowLegacyOutputFallback ? savedAgentState.inspection || savedAgentState.inspect : undefined);
+        const effectiveProfileData =
+          currentOutputs.profileData ||
+          savedOutputs.profileData ||
+          (allowLegacyOutputFallback ? savedAgentState.dataProfile || savedAgentState.profileData : undefined);
+        const effectiveResolveSchema =
+          currentOutputs.resolveSchema ||
+          savedOutputs.resolveSchema ||
+          (allowLegacyOutputFallback ? savedAgentState.schemaResolution || savedAgentState.resolveSchema : undefined);
+        const effectiveHierarchyMapper =
+          currentOutputs.hierarchyMapperNode ||
+          savedOutputs.hierarchyMapperNode ||
+          (allowLegacyOutputFallback
+            ? savedAgentState.hierarchyMapperNode || savedAgentState.hierarchyMapper
+            : undefined);
+        const effectiveRelationshipBuilder = effectiveHierarchyMapper?.relationshipBuilder;
+        const effectiveFormBuilder = effectiveHierarchyMapper?.formBuilder;
+        const effectiveFeatureArchitect =
+          currentOutputs.featureArchitectNode ||
+          savedOutputs.featureArchitectNode ||
+          (allowLegacyOutputFallback
+            ? savedAgentState.featureArchitectNode || savedAgentState.featureArchitect
+            : undefined);
+        const effectiveFeatureValidator =
+          currentOutputs.featureValidatorNode ||
+          savedOutputs.featureValidatorNode ||
+          effectiveFeatureArchitect?.featureValidator ||
+          (allowLegacyOutputFallback
+            ? savedAgentState.featureValidatorNode || savedAgentState.featureValidator
+            : undefined);
+        const effectiveExogenousScout =
+          currentOutputs.exogenous ||
+          savedOutputs.exogenous ||
+          (allowLegacyOutputFallback
+            ? savedAgentState.exogenousScout || savedAgentState.exogenous
+            : undefined);
+        const effectiveModelSelection =
+          currentOutputs.modelSelectionNode ||
+          savedOutputs.modelSelectionNode ||
+          (allowLegacyOutputFallback
+            ? savedAgentState.modelSelectionNode || savedAgentState.modelSelection
+            : undefined);
+        const effectiveTrainingConfig =
+          currentOutputs.trainingConfigurationNode || savedOutputs.trainingConfigurationNode;
+        const isTrainingConfigurationComplete =
+          displayPipelineStatuses.trainingConfigurationNode === "Completed" &&
+          Boolean(effectiveTrainingConfig?.contractPath);
+        const effectivePreFlight =
+          currentOutputs.preFlightNode ||
+          savedOutputs.preFlightNode ||
+          (allowLegacyOutputFallback ? savedAgentState.preFlightNode || savedAgentState.preFlight : undefined);
+        const effectiveModelTraining =
+          currentOutputs.modelTrainingCodeNode ||
+          savedOutputs.modelTrainingCodeNode ||
+          (allowLegacyOutputFallback
+            ? savedAgentState.modelTrainingCodeNode || savedAgentState.modelTraining
+            : undefined);
+        const effectiveModelValidation = effectiveModelTraining?.modelValidation;
+        const effectiveRunTimestamp = savedAgentState.runTimestamp;
 
         const stepOutputs: Record<string, React.ReactNode> = {
-          "Data Inspection": effectiveInspect ? (
-            <IngestionStepOutput inspectOutput={effectiveInspect} />
-          ) : null,
-          "Data Profiling": effectiveProfileData ? (
-            <ProfilingStepOutput profileData={effectiveProfileData} />
-          ) : null,
-          "Schema Resolver": effectiveResolveSchema ? (
-            <SchemaResolverStepOutput resolveSchema={effectiveResolveSchema} />
-          ) : null,
-          "Hierarchy Mapper": (effectiveHierarchyMapper || effectiveRelationshipBuilder || effectiveFormBuilder) ? (
+          inspect: effectiveInspect ? <IngestionStepOutput inspectOutput={effectiveInspect} /> : null,
+          profileData: effectiveProfileData ? <ProfilingStepOutput profileData={effectiveProfileData} /> : null,
+          resolveSchema: effectiveResolveSchema ? <SchemaResolverStepOutput resolveSchema={effectiveResolveSchema} /> : null,
+          hierarchyMapperNode: (effectiveHierarchyMapper || effectiveRelationshipBuilder || effectiveFormBuilder) ? (
             <HierarchyMapperStepOutput
               hierarchyMapper={effectiveHierarchyMapper}
               relationshipBuilder={effectiveRelationshipBuilder}
               formBuilder={effectiveFormBuilder}
             />
           ) : null,
-          "Feature Architect": effectiveFeatureArchitect ? (
+          featureArchitectNode: effectiveFeatureArchitect ? (
             <FeatureArchitectStepOutput featureArchitect={effectiveFeatureArchitect} />
           ) : null,
-          "Feature Validator": effectiveFeatureValidator ? (
-            <FeatureValidatorStepOutput
-              featureValidator={effectiveFeatureValidator}
-            />
+          featureValidatorNode: effectiveFeatureValidator ? (
+            <FeatureValidatorStepOutput featureValidator={effectiveFeatureValidator} />
           ) : null,
-          "Exogenous Scout": effectiveExogenousScout ? (
+          exogenous: effectiveExogenousScout ? (
             <ExogenousScoutStepOutput exogenousScout={effectiveExogenousScout} />
           ) : null,
-          "Model Selection": effectiveModelSelection ? (
+          modelSelectionNode: effectiveModelSelection ? (
             <ModelTrainingValidationStepOutput
               modelSelection={effectiveModelSelection}
               projectId={project.id}
               activeSubstep="Model Selection"
               activeRunTimestamp={effectiveRunTimestamp}
+              nextStepInProgress={displayPipelineStatuses.trainingConfigurationNode === "In-Progress"}
               onSelectionConfirmed={(models) => {
                 if (onApprove) {
                   onApprove("Training Configuration", models);
@@ -399,13 +1087,15 @@ export default function ProjectDetailPage({
               }}
             />
           ) : null,
-          "Training Configuration": effectiveTrainingConfig ? (
+          trainingConfigurationNode: isTrainingConfigurationComplete ? (
             <ModelTrainingValidationStepOutput
               modelSelection={effectiveModelSelection}
               trainingConfiguration={effectiveTrainingConfig}
               projectId={project.id}
               activeSubstep="Training Configuration"
               activeRunTimestamp={effectiveRunTimestamp}
+              isConfigurationComplete={isTrainingConfigurationComplete}
+              nextStepInProgress={displayPipelineStatuses.preFlightNode === "In-Progress"}
               onApprove={(selectedModels, splitEndDate) => {
                 if (onApprove) {
                   onApprove("Pre Flight", selectedModels, splitEndDate);
@@ -414,12 +1104,13 @@ export default function ProjectDetailPage({
               isApproving={isApproving}
             />
           ) : null,
-          "Pre Flight": effectivePreFlight ? (
+          preFlightNode: effectivePreFlight ? (
             <ModelTrainingValidationStepOutput
               preFlight={effectivePreFlight}
               projectId={project.id}
               activeSubstep="Pre Flight"
               activeRunTimestamp={effectiveRunTimestamp}
+              nextStepInProgress={displayPipelineStatuses.modelTrainingCodeNode === "In-Progress"}
               onApprovePreFlight={() => {
                 if (onApprove) {
                   onApprove("Model Training");
@@ -428,27 +1119,26 @@ export default function ProjectDetailPage({
               isApproving={isApproving}
             />
           ) : null,
-          "Model Training": (effectiveModelTraining || effectiveModelSelection) ? (
-            <ModelTrainingValidationStepOutput
+          modelTrainingCodeNode: (
+            <ModelTrainingExecutionStepOutput
+              status={displayPipelineStatuses.modelTrainingCodeNode ?? "Pending"}
               modelTraining={effectiveModelTraining}
               trainingConfiguration={effectiveTrainingConfig}
               modelSelection={effectiveModelSelection}
               projectId={project.id}
-              activeSubstep="Model Training"
               activeRunTimestamp={effectiveRunTimestamp}
-              onApproveTraining={(selectedModels, splitEndDate) => {
+              selectedModels={savedAgentState.selectedModels}
+              isExecuting={
+                (isApproving && (displayPipelineStatuses.modelTrainingCodeNode === "User Input" || displayPipelineStatuses.modelTrainingCodeNode === "Completed")) ||
+                displayPipelineStatuses.modelTrainingCodeNode === "In-Progress"
+              }
+              onExecute={(selectedModels) => {
                 if (onApprove) {
-                  onApprove("Model Training", selectedModels, splitEndDate);
+                  onApprove("Model Training", selectedModels);
                 }
               }}
-              onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
-                if (onApprove) {
-                  onApprove("Model Validation", selectedModels, undefined, horizon, frequency, startDate);
-                }
-              }}
-              isApproving={isApproving}
             />
-          ) : null,
+          ),
           "Model Validation": (effectiveModelValidation || effectiveModelTraining) ? (
             <ModelTrainingValidationStepOutput
               modelValidation={effectiveModelValidation}
@@ -458,6 +1148,7 @@ export default function ProjectDetailPage({
               projectId={project.id}
               activeSubstep="Model Validation"
               activeRunTimestamp={effectiveRunTimestamp}
+              nextStepInProgress={displayPipelineStatuses.modelTrainingCodeNode === "In-Progress"}
               onApproveValidation={(horizon, frequency, startDate, selectedModels) => {
                 if (onApprove) {
                   onApprove("Model Validation", selectedModels, undefined, horizon, frequency, startDate);
@@ -471,7 +1162,6 @@ export default function ProjectDetailPage({
           ) : effectiveFeatureArchitect ? (
             <FeatureArchitectStepOutput featureArchitect={effectiveFeatureArchitect} />
           ) : null,
-
         };
 
         return (
@@ -480,14 +1170,13 @@ export default function ProjectDetailPage({
             onClose={() => setIsExecutionModalOpen(false)}
             workflowCard={selectedWorkflow}
             selectedSubstepId={selectedSubstepId}
-            pipelineStatuses={pipelineStatuses}
+            pipelineStatuses={displayPipelineStatuses}
             stepOutputs={stepOutputs}
             runStatus={runStatus}
             workflowMessage={workflowMessage}
             projectId={project.id}
             agentState={project.agentState}
             agentThinking={agentThinking}
-            requiresApproval={requiresApproval}
             approvalNextStep={approvalNextStep}
             isApproving={isApproving}
             isAwaitingResponse={isAwaitingResponse}

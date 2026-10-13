@@ -34,7 +34,7 @@ export const STATUS_SUCCESS = "Success";
 export const STATUS_COMPLETED = "Completed";
 export const STATUS_FAILED = "Failed";
 export const STATUS_PENDING = "Pending";
-export const STATUS_RUNNING = "running";
+export const STATUS_RUNNING = "In-Progress";
 export const STATUS_OK = "OK";
 
 export const TRACE_FEATURE_CREATION = "featureArchitect:featureCreation";

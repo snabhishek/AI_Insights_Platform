@@ -1,5 +1,5 @@
 import { RunnableConfig } from "@langchain/core/runnables";
-import { AgentState, IngestionServices, BatchedTableState } from "../../state";
+import { AgentState, IngestionServices, BatchedTableState, checkWorkflowInterrupt } from "../../state";
 import {
   getPromptFromFile,
   chunkInspectionTableNames,
@@ -48,10 +48,8 @@ export async function exogenousScoutNode(state: typeof AgentState.State, config?
   if (!services) {
     throw new Error("Services dependency is not provided in config");
   }
-  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
-    console.info(`[Workflow] exogenousScoutNode skipping execution because workflow is stopped/paused.`);
-    return { status: state.status || "failed" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "exogenousScoutNode");
+  if (interrupt) return interrupt;
 
   let tableNames: string[] = [];
   if (Array.isArray(state.batchedTables) && state.batchedTables.length > 0) {
@@ -113,10 +111,11 @@ export async function exogenousScoutNode(state: typeof AgentState.State, config?
   return {
     exogenousScout: finalOutput,
     batchedTables: updatedBatchedTables,
-    status: "running",
+    status: "In-Progress",
     summary: "Exogenous data scouting completed",
-    steps: [{ name: "Exogenous Scout", status: "completed", summary: "Scouted external data via LangGraph worker nodes" }],
-    stageOutputs: { exogenousScout: finalOutput },
-    stageStatuses: { exogenousScout: "Completed" },
+    steps: [{ name: "Exogenous Scout", status: "Completed", summary: "Scouted external data via LangGraph worker nodes" }],
+    exogenous: finalOutput,
+    stageOutputs: { exogenous: finalOutput },
+    stageStatuses: { exogenous: "Completed" },
   };
 }

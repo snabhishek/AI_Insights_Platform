@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import { RunnableConfig } from "@langchain/core/runnables";
 import { getProjectSchemasDir } from "../../../config/fileServer.config";
-import { AgentState, IngestionServices } from "../../state";
+import { AgentState, IngestionServices, checkWorkflowInterrupt } from "../../state";
 import {
   createFetchSampleDataTool,
   createContentValueProfileTool,
@@ -202,10 +202,8 @@ export async function profilerNode(state: typeof AgentState.State, config?: Runn
   if (!services) {
     throw new Error("Services dependency is not provided in config");
   }
-  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
-    console.info(`[Workflow] profilerNode skipping execution because workflow is stopped/paused.`);
-    return { status: state.status || "failed" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "profilerNode");
+  if (interrupt) return interrupt;
   const { connectorService } = services;
   const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await connectorService.getById(connectorId)));
   const validConnectors = connectors.filter((connector) => !!connector);
@@ -260,11 +258,11 @@ export async function profilerNode(state: typeof AgentState.State, config?: Runn
   }
 
   return {
-    dataProfile: { sources: profileSources },
+    profileData: { sources: profileSources },
     batchedTables: updatedBatchedTables,
-    status: "running",
+    status: "In-Progress",
     summary: "Data profiling completed",
-    steps: [{ name: "Data Profiler", status: "completed", summary: "Profiling completed" }],
+    steps: [{ name: "Data Profiler", status: "Completed", summary: "Profiling completed" }],
     stageOutputs: { profileData: { sources: profileSources } },
     stageStatuses: { profileData: "Completed" },
   };

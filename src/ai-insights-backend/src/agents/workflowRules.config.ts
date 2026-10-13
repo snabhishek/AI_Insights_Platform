@@ -1,18 +1,34 @@
+import {
+  GraphNodeKey,
+  PipelineStepStatus,
+  TrackedAgentKey,
+  normalizeFlatStageStatuses,
+  normalizeStageOutputs,
+} from "./pipelineNames";
+
 export type PipelineCategory = "Data Ingestion" | "Feature Engineering" | "Model Training & Validation";
 
 export interface StageRuleConfig {
-  id: string;
+  id: GraphNodeKey;
   displayName: string;
   pipeline: PipelineCategory;
-  predecessorNode: string;
+  predecessorNode: GraphNodeKey | "__start__";
   interruptBefore: boolean;
   requiresApproval: boolean;
+  statusWhileWaiting?: PipelineStepStatus;
   approvalPrompt?: string;
-  nextStepOnApproval?: string;
+  nextStepOnApproval?: GraphNodeKey;
   requiredInputsOnApproval?: Array<"selectedModels" | "splitDates" | "yamlConfig">;
   prerequisites?: (state: any) => boolean;
-  downstreamOutputsToClearOnRetry?: string[];
-  aliases?: string[];
+  downstreamOutputsToClearOnRetry?: TrackedAgentKey[];
+}
+
+function nodeStatus(state: any, node: TrackedAgentKey): string | undefined {
+  return normalizeFlatStageStatuses(state?.stageStatuses)[node];
+}
+
+function nodeOutput(state: any, node: TrackedAgentKey): unknown {
+  return normalizeStageOutputs(state?.stageOutputs)[node];
 }
 
 export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
@@ -23,7 +39,6 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "__start__",
     interruptBefore: false,
     requiresApproval: false,
-    aliases: ["inspectNode", "Data Ingestion", "inspection"],
   },
   {
     id: "profileData",
@@ -32,7 +47,6 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "inspect",
     interruptBefore: false,
     requiresApproval: false,
-    aliases: ["dataProfile"],
   },
   {
     id: "resolveSchema",
@@ -41,7 +55,6 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "profileData",
     interruptBefore: false,
     requiresApproval: false,
-    aliases: ["schemaResolverNode", "schemaResolution"],
   },
   {
     id: "hierarchyMapperNode",
@@ -50,28 +63,23 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "resolveSchema",
     interruptBefore: true,
     requiresApproval: true,
+    statusWhileWaiting: "Awaiting Approval",
     approvalPrompt: "Data Ingestion completed successfully. Approve to proceed to Feature Engineering.",
-    nextStepOnApproval: "Feature Engineering",
+    nextStepOnApproval: "hierarchyMapperNode",
     prerequisites: (state) => Boolean(
-      state?.schemaResolution ||
-      state?.stageOutputs?.resolveSchema ||
-      state?.stageStatuses?.resolveSchema === "Completed"
+      nodeOutput(state, "resolveSchema") ||
+      nodeStatus(state, "resolveSchema") === "Completed"
     ),
     downstreamOutputsToClearOnRetry: [
-      "hierarchyMapper",
-      "relationshipBuilder",
-      "formBuilder",
-      "featureArchitect",
-      "featureValidator",
-      "exogenousScout",
-      "modelSelection",
-      "trainingConfiguration",
-      "preFlight",
-      "modelTrainingCode",
-      "modelTraining",
-      "modelValidation",
+      "hierarchyMapperNode",
+      "featureArchitectNode",
+      "featureValidatorNode",
+      "exogenous",
+      "modelSelectionNode",
+      "trainingConfigurationNode",
+      "preFlightNode",
+      "modelTrainingCodeNode",
     ],
-    aliases: ["hierarchyMapper", "relationshipBuilder", "formBuilder", "Feature Engineering"],
   },
   {
     id: "featureArchitectNode",
@@ -80,7 +88,6 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "hierarchyMapperNode",
     interruptBefore: false,
     requiresApproval: false,
-    aliases: ["featureArchitect", "featureValidator", "featureValidatorNode", "featureCreation", "featureTransformation"],
   },
   {
     id: "exogenous",
@@ -89,7 +96,6 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "featureArchitectNode",
     interruptBefore: false,
     requiresApproval: false,
-    aliases: ["exogenousScout"],
   },
   {
     id: "modelSelectionNode",
@@ -98,23 +104,20 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "exogenous",
     interruptBefore: true,
     requiresApproval: true,
+    statusWhileWaiting: "User Input",
     approvalPrompt: "Feature Engineering completed successfully. Approve to run Model Selection agent and discover candidate models.",
-    nextStepOnApproval: "Model Selection",
+    nextStepOnApproval: "modelSelectionNode",
     prerequisites: (state) => Boolean(
-      state?.featureArchitect ||
-      state?.stageOutputs?.featureArchitect ||
-      state?.stageOutputs?.exogenousScout ||
-      state?.stageStatuses?.exogenousScout === "Completed"
+      nodeOutput(state, "featureArchitectNode") ||
+      nodeOutput(state, "exogenous") ||
+      nodeStatus(state, "exogenous") === "Completed"
     ),
     downstreamOutputsToClearOnRetry: [
-      "modelSelection",
-      "trainingConfiguration",
-      "preFlight",
-      "modelTrainingCode",
-      "modelTraining",
-      "modelValidation",
+      "modelSelectionNode",
+      "trainingConfigurationNode",
+      "preFlightNode",
+      "modelTrainingCodeNode",
     ],
-    aliases: ["modelSelection", "Model Training & Validation"],
   },
   {
     id: "trainingConfigurationNode",
@@ -123,24 +126,20 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "modelSelectionNode",
     interruptBefore: true,
     requiresApproval: true,
+    statusWhileWaiting: "User Input",
     approvalPrompt: "Model Selection completed successfully. Select candidate models in the UI and click Send to Training Configuration.",
-    nextStepOnApproval: "Training Configuration",
+    nextStepOnApproval: "trainingConfigurationNode",
     requiredInputsOnApproval: ["selectedModels"],
     prerequisites: (state) => Boolean(
-      state?.modelSelection?.candidates?.length > 0 ||
-      state?.modelSelection?.models?.length > 0 ||
-      state?.stageOutputs?.modelSelection?.candidates?.length > 0 ||
-      state?.stageOutputs?.modelSelection?.models?.length > 0 ||
-      state?.stageStatuses?.modelSelection === "Completed"
+      ((nodeOutput(state, "modelSelectionNode") as any)?.candidates?.length ?? 0) > 0 ||
+      ((nodeOutput(state, "modelSelectionNode") as any)?.models?.length ?? 0) > 0 ||
+      nodeStatus(state, "modelSelectionNode") === "Completed"
     ),
     downstreamOutputsToClearOnRetry: [
-      "trainingConfiguration",
-      "preFlight",
-      "modelTrainingCode",
-      "modelTraining",
-      "modelValidation",
+      "trainingConfigurationNode",
+      "preFlightNode",
+      "modelTrainingCodeNode",
     ],
-    aliases: ["trainingConfiguration"],
   },
   {
     id: "preFlightNode",
@@ -149,22 +148,18 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "trainingConfigurationNode",
     interruptBefore: true,
     requiresApproval: true,
+    statusWhileWaiting: "User Input",
     approvalPrompt: "Training Configuration completed successfully. Review or edit the configuration in the editor, then click Approve & Start Preflight.",
-    nextStepOnApproval: "Pre Flight",
+    nextStepOnApproval: "preFlightNode",
     prerequisites: (state) => Boolean(
-      state?.trainingConfiguration?.contractPath ||
-      state?.trainingConfiguration?.configuration ||
-      state?.stageOutputs?.trainingConfiguration?.contractPath ||
-      state?.stageOutputs?.trainingConfiguration?.configuration ||
-      state?.stageStatuses?.trainingConfiguration === "Completed"
+      ((nodeOutput(state, "trainingConfigurationNode") as any)?.contractPath) ||
+      ((nodeOutput(state, "trainingConfigurationNode") as any)?.configuration) ||
+      nodeStatus(state, "trainingConfigurationNode") === "Completed"
     ),
     downstreamOutputsToClearOnRetry: [
-      "preFlight",
-      "modelTrainingCode",
-      "modelTraining",
-      "modelValidation",
+      "preFlightNode",
+      "modelTrainingCodeNode",
     ],
-    aliases: ["preFlight", "Pre Flight", "preFlightNode"],
   },
   {
     id: "modelTrainingCodeNode",
@@ -173,41 +168,17 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     predecessorNode: "preFlightNode",
     interruptBefore: true,
     requiresApproval: true,
+    statusWhileWaiting: "User Input",
     approvalPrompt: "Pre Flight completed successfully. Enter train split dates and click Approve & Generate Training Code.",
-    nextStepOnApproval: "Model Training",
+    nextStepOnApproval: "modelTrainingCodeNode",
     requiredInputsOnApproval: ["splitDates"],
     prerequisites: (state) => Boolean(
-      state?.preFlight?.decision ||
-      state?.stageOutputs?.preFlight?.decision ||
-      state?.stageStatuses?.preFlight === "Completed"
+      (nodeOutput(state, "preFlightNode") as any)?.decision ||
+      nodeStatus(state, "preFlightNode") === "Completed"
     ),
     downstreamOutputsToClearOnRetry: [
-      "modelTrainingCode",
-      "modelTraining",
-      "modelValidation",
+      "modelTrainingCodeNode",
     ],
-    aliases: ["modelTrainingCode", "Model Training", "modelTraining"],
-  },
-  {
-    id: "modelTrainingExecNode",
-    displayName: "Model Training Execution",
-    pipeline: "Model Training & Validation",
-    predecessorNode: "modelTrainingCodeNode",
-    interruptBefore: true,
-    requiresApproval: true,
-    approvalPrompt: "Training code generated successfully. Select the candidate models to train and click Execute Training in Docker.",
-    nextStepOnApproval: "Model Training",
-    requiredInputsOnApproval: ["selectedModels"],
-    prerequisites: (state) => Boolean(
-      state?.modelTrainingCode ||
-      state?.stageOutputs?.modelTrainingCode ||
-      state?.stageOutputs?.modelTraining?.filesCreated ||
-      state?.stageOutputs?.modelTraining?.projectDirectory
-    ),
-    downstreamOutputsToClearOnRetry: [
-      "modelTraining",
-    ],
-    aliases: ["modelTrainingExec", "modelTrainingNode"],
   },
 ] as const;
 
@@ -215,20 +186,114 @@ export function getInterruptBeforeNodes(): string[] {
   return WORKFLOW_STAGE_RULES.filter((rule) => rule.interruptBefore).map((rule) => rule.id);
 }
 
-export function getStageRuleByNode(nodeIdOrAlias?: string | null): StageRuleConfig | undefined {
-  if (!nodeIdOrAlias) return undefined;
-  const target = nodeIdOrAlias.trim();
+const SUBSTEP_TO_NODE_RULE_KEY: Record<string, GraphNodeKey> = {
+  // Data Ingestion
+  "Data Ingestion": "inspect",
+  inspect: "inspect",
+  dataInspection: "inspect",
+  "Data Inspection": "inspect",
+  inspection: "inspect",
+  profileData: "profileData",
+  dataProfile: "profileData",
+  dataProfiling: "profileData",
+  "Data Profiling": "profileData",
+  resolveSchema: "resolveSchema",
+  schemaResolution: "resolveSchema",
+  schemaResolver: "resolveSchema",
+  "Schema Resolver": "resolveSchema",
+
+  // Feature Engineering
+  "Feature Engineering": "hierarchyMapperNode",
+  hierarchyMapperNode: "hierarchyMapperNode",
+  hierarchyMapper: "hierarchyMapperNode",
+  "Hierarchy Mapper": "hierarchyMapperNode",
+  relationshipBuilder: "hierarchyMapperNode",
+  formBuilder: "hierarchyMapperNode",
+  featureArchitectNode: "featureArchitectNode",
+  featureArchitect: "featureArchitectNode",
+  "Feature Architect": "featureArchitectNode",
+  featureSupervisor: "featureArchitectNode",
+  featureCreation: "featureArchitectNode",
+  featureTransformation: "featureArchitectNode",
+  featureExtraction: "featureArchitectNode",
+  featureSelection: "featureArchitectNode",
+  buildDataset: "featureArchitectNode",
+  dataValidation: "featureArchitectNode",
+  programRectifier: "featureArchitectNode",
+  featureValidatorNode: "featureArchitectNode",
+  featureValidator: "featureArchitectNode",
+  "Feature Validator": "featureArchitectNode",
+  exogenous: "exogenous",
+  exogenousScout: "exogenous",
+  "Exogenous Scout": "exogenous",
+
+  // Model Training & Validation
+  "Model Training & Validation": "modelSelectionNode",
+  modelSelectionNode: "modelSelectionNode",
+  modelSelection: "modelSelectionNode",
+  "Model Selection": "modelSelectionNode",
+  finalModelSelectionNode: "modelSelectionNode",
+  trainingConfigurationNode: "trainingConfigurationNode",
+  trainingConfiguration: "trainingConfigurationNode",
+  "Training Configuration": "trainingConfigurationNode",
+  trainingConfig: "trainingConfigurationNode",
+  preFlightNode: "preFlightNode",
+  preFlight: "preFlightNode",
+  "Pre Flight": "preFlightNode",
+  modelTrainingCodeNode: "modelTrainingCodeNode",
+  modelTrainingExecutionNode: "modelTrainingCodeNode",
+  modelTrainingCode: "modelTrainingCodeNode",
+  "Model Training Code Generation": "modelTrainingCodeNode",
+  modelTraining: "modelTrainingCodeNode",
+  modelTrainingNode: "modelTrainingCodeNode",
+  "Model Training": "modelTrainingCodeNode",
+  modelValidation: "modelTrainingCodeNode",
+  modelValidationNode: "modelTrainingCodeNode",
+  "Model Validation": "modelTrainingCodeNode",
+};
+
+export function getStageRuleByNode(nodeId?: string | null): StageRuleConfig | undefined {
+  if (!nodeId) return undefined;
+  const mappedKey = SUBSTEP_TO_NODE_RULE_KEY[nodeId];
+  if (mappedKey) {
+    const found = WORKFLOW_STAGE_RULES.find((rule) => rule.id === mappedKey);
+    if (found) return found;
+  }
+  const normalized = String(nodeId).trim().toLowerCase();
   return WORKFLOW_STAGE_RULES.find(
     (rule) =>
-      rule.id === target ||
-      rule.displayName.toLowerCase() === target.toLowerCase() ||
-      rule.aliases?.some((a) => a.toLowerCase() === target.toLowerCase())
+      rule.id.toLowerCase() === normalized ||
+      rule.displayName.toLowerCase() === normalized
   );
 }
 
 export function getPipelineForSubstep(substepOrNode?: string | null): PipelineCategory {
+  if (!substepOrNode) return "Data Ingestion";
   const rule = getStageRuleByNode(substepOrNode);
-  return rule?.pipeline ?? "Data Ingestion";
+  if (rule?.pipeline) return rule.pipeline;
+
+  const normalized = String(substepOrNode).trim().toLowerCase();
+  if (
+    normalized.includes("hierarchy") ||
+    normalized.includes("relationship") ||
+    normalized.includes("formbuilder") ||
+    normalized.includes("architect") ||
+    normalized.includes("feature") ||
+    normalized.includes("exogenous")
+  ) {
+    return "Feature Engineering";
+  }
+  if (
+    normalized.includes("model") ||
+    normalized.includes("training") ||
+    normalized.includes("preflight") ||
+    normalized.includes("pre flight") ||
+    normalized.includes("configuration") ||
+    normalized.includes("validation")
+  ) {
+    return "Model Training & Validation";
+  }
+  return "Data Ingestion";
 }
 
 export function resolveSafePredecessorNode(
@@ -253,6 +318,7 @@ export function getApprovalGateForNode(nodeIdOrAlias?: string | null): {
   isGate: boolean;
   approvalPrompt: string;
   nextStep: string;
+  waitingStatus?: PipelineStepStatus;
   rule?: StageRuleConfig;
 } {
   const rule = getStageRuleByNode(nodeIdOrAlias);
@@ -268,7 +334,8 @@ export function getApprovalGateForNode(nodeIdOrAlias?: string | null): {
   return {
     isGate: true,
     approvalPrompt: rule.approvalPrompt || `${rule.displayName} requires user confirmation.`,
-    nextStep: rule.nextStepOnApproval || rule.displayName,
+    nextStep: rule.nextStepOnApproval || rule.id,
+    waitingStatus: rule.statusWhileWaiting,
     rule,
   };
 }

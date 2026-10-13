@@ -261,10 +261,13 @@ export async function supervisorNode(
     return updates;
   } catch (error) {
     console.warn("[supervisorNode] Execution failed, using fallback", error);
+    const fallbackTarget = state.prediction_target_column || state.orchestrationDecision?.prediction_target_column || state.orchestrationDecision?.targetColumn || "";
     return {
       nextWorker: WORKER_FINISH,
+      prediction_target_column: fallbackTarget,
       finalOutput: {
         status: STATUS_FAILED,
+        prediction_target_column: fallbackTarget,
         summary: `Supervisor execution failed: ${error instanceof Error ? error.message : String(error)}`,
       },
     };

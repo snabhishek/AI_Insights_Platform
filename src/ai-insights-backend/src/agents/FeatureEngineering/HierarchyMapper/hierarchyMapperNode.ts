@@ -1,15 +1,14 @@
 import { RunnableConfig } from "@langchain/core/runnables";
-import { AgentState, IngestionServices } from "../../state";
+import { AgentState, IngestionServices, checkWorkflowInterrupt } from "../../state";
 import { logMilestoneThinking } from "../../utils/agentUtils";
 import { relationshipBuilderNode } from "./RelationshipBuilder/relationshipBuilderNode";
 import { formBuilderNode } from "./FormBuilder/formBuilderNode";
+import { PipelineStepStatus } from "../../pipelineNames";
 
 export async function hierarchyMapperNode(state: typeof AgentState.State, config?: RunnableConfig) {
   const services = config?.configurable?.services as IngestionServices;
-  if (services?.isCancelled?.() || services?.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
-    console.info(`[Workflow] hierarchyMapperNode skipping execution because workflow is stopped/paused.`);
-    return { status: state.status || "failed" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "hierarchyMapperNode");
+  if (interrupt) return interrupt;
 
   await logMilestoneThinking(
     services,
@@ -23,7 +22,7 @@ export async function hierarchyMapperNode(state: typeof AgentState.State, config
     ...state,
     relationshipBuilder: relResult.relationshipBuilder as unknown as Record<string, unknown>,
     summary: relResult.summary,
-    status: relResult.status,
+    status: relResult.status as PipelineStepStatus,
   };
 
   const formResult = await formBuilderNode(updatedState, config);
@@ -37,21 +36,21 @@ export async function hierarchyMapperNode(state: typeof AgentState.State, config
 
   return {
     runTimestamp: activeRunTimestamp,
-    hierarchyMapper: combinedOutput as Record<string, unknown>,
-    relationshipBuilder: relResult.relationshipBuilder as unknown as Record<string, unknown>,
-    formBuilder: formResult.formBuilder as unknown as Record<string, unknown>,
-    status: "running",
+    hierarchyMapperNode: combinedOutput as Record<string, unknown>,
+    status: "In-Progress" as const,
     summary: `Hierarchy Mapper completed: ${relResult.summary} ${formResult.summary}`,
     steps: [
-      { name: "Hierarchy Mapper", status: "completed", summary: "Relationship Builder & Form Builder execution completed" },
+      { name: "Hierarchy Mapper", status: "Completed" as const, summary: "Relationship Builder & Form Builder execution completed" },
     ],
     stageOutputs: {
-      hierarchyMapper: combinedOutput,
-      relationshipBuilder: relResult.relationshipBuilder,
-      formBuilder: formResult.formBuilder,
+      hierarchyMapperNode: {
+        ...combinedOutput,
+        relationshipBuilder: relResult.relationshipBuilder,
+        formBuilder: formResult.formBuilder,
+      },
     },
     stageStatuses: {
-      hierarchyMapper: "Completed",
+      hierarchyMapperNode: "Completed",
     },
   };
 }

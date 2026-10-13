@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as yaml from "js-yaml";
 import { BaseMessage } from "@langchain/core/messages";
-import { AgentStateType, IngestionServices } from "../../state";
+import { GraphAgentStateType, IngestionServices } from "../../state";
 import {
   getModel,
   getPromptFromFile,
@@ -26,6 +26,7 @@ import { webSearchTool, extractUrlContentTool } from "../../tools/search";
 import { validateWithRetry } from "../../validator/validatorNode";
 import { sanitizeFolderName } from "../../../config/fileServer.config";
 import { ModelTrainingAgentOutput, ModelTrainingReport, CandidateModelRun } from "./types";
+import { normalizeFlatStageStatuses } from "../../pipelineNames";
 
 interface CodingAgentResult extends Record<string, unknown> {
   status: string;
@@ -48,30 +49,84 @@ interface RectifierResult extends Record<string, unknown> {
 
 export class ModelTrainingAgent {
 
-  private static getProjectContext(state: AgentStateType, services: IngestionServices) {
+  private static async getProjectContext(state: GraphAgentStateType, services: IngestionServices) {
     const projectId = state.projectId || services?.projectId || "";
-    const workspaceName = (state as any).workspaceName || services?.workspaceName || "FileStorage_Testing";
-    const projectName = (state as any).projectName || services?.projectName || "default";
+    const workspaceName = (state as any).workspaceName || services?.workspaceName || "";
+    const projectName = (state as any).projectName || services?.projectName || "";
     const runTimestamp = state.runTimestamp || services?.runTimestamp || "";
+
+    if (!projectId || !workspaceName || !projectName || !runTimestamp) {
+      throw new Error("[ModelTrainingAgent] Project, workspace, project name, and active run timestamp are required.");
+    }
 
     const projectDir = getProjectDirectory({ projectId, workspaceName, projectName, runTimestamp });
     const runDir = path.join(projectDir, runTimestamp);
     const pythonProjectName = `${projectName}_model_training`;
     const modelTrainingDir = path.join(runDir, pythonProjectName);
 
-    let contractPath = (state.trainingConfiguration as any)?.contractPath;
-    let contractData: any = (state.trainingConfiguration as any)?.configuration || {};
-    if (!contractPath || !fs.existsSync(contractPath)) {
-      const schemasDir = path.join(runDir, "schemas");
-      if (fs.existsSync(schemasDir)) {
-        const yamlFile = fs.readdirSync(schemasDir).find((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
-        if (yamlFile) {
-          contractPath = path.join(schemasDir, yamlFile);
-          try {
-            contractData = yaml.load(fs.readFileSync(contractPath, "utf-8")) || {};
-          } catch {}
-        }
+    let persistedAgentState: any = {};
+    const stateTrainingConfiguration = state.stageOutputs.trainingConfigurationNode as any;
+    const stateConfigurationOutput =
+      (state.stageOutputs as any)?.trainingConfigurationNode ||
+      (state as any).trainingConfigurationNode ||
+      {};
+    const stateContractPath =
+      stateTrainingConfiguration?.contractPath || stateConfigurationOutput?.contractPath;
+    const stateContractData =
+      stateTrainingConfiguration?.configuration &&
+      Object.keys(stateTrainingConfiguration.configuration).length > 0
+        ? stateTrainingConfiguration.configuration
+        : stateConfigurationOutput?.configuration;
+
+    if (!stateContractPath || !stateContractData || Object.keys(stateContractData).length === 0) {
+      const projectWithWorkspace = await services.projectService.getProjectWithWorkspace(projectId);
+      const candidateAgentState = (projectWithWorkspace?.project?.agentState as any) || {};
+      if (candidateAgentState.runTimestamp === runTimestamp) {
+        persistedAgentState = candidateAgentState;
       }
+    }
+
+    const persistedTrainingConfiguration = persistedAgentState.stageOutputs?.trainingConfigurationNode|| {};
+    const persistedConfigurationOutput =
+      persistedAgentState.stageOutputs?.trainingConfigurationNode ||
+      persistedAgentState.trainingConfigurationNode ||
+      {};
+    const trainingConfigurationState = {
+      ...persistedTrainingConfiguration,
+      ...stateTrainingConfiguration,
+    };
+    const configurationOutput = {
+      ...persistedConfigurationOutput,
+      ...stateConfigurationOutput,
+    };
+    const contractPath =
+      stateContractPath ||
+      persistedTrainingConfiguration.contractPath ||
+      persistedConfigurationOutput.contractPath;
+    const isNonEmptyObject = (value: unknown): value is Record<string, any> =>
+      value !== null &&
+      typeof value === "object" &&
+      !Array.isArray(value) &&
+      Object.keys(value).length > 0;
+    let contractData = [
+      stateContractData,
+      trainingConfigurationState.configuration,
+      configurationOutput.configuration,
+    ].find(isNonEmptyObject);
+
+    if (
+      !contractData &&
+      contractPath &&
+      fs.existsSync(contractPath)
+    ) {
+      const parsedContract = yaml.load(fs.readFileSync(contractPath, "utf-8"));
+      if (parsedContract && typeof parsedContract === "object" && !Array.isArray(parsedContract)) {
+        contractData = parsedContract;
+      }
+    }
+
+    if (!fs.existsSync(contractPath)) {
+      throw new Error(`[ModelTrainingAgent] Completed training configuration contract is missing: ${contractPath}`);
     }
 
     return {
@@ -85,23 +140,72 @@ export class ModelTrainingAgent {
       modelTrainingDir,
       contractPath,
       contractData,
+      trainingConfiguration: {
+        ...configurationOutput,
+        ...trainingConfigurationState,
+        contractPath,
+        configuration: contractData,
+      },
     };
   }
 
-  private static getCandidateModels(contractData: any, state: AgentStateType): CandidateModelItem[] {
-    const rawCandidates =
-      contractData?.model_selection?.models ||
-      contractData?.model_selection?.candidates ||
-      contractData?.models ||
-      contractData?.candidate_models ||
-      (state.modelSelection as any)?.candidates ||
-      (state.modelSelection as any)?.models;
+  private static getCandidateModels(
+    contractData: any,
+    state?: GraphAgentStateType
+  ): CandidateModelItem[] {
+    const modelSelection =
+      state?.modelSelection ||
+      (state?.stageOutputs as any)?.modelSelectionNode ||
+      (state as any)?.modelSelectionNode;
+    const trainingConfigurations = [
+      state?.trainingConfiguration,
+      (state?.stageOutputs as any)?.trainingConfigurationNode,
+      (state as any)?.trainingConfigurationNode,
+    ].filter((configuration) => configuration && typeof configuration === "object");
+    const configuredCandidates = trainingConfigurations.flatMap((configuration: any) => [
+      configuration.models,
+      configuration.configuration?.model_selection?.models,
+      configuration.configuration?.models,
+    ]).find((models) => Array.isArray(models) && models.length > 0);
+    const fallbackCandidates = [
+      contractData?.model_selection?.models,
+      contractData?.model_selection?.candidates,
+      contractData?.models,
+      contractData?.candidate_models,
+      modelSelection?.candidates,
+      modelSelection?.models,
+    ].find((models) => Array.isArray(models) && models.length > 0);
+    const rawCandidates = configuredCandidates || fallbackCandidates;
 
     if (!Array.isArray(rawCandidates) || rawCandidates.length === 0) {
-      throw new Error("[ModelTrainingAgent] No candidate models found in training contract or model selection. Candidate models are required.");
+      throw new Error(
+        "[ModelTrainingAgent] No candidate models were found in the training contract or model-selection output."
+      );
     }
 
-    return rawCandidates.map((m: any, idx: number) => {
+    const modelMetadata = new Map<string, any>();
+    for (const candidate of [...(fallbackCandidates || []), ...rawCandidates]) {
+      const id = typeof candidate === "string" ? candidate : candidate?.model_id || candidate?.id;
+      if (id) {
+        const key = String(id).toLowerCase();
+        modelMetadata.set(key, {
+          ...(modelMetadata.get(key) || {}),
+          ...(typeof candidate === "string" ? {} : candidate),
+          model_id: id,
+        });
+      }
+    }
+    const enabledCandidates = rawCandidates
+      .filter((model: any) => model && model.enabled !== false)
+      .map((model: any) => {
+        if (typeof model !== "string") return model;
+        return modelMetadata.get(model.toLowerCase()) || model;
+      });
+    if (enabledCandidates.length === 0) {
+      throw new Error("[ModelTrainingAgent] The training configuration contains no enabled models.");
+    }
+
+    return enabledCandidates.map((m: any, idx: number) => {
       const modelId = typeof m === "string" ? m : (m.model_id || m.id);
       if (!modelId) {
         throw new Error(`[ModelTrainingAgent] Candidate model at index ${idx} is missing 'model_id'.`);
@@ -122,12 +226,74 @@ export class ModelTrainingAgent {
     });
   }
 
+  public static normalizeModelToken(name: string): string {
+    return name.toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  public static isModelImplementedInProject(
+    modelId: string,
+    modelTrainingDir: string
+  ): boolean {
+    if (!fs.existsSync(modelTrainingDir)) return false;
+    const cleanId = this.normalizeModelToken(modelId);
+    if (!cleanId) return false;
+
+    const mainFileName = "main.py";
+    const mainPyPath = path.join(modelTrainingDir, mainFileName);
+    if (!fs.existsSync(mainPyPath)) return false;
+
+    const modelsDirName = "models";
+    const baseModelFileName = "base_model.py";
+    const modelsDir = path.join(modelTrainingDir, modelsDirName);
+    let hasTrainerFile = false;
+
+    if (fs.existsSync(modelsDir)) {
+      try {
+        const fileNames = fs.readdirSync(modelsDir);
+        for (const fileName of fileNames) {
+          if (!fileName.endsWith(".py") || fileName.startsWith("__") || fileName === baseModelFileName) {
+            continue;
+          }
+          const baseNameWithoutExt = fileName.replace(/_trainer\.py$/, "").replace(/\.py$/, "");
+          const cleanFile = this.normalizeModelToken(baseNameWithoutExt);
+          if (cleanFile.includes(cleanId) || cleanId.includes(cleanFile)) {
+            hasTrainerFile = true;
+            break;
+          }
+        }
+      } catch {}
+    }
+
+    const pipelineFileName = "pipeline.py";
+    const pipelinePath = path.join(modelTrainingDir, pipelineFileName);
+    let hasPipelineRef = false;
+    if (fs.existsSync(pipelinePath)) {
+      try {
+        const pipelineContent = fs.readFileSync(pipelinePath, "utf8").toLowerCase();
+        hasPipelineRef = pipelineContent.includes(cleanId) || pipelineContent.includes(modelId.toLowerCase());
+      } catch {}
+    }
+
+    return hasTrainerFile && hasPipelineRef;
+  }
+
   public static async generateProjectCode(
-    state: AgentStateType,
+    state: GraphAgentStateType,
     services: IngestionServices
   ): Promise<ModelTrainingAgentOutput> {
-    const ctx = this.getProjectContext(state, services);
-    const { projectId, workspaceName, projectName, runTimestamp, runDir, pythonProjectName, modelTrainingDir, contractPath, contractData } = ctx;
+    const ctx = await this.getProjectContext(state, services);
+    const {
+      projectId,
+      workspaceName,
+      projectName,
+      runTimestamp,
+      runDir,
+      pythonProjectName,
+      modelTrainingDir,
+      contractPath,
+      contractData,
+      trainingConfiguration,
+    } = ctx;
 
     if (!projectId || !projectName || !runTimestamp) {
       return {
@@ -140,10 +306,11 @@ export class ModelTrainingAgent {
       };
     }
 
-    const preFlight = state.preFlight || (state.stageOutputs as any)?.preFlight || {};
+    const preFlight = state.preFlight || (state.stageOutputs as any)?.preFlightNode || (state.stageOutputs as any)?.preFlight || {};
     const configuredCandidateModels = this.getCandidateModels(contractData, state);
 
-    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlight || {}) as any;
+    // Extract PreFlight host hardware diagnostics
+    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlightNode || (state.stageOutputs as any)?.preFlight || {}) as any;
     const sys = preFlightReport.system || {};
     const hostCpus = typeof sys.cpu_logical === "number" ? sys.cpu_logical : 4;
     const hostRamGb = typeof sys.ram_available_gb === "number" ? sys.ram_available_gb : 8;
@@ -163,7 +330,7 @@ export class ModelTrainingAgent {
     fs.mkdirSync(path.join(modelTrainingDir, "artifacts", "plots"), { recursive: true });
 
     const fsTools = await getMcpFilesystemTools({ projectId, workspaceName, projectName, runTimestamp });
-    const contractTool = createReadTrainingContractTool(state.trainingConfiguration || {}, projectId, runTimestamp, services);
+    const contractTool = createReadTrainingContractTool(trainingConfiguration, projectId, runTimestamp, services);
     const preFlightTool = createGetPreFlightDetailsTool(preFlight);
     const validationTool = createValidateProjectStructureTool(modelTrainingDir);
 
@@ -182,7 +349,7 @@ export class ModelTrainingAgent {
       "You are an expert AI Machine Learning Software Engineering and Coding Agent."
     );
 
-    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitDate || "";
+    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTrainingCodeNode?.splitEndDate || (state.stageOutputs as any)?.modelTrainingCodeNode?.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitDate || "";
 
     const timeColumn =
       contractData?.split?.time_column ||
@@ -256,6 +423,7 @@ export class ModelTrainingAgent {
       `1. DO NOT convert or binarize continuous target '${targetColumn}'. Train regression estimators (e.g. LGBMRegressor, RandomForestRegressor) for continuous forecasting/regression tasks.`,
       `2. Drop target-derived volume discount, promotion tiers, or leakage features that encode target quantity thresholds from feature set X.`,
       `3. Do NOT one-hot encode high-cardinality nominal entity IDs (e.g. Customer_Name, Supplier_Name, SKU with >50 unique values). Drop high-cardinality IDs from X or use frequency/label encoding.`,
+      `4. STRICT FAIL FAST - NO FALLBACKS OR ERROR SUPPRESSION: DO NOT write try-except blocks or fallback handling that catches errors during model training or evaluation (e.g. CatBoost, LightGBM, XGBoost). If any model throws an error, allow the exception to propagate directly and terminate execution immediately with a non-zero exit code so the rectifier can diagnose and resolve the issue.`,
       `--- Host Hardware & PreFlight Runtime Limits ---`,
       `Allocated Container CPUs: ${containerCpuStr}`,
       `Allocated Container RAM: ${containerRamStr}`,
@@ -272,80 +440,280 @@ export class ModelTrainingAgent {
       `Use 'write_todos' to track task progress as you create the files.`,
     ].join("\n\n");
 
+    const effectiveSelectedModels = Array.isArray(state.selectedModels) && state.selectedModels.length > 0
+      ? Array.from(new Set(state.selectedModels.map((modelId) => modelId.trim()).filter(Boolean)))
+      : configuredCandidateModels.map((m) => m.model_id);
+
+    const resourceLimits = { cpus: containerCpuStr, memory: containerRamStr, hasGpu };
+    const relativeEntrypoint = `${runTimestamp}/${pythonProjectName}/main.py`;
+    let accumulatedPackages: string[] = [];
+    let lastExecResult = { success: false, stdout: "", stderr: "" };
+
+    const readOnlyFsTools = fsTools.filter((t) => {
+      const name = (t.name || "").toLowerCase();
+      return (
+        !name.includes("write") &&
+        !name.includes("edit") &&
+        !name.includes("delete") &&
+        !name.includes("move") &&
+        !name.includes("create") &&
+        !name.includes("execute")
+      );
+    });
+
+    const extraArgs: string[] = [];
+    if (effectiveSelectedModels.length > 0) {
+      extraArgs.push(`--models "${effectiveSelectedModels.join(",")}"`);
+    }
+    if (effectiveSplitEndDate) {
+      extraArgs.push(`--split-date "${effectiveSplitEndDate}"`);
+      extraArgs.push(`--split-end-date "${effectiveSplitEndDate}"`);
+    }
+
+    const agentMessages: BaseMessage[] = [];
     const codingFallback: CodingAgentResult = {
-      status: "Success",
+      status: "Completed",
       summary: "Python model training project scaffolded successfully.",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
       requiredPackages: [],
     };
 
-    let codingResult: CodingAgentResult = codingFallback;
+    let codingResult: CodingAgentResult;
     try {
-      codingResult = await invokeAgentJson<CodingAgentResult>(
-        "modelTrainingCode",
-        model,
-        userPrompt,
+      codingResult = await validateWithRetry<CodingAgentResult>(
+        "modelTraining",
+        async (feedbackPrompt?: string) => {
+          const currentPrompt = feedbackPrompt
+            ? [
+                `The previous model training pipeline run encountered an execution error during container testing.`,
+                feedbackPrompt,
+                `Please inspect the failing code files and apply the required corrections using your file editing tools. Return the updated project status JSON.`,
+              ].join("\n\n")
+            : userPrompt;
+
+          return await invokeAgentJson<CodingAgentResult>(
+            "modelTraining",
+            model,
+            currentPrompt,
+            codingFallback,
+            services,
+            {
+              systemPrompt,
+              traceLabel: "modelTraining:codeGeneration",
+              tools: agentTools,
+              useDeepAgent: true,
+              enableTodoList: true,
+              recursionLimit: 200,
+              messages: agentMessages,
+              middlewareOptions: {
+                summarization: {
+                  triggerTokens: 200000,
+                  keepTokens: 25000,
+                },
+                todoList: true,
+                toolRetry: { maxRetries: 2 },
+              },
+              throwOnError: true,
+            }
+          );
+        },
         codingFallback,
         services,
-        {
-          systemPrompt,
-          traceLabel: "modelTraining:codeGeneration",
-          tools: agentTools,
-          useDeepAgent: true,
-          enableTodoList: true,
-          recursionLimit: 200,
-        }
+        20,
+        undefined,
+        async (result: CodingAgentResult) => {
+          if (Array.isArray(result.requiredPackages)) {
+            accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...result.requiredPackages]));
+          }
+
+          await logMilestoneThinking(
+            services,
+            "Model Training",
+            `Executing container test run for generated code without mounting project folder (mounting python_script only for dataset)...`
+          );
+
+          const execResult = await executePythonScript(
+            relativeEntrypoint,
+            "",
+            projectId,
+            runTimestamp,
+            services,
+            state.connectorId,
+            accumulatedPackages,
+            extraArgs,
+            resourceLimits,
+            { mountMode: "python_script_only" }
+          );
+
+          lastExecResult = execResult;
+
+          const combinedLogs = ((execResult.stderr || "") + "\n" + (execResult.stdout || "")).toLowerCase();
+          const hasSuppressedErrorInLogs =
+            combinedLogs.includes("traceback (most recent call last)") ||
+            combinedLogs.includes("catboosterror") ||
+            combinedLogs.includes("failed to train");
+
+          if (execResult.success && !hasSuppressedErrorInLogs) {
+            await logMilestoneThinking(
+              services,
+              "Model Training",
+              `Model training container test execution succeeded with no errors.`
+            );
+            return { isValid: true };
+          }
+
+          await logMilestoneThinking(
+            services,
+            "Model Training",
+            `Container test run encountered issues (non-zero exit code or model errors detected in logs). Invoking Rectifier advisor subagent to diagnose issues and provide rectification steps...`
+          );
+
+          const rectifierPrompt = await getPromptFromFile(
+            "ModelTrainingValidation/modelTrainingRectifier.md",
+            "You are an expert AI Python Debugger and Code Rectifier Advisor."
+          );
+
+          const rectifierUserMsg = [
+            `The Python model training project at '${runTimestamp}/${pythonProjectName}' failed during isolated container test execution.`,
+            `--- Execution Stdout ---`,
+            execResult.stdout || "[No stdout]",
+            `--- Execution Stderr / Traceback ---`,
+            execResult.stderr || "[No stderr]",
+            `Target Directory: ${modelTrainingDir}`,
+            `Inspect the failing files using your read-only filesystem tools. Diagnose the root cause and provide precise rectification instructions and code snippets for ModelTrainingAgent to apply.`,
+          ].join("\n\n");
+
+          const rectifierFallback: RectifierResult = {
+            status: "NeedsRectification",
+            explanation: "Execution error: " + (execResult.stderr || execResult.stdout).slice(0, 300),
+          };
+
+          let rectResult: RectifierResult = rectifierFallback;
+          try {
+            rectResult = await invokeAgentJson<RectifierResult>(
+              "modelTrainingRectifier",
+              model,
+              rectifierUserMsg,
+              rectifierFallback,
+              services,
+              {
+                systemPrompt: rectifierPrompt,
+                traceLabel: "modelTraining:rectifierAdvisor",
+                tools: readOnlyFsTools,
+                recursionLimit: 200,
+              }
+            );
+
+            if (Array.isArray(rectResult.requiredPackages)) {
+              accumulatedPackages = Array.from(new Set([...accumulatedPackages, ...rectResult.requiredPackages]));
+            }
+          } catch (rErr: any) {
+            console.warn("[ModelTrainingAgent] Rectifier subagent invocation warning:", rErr?.message || rErr);
+          }
+
+          const feedbackReason = [
+            `Execution failed with error:`,
+            execResult.stderr || execResult.stdout || "Unknown execution failure",
+            `\n--- Rectifier Advisor Subagent Diagnosis ---`,
+            `Failing File: ${rectResult.failingFile || "See traceback above"}`,
+            `Root Cause: ${rectResult.rootCause || rectResult.explanation || "Execution error"}`,
+            `Rectification Steps:\n${rectResult.rectificationSteps || rectResult.explanation || "Please fix the failing code."}`,
+            rectResult.recommendedCodeSnippet
+              ? `Recommended Code Snippet:\n\`\`\`python\n${rectResult.recommendedCodeSnippet}\n\`\`\``
+              : "",
+          ].filter(Boolean).join("\n\n");
+
+          return {
+            isValid: false,
+            reason: feedbackReason,
+          };
+        },
+        false
       );
     } catch (codeErr: any) {
-      console.warn("[ModelTrainingAgent] Code generation invoke warning:", codeErr?.message || codeErr);
+      await cleanupRunContainer(projectId, runTimestamp);
+      console.warn("[ModelTrainingAgent] Code generation/validation warning:", codeErr?.message || codeErr);
+      const errorMessage = codeErr instanceof Error ? codeErr.message : String(codeErr);
+      return {
+        status: "Failed",
+        summary: `Model training code generation failed: ${errorMessage}`,
+        phase: "Model Training",
+        projectDirectory: `${runTimestamp}/${pythonProjectName}`,
+        candidates: configuredCandidateModels,
+        rankedCandidates: configuredCandidateModels,
+        filesCreated: [],
+        splitEndDate: effectiveSplitEndDate,
+        executionLogs: `--- STDOUT ---\n${lastExecResult.stdout}\n\n--- STDERR ---\n${lastExecResult.stderr || errorMessage}`,
+      };
     }
+
+    await cleanupRunContainer(projectId, runTimestamp);
+
+    const finalSummary = `Model training code generation and container validation completed successfully without errors in '${pythonProjectName}'. All candidate models verified.`;
 
     await logMilestoneThinking(
       services,
       "Model Training",
-      `Python model training project generated. Pausing for user to select candidate models to execute in Docker.`
+      finalSummary
     );
 
     return {
       status: "Completed",
-      summary: `Python model training program created in '${pythonProjectName}'. Please select the candidate models to train and execute in Docker.`,
+      summary: finalSummary,
       phase: "Model Training",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
       candidates: configuredCandidateModels,
       rankedCandidates: configuredCandidateModels,
       filesCreated: codingResult.files || [],
       splitEndDate: effectiveSplitEndDate,
+      executionLogs: `--- STDOUT ---\n${lastExecResult.stdout}\n\n--- STDERR ---\n${lastExecResult.stderr}`,
     };
   }
 
   public static async executeContainerTraining(
-    state: AgentStateType,
+    state: GraphAgentStateType,
     services: IngestionServices,
     options?: { maxRetries?: number }
   ): Promise<ModelTrainingAgentOutput> {
     const startTime = Date.now();
-    const ctx = this.getProjectContext(state, services);
-    const { projectId, workspaceName, projectName, runTimestamp, runDir, pythonProjectName, modelTrainingDir, contractPath, contractData } = ctx;
+    const ctx = await this.getProjectContext(state, services);
+    const {
+      projectId,
+      workspaceName,
+      projectName,
+      runTimestamp,
+      runDir,
+      pythonProjectName,
+      modelTrainingDir,
+      contractPath,
+      contractData,
+      trainingConfiguration,
+    } = ctx;
 
     const configuredCandidateModels = this.getCandidateModels(contractData, state);
 
-    const effectiveSelectedModels: string[] = (
-      Array.isArray(state.selectedModels) && state.selectedModels.length > 0
-        ? state.selectedModels
-        : Array.isArray((state.stageOutputs as any)?.modelTraining?.selectedModels) && (state.stageOutputs as any).modelTraining.selectedModels.length > 0
-        ? (state.stageOutputs as any).modelTraining.selectedModels
-        : []
-    );
+    const effectiveSelectedModels = Array.isArray(state.selectedModels)
+      ? Array.from(new Set(state.selectedModels.map((modelId) => modelId.trim()).filter(Boolean)))
+      : [];
 
     if (effectiveSelectedModels.length === 0) {
       throw new Error(
         "[ModelTrainingAgent] No candidate models selected for training. Selected models are required to execute container training."
       );
     }
+    const enabledModelIds = new Set(configuredCandidateModels.map((model) => model.model_id.toLowerCase()));
+    const unconfiguredModels = effectiveSelectedModels.filter(
+      (modelId) => !enabledModelIds.has(modelId.toLowerCase())
+    );
+    if (unconfiguredModels.length > 0) {
+      throw new Error(
+        `[ModelTrainingAgent] Selected models are not enabled in the training configuration: ${unconfiguredModels.join(", ")}.`
+      );
+    }
 
-    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || "";
+    const effectiveSplitEndDate = state.splitEndDate || state.splitDate || (state.stageOutputs as any)?.modelTrainingCodeNode?.splitEndDate || (state.stageOutputs as any)?.modelTraining?.splitEndDate || "";
 
-    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlight || {}) as any;
+    const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlightNode || (state.stageOutputs as any)?.preFlight || {}) as any;
     const sys = preFlightReport.system || {};
     const hostCpus = typeof sys.cpu_logical === "number" ? sys.cpu_logical : 4;
     const hostRamGb = typeof sys.ram_available_gb === "number" ? sys.ram_available_gb : 8;
@@ -392,7 +760,7 @@ export class ModelTrainingAgent {
 
     const agentMessages: BaseMessage[] = [];
     const codingFallback: CodingAgentResult = {
-      status: "Success",
+      status: "Completed",
       summary: "Coding agent generated project files.",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
       requiredPackages: [],
@@ -412,7 +780,7 @@ export class ModelTrainingAgent {
 
     const agentTools = [
       ...fsTools,
-      createReadTrainingContractTool(state.trainingConfiguration || {}, projectId, runTimestamp, services),
+      createReadTrainingContractTool(trainingConfiguration, projectId, runTimestamp, services),
       createGetPreFlightDetailsTool(preFlightReport),
       createValidateProjectStructureTool(modelTrainingDir),
       webSearchTool,
@@ -424,57 +792,103 @@ export class ModelTrainingAgent {
       "You are an expert AI Machine Learning Software Engineering and Coding Agent."
     );
 
-    const codingResult = await validateWithRetry<CodingAgentResult>(
+    const newlyAddedModels = effectiveSelectedModels.filter(
+      (modelId) => !ModelTrainingAgent.isModelImplementedInProject(modelId, modelTrainingDir)
+    );
+    const needsCodeUpdate = newlyAddedModels.length > 0;
+
+    let codingResult: CodingAgentResult;
+    try {
+      codingResult = await validateWithRetry<CodingAgentResult>(
       "modelTraining",
       async (feedbackPrompt?: string) => {
-        const userPrompt = feedbackPrompt
-          ? [
-              `The previous model training pipeline run encountered an execution error.`,
-              feedbackPrompt,
-              `Please inspect the failing code files and apply the required corrections using your file editing tools. Return the updated project status JSON.`,
-            ].join("\n\n")
-          : [
-              `Execute and finalize the modular Python model training project in '${runTimestamp}/${pythonProjectName}'.`,
-              `--- Active Run Context ---`,
-              `Project Name: ${projectName}`,
-              `Run Timestamp: ${runTimestamp}`,
-              `Target Project Folder: ${runTimestamp}/${pythonProjectName}`,
-              `Host Path: ${modelTrainingDir}`,
-              `Contract Path: ${contractPath || "schemas/<contract>.yaml"}`,
-              `--- ML Task & Objective Specifications ---`,
-              ...(contractData?.task?.task_type ? [`Problem Type: ${contractData.task.task_type}`] : []),
-              ...(contractData?.task?.task_subtype ? [`Task Subtype: ${contractData.task.task_subtype}`] : []),
-              ...(contractData?.model_selection?.target_entity?.name || contractData?.task?.target_column ? [`Target Column: ${contractData.model_selection?.target_entity?.name || contractData.task.target_column}`] : []),
-              ...(contractData?.["x-primary-metric-name"] || contractData?.objective?.optimization_metric ? [`Primary Optimization Metric: ${contractData["x-primary-metric-name"] || contractData.objective.optimization_metric}`] : []),
-              `CRITICAL IMPLEMENTATION MANDATES:`,
-              `1. DO NOT convert or binarize continuous target variables into classification. Train regression estimators (e.g. LGBMRegressor, RandomForestRegressor) for continuous forecasting/regression tasks.`,
-              `2. Drop target-derived volume discount, promotion tiers, or leakage features that encode target quantity thresholds from feature set X.`,
-              `3. Do NOT one-hot encode high-cardinality nominal entity IDs (e.g. Customer_Name, Supplier_Name, SKU with >50 unique values). Drop high-cardinality IDs from X or use frequency/label encoding.`,
-              `--- Host Hardware & PreFlight Runtime Limits ---`,
-              `Allocated Container CPUs: ${containerCpuStr}`,
-              `Allocated Container RAM: ${containerRamStr}`,
-              `GPU Acceleration: ${hasGpu ? "Enabled (CDI reservations)" : "Disabled (CPU only)"}`,
-              `In docker-compose.yml, configure deploy.resources.limits with cpus: '${containerCpuStr}' and memory: ${containerRamStr}. Set network: host in build and network_mode: host.`,
-              ...splitDateInstructions,
-              `--- User-Selected Models to Train ---`,
-              `The user has explicitly selected: ${effectiveSelectedModels.join(", ")}. In pipeline.py and main.py, implement trainers and train ONLY these candidate models sequentially.`,
-              `--- Strict Isolation Constraints ---`,
-              `1. DO NOT read or reference any other timestamp folder. Only operate inside '${runTimestamp}/'.`,
-              `2. Execute models sequentially in pipeline.py.`,
-              `3. Always generate model evaluation metrics and comparison visualization plots in artifacts/plots/.`,
-              `4. Generate model_training_report.json at completion.`,
-              `Use 'write_todos' to track task progress as you create the files.`,
-            ].join("\n\n");
+        if (!feedbackPrompt) {
+          if (!needsCodeUpdate) {
+            await logMilestoneThinking(
+              services,
+              "Model Training",
+              `Selected models (${effectiveSelectedModels.join(", ")}) already implemented in '${pythonProjectName}'. Proceeding directly to container execution...`
+            );
+            return codingFallback;
+          }
+
+          await logMilestoneThinking(
+            services,
+            "Model Training",
+            `Updating Python code in '${pythonProjectName}' to add trainer support for newly added model(s): ${newlyAddedModels.join(", ")} (preserving project directory)...`
+          );
+
+          const updatePrompt = [
+            `Update the modular Python model training project in '${runTimestamp}/${pythonProjectName}' to add support for training the newly added model(s): ${newlyAddedModels.join(", ")}.`,
+            `--- Active Run Context ---`,
+            `Project Name: ${projectName}`,
+            `Run Timestamp: ${runTimestamp}`,
+            `Target Project Folder: ${runTimestamp}/${pythonProjectName}`,
+            `Host Path: ${modelTrainingDir}`,
+            `Contract Path: ${contractPath || "schemas/<contract>.yaml"}`,
+            `--- ML Task & Objective Specifications ---`,
+            ...(contractData?.task?.task_type ? [`Problem Type: ${contractData.task.task_type}`] : []),
+            ...(contractData?.task?.task_subtype ? [`Task Subtype: ${contractData.task.task_subtype}`] : []),
+            ...(contractData?.model_selection?.target_entity?.name || contractData?.task?.target_column ? [`Target Column: ${contractData.model_selection?.target_entity?.name || contractData.task.target_column}`] : []),
+            ...(contractData?.["x-primary-metric-name"] || contractData?.objective?.optimization_metric ? [`Primary Optimization Metric: ${contractData["x-primary-metric-name"] || contractData.objective.optimization_metric}`] : []),
+            `CRITICAL IMPLEMENTATION MANDATES:`,
+            `1. DO NOT convert or binarize continuous target variables into classification. Train regression estimators for continuous forecasting/regression tasks.`,
+            `2. Drop target-derived volume discount, promotion tiers, or leakage features that encode target quantity thresholds from feature set X.`,
+            `3. Do NOT one-hot encode high-cardinality nominal entity IDs. Drop high-cardinality IDs from X or use frequency/label encoding.`,
+            `4. STRICT FAIL FAST - NO FALLBACKS OR ERROR SUPPRESSION: DO NOT write try-except blocks or fallback handling that catches errors during model training or evaluation (e.g. CatBoost, LightGBM, XGBoost). If any model throws an error, allow the exception to propagate directly and terminate execution immediately with a non-zero exit code so the rectifier can diagnose and resolve the issue.`,
+            `--- STRICT INCREMENTAL CODE UPDATE RULES (DO NOT DELETE FOLDER) ---`,
+            `1. CRITICAL MANDATE: DO NOT delete, wipe, recreate, or re-scaffold the project directory '${runTimestamp}/${pythonProjectName}'. All existing files MUST be preserved.`,
+            `2. Keep all existing working files: 'data/data_loader.py', 'configs/training_config.yaml', 'evaluation/', and existing trainers in 'models/'.`,
+            `3. Implement concrete trainer class(es) for the newly added model(s) (${newlyAddedModels.join(", ")}) in 'models/', implementing BaseModelTrainer from 'models/base_model.py'.`,
+            `4. Update 'pipeline.py' (and 'main.py' if needed) to import and register the new trainer(s) so that the '--models' CLI argument executes them alongside existing trainers.`,
+            `5. Update 'requirements.txt' if any new package is required for the new model(s).`,
+            `6. All models to train in this execution: ${effectiveSelectedModels.join(", ")}.`,
+            `7. Always generate model evaluation metrics, comparison visualization plots in artifacts/plots/, and model_training_report.json at completion.`,
+            `Use 'write_todos' to track task progress as you update the files. Return the updated project status JSON.`,
+          ].join("\n\n");
+
+          return await invokeAgentJson<CodingAgentResult>(
+            "modelTraining",
+            model,
+            updatePrompt,
+            codingFallback,
+            services,
+            {
+              systemPrompt,
+              traceLabel: "modelTraining:codeUpdate",
+              tools: agentTools,
+              useDeepAgent: true,
+              enableTodoList: true,
+              recursionLimit: 200,
+              messages: agentMessages,
+              middlewareOptions: {
+                summarization: {
+                  triggerTokens: 200000,
+                  keepTokens: 25000,
+                },
+                todoList: true,
+                toolRetry: { maxRetries: 2 },
+              },
+              throwOnError: true,
+            }
+          );
+        }
+
+        const repairPrompt = [
+          `The previous model training pipeline run encountered an execution error.`,
+          feedbackPrompt,
+          `Please inspect the failing code files and apply the required corrections using your file editing tools. DO NOT delete existing project files. Return the updated project status JSON.`,
+        ].join("\n\n");
 
         return await invokeAgentJson<CodingAgentResult>(
           "modelTraining",
           model,
-          userPrompt,
+          repairPrompt,
           codingFallback,
           services,
           {
             systemPrompt,
-            traceLabel: "modelTraining:codingAgent",
+            traceLabel: "modelTraining:codeFix",
             tools: agentTools,
             useDeepAgent: true,
             enableTodoList: true,
@@ -488,6 +902,7 @@ export class ModelTrainingAgent {
               todoList: true,
               toolRetry: { maxRetries: 2 },
             },
+            throwOnError: true,
           }
         );
       },
@@ -532,14 +947,86 @@ export class ModelTrainingAgent {
 
         const reportPathInProject = path.join(modelTrainingDir, "model_training_report.json");
         const reportPathInRun = path.join(runDir, "model_training_report.json");
-        const reportExists = fs.existsSync(reportPathInProject) || fs.existsSync(reportPathInRun);
+        const resolvedReportPath = fs.existsSync(reportPathInProject)
+          ? reportPathInProject
+          : fs.existsSync(reportPathInRun)
+          ? reportPathInRun
+          : null;
+        const reportExists = Boolean(resolvedReportPath);
 
         const preprocessorExists =
           fs.existsSync(path.join(modelTrainingDir, "artifacts", "models", "preprocessor.joblib")) ||
           fs.existsSync(path.join(modelTrainingDir, "models", "preprocessor.joblib")) ||
           fs.existsSync(path.join(runDir, "artifacts", "models", "preprocessor.joblib"));
 
-        if (execResult.success && reportExists && preprocessorExists) {
+        let reportAllModelsValid = true;
+        const missingOrFailedModels: string[] = [];
+
+        if (resolvedReportPath) {
+          try {
+            const reportRaw = fs.readFileSync(resolvedReportPath, "utf-8");
+            const reportData = JSON.parse(reportRaw);
+
+            if (reportData.status && String(reportData.status).toLowerCase().includes("fail")) {
+              reportAllModelsValid = false;
+              missingOrFailedModels.push(`Report status is '${reportData.status}'.`);
+            }
+
+            if (effectiveSelectedModels.length > 0) {
+              const modelsEvaluated: any[] = Array.isArray(reportData.models_evaluated)
+                ? reportData.models_evaluated
+                : [];
+              const modelResults: Record<string, any> =
+                reportData.model_results && typeof reportData.model_results === "object"
+                  ? reportData.model_results
+                  : {};
+              const candidateModelsEvaluated: string[] = Array.isArray(reportData.candidate_models_evaluated)
+                ? reportData.candidate_models_evaluated.map(String)
+                : [];
+
+              for (const reqModelId of effectiveSelectedModels) {
+                const normReq = reqModelId.toLowerCase().trim();
+                const evaluatedEntry = modelsEvaluated.find(
+                  (m) =>
+                    String(m?.model_id || "").toLowerCase().trim() === normReq ||
+                    String(m?.displayName || "").toLowerCase().trim() === normReq
+                );
+                const resultsEntry = Object.entries(modelResults).find(
+                  ([k, v]: [string, any]) =>
+                    k.toLowerCase().trim() === normReq ||
+                    String(v?.model_id || "").toLowerCase().trim() === normReq
+                );
+                const inCandidatesList = candidateModelsEvaluated.some(
+                  (c) => c.toLowerCase().trim() === normReq
+                );
+
+                const modelEntry = evaluatedEntry || (resultsEntry ? resultsEntry[1] : null);
+
+                if (!modelEntry && !inCandidatesList) {
+                  reportAllModelsValid = false;
+                  missingOrFailedModels.push(`Selected model '${reqModelId}' was not trained or present in model_training_report.json.`);
+                } else if (modelEntry) {
+                  const entryStatus = String(modelEntry.status || "").toLowerCase();
+                  if (entryStatus.includes("fail") || entryStatus.includes("error") || modelEntry.error) {
+                    reportAllModelsValid = false;
+                    missingOrFailedModels.push(`Model '${reqModelId}' failed with error: ${modelEntry.error || entryStatus}`);
+                  }
+                }
+              }
+            }
+          } catch (pErr: any) {
+            reportAllModelsValid = false;
+            missingOrFailedModels.push(`Failed to parse model_training_report.json: ${pErr.message}`);
+          }
+        }
+
+        const combinedLogs = ((execResult.stderr || "") + "\n" + (execResult.stdout || "")).toLowerCase();
+        const hasSuppressedErrorInLogs =
+          combinedLogs.includes("traceback (most recent call last)") ||
+          combinedLogs.includes("catboosterror") ||
+          combinedLogs.includes("failed to train");
+
+        if (execResult.success && reportExists && preprocessorExists && reportAllModelsValid && !hasSuppressedErrorInLogs) {
           await logMilestoneThinking(
             services,
             "Model Training",
@@ -552,6 +1039,8 @@ export class ModelTrainingAgent {
         if (!execResult.success) missingDetails.push("Container execution returned failure exit code.");
         if (!reportExists) missingDetails.push("model_training_report.json was not generated.");
         if (!preprocessorExists) missingDetails.push("artifacts/models/preprocessor.joblib was not persisted.");
+        if (!reportAllModelsValid) missingDetails.push(...missingOrFailedModels);
+        if (hasSuppressedErrorInLogs) missingDetails.push("Container logs contain unhandled exception or suppressed error traceback.");
 
         await logMilestoneThinking(
           services,
@@ -565,7 +1054,9 @@ export class ModelTrainingAgent {
         );
 
         const rectifierUserMsg = [
-          `The Python model training project at '${runTimestamp}/${pythonProjectName}' failed during container execution.`,
+          `The Python model training project at '${runTimestamp}/${pythonProjectName}' failed or encountered model errors during container execution.`,
+          `Selected models expected to train: ${effectiveSelectedModels.join(", ")}`,
+          `Validation Issues:\n${missingDetails.join("\n")}`,
           `--- Execution Stdout ---`,
           execResult.stdout || "[No stdout]",
           `--- Execution Stderr / Traceback ---`,
@@ -618,8 +1109,23 @@ export class ModelTrainingAgent {
           isValid: false,
           reason: feedbackReason,
         };
-      }
-    );
+      },
+        false
+      );
+    } catch (error) {
+      await cleanupRunContainer(projectId, runTimestamp);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      return {
+        status: "Failed",
+        summary: `Model training execution could not complete its agent call: ${errorMessage}`,
+        phase: "Model Training",
+        projectDirectory: `${runTimestamp}/${pythonProjectName}`,
+        candidates: configuredCandidateModels,
+        rankedCandidates: configuredCandidateModels,
+        executedModels: [],
+        executionLogs: errorMessage,
+      };
+    }
 
     await cleanupRunContainer(projectId, runTimestamp);
 
@@ -751,8 +1257,14 @@ export class ModelTrainingAgent {
       return res;
     };
 
-    const runs: CandidateModelRun[] = rawRuns.map((r: any, idx: number) => {
-      const modelId = String(r.model_id || r.id || r.name || r.model_name || `model_${idx + 1}`);
+    const runs: CandidateModelRun[] = rawRuns.map((r: any) => {
+      const modelId = String(r.model_id || r.id || r.name || r.model_name || "").trim();
+      if (!modelId) {
+        throw new Error("[ModelTrainingAgent] Model execution report contains a result without a model identifier.");
+      }
+      if (!enabledModelIds.has(modelId.toLowerCase()) || !effectiveSelectedModels.some((id) => id.toLowerCase() === modelId.toLowerCase())) {
+        throw new Error(`[ModelTrainingAgent] Model execution report contains unselected model '${modelId}'.`);
+      }
       const configuredModel = configuredCandidateModels.find(
         (c) => c.model_id?.toLowerCase() === modelId.toLowerCase()
       );
@@ -765,9 +1277,7 @@ export class ModelTrainingAgent {
       const status: "Completed" | "Failed" =
         normStatus === "completed" || normStatus === "success"
           ? "Completed"
-          : r.error || normStatus === "failed"
-          ? "Failed"
-          : "Completed";
+          : "Failed";
 
       const validationMetrics =
         r.validationMetrics ||
@@ -849,7 +1359,7 @@ export class ModelTrainingAgent {
         r.time_taken ??
         (r.duration_ms ? r.duration_ms / 1000 : undefined);
 
-      const artifact = r.model_artifact || r.artifact || r.model_path || r.artifact_path || `artifacts/models/${modelId}.joblib`;
+      const artifact = r.model_artifact || r.artifact || r.model_path || r.artifact_path;
       const plots = normalizePlotMap(r.plots || r.comparison_plots || r.plot_paths || {});
 
       return {
@@ -910,7 +1420,13 @@ export class ModelTrainingAgent {
       );
     }
 
-    const championRun = runs.find((r) => r.model_id?.toLowerCase() === selectedModel.toLowerCase()) || rankedCandidates[0];
+    if (!enabledModelIds.has(selectedModel.toLowerCase())) {
+      throw new Error(`[ModelTrainingAgent] Champion model '${selectedModel}' was not enabled in the training configuration.`);
+    }
+    const championRun = runs.find((r) => r.model_id?.toLowerCase() === selectedModel.toLowerCase());
+    if (!championRun) {
+      throw new Error(`[ModelTrainingAgent] Champion model '${selectedModel}' is missing from the model execution results.`);
+    }
 
     const selectedModelArtifact =
       report.best_model?.model_path ||
@@ -920,9 +1436,7 @@ export class ModelTrainingAgent {
       report.selectedModelArtifact ||
       report.champion_artifact ||
       report.artifacts?.selected_model ||
-      championRun?.artifact ||
-      (rankedCandidates[0]?.artifact) ||
-      `artifacts/models/${selectedModel}.joblib`;
+      championRun.artifact;
 
     const validationMetrics =
       report.validationMetrics ||
@@ -968,10 +1482,12 @@ export class ModelTrainingAgent {
       summary: finalSummary,
       phase: "Model Training",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
-      report,
+      report: { ...report, model_results: runs },
+      executionCompleted: finalStatus === "Completed",
       direction: report.metric_direction || report.direction || reportDirection,
       candidates: runs,
       rankedCandidates,
+      executedModels: runs,
       selectedModel,
       selectedModelArtifact,
       validationMetrics,
@@ -984,18 +1500,9 @@ export class ModelTrainingAgent {
   }
 
   public static async execute(
-    state: AgentStateType,
+    state: GraphAgentStateType,
     services: IngestionServices
   ): Promise<ModelTrainingAgentOutput> {
-    const hasProjectDir = Boolean(
-      (state.stageOutputs as any)?.modelTrainingCode?.projectDirectory ||
-      (state.stageOutputs as any)?.modelTraining?.projectDirectory
-    );
-    const hasSelectedModelsToRun = Array.isArray(state.selectedModels) && state.selectedModels.length > 0;
-
-    if (hasProjectDir && hasSelectedModelsToRun) {
-      return await this.executeContainerTraining(state, services);
-    }
     return await this.generateProjectCode(state, services);
   }
 }

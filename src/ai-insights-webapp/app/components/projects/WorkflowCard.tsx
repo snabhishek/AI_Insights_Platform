@@ -48,28 +48,47 @@ const COLOR_MAP: Record<string, { border: string; icon: string; glow: string; sh
   },
 };
 
-function StatusBadge({ status }: { status: PipelineStatus }) {
+function StatusBadge({ status, isUserPaused }: { status: PipelineStatus; isUserPaused: boolean }) {
+  const badgeClass = "w-5.5 h-5.5 rounded-full text-white flex items-center justify-center shadow-md";
   if (status === "Completed") {
     return (
-      <span className="w-5.5 h-5.5 rounded-full bg-emerald-500 text-white flex items-center justify-center shadow-md scale-110 transition-transform duration-300" title="Completed">
+      <span className={`${badgeClass} bg-status-completed scale-110 transition-transform duration-300`} title="Completed" aria-label="Completed">
         <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="4.5">
           <polyline points="20 6 9 17 4 12" />
         </svg>
       </span>
     );
   }
+  if (isUserPaused && (status === "In-Progress" || status === "Pending")) {
+    return (
+      <span
+        className={`${badgeClass} bg-status-stopped scale-110 shadow-md transition-transform duration-300`}
+        title="Paused"
+        aria-label="Paused"
+      >
+        <svg viewBox="0 0 24 24" width="10" height="10" fill="currentColor">
+          <rect x="6" y="4" width="4" height="16" rx="1" />
+          <rect x="14" y="4" width="4" height="16" rx="1" />
+        </svg>
+      </span>
+    );
+  }
   if (status === "Awaiting Approval") {
     return (
-      <span className="w-5.5 h-5.5 rounded-full bg-yellow-500 text-white flex items-center justify-center shadow-md animate-pulse scale-110 transition-transform duration-300" title="Awaiting Approval">
+      <span
+        className={`${badgeClass} bg-status-awaiting-approval animate-pulse scale-110 transition-transform duration-300`}
+        title="Awaiting Approval"
+        aria-label="Awaiting Approval"
+      >
         <svg viewBox="0 0 24 24" width="10" height="10" fill="none" stroke="currentColor" strokeWidth="4.5">
           <polygon points="5 3 19 12 5 21 5 3" />
         </svg>
       </span>
     );
   }
-  if (status === "In Progress") {
+  if (status === "In-Progress") {
     return (
-      <span className="w-5.5 h-5.5 rounded-full bg-indigo-500 text-white flex items-center justify-center shadow-lg shadow-indigo-500/35" title="Running">
+      <span className={`${badgeClass} bg-status-in-progress shadow-lg`} title="In-Progress" aria-label="In-Progress">
         <svg className="animate-spin h-3.5 w-3.5 text-white" fill="none" viewBox="0 0 24 24">
           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
@@ -79,21 +98,45 @@ function StatusBadge({ status }: { status: PipelineStatus }) {
   }
   if (status === "Pending") {
     return (
-      <span className="w-5.5 h-5.5 rounded-full bg-amber-500 text-white flex items-center justify-center shadow-md animate-pulse" title="Pending">
+      <span className={`${badgeClass} bg-status-pending animate-pulse`} title="Pending" aria-label="Pending">
         <span className="w-1.5 h-1.5 rounded-full bg-white" />
       </span>
     );
   }
   if (status === "Stopped") {
     return (
-      <span className="w-5.5 h-5.5 rounded-full bg-red-500 text-white flex items-center justify-center shadow-md animate-pulse" title="Pending">
-        <span className="w-1.5 h-1.5 rounded-full bg-white" />
+      <span className={`${badgeClass} bg-status-stopped`} title="Stopped" aria-label="Stopped">
+        <span className="w-2 h-2 rounded-sm bg-white" />
+      </span>
+    );
+  }
+  if (status === "Paused") {
+    return (
+      <span className={`${badgeClass} bg-status-paused`} title="Paused" aria-label="Paused">
+        <span className="flex items-center gap-0.5">
+          <span className="w-0.5 h-2 bg-white rounded-full" />
+          <span className="w-0.5 h-2 bg-white rounded-full" />
+        </span>
+      </span>
+    );
+  }
+  if (status === "Failed") {
+    return (
+      <span className={`${badgeClass} bg-status-failed font-bold`} title="Failed" aria-label="Failed">
+        !
+      </span>
+    );
+  }
+  if (status === "User Input") {
+    return (
+      <span className={`${badgeClass} bg-status-user-input font-bold`} title="User Input" aria-label="User Input">
+        ?
       </span>
     );
   }
   return (
-    <span className="w-5.5 h-5.5 rounded-full border border-border/80 dark:border-white/10 bg-surface dark:bg-slate-900 flex items-center justify-center text-muted-foreground/35" title="Pending">
-      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground/20" />
+    <span className={`${badgeClass} bg-status-none opacity-80`} title="None" aria-label="None">
+      <span className="w-1.5 h-1.5 rounded-full bg-white/70" />
     </span>
   );
 }
@@ -103,10 +146,11 @@ interface WorkflowCardProps {
   status: PipelineStatus;
   index: number;
   isActive?: boolean;
+  isUserPaused?: boolean;
   onSelect?: (stepId: string) => void;
 }
 
-export default function WorkflowCard({ step, status, index, isActive = false, onSelect }: WorkflowCardProps) {
+export default function WorkflowCard({ step, status, index, isActive = false, isUserPaused = false, onSelect }: WorkflowCardProps) {
   const colors = COLOR_MAP[step.color];
   const [showInfo, setShowInfo] = React.useState(false);
   const containerRef = React.useRef<HTMLDivElement>(null);
@@ -173,7 +217,7 @@ export default function WorkflowCard({ step, status, index, isActive = false, on
             i
           </span>
 
-          <StatusBadge status={status} />
+          <StatusBadge status={status} isUserPaused={isUserPaused} />
         </div>
 
         <div className={`w-14 h-14 rounded-lg flex items-center justify-center border shrink-0 transition-all duration-300 mt-2 relative z-10 ${colors.icon}`}>

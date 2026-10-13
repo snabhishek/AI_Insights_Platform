@@ -31,5 +31,7 @@ export interface ITrainingConfigService {
 
   saveContract(projectId: string, yamlContent: string, timestamp?: string): Promise<SaveTrainingContractResult>;
 
+  syncSplitDate(projectId: string, splitDate: string, timestamp?: string): Promise<SaveTrainingContractResult>;
+
   getDateRange(projectId: string, timestamp?: string): Promise<DateRangeResult>;
 }

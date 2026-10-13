@@ -51,7 +51,7 @@ export default function SubProcessLogModal({
   stepsList = [],
   agentThinking,
   agentState,
-  runStatus = "Idle",
+  runStatus = "None",
   onSelectSubstep,
 }: SubProcessLogModalProps) {
   const [mounted, setMounted] = useState(false);
@@ -89,7 +89,7 @@ export default function SubProcessLogModal({
   const currentStepStatus: PipelineStatus = currentStepId
     ? (pipelineStatuses[currentStepId] ?? "Pending")
     : "Pending";
-  const isRunning = currentStepStatus === "In Progress" && runStatus !== "Stopped";
+  const isRunning = currentStepStatus === "In-Progress" && runStatus !== "Stopped";
 
   useEffect(() => {
     if (!isOpen || !currentStepId) return;
@@ -97,20 +97,27 @@ export default function SubProcessLogModal({
     const loadThinking = async () => {
       if (!projectId) return;
       try {
-        const res = await fetchAgentThinkingApi(projectId, pipelineTitle, currentStepId);
-        if (res.success && res.data?.thinking && res.data.thinking.length > 0) {
-          setThinkingLogs(res.data.thinking);
-          return;
+        const candidateSubsteps = [currentStepId, currentStep?.title].filter(Boolean) as string[];
+        for (const sub of candidateSubsteps) {
+          const res = await fetchAgentThinkingApi(projectId, pipelineTitle, sub);
+          if (res.success && res.data?.thinking && res.data.thinking.length > 0) {
+            setThinkingLogs(res.data.thinking);
+            return;
+          }
         }
-        const feRes = await fetchAgentThinkingApi(projectId, "Feature Engineering", currentStepId);
-        if (feRes.success && feRes.data?.thinking && feRes.data.thinking.length > 0) {
-          setThinkingLogs(feRes.data.thinking);
-          return;
+        for (const sub of candidateSubsteps) {
+          const feRes = await fetchAgentThinkingApi(projectId, "Feature Engineering", sub);
+          if (feRes.success && feRes.data?.thinking && feRes.data.thinking.length > 0) {
+            setThinkingLogs(feRes.data.thinking);
+            return;
+          }
         }
-        const diRes = await fetchAgentThinkingApi(projectId, "Data Ingestion", currentStepId);
-        if (diRes.success && diRes.data?.thinking && diRes.data.thinking.length > 0) {
-          setThinkingLogs(diRes.data.thinking);
-          return;
+        for (const sub of candidateSubsteps) {
+          const diRes = await fetchAgentThinkingApi(projectId, "Data Ingestion", sub);
+          if (diRes.success && diRes.data?.thinking && diRes.data.thinking.length > 0) {
+            setThinkingLogs(diRes.data.thinking);
+            return;
+          }
         }
       } catch (err) {
         console.warn("Failed to fetch logs in modal:", err);
@@ -119,7 +126,9 @@ export default function SubProcessLogModal({
 
     const streamed =
       agentThinking?.[currentStepId] ||
+      agentThinking?.[currentStep?.title || ""] ||
       agentState?.agentThinking?.[currentStepId] ||
+      agentState?.agentThinking?.[currentStep?.title || ""] ||
       [];
 
     if (streamed.length > 0) {
@@ -130,6 +139,7 @@ export default function SubProcessLogModal({
   }, [
     isOpen,
     currentStepId,
+    currentStep?.title,
     currentStepStatus,
     projectId,
     pipelineTitle,
@@ -141,16 +151,20 @@ export default function SubProcessLogModal({
     if (!isOpen || !isRunning || !projectId || !currentStepId) return;
     const interval = setInterval(async () => {
       try {
-        const res = await fetchAgentThinkingApi(projectId, pipelineTitle, currentStepId);
-        if (res.success && res.data?.thinking && res.data.thinking.length > 0) {
-          setThinkingLogs(res.data.thinking);
+        const candidateSubsteps = [currentStepId, currentStep?.title].filter(Boolean) as string[];
+        for (const sub of candidateSubsteps) {
+          const res = await fetchAgentThinkingApi(projectId, pipelineTitle, sub);
+          if (res.success && res.data?.thinking && res.data.thinking.length > 0) {
+            setThinkingLogs(res.data.thinking);
+            break;
+          }
         }
       } catch {
 
       }
     }, 2000);
     return () => clearInterval(interval);
-  }, [isOpen, isRunning, projectId, pipelineTitle, currentStepId]);
+  }, [isOpen, isRunning, projectId, pipelineTitle, currentStepId, currentStep?.title]);
 
   useEffect(() => {
     if (logsContainerRef.current) {
@@ -273,21 +287,21 @@ export default function SubProcessLogModal({
           <div className="flex items-center gap-2 sm:gap-3">
 
             {isRunning ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-status-in-progress/15 text-status-in-progress border border-status-in-progress/30">
                 <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-indigo-500"></span>
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-status-in-progress opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-status-in-progress"></span>
                 </span>
                 <span>STREAMING</span>
               </span>
             ) : currentStepStatus === "Completed" ? (
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-status-completed/15 text-status-completed border border-status-completed/30">
+                <span className="w-1.5 h-1.5 rounded-full bg-status-completed"></span>
                 <span>COMPLETED</span>
               </span>
             ) : (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-800/80 text-slate-400 border border-slate-700/60">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                <span className="w-1.5 h-1.5 rounded-full bg-status-none"></span>
                 <span>{currentStepStatus}</span>
               </span>
             )}
@@ -330,14 +344,20 @@ export default function SubProcessLogModal({
         </div>
 
         {stepsList.length > 1 && (
-          <div className="flex items-center gap-1.5 px-4 py-2 bg-[#090d16] border-b border-slate-800/80 overflow-x-auto shrink-0 select-none scrollbar-none">
+          <div className="flex items-center gap-1.5 px-4 py-2 bg-[#090d16] border-slate-800/80 border-b overflow-x-auto shrink-0 select-none scrollbar-none">
             <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-2 shrink-0">
               Sub-processes:
             </span>
             {stepsList.map((st) => {
               const isSelected = st.id === currentStep?.id;
               const stepStatus = pipelineStatuses[st.id] ?? "Pending";
-              const stepLogsCount = (agentThinking?.[st.id] || agentState?.agentThinking?.[st.id] || []).length;
+              const stepLogsCount = (
+                agentThinking?.[st.id] ||
+                agentThinking?.[st.title] ||
+                agentState?.agentThinking?.[st.id] ||
+                agentState?.agentThinking?.[st.title] ||
+                []
+              ).length;
 
               return (
                 <button
@@ -356,10 +376,20 @@ export default function SubProcessLogModal({
                   <span
                     className={`w-1.5 h-1.5 rounded-full ${
                       stepStatus === "Completed"
-                        ? "bg-emerald-400"
-                        : stepStatus === "In Progress"
-                          ? "bg-indigo-400 animate-ping"
-                          : "bg-slate-600"
+                        ? "bg-status-completed"
+                        : stepStatus === "In-Progress"
+                          ? "bg-status-in-progress animate-ping"
+                          : stepStatus === "Awaiting Approval"
+                            ? "bg-status-awaiting-approval animate-pulse"
+                            : stepStatus === "User Input"
+                              ? "bg-status-user-input"
+                              : stepStatus === "Stopped"
+                                ? "bg-status-stopped"
+                                : stepStatus === "Failed"
+                                  ? "bg-status-failed"
+                                  : stepStatus === "Pending"
+                                    ? "bg-status-pending"
+                                    : "bg-status-none"
                     }`}
                   />
                   <span>{st.title}</span>

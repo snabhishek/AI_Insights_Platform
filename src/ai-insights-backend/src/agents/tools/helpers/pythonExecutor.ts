@@ -20,6 +20,18 @@ export interface ExecutionResult {
   logFilePath?: string;
 }
 
+export interface PythonExecutionOptions {
+  mountMode?: "project" | "python_script_only";
+  serviceName?: string;
+  projectRootDir?: string;
+  effectiveTimestamp?: string;
+  sessionId?: string;
+  isolated?: boolean;
+  writableRelativePath?: string;
+  onLog?: (line: string) => void;
+  signal?: AbortSignal;
+}
+
 export function generateLogTimestamp(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -286,6 +298,7 @@ export function ensureDockerfile(targetDir: string): string {
     "    && rm -rf /var/lib/apt/lists/*",
     "COPY requirements.txt /tmp/requirements.txt",
     "RUN pip install --no-cache-dir --disable-pip-version-check --default-timeout=120 --retries 3 --trusted-host pypi.org --trusted-host files.pythonhosted.org -r /tmp/requirements.txt",
+    "COPY . /workspace",
     "",
   ].join("\n");
 
@@ -293,11 +306,12 @@ export function ensureDockerfile(targetDir: string): string {
     fs.mkdirSync(targetDir, { recursive: true });
     fs.writeFileSync(dockerfilePath, dockerfileContent, "utf-8");
   } else {
-
     try {
       const existing = fs.readFileSync(dockerfilePath, "utf-8");
       if (!existing.includes("python3-dev") || !existing.includes("libgomp1")) {
         fs.writeFileSync(dockerfilePath, dockerfileContent, "utf-8");
+      } else if (!existing.includes("COPY . /workspace") && !existing.includes("COPY . .")) {
+        fs.appendFileSync(dockerfilePath, "\nCOPY . /workspace\n", "utf-8");
       }
     } catch {}
   }
@@ -308,13 +322,24 @@ export function ensureDockerCompose(
   targetDir: string,
   serviceName: string = "app",
   resourceLimits?: { cpus?: string; memory?: string; hasGpu?: boolean },
+  options?: PythonExecutionOptions | { writableRelativePath: string },
   isolation?: { writableRelativePath: string }
 ): string {
-  const composeYml = path.join(targetDir, "docker-compose.yml");
+  const effectiveIsolation =
+    isolation ||
+    (options && "writableRelativePath" in options && typeof options.writableRelativePath === "string"
+      ? { writableRelativePath: options.writableRelativePath }
+      : undefined);
+  const isPythonScriptOnly = (options as PythonExecutionOptions)?.mountMode === "python_script_only";
+  const composeYml = isPythonScriptOnly
+    ? path.join(targetDir, "docker-compose.test.yml")
+    : path.join(targetDir, "docker-compose.yml");
   const composeYaml = path.join(targetDir, "docker-compose.yaml");
 
-  if (fs.existsSync(composeYml)) return composeYml;
-  if (fs.existsSync(composeYaml)) return composeYaml;
+  if (!isPythonScriptOnly) {
+    if (fs.existsSync(composeYml)) return composeYml;
+    if (fs.existsSync(composeYaml)) return composeYaml;
+  }
 
   const cpus = resourceLimits?.cpus || "2.0";
   const memory = resourceLimits?.memory || "4G";
@@ -328,6 +353,20 @@ export function ensureDockerCompose(
       ].join("\n")
     : "";
 
+  const volumeMounts = effectiveIsolation
+    ? [
+        "      - \"${HOST_PROJECT_ROOT:-.}:/workspace:ro\"",
+        `      - "\${HOST_EXECUTION_DIR}:/${path.posix.join("workspace", effectiveIsolation.writableRelativePath)}:rw"`,
+      ]
+    : isPythonScriptOnly
+      ? [
+          "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/python_script:ro\"",
+          "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro\"",
+        ]
+      : [
+          "      - \"${HOST_PROJECT_ROOT:-.}:/workspace\"",
+        ];
+
   const content = [
     "services:",
     `  ${serviceName}:`,
@@ -335,11 +374,10 @@ export function ensureDockerCompose(
     "      context: .",
     "      dockerfile: Dockerfile",
     "      network: host",
-    isolation ? "    network_mode: none" : "    network_mode: host",
-    ...(isolation ? ["    read_only: true", "    cap_drop: [ALL]", "    security_opt: [no-new-privileges:true]", "    tmpfs: [/tmp]"] : []),
+    effectiveIsolation ? "    network_mode: none" : "    network_mode: host",
+    ...(effectiveIsolation ? ["    read_only: true", "    cap_drop: [ALL]", "    security_opt: [no-new-privileges:true]", "    tmpfs: [/tmp]"] : []),
     "    volumes:",
-    isolation ? "      - \"${HOST_PROJECT_ROOT:-.}:/workspace:ro\"" : "      - \"${HOST_PROJECT_ROOT:-.}:/workspace\"",
-    ...(isolation ? [`      - \"\${HOST_EXECUTION_DIR}:/${path.posix.join("workspace", isolation.writableRelativePath)}:rw\"`] : []),
+    ...volumeMounts,
     "    working_dir: /workspace",
     "    environment:",
     "      - PYTHONPATH=/workspace",
@@ -399,9 +437,9 @@ export async function executePythonScript(
   requiredPackages?: string[],
   extraArgs: string[] = [],
   resourceLimits?: { cpus?: string; memory?: string; hasGpu?: boolean },
-  executionOptions?: { projectRootDir: string; effectiveTimestamp: string; sessionId: string; onLog?: (line: string) => void; isolated: true; signal?: AbortSignal }
+  options?: PythonExecutionOptions
 ): Promise<ExecutionResult> {
-  executionOptions?.signal?.throwIfAborted();
+  options?.signal?.throwIfAborted();
   let workspaceName = "Default_Workspace";
   let projectName = projectId || "default";
 
@@ -417,7 +455,7 @@ export async function executePythonScript(
     }
   }
 
-  const projectRootDir = executionOptions?.projectRootDir || path.join(
+  const projectRootDir = options?.projectRootDir || path.join(
     getFileServerBasePath(),
     "workspaces",
     sanitizeFolderName(workspaceName),
@@ -428,14 +466,14 @@ export async function executePythonScript(
   const normProjectDir = path.resolve(projectRootDir).replace(/\\/g, "/");
 
   const effectiveTimestamp =
-    executionOptions?.effectiveTimestamp ||
+    options?.effectiveTimestamp ||
     getLatestProjectTimestamp(workspaceName, projectName) ||
     (runTimestamp && runTimestamp !== "default" ? runTimestamp.trim() : undefined) ||
     resolveProjectEffectiveTimestamp(workspaceName, projectName, runTimestamp) ||
     runTimestamp ||
     "default";
 
-  const baseDir = executionOptions ? path.dirname(path.resolve(scriptName)) : getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
+  const baseDir = options?.isolated ? path.dirname(path.resolve(scriptName)) : getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
   ensureDirectoryExists(baseDir);
 
   let scriptPath: string;
@@ -454,7 +492,7 @@ export async function executePythonScript(
       }
     }
     if (code && code.trim().length > 0) {
-      if (executionOptions) {
+      if (options?.isolated) {
         const relative = path.relative(projectRootDir, scriptPath);
         if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Execution script must remain inside the project.");
       }
@@ -475,7 +513,7 @@ export async function executePythonScript(
   }
 
   const relFromProjectRoot = path.relative(projectRootDir, scriptPath).replace(/\\/g, "/");
-  if (executionOptions && (relFromProjectRoot.startsWith("../") || path.isAbsolute(relFromProjectRoot))) throw new Error("Execution script must remain inside the project.");
+  if (options?.isolated && (relFromProjectRoot.startsWith("../") || path.isAbsolute(relFromProjectRoot))) throw new Error("Execution script must remain inside the project.");
   const scriptDirRel = path.relative(projectRootDir, path.dirname(scriptPath)).replace(/\\/g, "/");
   const containerOutDir = scriptDirRel && scriptDirRel !== "." ? `/workspace/${scriptDirRel}`.replace(/\/+/g, "/") : "/workspace";
 
@@ -525,23 +563,36 @@ export async function executePythonScript(
   const execDir = resolveExecutionDirectory(scriptPath, projectRootDir, effectiveTimestamp);
   ensureDirectoryExists(execDir);
 
+  const isPythonScriptOnly = options?.mountMode === "python_script_only";
+  const pythonScriptDir = getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
+  const normPythonScriptDir = path.resolve(pythonScriptDir).replace(/\\/g, "/");
+
   ensureRequirementsTxt(execDir, requiredPackages);
   ensureDockerfile(execDir);
-  const composeFile = ensureDockerCompose(execDir, "app", resourceLimits,
-    executionOptions ? { writableRelativePath: scriptDirRel } : undefined);
+  const composeFile = ensureDockerCompose(
+    execDir,
+    options?.serviceName || "app",
+    resourceLimits,
+    options,
+    options?.isolated ? { writableRelativePath: scriptDirRel } : undefined
+  );
   const composeFileName = path.basename(composeFile);
 
-  const sessionKey = `${projectId || "default"}__${executionOptions?.sessionId || effectiveTimestamp}`;
-  const composePrefix = executionOptions ? `docker compose -p "sparrow_${executionOptions.sessionId.replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase()}"` : "docker compose";
+  const sessionKey = `${projectId || "default"}__${options?.sessionId || effectiveTimestamp}`;
+  const composePrefix = options?.sessionId
+    ? `docker compose -p "sparrow_${options.sessionId.replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase()}"`
+    : "docker compose";
   activeComposeSessions.set(sessionKey, { composeDir: execDir, composeFile, composePrefix });
 
-  const env = {
+  const env: NodeJS.ProcessEnv = {
     HOST_PROJECT_ROOT: normProjectDir,
+    HOST_PYTHON_SCRIPT_DIR: normPythonScriptDir,
+    RUN_TIMESTAMP: effectiveTimestamp,
     PYTHONPATH: "/workspace",
     HOST_EXECUTION_DIR: path.resolve(execDir).replace(/\\/g, "/"),
   };
 
-  console.info(`[DockerExecutor] Building and running via Docker Compose in [${execDir}] for script [${relFromProjectRoot}]`);
+  console.info(`[DockerExecutor] Building and running via Docker Compose in [${execDir}] for script [${relFromProjectRoot}] (mountMode: ${options?.mountMode || "project"})`);
 
   const dockerLogsDir = path.join(execDir, "docker_logs");
   ensureDirectoryExists(dockerLogsDir);
@@ -556,14 +607,25 @@ export async function executePythonScript(
     duplicateIndex++;
   }
 
+  const scriptInContainer = isPythonScriptOnly
+    ? path.relative(execDir, scriptPath).replace(/\\/g, "/") || "main.py"
+    : relFromProjectRoot;
+
+  const effectiveArgs = isPythonScriptOnly
+    ? args.map((arg) => (arg.startsWith("--out-dir") ? '--out-dir "/workspace"' : arg))
+    : args;
+
   const initLogHeader = [
     "=".repeat(80),
     `DOCKER CONTAINER EXECUTION LOG`,
     `Execution Start Time: ${new Date().toISOString()}`,
     `Execution Directory: ${execDir}`,
     `Script Relative Path: ${relFromProjectRoot}`,
+    `Script In Container: ${scriptInContainer}`,
+    `Mount Mode: ${options?.mountMode || "project"}`,
     `Host Project Root: ${normProjectDir}`,
-    `Arguments: ${args.join(" ")}`,
+    `Host Python Script Dir: ${normPythonScriptDir}`,
+    `Arguments: ${effectiveArgs.join(" ")}`,
     "=".repeat(80),
     "",
   ].join("\n");
@@ -586,8 +648,8 @@ export async function executePythonScript(
   );
 
   const buildResult = await executeProcess(buildCmd, {
-    signal: executionOptions?.signal,
-    onLog: executionOptions?.onLog,
+    signal: options?.signal,
+    onLog: options?.onLog,
     cwd: execDir,
     env,
     timeoutMs: 300000,
@@ -630,7 +692,7 @@ export async function executePythonScript(
     "utf-8"
   );
 
-  let serviceName = "app";
+  let serviceName = options?.serviceName || "app";
   try {
     const composeContent = fs.readFileSync(composeFile, "utf-8");
     const serviceMatch = composeContent.match(/services:\s*\n\s*([a-zA-Z0-9_-]+):/);
@@ -639,7 +701,7 @@ export async function executePythonScript(
     }
   } catch {}
 
-  const runCmd = `${composePrefix} -f "${composeFileName}" run --rm ${serviceName} python -u "${relFromProjectRoot}" ${args.join(" ")}`;
+  const runCmd = `${composePrefix} -f "${composeFileName}" run --rm ${serviceName} python -u "${scriptInContainer}" ${effectiveArgs.join(" ")}`;
   fs.appendFileSync(
     logFilePath,
     [
@@ -654,8 +716,8 @@ export async function executePythonScript(
   );
 
   const execResult = await executeProcess(runCmd, {
-    signal: executionOptions?.signal,
-    onLog: executionOptions?.onLog,
+    signal: options?.signal,
+    onLog: options?.onLog,
     cwd: execDir,
     env,
     timeoutMs: 600000,

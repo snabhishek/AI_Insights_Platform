@@ -38,8 +38,7 @@ export async function initializeApplicationData() {
 
     try {
       await query(`
-        UPDATE projects SET status = 'stopped' WHERE status = 'running';
-        UPDATE project_runs SET status = 'stopped', agent_state = jsonb_set(agent_state, '{status}', '"stopped"') WHERE status = 'running';
+        UPDATE projects SET status = 'Stopped' WHERE status IN ('running', 'In-Progress');
         UPDATE sparrow_chat_messages SET payload=payload || jsonb_build_object(
           'status','stopped','isThinking',false,'content','Agent was stopped','thinking',
           COALESCE((SELECT jsonb_agg(CASE WHEN step->>'done'='true' THEN step ELSE step || '{"status":"stopped"}'::jsonb END)

@@ -41,7 +41,7 @@ export default function Header() {
   const metaString = `${userProfile.role} • ${userProfile.daysRemaining} days • ${userProfile.tasksCount} tasks • ${userProfile.tokensLeft} tokens left`;
 
   return (
-    <header className="flex h-[68px] w-full items-center justify-between border-b border-border bg-surface px-4">
+    <header className="flex w-full items-center justify-between border-b border-border bg-surface px-4">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2.5">
           <Image

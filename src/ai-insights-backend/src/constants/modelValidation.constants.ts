@@ -17,7 +17,7 @@ export type ValidationModeOption = typeof VALIDATION_MODE_OPTIONS[keyof typeof V
 
 export const VALIDATION_STATUS_OPTIONS = {
   PENDING: "Pending",
-  IN_PROGRESS: "In Progress",
+  IN_PROGRESS: "In-Progress",
   COMPLETED: "Completed",
   FAILED: "Failed",
 } as const;

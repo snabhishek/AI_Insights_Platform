@@ -69,11 +69,16 @@ export async function dataValidationNode(
   const scriptPath = path.join(pythonScriptDir, scriptName);
   const userPromptText = state.userPrompt ?? DEFAULT_USER_PROMPT;
 
+  const targetCandidate = state.prediction_target_column.length > 0
+    ? state.prediction_target_column
+    : (state.orchestrationDecision?.prediction_target_column || state.orchestrationDecision?.targetColumn || "");
+
   const userMessage = [
     "Generate data validation script to audit the baseline dataset.",
     `User Requirements: ${userPromptText}`,
     `Tables List: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
     `Orchestrator Decisions: ${JSON.stringify(state.orchestrationDecision)}`,
+    ...(targetCandidate ? [`Prediction Target Column: ${targetCandidate}`] : []),
     `Input Dataset Artifact: ${ARTIFACT_DATASET}`,
     `Target Pipeline File: ${scriptPath}`,
     `Region to Edit: ${REGION_DATA_VALIDATION}`,
@@ -108,9 +113,11 @@ export async function dataValidationNode(
     );
 
     const summaryText = result.summary.length > 0 ? result.summary : DEFAULT_VALIDATION_SUCCESS;
+    const resolvedTarget = (result as any)?.prediction_target_column || (result as any)?.targetColumn || targetCandidate;
 
     return {
       dataValidation: result,
+      ...(resolvedTarget ? { prediction_target_column: resolvedTarget } : {}),
       history: [
         {
           worker: WORKER_DATA_VALIDATION,
@@ -122,6 +129,7 @@ export async function dataValidationNode(
     console.warn("[dataValidationNode] Execution failed, using fallback", error);
     return {
       dataValidation: fallback,
+      ...(targetCandidate ? { prediction_target_column: targetCandidate } : {}),
       history: [
         {
           worker: WORKER_DATA_VALIDATION,
