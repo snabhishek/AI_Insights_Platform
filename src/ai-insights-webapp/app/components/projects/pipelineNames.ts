@@ -98,6 +98,19 @@ export interface FeatureValidatorOutput extends AgentOutput {
   };
 }
 
+export interface FeatureExtractionRecommendation {
+  method: string;
+  extractedFeaturesCount: number;
+  description: string;
+}
+
+export interface FeatureSelectionRecommendation {
+  method: string;
+  selectedFeatures: string[];
+  droppedFeatures: string[];
+  description: string;
+}
+
 export interface FeatureArchitectOutput extends AgentOutput {
   targetColumn?: string;
   problemType?: string;
@@ -106,6 +119,16 @@ export interface FeatureArchitectOutput extends AgentOutput {
     orchestrationDecision?: WorkflowDecisionOutput;
   };
   featureValidator?: FeatureValidatorOutput;
+  featureExtraction?: {
+    status?: string;
+    summary?: string;
+    recommendations?: FeatureExtractionRecommendation[];
+  };
+  featureSelection?: {
+    status?: string;
+    summary?: string;
+    recommendations?: FeatureSelectionRecommendation[];
+  };
 }
 
 export interface HierarchyMapperOutput extends AgentOutput {

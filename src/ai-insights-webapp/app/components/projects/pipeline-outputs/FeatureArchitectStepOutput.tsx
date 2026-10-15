@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { Badge, SectionHeader } from "./utils";
+import type { FeatureExtractionRecommendation, FeatureSelectionRecommendation } from "../pipelineNames";
 
 interface FeatureArchitectStepOutputProps {
   featureArchitect?: any;
@@ -22,10 +23,10 @@ export default function FeatureArchitectStepOutput({
   const transformRecs = Array.isArray(payload?.featureTransformation?.recommendations)
     ? payload.featureTransformation.recommendations
     : [];
-  const extractRecs = Array.isArray(payload?.featureExtraction?.recommendations)
+  const extractRecs: FeatureExtractionRecommendation[] = Array.isArray(payload?.featureExtraction?.recommendations)
     ? payload.featureExtraction.recommendations
     : [];
-  const selectRecs = Array.isArray(payload?.featureSelection?.recommendations)
+  const selectRecs: FeatureSelectionRecommendation[] = Array.isArray(payload?.featureSelection?.recommendations)
     ? payload.featureSelection.recommendations
     : [];
 
@@ -209,25 +210,22 @@ export default function FeatureArchitectStepOutput({
             title="Dimensionality & Component Extractions"
             subtitle="PCA, UMAP, and decomposition recommendations"
           />
+          {payload.featureExtraction?.summary && (
+            <p className="text-xs text-muted-foreground">{payload.featureExtraction.summary}</p>
+          )}
           {extractRecs.length === 0 ? (
             <div className="text-xs text-muted-foreground italic p-4 border border-border rounded text-center">
-              No dimensionality reduction / extractions required for this dataset.
+              No feature extraction recommendations recorded.
             </div>
           ) : (
             <div className="space-y-4">
-              {extractRecs.map((tableRec: any, idx: number) => (
+              {extractRecs.map((recommendation, idx) => (
                 <div key={idx} className="border border-border rounded p-3 space-y-2">
-                  <div className="font-mono text-xs font-bold">{tableRec.tableName}</div>
-                  {Array.isArray(tableRec.extractions) &&
-                    tableRec.extractions.map((e: any, eIdx: number) => (
-                      <div key={eIdx} className="text-xs bg-surface-muted p-2 rounded flex justify-between items-center">
-                        <div>
-                          <Badge variant="purple">{e.technique}</Badge>
-                          <span className="ml-2 font-mono text-muted-foreground">{e.numberOfComponents} components</span>
-                        </div>
-                        <div className="text-muted-foreground">{e.rationale}</div>
-                      </div>
-                    ))}
+                  <div className="flex items-center gap-2 text-xs">
+                    <Badge variant="purple">{recommendation.method}</Badge>
+                    <span className="font-mono text-muted-foreground">{recommendation.extractedFeaturesCount} components</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{recommendation.description}</p>
                 </div>
               ))}
             </div>
@@ -241,26 +239,33 @@ export default function FeatureArchitectStepOutput({
             title="Feature Selection Summary"
             subtitle="Importance ranking and variance threshold filtering"
           />
+          {payload.featureSelection?.summary && (
+            <p className="text-xs text-muted-foreground">{payload.featureSelection.summary}</p>
+          )}
           {selectRecs.length === 0 ? (
             <div className="text-xs text-muted-foreground italic p-4 border border-border rounded text-center">
               No feature selection recommendations recorded.
             </div>
           ) : (
             <div className="space-y-4">
-              {selectRecs.map((tableRec: any, idx: number) => (
+              {selectRecs.map((recommendation, idx) => (
                 <div key={idx} className="border border-border rounded p-4 space-y-3">
-                  <div className="font-mono text-xs font-bold text-foreground">Table: {tableRec.tableName}</div>
-                  {Array.isArray(tableRec.selections) &&
-                    tableRec.selections.map((s: any, sIdx: number) => (
-                      <div key={sIdx} className="space-y-2">
-                        <div className="flex items-center gap-2">
-                          <Badge variant="success">Selected: {s.selectedFeatures?.length || 0}</Badge>
-                          <Badge variant="neutral">Discarded: {s.discardedFeatures?.length || 0}</Badge>
-                          <span className="text-xs font-semibold text-muted-foreground">Method: {s.methodology}</span>
-                        </div>
-                        <p className="text-xs text-muted-foreground">{s.rationale}</p>
-                      </div>
-                    ))}
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="success">Selected: {recommendation.selectedFeatures.length}</Badge>
+                    <Badge variant="neutral">Discarded: {recommendation.droppedFeatures.length}</Badge>
+                    <span className="text-xs font-semibold text-muted-foreground">Method: {recommendation.method}</span>
+                  </div>
+                  <p className="text-xs text-muted-foreground">{recommendation.description}</p>
+                  {recommendation.selectedFeatures.length > 0 && (
+                    <p className="text-xs text-muted-foreground break-words">
+                      Selected features: <span className="font-mono">{recommendation.selectedFeatures.join(", ")}</span>
+                    </p>
+                  )}
+                  {recommendation.droppedFeatures.length > 0 && (
+                    <p className="text-xs text-muted-foreground break-words">
+                      Discarded features: <span className="font-mono">{recommendation.droppedFeatures.join(", ")}</span>
+                    </p>
+                  )}
                 </div>
               ))}
             </div>

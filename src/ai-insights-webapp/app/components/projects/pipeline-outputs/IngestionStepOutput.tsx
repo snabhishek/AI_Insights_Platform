@@ -39,7 +39,7 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
   }, [selectedSourceIndex, sources, tables.length]);
 
   useEffect(() => {
-    setIsSchemaOpen(false);
+    setIsSchemaOpen(true);
   }, [selectedTableKey]);
 
   if (sources.length === 0) {
@@ -61,6 +61,34 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
   });
 
   const selectedTableName = selectedTable?.name || selectedTable?.tableName || null;
+
+  const explicitRelationships: any[] = Array.isArray(selectedTable?.relationships?.explicit)
+    ? selectedTable.relationships.explicit
+    : [];
+  const inferredRelationships: any[] = Array.isArray(selectedTable?.relationships?.inferred)
+    ? selectedTable.relationships.inferred
+    : Array.isArray(selectedTable?.relationships)
+      ? selectedTable.relationships
+      : [];
+
+  const isValidRelationship = (r: any) => {
+    if (!r) return false;
+    if (typeof r === "string") return r.trim().length > 0;
+    const from = (r.from ?? r.source ?? r.sourceColumn ?? "").toString().trim();
+    const to = (r.to ?? r.target ?? r.targetColumn ?? "").toString().trim();
+    return from.length > 0 && to.length > 0;
+  };
+
+  const getRelationshipLabel = (r: any) => {
+    if (typeof r === "string") return r;
+    const from = (r.from ?? r.source ?? r.sourceColumn ?? "").toString().trim();
+    const to = (r.to ?? r.target ?? r.targetColumn ?? "").toString().trim();
+    return `${from} ➔ ${to}`;
+  };
+
+  const validExplicitRelationships = explicitRelationships.filter(isValidRelationship);
+  const validInferredRelationships = inferredRelationships.filter(isValidRelationship);
+  const hasRelationships = validExplicitRelationships.length > 0 || validInferredRelationships.length > 0;
 
   return (
     <div className="space-y-6 select-none">
@@ -158,20 +186,20 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
                 )}
               </div>
 
-              {((selectedTable.relationships?.explicit?.length ?? 0) > 0 || (selectedTable.relationships?.inferred?.length ?? 0) > 0) && (
+              {hasRelationships && (
                 <div className="rounded-lg border border-indigo-500/10 bg-indigo-500/[0.02] p-4 space-y-3">
                   <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-500 block">Relationships</span>
                   <div className="space-y-2 text-xs">
-                    {(selectedTable.relationships?.explicit ?? []).map((r: any, rIdx: number) => (
+                    {validExplicitRelationships.map((r: any, rIdx: number) => (
                       <div key={`explicit-${rIdx}`} className="flex items-center gap-2 text-foreground font-medium">
                         <span className="rounded px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 text-[9px]">Explicit</span>
-                        <span>{r.from} ➔ {r.to}</span>
+                        <span>{getRelationshipLabel(r)}</span>
                       </div>
                     ))}
-                    {(selectedTable.relationships?.inferred ?? []).map((r: any, rIdx: number) => (
+                    {validInferredRelationships.map((r: any, rIdx: number) => (
                       <div key={`inferred-${rIdx}`} className="flex items-center gap-2 text-foreground font-medium">
                         <span className="rounded px-2 py-0.5 bg-purple-50 text-purple-600 border border-purple-100 text-[9px]">Inferred</span>
-                        <span>{r.from} ➔ {r.to}</span>
+                        <span>{getRelationshipLabel(r)}</span>
                       </div>
                     ))}
                   </div>

@@ -220,27 +220,19 @@ export default function ProjectCreatePage({
   };
 
   useEffect(() => {
-    if (project) {
-      setDisplayName(project.projectName || "");
-      setProjectName(project.name || "");
-      setUseCaseInfo(project.useCase || "");
-      setSelectedSources(project.dataSources || []);
-      applyProjectDomain(project, domainList);
-      setIsEditing(Boolean(startInEditMode));
-      setSubmitError(null);
-    } else {
-      setDisplayName("");
-      setProjectName("");
-      setUseCaseInfo("");
-      setSelectedSources([]);
-      setSelectedDomain("");
-      setCustomDomain("");
-      setSelectedSubDomain("");
-      setCustomSubDomain("");
-      setIsEditing(true);
-      setSubmitError(null);
-    }
-  }, [project, domainList, startInEditMode]);
+    if (!project || isEditing) return;
+
+    setDisplayName(project.projectName || "");
+    setProjectName(project.name || "");
+    setUseCaseInfo(project.useCase || "");
+    setSelectedSources(project.dataSources || []);
+    applyProjectDomain(project, domainList);
+    setSubmitError(null);
+  }, [project, domainList, isEditing]);
+
+  useEffect(() => {
+    if (startInEditMode) setIsEditing(true);
+  }, [startInEditMode]);
 
   useEffect(() => {
     fetch(`${BACKEND_URL}/domains`)
@@ -486,7 +478,10 @@ export default function ProjectCreatePage({
                 <button
                   type="button"
                   disabled={isWorkflowActiveOrPaused}
-                  onClick={() => setIsEditing(true)}
+                  onClick={() => {
+                    setIsEditing(true);
+                    onEditModeChange?.(true);
+                  }}
                   title={
                     isWorkflowActiveOrPaused
                       ? "Cannot edit project details while workflow is running or paused"

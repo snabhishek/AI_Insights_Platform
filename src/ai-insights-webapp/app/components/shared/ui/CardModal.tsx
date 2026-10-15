@@ -171,9 +171,11 @@ function CardModalContent({
     if (inProgressIndex !== -1) return inProgressIndex;
 
     if (isModelTrainingCard && (runStatus === "Awaiting Approval" || isCardAwaitingApproval)) {
-      const reviewInfo = resolveModelTrainingReviewStep(pipelineStatuses, approvalNextStep);
-      const reviewIndex = stepsList.findIndex((step) => step.id === reviewInfo.stepId);
-      if (reviewIndex !== -1) return reviewIndex;
+      const reviewInfo = resolveModelTrainingReviewStep(approvalNextStep);
+      if (reviewInfo) {
+        const reviewIndex = stepsList.findIndex((step) => step.id === reviewInfo.stepId);
+        if (reviewIndex !== -1) return reviewIndex;
+      }
     }
 
     const awaitingIndex = stepsList.findIndex(
