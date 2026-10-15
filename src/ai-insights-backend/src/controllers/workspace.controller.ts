@@ -37,6 +37,34 @@ export class WorkspaceController {
     }
   };
 
+  renameWorkspace = async (req: Request, res: Response): Promise<void> => {
+    const id = req.params.id as string;
+    const { name } = req.body;
+
+    if (!name || typeof name !== "string" || !name.trim()) {
+      res.status(400).json({ success: false, message: "Workspace name is required." });
+      return;
+    }
+
+    try {
+      const result = await this.workspaceService.renameWorkspace(id, name.trim());
+      if (!result.success) {
+        if (result.reason === "NOT_FOUND") {
+          res.status(404).json({ success: false, message: result.message });
+        } else if (result.reason === "DUPLICATE") {
+          res.status(409).json({ success: false, message: result.message });
+        } else {
+          res.status(400).json({ success: false, message: result.message });
+        }
+        return;
+      }
+
+      res.json(result.data);
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message || "Failed to rename workspace" });
+    }
+  };
+
   deleteWorkspace = async (req: Request, res: Response): Promise<void> => {
     const id = req.params.id as string;
     try {
@@ -70,16 +98,19 @@ export class WorkspaceController {
 
   createProject = async (req: Request, res: Response): Promise<void> => {
     const workspaceId = req.params.id as string;
-    const { name, role, dataSources, initials, useCase, domain, subDomain, splitDate } = req.body;
+    const { projectName, name, role, dataSources, initials, useCase, domain, subDomain, splitDate } = req.body;
 
     if (!name || !name.trim()) {
-      res.status(400).json({ success: false, message: "Project name is required." });
+      res.status(400).json({ success: false, message: "Use case title is required." });
       return;
     }
 
+    const effectiveProjectName = (projectName && projectName.trim()) || name.trim();
+
     try {
       const result = await this.workspaceService.createProject(workspaceId, {
-        name,
+        projectName: effectiveProjectName,
+        name: name.trim(),
         role,
         dataSources,
         initials,
@@ -108,13 +139,16 @@ export class WorkspaceController {
 
   updateProject = async (req: Request, res: Response): Promise<void> => {
     const pid = req.params.pid as string;
-    const { name, useCase, dataSources, status, agentState, replaceAgentState } = req.body;
+    const { projectName, name, useCase, dataSources, status, agentState, replaceAgentState, domain, subDomain } = req.body;
 
     try {
       const result = await this.workspaceService.updateProject(pid, {
+        projectName,
         name,
         useCase,
         dataSources,
+        domain,
+        subDomain,
         status,
         agentState,
         replaceAgentState,

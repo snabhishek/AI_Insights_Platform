@@ -12,8 +12,8 @@ const dbName = process.env.DB_NAME!;
 const connectionString = `postgresql://${dbUser}:${dbPass}@${dbHost}:${dbPort}/${dbName}`;
 
 export default defineConfig({
-  schema: "./src/db/*.ts",
-  out: "./drizzle",
+  schema: "./src/db/schema.ts",
+  out: "./src/db/migrations/sql",
   dialect: "postgresql",
   dbCredentials: {
     url: connectionString,

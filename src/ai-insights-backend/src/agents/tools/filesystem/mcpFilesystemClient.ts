@@ -235,7 +235,7 @@ export function getMcpFilesystemClient(options: McpFilesystemOptions = {}): Mult
       filesystem: {
         transport: "stdio",
         command: process.execPath,
-        args: [serverScript, ...normalizedDirs],
+        args: [path.resolve(__dirname, "../../../../scripts/mcp-filesystem-runner.cjs"), serverScript, ...normalizedDirs],
       },
     },
   });

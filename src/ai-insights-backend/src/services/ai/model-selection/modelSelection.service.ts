@@ -29,7 +29,7 @@ export class ModelSelectionService implements IModelSelectionService {
     private projectService: ProjectService,
     private registry: ModelCapabilityRegistry = defaultModelCapabilityRegistry,
     private discoveryService: IModelDiscoveryService = new ModelDiscoveryService(repository)
-  ) {}
+  ) { }
 
   public getRegistry(): ModelCapabilityRegistry {
     return this.registry;
@@ -249,8 +249,8 @@ export class ModelSelectionService implements IModelSelectionService {
         }));
 
         const trainingConfigPayload = {
-          ...(existingState.trainingConfiguration || {}),
-          status: "Pending",
+          ...(existingState.stageOutputs.trainingConfigurationNode || {}),
+          status: existingState.stageStatuses.modelTrainingValidation?.trainingConfigurationNode === 'Completed' || existingState.stageStatuses.modelTrainingValidation?.trainingConfiguration === 'Completed' ? 'Completed' : 'Pending',
           models: selectedModelObjects,
           selectedModelIds: selectedModelIds,
           candidate_models: selectedModelIds,
@@ -259,23 +259,32 @@ export class ModelSelectionService implements IModelSelectionService {
         };
 
         const cleanStageOutputs = { ...(existingState.stageOutputs || {}) };
+        delete cleanStageOutputs.preFlightNode;
         delete cleanStageOutputs.preFlight;
+        delete cleanStageOutputs.modelTrainingCodeNode;
+        delete cleanStageOutputs.modelTrainingCode;
         delete cleanStageOutputs.modelTraining;
         delete cleanStageOutputs.modelValidation;
 
         const cleanStageStatuses = { ...(existingState.stageStatuses || {}) };
-        cleanStageStatuses.modelSelection = "Completed";
         cleanStageStatuses.modelSelectionNode = "Completed";
-        cleanStageStatuses.trainingConfiguration = "In Progress";
+        cleanStageStatuses.modelSelection = "Completed";
+        if (existingState.stageStatuses.modelTrainingValidation?.trainingConfigurationNode === "Completed" || existingState.stageStatuses.modelTrainingValidation?.trainingConfiguration === "Completed") {
+          cleanStageStatuses.trainingConfigurationNode = "Completed";
+          cleanStageStatuses.trainingConfiguration = "Completed";
+        } else {
+          cleanStageStatuses.trainingConfigurationNode = "In-Progress";
+          cleanStageStatuses.trainingConfiguration = "In-Progress";
+        }
+        cleanStageStatuses.preFlightNode = "Pending";
         cleanStageStatuses.preFlight = "Pending";
+        cleanStageStatuses.modelTrainingCodeNode = "Pending";
         cleanStageStatuses.modelTrainingCode = "Pending";
-        cleanStageStatuses.modelTrainingExec = "Pending";
         cleanStageStatuses.modelTraining = "Pending";
-        cleanStageStatuses.modelEvaluation = "Pending";
         cleanStageStatuses.modelValidation = "Pending";
 
         const updatedModelSelection = {
-          ...(existingState.stageOutputs?.modelSelection || existingState.modelSelection || record.decision || {}),
+          ...(existingState.stageOutputs?.modelSelectionNode || existingState.modelSelection || record.decision || {}),
           userSelection,
           selectedModelIds,
           models: selectedModelObjects,
@@ -284,10 +293,14 @@ export class ModelSelectionService implements IModelSelectionService {
         const updatedState = {
           ...existingState,
           modelSelection: updatedModelSelection,
+          modelSelectionNode: updatedModelSelection,
           trainingConfiguration: trainingConfigPayload,
+          trainingConfigurationNode: trainingConfigPayload,
           stageOutputs: {
             ...cleanStageOutputs,
+            modelSelectionNode: updatedModelSelection,
             modelSelection: updatedModelSelection,
+            trainingConfigurationNode: trainingConfigPayload,
             trainingConfiguration: trainingConfigPayload,
           },
           stageStatuses: cleanStageStatuses,
@@ -337,7 +350,7 @@ export class ModelSelectionService implements IModelSelectionService {
     }
 
     const existingState = (project.agentState as any) || {};
-    const modelSelection = existingState.stageOutputs?.modelSelection || existingState.modelSelection || {};
+    const modelSelection = existingState.stageOutputs?.modelSelectionNode || existingState.modelSelection || {};
     const candidates = modelSelection.candidates || [];
     const selectedCandidates = candidates.filter((c: any) =>
       selectedModelIds.some((s: string) => s.toLowerCase().trim() === (c.model_id || "").toLowerCase().trim())
@@ -361,7 +374,7 @@ export class ModelSelectionService implements IModelSelectionService {
 
     const trainingConfigPayload = {
       ...(existingState.trainingConfiguration || {}),
-      status: "Pending",
+      status: existingState.stageStatuses.modelTrainingValidation?.trainingConfigurationNode === 'Completed' || existingState.stageStatuses.modelTrainingValidation?.trainingConfiguration === 'Completed' ? 'Completed' : 'Pending',
       models: selectedModelObjects,
       selectedModelIds: selectedModelIds,
       candidate_models: selectedModelIds,
@@ -376,28 +389,43 @@ export class ModelSelectionService implements IModelSelectionService {
     };
 
     const cleanStageOutputs = { ...(existingState.stageOutputs || {}) };
+    delete cleanStageOutputs.preFlightNode;
     delete cleanStageOutputs.preFlight;
+    delete cleanStageOutputs.modelTrainingCodeNode;
+    delete cleanStageOutputs.modelTrainingCode;
     delete cleanStageOutputs.modelTraining;
     delete cleanStageOutputs.modelValidation;
 
     const cleanStageStatuses = { ...(existingState.stageStatuses || {}) };
-    cleanStageStatuses.modelSelection = "Completed";
     cleanStageStatuses.modelSelectionNode = "Completed";
-    cleanStageStatuses.trainingConfiguration = "In Progress";
+    cleanStageStatuses.modelSelection = "Completed";
+    if (existingState.stageStatuses.trainingConfigurationNode === "Completed" || existingState.stageStatuses.trainingConfiguration === "Completed") {
+      cleanStageStatuses.trainingConfigurationNode = "Completed";
+      cleanStageStatuses.trainingConfiguration = "Completed";
+    } else {
+      cleanStageStatuses.trainingConfigurationNode = "In-Progress";
+      cleanStageStatuses.trainingConfiguration = "In-Progress";
+    }
+    cleanStageStatuses.preFlightNode = "Pending";
     cleanStageStatuses.preFlight = "Pending";
+    cleanStageStatuses.modelTrainingCodeNode = "Pending";
     cleanStageStatuses.modelTrainingCode = "Pending";
-    cleanStageStatuses.modelTrainingExec = "Pending";
     cleanStageStatuses.modelTraining = "Pending";
-    cleanStageStatuses.modelEvaluation = "Pending";
     cleanStageStatuses.modelValidation = "Pending";
 
     const updatedState = {
       ...existingState,
+      status: "In-Progress",
+      summary: "Advancing workflow to Training Configuration stage",
       modelSelection: updatedModelSelection,
+      modelSelectionNode: updatedModelSelection,
       trainingConfiguration: trainingConfigPayload,
+      trainingConfigurationNode: trainingConfigPayload,
       stageOutputs: {
         ...cleanStageOutputs,
+        modelSelectionNode: updatedModelSelection,
         modelSelection: updatedModelSelection,
+        trainingConfigurationNode: trainingConfigPayload,
         trainingConfiguration: trainingConfigPayload,
       },
       stageStatuses: cleanStageStatuses,

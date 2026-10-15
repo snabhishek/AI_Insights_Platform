@@ -178,10 +178,10 @@ async function runTest() {
 
   console.log("-> Node Status:", nodeResult.status);
   console.log("-> Summary:", nodeResult.summary);
-  console.log("-> Stage Status:", nodeResult.stageStatuses?.trainingConfiguration);
-  console.log("-> Contract Path:", nodeResult.trainingConfiguration?.contractPath);
+  console.log("-> Stage Status:", nodeResult.stageStatuses?.trainingConfigurationNode);
+  console.log("-> Contract Path:", nodeResult.trainingConfigurationNode?.contractPath);
 
-  const contractPath = nodeResult.trainingConfiguration?.contractPath;
+  const contractPath = nodeResult.trainingConfigurationNode?.contractPath;
   if (contractPath && fs.existsSync(contractPath)) {
     const content = fs.readFileSync(contractPath, "utf-8");
     console.log("\n=== Generated Training Job Contract YAML Sample ===");

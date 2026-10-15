@@ -11,7 +11,7 @@ import {
   trainingConfigurationNode,
   preFlightNode,
   modelTrainingCodeNode,
-  modelTrainingExecNode,
+  modelTrainingExecutionNode,
 } from "./ModelTrainingValidation/nodes";
 import { getInterruptBeforeNodes } from "./workflowRules.config";
 
@@ -27,7 +27,7 @@ export function createAgentGraph(checkpointer: any) {
     .addNode("trainingConfigurationNode", trainingConfigurationNode)
     .addNode("preFlightNode", preFlightNode)
     .addNode("modelTrainingCodeNode", modelTrainingCodeNode)
-    .addNode("modelTrainingExecNode", modelTrainingExecNode)
+    .addNode("modelTrainingExecutionNode", modelTrainingExecutionNode)
     .addEdge("__start__", "inspect")
     .addEdge("inspect", "profileData")
     .addEdge("profileData", "resolveSchema")
@@ -38,11 +38,11 @@ export function createAgentGraph(checkpointer: any) {
     .addEdge("modelSelectionNode", "trainingConfigurationNode")
     .addEdge("trainingConfigurationNode", "preFlightNode")
     .addEdge("preFlightNode", "modelTrainingCodeNode")
-    .addEdge("modelTrainingCodeNode", "modelTrainingExecNode")
-    .addEdge("modelTrainingExecNode", "__end__");
+    .addEdge("modelTrainingCodeNode", "modelTrainingExecutionNode")
+    .addEdge("modelTrainingExecutionNode", "__end__");
 
   return workflow.compile({
     checkpointer,
-    interruptBefore: getInterruptBeforeNodes() as any,
+    interruptBefore: [...getInterruptBeforeNodes(), "modelTrainingExecutionNode"] as any,
   });
 }

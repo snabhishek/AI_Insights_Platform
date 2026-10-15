@@ -6,6 +6,32 @@ import { agentThinking } from "../db/agentThinking";
 import { IProjectRepository } from "./project.repository.interface";
 import { Project, ProjectRun, ProjectWithWorkspace } from "../models/project.types";
 import { AgentStateType } from "../agents/state";
+import {
+  buildGroupedStageStatuses,
+  FlatStageStatuses,
+  NODE_CONFIG,
+  normalizeFlatStageStatuses,
+  normalizeGroupedStageStatuses,
+  normalizePipelineStepStatus,
+  normalizeStageOutputs,
+  PipelineStepStatus,
+  StageKey,
+  TRACKED_AGENT_KEYS,
+  TrackedAgentKey,
+} from "../agents/pipelineNames";
+
+function normalizePersistedAgentState(value: unknown): AgentStateType | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+  const state = value as Record<string, unknown>;
+  const stageOutputs = normalizeStageOutputs(state.stageOutputs);
+  const trainingConfiguration = stageOutputs.trainingConfigurationNode;
+  return {
+    ...state,
+    ...(trainingConfiguration?.status === "Completed" ? { trainingConfiguration } : {}),
+    stageStatuses: normalizeGroupedStageStatuses(state.stageStatuses),
+    stageOutputs,
+  } as AgentStateType;
+}
 
 export class PostgresProjectRepository implements IProjectRepository {
   constructor(private db: NodePgDatabase<typeof schema>) { }
@@ -14,6 +40,7 @@ export class PostgresProjectRepository implements IProjectRepository {
     const rawAgentState = row.agent_state ?? row.agentState ?? {};
     return {
       id: row.id,
+      projectName: row.project_name ?? row.projectName ?? undefined,
       name: row.name,
       role: row.role as "OWNER" | "MEMBER",
       dataSources: Array.isArray(row.data_sources) ? row.data_sources : row.dataSources || [],
@@ -23,9 +50,9 @@ export class PostgresProjectRepository implements IProjectRepository {
       domain: row.domain ?? undefined,
       subDomain: row.sub_domain ?? row.subDomain ?? undefined,
       folderPath: row.folder_path ?? row.folderPath ?? undefined,
-      status: row.status || (row.agent_state?.status) || "idle",
+      status: normalizePipelineStepStatus(row.status || (row.agent_state?.status)) || "None",
 
-      agentState: rawAgentState,
+      agentState: normalizePersistedAgentState(rawAgentState),
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
     };
   }
@@ -36,8 +63,8 @@ export class PostgresProjectRepository implements IProjectRepository {
       id: row.id,
       projectId: row.project_id || row.projectId,
       useCase: row.use_case ?? row.useCase ?? undefined,
-      status: row.status || (row.agent_state?.status) || "idle",
-      agentState: rawAgentState,
+      status: normalizePipelineStepStatus(row.status || (row.agent_state?.status)) || "None",
+      agentState: normalizePersistedAgentState(rawAgentState),
       createdAt: row.created_at instanceof Date ? row.created_at.toISOString() : (row.created_at || row.createdAt),
     };
   }
@@ -54,8 +81,8 @@ export class PostgresProjectRepository implements IProjectRepository {
 
     const project = this.mapRowToProject(res[0]);
     if (latestRuns.length > 0) {
-      project.agentState = latestRuns[0].agentState as AgentStateType;
-      project.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || project.status || "idle";
+      project.agentState = normalizePersistedAgentState(latestRuns[0].agentState);
+      project.status = normalizePipelineStepStatus(latestRuns[0].status || (latestRuns[0].agentState as any)?.status || project.status) || "None";
       if (project.agentState && typeof project.agentState === "object") {
         (project.agentState as any).status = project.status;
       }
@@ -75,8 +102,8 @@ export class PostgresProjectRepository implements IProjectRepository {
         .orderBy(desc(schema.projectRuns.createdAt))
         .limit(1);
       if (latestRuns.length > 0) {
-        proj.agentState = latestRuns[0].agentState as AgentStateType;
-        proj.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || proj.status || "idle";
+        proj.agentState = normalizePersistedAgentState(latestRuns[0].agentState);
+        proj.status = normalizePipelineStepStatus(latestRuns[0].status || (latestRuns[0].agentState as any)?.status || proj.status) || "None";
         if (proj.agentState && typeof proj.agentState === "object") {
           (proj.agentState as any).status = proj.status;
         }
@@ -106,18 +133,12 @@ export class PostgresProjectRepository implements IProjectRepository {
 
   async updateAgentState(id: string, agentState: Record<string, unknown>, useCase?: string, replaceState = false): Promise<Project | undefined> {
     const currentProj = await this.getById(id);
-    if (currentProj?.agentState?.status === "completed" || currentProj?.agentState?.status === "stopped") {
-      currentProj.agentState = undefined;
-
-      return currentProj;
-    }
 
     const effectiveUseCase = useCase ?? currentProj?.useCase;
-    const effectiveStatus = (agentState?.status as string) || currentProj?.status || "idle";
 
     const existingState = replaceState ? {} : ((currentProj?.agentState as Record<string, unknown>) || {});
-    const existingOutputs = (existingState?.stageOutputs as Record<string, unknown>) || {};
-    const incomingOutputs = (agentState?.stageOutputs as Record<string, unknown>) || {};
+    const existingOutputs: Record<string, unknown> = { ...normalizeStageOutputs(existingState.stageOutputs) };
+    const incomingOutputs: Record<string, unknown> = { ...normalizeStageOutputs(agentState.stageOutputs) };
 
     const mergedStageOutputs: Record<string, unknown> = { ...existingOutputs };
     for (const [k, v] of Object.entries(incomingOutputs)) {
@@ -132,35 +153,105 @@ export class PostgresProjectRepository implements IProjectRepository {
     const preserveIfIncomingEmpty = (key: string) => {
       const incoming = agentState?.[key];
       const existing = existingState?.[key];
-      const isIncEmpty = !incoming || (typeof incoming === "object" && Object.keys(incoming as object).length === 0);
-      const isExtPopulated = existing && typeof existing === "object" && Object.keys(existing as object).length > 0;
+      const isIncEmpty = !incoming ||
+        (typeof incoming === "object" && Object.keys(incoming as object).length === 0) ||
+        (typeof incoming === "string" && incoming.trim().length === 0);
+      const isExtPopulated = existing &&
+        ((typeof existing === "object" && Object.keys(existing as object).length > 0) ||
+        (typeof existing === "string" && existing.trim().length > 0));
       if (isIncEmpty && isExtPopulated) {
         return existing;
       }
       return incoming !== undefined ? incoming : existing;
     };
 
-    const getAgentState = () => (
-      {
+    const existingStatuses = normalizeGroupedStageStatuses(existingState.stageStatuses);
+    const incomingStatuses = agentState.stageStatuses;
+    const incomingGroupedStatuses = incomingStatuses === undefined
+      ? undefined
+      : normalizeGroupedStageStatuses(incomingStatuses);
+    const incomingStatusObject = incomingStatuses && typeof incomingStatuses === "object"
+      ? incomingStatuses as Record<string, unknown>
+      : {};
+    const incomingStageOverrides: Partial<Record<StageKey, PipelineStepStatus>> = {};
+    for (const key of Object.keys(existingStatuses) as StageKey[]) {
+      const group = incomingStatusObject[key];
+      if (group && typeof group === "object" && !Array.isArray(group)) {
+        const status = normalizePipelineStepStatus((group as Record<string, unknown>).status);
+        if (status) incomingStageOverrides[key] = status;
+      }
+    }
+    const existingFlat = normalizeFlatStageStatuses(existingState.stageStatuses);
+    const incomingFlat = normalizeFlatStageStatuses(incomingStatuses);
+    const mergedFlat: FlatStageStatuses = {
+      ...existingFlat,
+      ...incomingFlat,
+    };
+    if (!replaceState) {
+      for (const key of TRACKED_AGENT_KEYS) {
+        if (existingFlat[key] === "Completed" && (incomingFlat[key] === "Pending" || incomingFlat[key] === "In-Progress")) {
+          const stage = NODE_CONFIG[key]?.stage;
+          if (stage && (existingStatuses[stage]?.status === "Completed" || incomingFlat[key] === "Pending")) {
+            mergedFlat[key] = "Completed";
+          }
+        }
+      }
+    }
+    const mergedStageStatuses = incomingGroupedStatuses
+      ? buildGroupedStageStatuses(mergedFlat, incomingStageOverrides)
+      : existingStatuses;
+
+    let computedStatus: PipelineStepStatus | undefined = normalizePipelineStepStatus(agentState?.status as string);
+    if (!computedStatus) {
+      const flatValues = Object.values(mergedFlat);
+      if (flatValues.some((s) => s === "In-Progress")) {
+        computedStatus = "In-Progress";
+      } else if (flatValues.some((s) => s === "Awaiting Approval")) {
+        computedStatus = "Awaiting Approval";
+      } else if (flatValues.some((s) => s === "Paused")) {
+        computedStatus = "Paused";
+      } else if (flatValues.some((s) => s === "Failed")) {
+        computedStatus = "Failed";
+      } else if (flatValues.length > 0 && flatValues.every((s) => s === "Completed")) {
+        computedStatus = "Completed";
+      } else {
+        computedStatus = normalizePipelineStepStatus(currentProj?.status) || "None";
+      }
+    }
+    const effectiveStatus: PipelineStepStatus = computedStatus;
+
+    const getAgentState = () => {
+      const merged: Record<string, unknown> = {
         ...existingState,
         ...agentState,
+        status: effectiveStatus,
+        stageStatuses: mergedStageStatuses,
         stageOutputs: mergedStageOutputs,
+        prediction_target_column: preserveIfIncomingEmpty("prediction_target_column"),
+        targetColumn: preserveIfIncomingEmpty("targetColumn"),
         formBuilder: preserveIfIncomingEmpty("formBuilder"),
         hierarchyMapper: preserveIfIncomingEmpty("hierarchyMapper"),
+        hierarchyMapperNode: preserveIfIncomingEmpty("hierarchyMapperNode"),
         relationshipBuilder: preserveIfIncomingEmpty("relationshipBuilder"),
+        featureArchitect: preserveIfIncomingEmpty("featureArchitect"),
+        featureArchitectNode: preserveIfIncomingEmpty("featureArchitectNode"),
+        featureValidator: preserveIfIncomingEmpty("featureValidator"),
+        featureValidatorNode: preserveIfIncomingEmpty("featureValidatorNode"),
+        exogenousScout: preserveIfIncomingEmpty("exogenousScout"),
+        exogenous: preserveIfIncomingEmpty("exogenous"),
         modelSelection: preserveIfIncomingEmpty("modelSelection"),
+        modelSelectionNode: preserveIfIncomingEmpty("modelSelectionNode"),
         trainingConfiguration: preserveIfIncomingEmpty("trainingConfiguration"),
+        trainingConfigurationNode: preserveIfIncomingEmpty("trainingConfigurationNode"),
         preFlight: preserveIfIncomingEmpty("preFlight"),
+        preFlightNode: preserveIfIncomingEmpty("preFlightNode"),
+        modelTrainingCode: preserveIfIncomingEmpty("modelTrainingCode"),
+        modelTrainingCodeNode: preserveIfIncomingEmpty("modelTrainingCodeNode"),
         modelTraining: preserveIfIncomingEmpty("modelTraining"),
         modelValidation: preserveIfIncomingEmpty("modelValidation"),
-        ...((agentState?.stageStatuses || existingState?.stageStatuses) ? {
-          stageStatuses: {
-            ...((existingState?.stageStatuses as Record<string, unknown>) || {}),
-            ...((agentState?.stageStatuses as Record<string, unknown>) || {}),
-          }
-        } : {}),
-      } as AgentStateType
-    )
+      };
+      return merged as AgentStateType;
+    };
 
     const projectUpdates: Record<string, any> = {
       status: effectiveStatus,
@@ -169,22 +260,20 @@ export class PostgresProjectRepository implements IProjectRepository {
       projectUpdates.useCase = effectiveUseCase;
     }
 
-    await this.db.update(schema.projects)
-      .set(projectUpdates)
-      .where(eq(schema.projects.id, id));
+    await this.db.transaction(async (tx) => {
+      await tx.update(schema.projects)
+        .set(projectUpdates)
+        .where(eq(schema.projects.id, id));
 
-    try {
       const runId = `run-${uuidv4()}`;
-      await this.db.insert(schema.projectRuns).values({
+      await tx.insert(schema.projectRuns).values({
         id: runId,
         projectId: id,
         useCase: effectiveUseCase || null,
         status: effectiveStatus,
         agentState: getAgentState(),
       });
-    } catch (runErr: any) {
-      console.warn(`[ProjectRepository] Failed to insert project run record:`, runErr?.message || runErr);
-    }
+    });
 
     const updatedProj = await this.getById(id);
     if (updatedProj) {
@@ -196,11 +285,17 @@ export class PostgresProjectRepository implements IProjectRepository {
 
   async updateProject(id: string, updates: Partial<Project>): Promise<Project | undefined> {
     const updatePayload: Record<string, any> = {};
+    if (updates.projectName !== undefined) updatePayload.projectName = updates.projectName;
     if (updates.name !== undefined) updatePayload.name = updates.name;
+    if (updates.domain !== undefined) updatePayload.domain = updates.domain;
+    if (updates.subDomain !== undefined) updatePayload.subDomain = updates.subDomain;
     if (updates.useCase !== undefined) updatePayload.useCase = updates.useCase;
     if (updates.dataSources !== undefined) updatePayload.dataSources = updates.dataSources;
     if (updates.folderPath !== undefined) updatePayload.folderPath = updates.folderPath;
-    if (updates.status !== undefined) updatePayload.status = updates.status;
+    if (updates.status !== undefined) {
+      const normalized = normalizePipelineStepStatus(updates.status);
+      if (normalized) updatePayload.status = normalized;
+    }
 
     if (Object.keys(updatePayload).length > 0) {
       await this.db.update(schema.projects)
@@ -237,8 +332,8 @@ export class PostgresProjectRepository implements IProjectRepository {
         .orderBy(desc(schema.projectRuns.createdAt))
         .limit(1);
       if (latestRuns.length > 0) {
-        proj.agentState = latestRuns[0].agentState as AgentStateType;
-        proj.status = latestRuns[0].status || (latestRuns[0].agentState as any)?.status || proj.status || "idle";
+        proj.agentState = normalizePersistedAgentState(latestRuns[0].agentState);
+        proj.status = normalizePipelineStepStatus(latestRuns[0].status || (latestRuns[0].agentState as any)?.status || proj.status) || "None";
         if (proj.agentState && typeof proj.agentState === "object") {
           (proj.agentState as any).status = proj.status;
         }
@@ -250,8 +345,10 @@ export class PostgresProjectRepository implements IProjectRepository {
 
   async createProject(project: Project): Promise<Project> {
     const now = new Date(project.createdAt);
+    const initialStatus = normalizePipelineStepStatus(project.status) || "None";
     await this.db.insert(schema.projects).values({
       id: project.id,
+      projectName: project.projectName || null,
       name: project.name,
       role: project.role,
       dataSources: project.dataSources,
@@ -261,7 +358,7 @@ export class PostgresProjectRepository implements IProjectRepository {
       domain: project.domain || null,
       subDomain: project.subDomain || null,
       folderPath: project.folderPath || null,
-      status: project.status || "idle",
+      status: initialStatus,
       createdAt: now,
     });
     return project;

@@ -7,6 +7,7 @@ interface PreFlightStepOutputProps {
   projectId?: string;
   activeRunTimestamp?: string;
   onApprovePreFlight?: () => void;
+  nextStepInProgress?: boolean;
   isApproving?: boolean;
 }
 
@@ -133,6 +134,7 @@ function ExecutionStrategyIcon({ strategy, className = "w-4 h-4" }: { strategy?:
 export default function PreFlightStepOutput({
   preFlight,
   onApprovePreFlight,
+  nextStepInProgress = false,
   isApproving = false,
 }: PreFlightStepOutputProps) {
   const [filterCategory, setFilterCategory] = useState<string>("ALL");
@@ -218,7 +220,7 @@ export default function PreFlightStepOutput({
   });
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="w-full space-y-6">
 
       <div className={`p-5 rounded-2xl border ${decisionBadge.bg} flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm backdrop-blur-sm`}>
         <div className="flex items-start gap-3.5">
@@ -649,6 +651,7 @@ export default function PreFlightStepOutput({
 
           <div className="flex items-center gap-1.5 flex-wrap">
             <button
+              disabled={nextStepInProgress}
               onClick={() => setFilterCategory("ALL")}
               className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-colors ${
                 filterCategory === "ALL"
@@ -659,6 +662,7 @@ export default function PreFlightStepOutput({
               All ({checks.length})
             </button>
             <button
+              disabled={nextStepInProgress}
               onClick={() => setFilterCategory("WARNINGS_FAILED")}
               className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-colors ${
                 filterCategory === "WARNINGS_FAILED"
@@ -669,6 +673,7 @@ export default function PreFlightStepOutput({
               Issues ({warningCount + failedCount})
             </button>
             <button
+              disabled={nextStepInProgress}
               onClick={() => setFilterCategory("RESOURCE_SAFETY")}
               className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-colors ${
                 filterCategory === "RESOURCE_SAFETY"
@@ -679,6 +684,7 @@ export default function PreFlightStepOutput({
               Safety & Resources
             </button>
             <button
+              disabled={nextStepInProgress}
               onClick={() => setFilterCategory("CONFIGURATION")}
               className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-colors ${
                 filterCategory === "CONFIGURATION"
@@ -689,6 +695,7 @@ export default function PreFlightStepOutput({
               Configuration
             </button>
             <button
+              disabled={nextStepInProgress}
               onClick={() => setFilterCategory("DATA_FEATURES")}
               className={`text-[11px] px-2.5 py-1 rounded-lg font-semibold transition-colors ${
                 filterCategory === "DATA_FEATURES"
@@ -771,7 +778,7 @@ export default function PreFlightStepOutput({
 
           <button
             type="button"
-            disabled={isApproving || preFlight?.decision === "BLOCKED" || preFlight?.decision === "FAILED"}
+            disabled={nextStepInProgress || isApproving || preFlight?.decision === "BLOCKED" || preFlight?.decision === "FAILED"}
             onClick={onApprovePreFlight}
             className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >

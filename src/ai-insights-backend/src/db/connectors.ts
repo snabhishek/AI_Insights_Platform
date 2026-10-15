@@ -1,7 +1,8 @@
 import { pgTable, varchar, timestamp, jsonb, boolean, text, index } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
-import { ConnectionConfig } from "../models/connector.types";
+import { ConnectionConfig, ConnectorType, ConnectorStatus, ConnectorHealth } from "../models/connector.types";
 import { AgentStateType } from "../agents/state";
+import { PipelineStepStatus } from "../agents/pipelineNames";
 
 export const workspaces = pgTable("workspaces", {
   id: varchar("id", { length: 50 }).primaryKey(),
@@ -12,6 +13,7 @@ export const workspaces = pgTable("workspaces", {
 
 export const projects = pgTable("projects", {
   id: varchar("id", { length: 50 }).primaryKey(),
+  projectName: varchar("project_name", { length: 255 }),
   name: varchar("name", { length: 255 }).notNull(),
   role: varchar("role", { length: 50 }).notNull().default("OWNER"),
   dataSources: text("data_sources").array().notNull().default(sql`'{}'::text[]`),
@@ -23,7 +25,7 @@ export const projects = pgTable("projects", {
   domain: varchar("domain", { length: 255 }),
   subDomain: varchar("sub_domain", { length: 255 }),
   folderPath: varchar("folder_path", { length: 500 }),
-  status: varchar("status", { length: 50 }).default("idle"),
+  status: varchar("status", { length: 50 }).$type<PipelineStepStatus>().default("None"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => {
   return {
@@ -35,9 +37,9 @@ export const connectors = pgTable("connectors", {
   id: varchar("id", { length: 50 }).primaryKey(),
   name: varchar("name", { length: 255 }).notNull(),
   subtext: varchar("subtext", { length: 255 }).notNull(),
-  type: varchar("type", { length: 50 }).notNull(),
-  status: varchar("status", { length: 50 }).notNull(),
-  health: varchar("health", { length: 50 }).notNull(),
+  type: varchar("type", { length: 50 }).$type<ConnectorType>().notNull(),
+  status: varchar("status", { length: 50 }).$type<ConnectorStatus>().notNull(),
+  health: varchar("health", { length: 50 }).$type<ConnectorHealth>().notNull(),
   lastSyncTime: varchar("last_sync_time", { length: 100 }).notNull(),
   lastSyncDate: varchar("last_sync_date", { length: 100 }).notNull(),
   createdAt: timestamp("created_at").notNull(),
@@ -61,7 +63,7 @@ export const projectRuns = pgTable("project_runs", {
     .notNull()
     .references(() => projects.id, { onDelete: "cascade" }),
   useCase: text("use_case"),
-  status: varchar("status", { length: 50 }).default("idle"),
+  status: varchar("status", { length: 50 }).$type<PipelineStepStatus>().default("None"),
   agentState: jsonb("agent_state").$type<AgentStateType>().notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 }, (table) => {

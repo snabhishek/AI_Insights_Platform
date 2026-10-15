@@ -52,6 +52,7 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
 
   const allFields = useRef<FormField[]>([]);
   const directChildrenMap = useRef<Map<string, Set<string>>>(new Map());
+  const initializedSchemaSignatureRef = useRef<string>("");
 
   useEffect(() => {
     const groups = schema?.filterGroups || schema?.forms || [];
@@ -181,8 +182,22 @@ export function useFilterForm({ schema, apiBaseUrl = DEFAULT_API_BASE }: UseFilt
   );
 
   useEffect(() => {
-    if (!schema) return;
+    if (!schema) {
+      initializedSchemaSignatureRef.current = "";
+      return;
+    }
     const groups = schema.filterGroups || schema.forms || [];
+    const allFieldIds = groups.flatMap((g) => (g.fields || []).map((f) => f.fieldId)).join(",");
+    const currentSchemaKey = `${schema.projectId || ""}:${schema.sourceId || ""}:${allFieldIds}`;
+
+    if (initializedSchemaSignatureRef.current === currentSchemaKey) {
+      return;
+    }
+    initializedSchemaSignatureRef.current = currentSchemaKey;
+
+    setSelectedValues({});
+    selectedValuesRef.current = {};
+
     groups.forEach((group) => {
       (group.fields || []).forEach((field) => {
         fetchOptions(field, {}, "");

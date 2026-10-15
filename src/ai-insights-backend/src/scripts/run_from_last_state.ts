@@ -15,7 +15,7 @@ import { ConnectionTesterService } from "../services/connector/connectionTester.
 import { PostgresConnectorRepository } from "../repositories/connector.repository";
 import { PostgresProjectRepository } from "../repositories/project.repository";
 import { ProjectService } from "../services/project/project.service";
-import { pool, initializeDatabaseSchemas } from "../db";
+import { pool, runMigrations, initializeApplicationData } from "../db";
 import * as connectorsSchema from "../db/connectors";
 import * as agentThinkingSchema from "../db/agentThinking";
 import * as agentJobsSchema from "../db/agentJobs";
@@ -115,7 +115,8 @@ async function runFromLastState() {
   console.log("=================================================\n");
 
   const db = drizzle(pool, { schema });
-  await initializeDatabaseSchemas();
+  await runMigrations();
+  await initializeApplicationData();
 
   const logsDir = path.resolve(__dirname, "../../logs");
   if (!fs.existsSync(logsDir)) {
@@ -147,8 +148,8 @@ async function runFromLastState() {
   savedState.projectName = (savedState as any).projectName || "carrier";
   savedState.workspaceName = (savedState as any).workspaceName || "FileStorage_Testing";
   savedState.runTimestamp = savedState.runTimestamp || "20260918-185832";
-
-  savedState.status = "running";
+  // Reset status to "In-Progress" so nodes do not skip execution on previous paused/failed status
+  savedState.status = "In-Progress";
 
   let targetNode: string = "modelTrainingNode";
   if (process.argv[2] && !process.argv[2].endsWith(".json")) {

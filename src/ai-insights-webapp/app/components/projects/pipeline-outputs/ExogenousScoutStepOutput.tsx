@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useState } from "react";
+import { Search, Radar } from "lucide-react";
 import { Badge, SectionHeader } from "./utils";
+import ModernSelect from "../../shared/ui/ModernSelect";
 
 interface ExogenousSource {
   sourceName?: string;
@@ -58,14 +60,10 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
     ? payload.searchQueriesExecuted
     : [];
 
-  const summaryText = typeof payload?.summary === "string"
-    ? payload.summary
-    : "Exogenous data scout agent executed successfully.";
-
   if (tables.length === 0) {
     return (
       <div className="p-6 text-center border border-dashed border-border bg-surface-muted/20 select-none">
-        <span className="text-xl block mb-1">🌐</span>
+        <Radar className="w-6 h-6 mx-auto mb-1.5 text-muted-foreground/60" />
         <p className="text-xs text-muted-foreground">No exogenous data scout findings in payload.</p>
       </div>
     );
@@ -89,18 +87,6 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
   return (
     <div className="space-y-6 select-none">
 
-      <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/60 text-xs text-indigo-900 dark:text-indigo-300 flex items-start gap-3 shadow-sm font-semibold select-none rounded-lg">
-        <span className="text-base leading-none">🌐</span>
-        <div>
-          <strong className="block text-indigo-950 dark:text-indigo-300 font-extrabold text-sm">
-            Exogenous Scout Analysis Completed
-          </strong>
-          <p className="text-indigo-700/90 dark:text-indigo-300/80 mt-0.5 font-normal">
-            {summaryText}
-          </p>
-        </div>
-      </div>
-
       {searchQueries.length > 0 && (
         <div className="p-4 border border-border bg-surface/50 rounded-lg space-y-2 select-text">
           <span className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground block">
@@ -110,9 +96,10 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
             {searchQueries.map((q, idx) => (
               <span
                 key={idx}
-                className="px-2.5 py-1 bg-surface-muted border border-border text-[11px] font-mono font-medium text-foreground rounded-md"
+                className="inline-flex items-center gap-1 px-2.5 py-1 bg-surface-muted border border-border text-[11px] font-mono font-medium text-foreground rounded-md"
               >
-                🔍 {q}
+                <Search className="w-3 h-3 text-muted-foreground shrink-0" />
+                <span>{q}</span>
               </span>
             ))}
           </div>
@@ -120,21 +107,20 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
       )}
 
       <div className="space-y-4">
-
         {tables.length > 1 && (
           <div className="flex items-center gap-2">
             <span className="text-xs font-semibold text-muted-foreground uppercase">Target Table:</span>
-            <select
-              value={selectedTableIndex}
-              onChange={(e) => setSelectedTableIndex(Number(e.target.value))}
-              className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-bold text-foreground focus:border-indigo-500 focus:ring-indigo-500"
-            >
-              {tables.map((t, idx) => (
-                <option key={idx} value={idx}>
-                  {t.tableName || t.name || `Table #${idx + 1}`}
-                </option>
-              ))}
-            </select>
+            <div className="w-52">
+              <ModernSelect
+                value={String(selectedTableIndex)}
+                onChange={(val) => setSelectedTableIndex(Number(val))}
+                options={tables.map((t, idx) => ({
+                  value: String(idx),
+                  label: t.tableName || t.name || `Table #${idx + 1}`,
+                }))}
+                triggerClassName="h-8 text-xs font-bold"
+              />
+            </div>
           </div>
         )}
 

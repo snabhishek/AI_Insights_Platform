@@ -1,67 +1,59 @@
 "use client";
 
 import React from "react";
+import {
+  Database,
+  ScanSearch,
+  BarChart3,
+  TableProperties,
+  Network,
+  DraftingCompass,
+  ShieldCheck,
+  Radar,
+  BrainCircuit,
+  SlidersHorizontal,
+  Rocket,
+  Code2,
+} from "lucide-react";
 import { Workflow } from "./types";
+import { buildGroupedStageStatuses, TRACKED_AGENT_KEYS } from "./pipelineNames";
 
 export const PIPELINE_STEPS: Workflow[] = [
   {
-    id: "Data Ingestion",
+    id: "dataIngestion",
     title: "Data Ingestion",
     description: "Inspect connector sources and discover structure",
     color: "green",
-    icon: (
-      <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-        <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-      </svg>
-    ),
+    icon: <Database size={22} strokeWidth={2} />,
     step: [
       {
-        id: "Data Inspection",
+        id: "inspect",
         title: "Data Inspection",
         description: "Inspect connector sources and discover structure",
         metric: "Inspect",
         color: "green",
-        icon: (
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-          </svg>
-        ),
+        icon: <ScanSearch size={18} strokeWidth={2} />,
       },
       {
-        id: "Data Profiling",
+        id: "profileData",
         title: "Data Profiling",
         description: "Profile data quality findings",
         metric: "Profile",
         color: "blue",
-        icon: (
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
-            <polyline points="10 9 9 9 8 9" />
-          </svg>
-        ),
+        icon: <BarChart3 size={18} strokeWidth={2} />,
       },
       {
-        id: "Schema Resolver",
+        id: "resolveSchema",
         title: "Schema Resolver",
         description: "Resolve and map the schema for downstream use",
         metric: "Resolve",
         color: "purple",
-        icon: (
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-            <rect x="3" y="3" width="7" height="9" rx="1" />
-            <rect x="14" y="3" width="7" height="5" rx="1" />
-            <rect x="14" y="12" width="7" height="9" rx="1" />
-            <rect x="3" y="16" width="7" height="5" rx="1" />
-          </svg>
-        ),
+        icon: <TableProperties size={18} strokeWidth={2} />,
       },
-    ]
+    ],
   },
   {
-    id: "Feature Engineering",
+    id: "featureEngineering",
     title: "Feature Engineering",
     description: "Shape the data into features for downstream analytics",
 
@@ -76,64 +68,41 @@ export const PIPELINE_STEPS: Workflow[] = [
     ),
     step: [
       {
-        id: "Hierarchy Mapper",
+        id: "hierarchyMapperNode",
         title: "Hierarchy Mapper",
         description: "Discovers dimensional hierarchies and builds the queryable filter graph",
         metric: "HierarchyMapper",
         color: "green",
-        icon: (
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />
-          </svg>
-        ),
+        icon: <Network size={18} strokeWidth={2} />,
       },
       {
-        id: "Feature Architect",
+        id: "featureArchitectNode",
         title: "Feature Architect",
         description: "Generates and statistically validates lag/rolling/seasonal/calendar feature",
         metric: "FeatureArchitect",
         color: "blue",
-        icon: (
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-            <polyline points="14 2 14 8 20 8" />
-            <line x1="16" y1="13" x2="8" y2="13" />
-            <line x1="16" y1="17" x2="8" y2="17" />
-            <polyline points="10 9 9 9 8 9" />
-          </svg>
-        ),
+        icon: <DraftingCompass size={18} strokeWidth={2} />,
       },
       {
-        id: "Feature Validator",
+        id: "featureValidatorNode",
         title: "Feature Validator",
         description: "Audits features for leakage, multicollinearity, drift, and importance",
         metric: "FeatureValidator",
         color: "teal",
-        icon: (
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M9 11l3 3L22 4" />
-            <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-          </svg>
-        ),
+        icon: <ShieldCheck size={18} strokeWidth={2} />,
       },
       {
-        id: "Exogenous Scout",
+        id: "exogenous",
         title: "Exogenous Scout",
         description: "Scouts and ranks external signals by predictive power",
         metric: "ExogenousScout",
         color: "purple",
-        icon: (
-          <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-            <path d="M11 8a3 3 0 0 0-3 3" />
-          </svg>
-        ),
+        icon: <Radar size={18} strokeWidth={2} />,
       },
-    ]
+    ],
   },
   {
-    id: "Model Training & Validation",
+    id: "modelTrainingValidation",
     title: "Model Training & Validation",
     description: "Train, evaluate, validate, and select the best model",
 
@@ -149,21 +118,42 @@ export const PIPELINE_STEPS: Workflow[] = [
       </svg>
     ),
     step: [
-      { id: "Model Selection", title: "Model Selection", description: "Initialize model selection and select candidates", metric: "Select", color: "purple", icon: <span>01</span> },
-      { id: "Training Configuration", title: "Training Configuration", description: "Configure training environment and dataset splits", metric: "Configure", color: "pink", icon: <span>02</span> },
-      { id: "Pre Flight", title: "Pre Flight", description: "Validate runtime resources, environment and strategy pre-flight", metric: "Validate", color: "pink", icon: <span>03</span> },
-      { id: "Model Training", title: "Model Training", description: "Train candidate models from the validated feature dataset", metric: "Train", color: "pink", icon: <span>04</span> },
+      {
+        id: "modelSelectionNode",
+        title: "Model Selection",
+        description: "Initialize model selection and select candidates",
+        metric: "Select",
+        color: "purple",
+        icon: <BrainCircuit size={18} strokeWidth={2} />,
+      },
+      {
+        id: "trainingConfigurationNode",
+        title: "Training Configuration",
+        description: "Configure training environment and dataset splits",
+        metric: "Configure",
+        color: "pink",
+        icon: <SlidersHorizontal size={18} strokeWidth={2} />,
+      },
+      {
+        id: "preFlightNode",
+        title: "Pre Flight",
+        description: "Validate runtime resources, environment and strategy pre-flight",
+        metric: "Validate",
+        color: "pink",
+        icon: <Rocket size={18} strokeWidth={2} />,
+      },
+      {
+        id: "modelTrainingCodeNode",
+        title: "Model Training Code Generation",
+        description: "Generate model training code and verify execution in Docker",
+        metric: "Generate Code",
+        color: "pink",
+        icon: <Code2 size={18} strokeWidth={2} />,
+      },
     ],
   },
 ];
 
-export const INITIAL_PIPELINE_STATUSES: Record<string, "Pending"> = {
-  "Data Inspection": "Pending",
-  "Data Profiling": "Pending",
-  "Schema Resolver": "Pending",
-  "Feature Engineering": "Pending",
-  "Model Selection": "Pending",
-  "Training Configuration": "Pending",
-  "Pre Flight": "Pending",
-  "Model Training": "Pending",
-};
+export const INITIAL_PIPELINE_STATUSES = buildGroupedStageStatuses(
+  Object.fromEntries(TRACKED_AGENT_KEYS.map((key) => [key, "None"]))
+);

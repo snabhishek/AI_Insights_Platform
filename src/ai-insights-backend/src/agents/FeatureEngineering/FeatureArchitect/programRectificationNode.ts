@@ -349,6 +349,7 @@ export async function programRectificationNode(
 
   const targetStateUpdate: Record<string, any> = {};
   const currentLogs = `--- Stdout ---\n${lastStdout}\n\n--- Stderr ---\n${lastStderr}`;
+  const targetCol = state.prediction_target_column || state.orchestrationDecision?.prediction_target_column || state.orchestrationDecision?.targetColumn || "";
 
   if (success) {
     targetStateUpdate[stateField] = {
@@ -364,6 +365,7 @@ export async function programRectificationNode(
 
     return {
       ...targetStateUpdate,
+      ...(targetCol ? { prediction_target_column: targetCol } : {}),
       currentExecutionLogs: currentLogs,
       history: [
         {
@@ -387,6 +389,7 @@ export async function programRectificationNode(
 
   return {
     ...targetStateUpdate,
+    ...(targetCol ? { prediction_target_column: targetCol } : {}),
     currentExecutionLogs: currentLogs,
     history: [
       {

@@ -1,9 +1,100 @@
 import { NodePgDatabase } from "drizzle-orm/node-postgres";
-import { eq, and } from "drizzle-orm";
+import { eq, and, inArray } from "drizzle-orm";
 import { v4 as uuidv4 } from "uuid";
 import { agentThinking } from "../db/agentThinking";
 import { IAgentThinkingRepository } from "./agentThinking.repository.interface";
 import { AgentThinking, ThinkingLog } from "../models/agentThinking.types";
+
+const SUBSTEP_ALIASES: Record<string, string[]> = {
+  inspect: ["inspect", "Data Inspection", "inspection", "dataInspection"],
+  "Data Inspection": ["Data Inspection", "inspect", "inspection", "dataInspection"],
+  profileData: ["profileData", "Data Profiling", "dataProfile", "dataProfiling"],
+  "Data Profiling": ["Data Profiling", "profileData", "dataProfile", "dataProfiling"],
+  resolveSchema: ["resolveSchema", "Schema Resolver", "schemaResolution", "schemaResolver"],
+  "Schema Resolver": ["Schema Resolver", "resolveSchema", "schemaResolution", "schemaResolver"],
+  hierarchyMapperNode: ["hierarchyMapperNode", "Hierarchy Mapper", "hierarchyMapper", "relationshipBuilder", "formBuilder"],
+  "Hierarchy Mapper": ["Hierarchy Mapper", "hierarchyMapperNode", "hierarchyMapper", "relationshipBuilder", "formBuilder"],
+  hierarchyMapper: ["hierarchyMapper", "Hierarchy Mapper", "hierarchyMapperNode", "relationshipBuilder", "formBuilder"],
+  relationshipBuilder: ["relationshipBuilder", "Hierarchy Mapper", "hierarchyMapperNode", "hierarchyMapper"],
+  formBuilder: ["formBuilder", "Hierarchy Mapper", "hierarchyMapperNode", "hierarchyMapper"],
+  featureArchitectNode: [
+    "featureArchitectNode",
+    "Feature Architect",
+    "featureArchitect",
+    "featureSupervisor",
+    "featureCreation",
+    "featureTransformation",
+    "featureExtraction",
+    "featureSelection",
+    "buildDataset",
+    "dataValidation",
+    "programRectifier",
+    "Feature Engineering",
+  ],
+  "Feature Architect": [
+    "Feature Architect",
+    "featureArchitectNode",
+    "featureArchitect",
+    "featureSupervisor",
+    "featureCreation",
+    "featureTransformation",
+    "featureExtraction",
+    "featureSelection",
+    "buildDataset",
+    "dataValidation",
+    "programRectifier",
+    "Feature Engineering",
+  ],
+  featureArchitect: ["featureArchitect", "Feature Architect", "featureArchitectNode"],
+  featureSupervisor: ["featureSupervisor", "Feature Architect", "featureArchitectNode"],
+  featureCreation: ["featureCreation", "Feature Architect", "featureArchitectNode"],
+  featureTransformation: ["featureTransformation", "Feature Architect", "featureArchitectNode"],
+  featureExtraction: ["featureExtraction", "Feature Architect", "featureArchitectNode"],
+  featureSelection: ["featureSelection", "Feature Architect", "featureArchitectNode"],
+  featureValidatorNode: ["featureValidatorNode", "Feature Validator", "featureValidator"],
+  "Feature Validator": ["Feature Validator", "featureValidatorNode", "featureValidator"],
+  featureValidator: ["featureValidator", "Feature Validator", "featureValidatorNode"],
+  exogenous: ["exogenous", "Exogenous Scout", "exogenousScout"],
+  "Exogenous Scout": ["Exogenous Scout", "exogenous", "exogenousScout"],
+  exogenousScout: ["exogenousScout", "Exogenous Scout", "exogenous"],
+  modelSelectionNode: ["modelSelectionNode", "Model Selection", "modelSelection", "finalModelSelectionNode"],
+  "Model Selection": ["Model Selection", "modelSelectionNode", "modelSelection", "finalModelSelectionNode"],
+  modelSelection: ["modelSelection", "Model Selection", "modelSelectionNode"],
+  trainingConfigurationNode: ["trainingConfigurationNode", "Training Configuration", "trainingConfiguration", "trainingConfig"],
+  "Training Configuration": ["Training Configuration", "trainingConfigurationNode", "trainingConfiguration", "trainingConfig"],
+  trainingConfiguration: ["trainingConfiguration", "Training Configuration", "trainingConfigurationNode"],
+  preFlightNode: ["preFlightNode", "Pre Flight", "preFlight"],
+  "Pre Flight": ["Pre Flight", "preFlightNode", "preFlight"],
+  preFlight: ["preFlight", "Pre Flight", "preFlightNode"],
+  modelTrainingCodeNode: ["modelTrainingCodeNode", "Model Training Code Generation", "modelTrainingCode", "Model Training", "modelTraining", "modelTrainingNode"],
+  "Model Training Code Generation": ["Model Training Code Generation", "modelTrainingCodeNode", "modelTrainingCode", "Model Training", "modelTraining", "modelTrainingNode"],
+  modelTrainingCode: ["modelTrainingCode", "Model Training Code Generation", "modelTrainingCodeNode", "Model Training", "modelTraining", "modelTrainingNode"],
+  "Model Training": ["Model Training", "modelTrainingCodeNode", "modelTrainingCode", "modelTraining", "modelTrainingNode"],
+  modelTraining: ["modelTraining", "modelTrainingCodeNode", "modelTrainingCode", "Model Training", "modelTrainingNode"],
+  modelTrainingNode: ["modelTrainingNode", "modelTrainingCodeNode", "modelTrainingCode", "Model Training", "modelTraining"],
+  modelValidationNode: ["modelValidationNode", "Model Validation", "modelValidation"],
+  "Model Validation": ["Model Validation", "modelValidationNode", "modelValidation"],
+  modelValidation: ["modelValidation", "Model Validation", "modelValidationNode"],
+};
+
+function getSubstepCandidates(substep: string): string[] {
+  const direct = SUBSTEP_ALIASES[substep];
+  if (direct && direct.length > 0) return direct;
+  const lower = substep.trim().toLowerCase();
+  for (const [k, v] of Object.entries(SUBSTEP_ALIASES)) {
+    if (k.toLowerCase() === lower) return v;
+  }
+  return [substep];
+}
+
+function normalizePipeline(pipeline?: string): string | undefined {
+  if (!pipeline) return undefined;
+  const p = pipeline.trim().toLowerCase();
+  if (p === "dataingestion" || p === "data ingestion") return "Data Ingestion";
+  if (p === "featureengineering" || p === "feature engineering") return "Feature Engineering";
+  if (p.includes("model") || p.includes("training") || p.includes("validation")) return "Model Training & Validation";
+  return pipeline.trim();
+}
 
 export class PostgresAgentThinkingRepository implements IAgentThinkingRepository {
   constructor(private db: NodePgDatabase<any>) {}
@@ -22,7 +113,10 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
 
   async getThinking(projectId: string, pipeline: string, substep: string): Promise<AgentThinking | undefined> {
     try {
-      const res = await this.db.select()
+      const candidates = getSubstepCandidates(substep);
+
+      // 1. Exact match
+      let res = await this.db.select()
         .from(agentThinking)
         .where(
           and(
@@ -31,8 +125,19 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
             eq(agentThinking.substep, substep)
           )
         );
-      if (res.length === 0) return undefined;
-      return this.mapRowToAgentThinking(res[0]);
+      if (res.length > 0) return this.mapRowToAgentThinking(res[0]);
+
+      // Resolve subprocess aliases within the requested pipeline only.
+      res = await this.db.select()
+        .from(agentThinking)
+        .where(and(
+          eq(agentThinking.projectId, projectId),
+          eq(agentThinking.pipeline, pipeline),
+          inArray(agentThinking.substep, candidates)
+        ));
+      if (res.length > 0) return this.mapRowToAgentThinking(res[0]);
+
+      return undefined;
     } catch (err: any) {
       console.warn(`[AgentThinkingRepository] Error fetching thinking for project ${projectId}:`, err.message || err);
       return undefined;
@@ -41,20 +146,97 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
 
   async getAllThinking(projectId: string, pipeline?: string): Promise<Record<string, ThinkingLog[]>> {
     try {
-      const conditions = [eq(agentThinking.projectId, projectId)];
-      if (pipeline) {
-        conditions.push(eq(agentThinking.pipeline, pipeline));
-      }
-      const res = await this.db.select()
+      const allRows = await this.db.select()
         .from(agentThinking)
-        .where(and(...conditions));
+        .where(pipeline
+          ? and(eq(agentThinking.projectId, projectId), eq(agentThinking.pipeline, pipeline))
+          : eq(agentThinking.projectId, projectId));
 
       const map: Record<string, ThinkingLog[]> = {};
-      for (const row of res) {
-        if (row.substep) {
-          map[row.substep] = (row.thinking as ThinkingLog[]) || [];
+
+      for (const row of allRows) {
+        if (!row.substep) continue;
+        const rowLogs = (row.thinking as ThinkingLog[]) || [];
+        map[row.substep] = rowLogs;
+
+        // Populate aliases so both node IDs and display titles are available
+        const aliases = getSubstepCandidates(row.substep);
+        for (const alias of aliases) {
+          if (!map[alias] || map[alias].length < rowLogs.length) {
+            map[alias] = rowLogs;
+          }
         }
       }
+
+      // Aggregate sub-workers for Feature Architect
+      const faWorkers = [
+        "featureSupervisor",
+        "featureCreation",
+        "featureTransformation",
+        "buildDataset",
+        "dataValidation",
+        "featureExtraction",
+        "featureSelection",
+        "programRectifier",
+        "Feature Engineering",
+      ];
+      const aggregatedFaLogs: ThinkingLog[] = [
+        ...(map["Feature Architect"] || map["featureArchitectNode"] || []),
+      ];
+      for (const w of faWorkers) {
+        if (map[w] && Array.isArray(map[w])) {
+          for (const item of map[w]) {
+            if (!aggregatedFaLogs.some((l) => l.text === item.text)) {
+              aggregatedFaLogs.push(item);
+            }
+          }
+        }
+      }
+      if (aggregatedFaLogs.length > 0) {
+        map["Feature Architect"] = aggregatedFaLogs;
+        map["featureArchitectNode"] = aggregatedFaLogs;
+        map["featureArchitect"] = aggregatedFaLogs;
+      }
+
+      // Aggregate sub-workers for Hierarchy Mapper
+      const hmWorkers = ["relationshipBuilder", "formBuilder"];
+      const aggregatedHmLogs: ThinkingLog[] = [
+        ...(map["Hierarchy Mapper"] || map["hierarchyMapperNode"] || []),
+      ];
+      for (const w of hmWorkers) {
+        if (map[w] && Array.isArray(map[w])) {
+          for (const item of map[w]) {
+            if (!aggregatedHmLogs.some((l) => l.text === item.text)) {
+              aggregatedHmLogs.push(item);
+            }
+          }
+        }
+      }
+      if (aggregatedHmLogs.length > 0) {
+        map["Hierarchy Mapper"] = aggregatedHmLogs;
+        map["hierarchyMapperNode"] = aggregatedHmLogs;
+        map["hierarchyMapper"] = aggregatedHmLogs;
+      }
+
+      // Aggregate Model Training
+      const mtWorkers = ["modelTrainingCodeNode", "modelTrainingCode", "modelTrainingNode", "modelTraining"];
+      const aggregatedMtLogs: ThinkingLog[] = [
+        ...(map["Model Training"] || map["modelTrainingCodeNode"] || []),
+      ];
+      for (const w of mtWorkers) {
+        if (map[w] && Array.isArray(map[w])) {
+          for (const item of map[w]) {
+            if (!aggregatedMtLogs.some((l) => l.text === item.text)) {
+              aggregatedMtLogs.push(item);
+            }
+          }
+        }
+      }
+      if (aggregatedMtLogs.length > 0) {
+        map["Model Training"] = aggregatedMtLogs;
+        map["modelTrainingCodeNode"] = aggregatedMtLogs;
+      }
+
       return map;
     } catch (err: any) {
       console.warn(`[AgentThinkingRepository] Error fetching all thinking for project ${projectId}:`, err.message || err);
@@ -64,11 +246,14 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
 
   async saveThinking(projectId: string, pipeline: string, substep: string, thinking: ThinkingLog[]): Promise<AgentThinking> {
     try {
-      const existing = await this.getThinking(projectId, pipeline, substep);
-
+      const canonicalPipe = normalizePipeline(pipeline) || pipeline;
+      const existing = await this.getThinking(projectId, canonicalPipe, substep);
+      
       if (existing) {
         const res = await this.db.update(agentThinking)
           .set({
+            pipeline: canonicalPipe,
+            substep,
             thinking,
             updatedAt: new Date(),
           })
@@ -81,7 +266,7 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
           .values({
             id,
             projectId,
-            pipeline,
+            pipeline: canonicalPipe,
             substep,
             thinking,
           })
@@ -104,12 +289,12 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
 
   async deleteThinking(projectId: string, pipeline: string, substep: string): Promise<void> {
     try {
+      const candidates = getSubstepCandidates(substep);
       await this.db.delete(agentThinking)
         .where(
           and(
             eq(agentThinking.projectId, projectId),
-            eq(agentThinking.pipeline, pipeline),
-            eq(agentThinking.substep, substep)
+            inArray(agentThinking.substep, candidates)
           )
         );
     } catch (err: any) {
@@ -119,13 +304,48 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
 
   async clearProjectPipelineThinking(projectId: string, pipeline: string): Promise<void> {
     try {
-      await this.db.delete(agentThinking)
-        .where(
-          and(
-            eq(agentThinking.projectId, projectId),
-            eq(agentThinking.pipeline, pipeline)
-          )
+      const normalizedPipe = normalizePipeline(pipeline) || pipeline;
+      const pipelineSubsteps: string[] = [];
+      if (normalizedPipe === "Data Ingestion") {
+        pipelineSubsteps.push(
+          ...getSubstepCandidates("Data Inspection"),
+          ...getSubstepCandidates("Data Profiling"),
+          ...getSubstepCandidates("Schema Resolver")
         );
+      } else if (normalizedPipe === "Feature Engineering") {
+        pipelineSubsteps.push(
+          ...getSubstepCandidates("Hierarchy Mapper"),
+          ...getSubstepCandidates("Feature Architect"),
+          ...getSubstepCandidates("Feature Validator"),
+          ...getSubstepCandidates("Exogenous Scout")
+        );
+      } else if (normalizedPipe === "Model Training & Validation") {
+        pipelineSubsteps.push(
+          ...getSubstepCandidates("Model Selection"),
+          ...getSubstepCandidates("Training Configuration"),
+          ...getSubstepCandidates("Pre Flight"),
+          ...getSubstepCandidates("Model Training Code Generation"),
+          ...getSubstepCandidates("Model Validation")
+        );
+      }
+
+      if (pipelineSubsteps.length > 0) {
+        await this.db.delete(agentThinking)
+          .where(
+            and(
+              eq(agentThinking.projectId, projectId),
+              inArray(agentThinking.substep, pipelineSubsteps)
+            )
+          );
+      } else {
+        await this.db.delete(agentThinking)
+          .where(
+            and(
+              eq(agentThinking.projectId, projectId),
+              eq(agentThinking.pipeline, normalizedPipe)
+            )
+          );
+      }
     } catch (err: any) {
       console.warn(`[AgentThinkingRepository] Warning: clearProjectPipelineThinking failed for project ${projectId}:`, err.message || err);
     }

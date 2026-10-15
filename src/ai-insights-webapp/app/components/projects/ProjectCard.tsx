@@ -68,10 +68,10 @@ export default function ProjectCard({
         </div>
 
         <h3
-          className="text-sm font-bold text-foreground tracking-tight mb-1 truncate group-hover:text-primary dark:group-hover:text-amber-400 transition-colors"
-          title={project.name}
+          className="text-sm font-bold text-foreground tracking-tight mb-0.5 truncate group-hover:text-primary dark:group-hover:text-amber-400 transition-colors"
+          title={project.projectName || project.name}
         >
-          {project.name}
+          {project.projectName || project.name}
         </h3>
 
         <p className="text-xs text-muted-foreground line-clamp-2 leading-relaxed mb-4">

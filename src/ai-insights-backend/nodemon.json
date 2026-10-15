@@ -32,7 +32,8 @@
     "node_modules/**",
     "dist/**",
     ".git/**",
-    "drizzle/**"
+    "drizzle/**",
+    "src/scripts/**"
   ],
   "exec": "node --max-old-space-size=8192 -r ts-node/register src/index.ts",
   "delay": "2000"

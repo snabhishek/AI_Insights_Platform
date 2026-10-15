@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { useApp, DataSource, ConnectionConfig } from "../providers/AppContext";
+import ModernSelect from "../shared/ui/ModernSelect";
 import {
   PostgresqlIcon,
   SnowflakeIcon,
@@ -65,6 +66,7 @@ export default function ConnectionModal({
   const [url, setUrl] = useState("");
   const [fileName, setFileName] = useState("");
   const [fileContent, setFileContent] = useState("");
+  const [httpMethod, setHttpMethod] = useState("GET");
 
   const [testing, setTesting] = useState(false);
   const [testResult, setTestResult] = useState<"success" | "error" | null>(null);
@@ -430,10 +432,15 @@ export default function ConnectionModal({
                 <label className="block text-xs font-semibold text-muted-foreground uppercase mb-1">
                   HTTP Method
                 </label>
-                <select className="w-full h-10 px-3.5 rounded-lg border border-border bg-surface text-sm text-foreground focus:outline-none focus:border-primary transition-all">
-                  <option value="GET">GET</option>
-                  <option value="POST">POST</option>
-                </select>
+                <ModernSelect
+                  value={httpMethod}
+                  onChange={(val) => setHttpMethod(val)}
+                  options={[
+                    { value: "GET", label: "GET" },
+                    { value: "POST", label: "POST" },
+                  ]}
+                  triggerClassName="h-10 text-sm"
+                />
               </div>
 
               <div>

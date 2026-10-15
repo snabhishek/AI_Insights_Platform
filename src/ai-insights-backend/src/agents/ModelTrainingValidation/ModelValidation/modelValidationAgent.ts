@@ -2,7 +2,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as yaml from "js-yaml";
 import { BaseMessage } from "@langchain/core/messages";
-import { AgentStateType, IngestionServices } from "../../state";
+import { GraphAgentStateType, IngestionServices } from "../../state";
 import {
   getModel,
   getPromptFromFile,
@@ -57,8 +57,10 @@ export class ModelValidationAgent {
 
   public static determineValidationMode(
     predictionStartDate: string,
-    currentServerDate?: string
+    currentServerDate?: string,
+    executionMode?: ValidationMode
   ): ValidationMode {
+    if (executionMode) return executionMode;
     const today = currentServerDate || new Date().toISOString().slice(0, 10);
     const cleanStart = (predictionStartDate || "").trim().slice(0, 10);
     if (!cleanStart) return "backtesting";
@@ -66,7 +68,7 @@ export class ModelValidationAgent {
   }
 
   public static resolvePredictionStartDate(
-    state: AgentStateType,
+    state: GraphAgentStateType,
     trainingConfig: any
   ): string {
     const directStart =
@@ -86,16 +88,11 @@ export class ModelValidationAgent {
 
     if (cutoffDateStr && typeof cutoffDateStr === "string" && cutoffDateStr.trim().length > 0) {
       const trimmed = cutoffDateStr.trim();
-      const match = /^(\d{4})-(\d{2})/.exec(trimmed);
-      if (match) {
-        return `${match[1]}-${match[2]}-01`;
-      }
       try {
         const d = new Date(trimmed);
         if (!isNaN(d.getTime())) {
-          const y = d.getFullYear();
-          const m = String(d.getMonth() + 1).padStart(2, "0");
-          return `${y}-${m}-01`;
+          d.setUTCDate(d.getUTCDate() + 1);
+          return d.toISOString().slice(0, 10);
         }
       } catch { }
       return trimmed.slice(0, 10);
@@ -171,7 +168,7 @@ export class ModelValidationAgent {
 
   public static extractValidatedFeatures(
     trainingConfig: any,
-    state: AgentStateType,
+    state: GraphAgentStateType,
     runDir?: string
   ): string[] {
 
@@ -196,11 +193,15 @@ export class ModelValidationAgent {
       stateConfig?.validated_features ||
       stateConfig?.validatedFeatures ||
       stateConfig?.features ||
+      ((state as any).featureValidatorNode as any)?.validatedFeatureSet?.kept ||
       (state.featureValidator as any)?.validatedFeatureSet?.kept ||
+      (state.stageOutputs?.featureValidatorNode as any)?.validatedFeatureSet?.kept ||
       (state.stageOutputs as any)?.featureValidator?.validatedFeatureSet?.kept ||
       (state as any)?.features ||
       (state as any)?.validatedFeatures ||
+      ((state as any).featureArchitectNode as any)?.validatedFeatureSet?.kept ||
       (state.featureArchitect as any)?.validatedFeatureSet?.kept ||
+      (state.stageOutputs?.modelTrainingCodeNode as any)?.features ||
       (state.stageOutputs as any)?.modelTraining?.features;
 
     if (Array.isArray(stateFeatures) && stateFeatures.length > 0) {
@@ -227,7 +228,7 @@ export class ModelValidationAgent {
     return [];
   }
 
-  private static getProjectContext(state: AgentStateType, services: IngestionServices) {
+  private static getProjectContext(state: GraphAgentStateType, services: IngestionServices) {
     const projectId = state.projectId || services?.projectId || "default-project";
     let workspaceName = (state as any).workspaceName || services?.workspaceName || "";
     const projectName = (state as any).projectName || services?.projectName || "Forecasting";
@@ -367,12 +368,13 @@ export class ModelValidationAgent {
   }
 
   public static async execute(
-    state: AgentStateType,
+    state: GraphAgentStateType,
     services: IngestionServices,
     options?: {
       predictionHorizon?: number;
       predictionFrequency?: string;
       predictionObjectiveStartDate?: string;
+      executionMode?: ValidationMode;
       selectedModels?: string[];
       filters?: Record<string, any>;
       maxRetries?: number;
@@ -419,7 +421,7 @@ export class ModelValidationAgent {
       throw new Error("[ModelValidationAgent] Prediction objective start date is required.");
     }
 
-    const mode = this.determineValidationMode(predictionStartDate);
+    const mode = this.determineValidationMode(predictionStartDate, undefined, options?.executionMode);
 
     let featureMetadata: any = {};
     const metadataYamlPath = path.join(runDir, "python_script", "metadata.yaml");
@@ -450,7 +452,7 @@ export class ModelValidationAgent {
       trainingConfig?.target_column ||
       trainingConfig?.model_selection?.target_entity?.name ||
       (state.modelSelection as any)?.target_entity?.name ||
-      (state.stageOutputs?.modelSelection as any)?.target_entity?.name ||
+      (state.stageOutputs?.modelSelectionNode as any)?.target_entity?.name ||
       "";
 
     const groupCol =
@@ -471,7 +473,7 @@ export class ModelValidationAgent {
       (state as any).problemType ||
       (state.modelSelection as any)?.problem_type ||
       (state.modelSelection as any)?.task_type ||
-      (state.stageOutputs?.modelSelection as any)?.problem_type ||
+      (state.stageOutputs?.modelSelectionNode as any)?.problem_type ||
       (state.featureArchitect as any)?.orchestrationDecision?.problemType;
 
     const direction =
@@ -484,9 +486,9 @@ export class ModelValidationAgent {
       trainingConfig?.["x-primary-metric-def"]?.direction ||
       (state as any).direction ||
       (state.modelSelection as any)?.direction ||
-      (state.stageOutputs?.modelSelection as any)?.direction ||
+      (state.stageOutputs?.modelSelectionNode as any)?.direction ||
       (state.modelTraining as any)?.direction ||
-      (state.stageOutputs?.modelTraining as any)?.direction ||
+      (state.stageOutputs?.modelTrainingCodeNode as any)?.direction ||
       (state.trainingConfiguration as any)?.configuration?.objective?.direction ||
       (state.trainingConfiguration as any)?.configuration?.["x-primary-metric-def"]?.direction ||
       (state.trainingConfiguration as any)?.direction;
@@ -618,6 +620,7 @@ export class ModelValidationAgent {
       `1. Write the executable validation script to '${runTimestamp}/${projectName}_model_validation/validation_runner.py'.`,
       `2. The script must execute inference across all candidate model joblib artifacts, apply preprocessor transformation, and compute metrics.`,
       `3. In Future Prediction Mode (${mode === "future_prediction"}), generate forward periods without fake past actuals, benchmark using training test scores, and set actualTotal/difference to null.`,
+      `In future_prediction mode, forecast every period from ${predictionStartDate} for all ${horizon} periods, including gaps before today's date. Calendar-past periods without observations are still forecasts. Advance sequentially and recursively update lag/rolling features from prior predictions when required by the trained model; do not jump directly to a late requested period with stale lags. Never fabricate actuals or unavailable future covariates; report unsupported inference explicitly.`,
       `4. In Backtesting Mode (${mode === "backtesting"}), slice evaluation records starting from ${predictionStartDate}, compare against ground-truth actuals, and compute deterministic metrics (F1/Accuracy or WAPE/MAE/RMSE).`,
       `5. Save outputs to '${runTimestamp}/${projectName}_model_validation/reports/model_validation_report.json' and 'artifacts/predictions/validation_predictions.parquet'.`,
       `6. MANDATORY JSON REPORT SCHEMA: 'model_validation_report.json' MUST structure candidate model results under the exact key 'model_results' (i.e. { "model_results": { "<model_id>": { "model_id": ..., "displayName": ..., "framework": ..., "status": "Completed", "score": ..., "metrics": { ... }, "totals": { ... }, "chartData": { ... }, ... } } }), matching the exact convention used in 'model_training_report.json'. DO NOT use 'models', 'candidate_models', or any alternative key names. Do NOT modify the key-value names mentioned in the standard schema.`,
@@ -1057,10 +1060,10 @@ export class ModelValidationAgent {
     const stateCandidates = [
       ...((state.modelSelection as any)?.candidates || []),
       ...((state.modelSelection as any)?.models || []),
-      ...((state.stageOutputs?.modelSelection as any)?.candidates || []),
-      ...((state.stageOutputs?.modelSelection as any)?.models || []),
+      ...((state.stageOutputs?.modelSelectionNode as any)?.candidates || []),
+      ...((state.stageOutputs?.modelSelectionNode as any)?.models || []),
       ...((state.modelTraining as any)?.candidates || []),
-      ...((state.stageOutputs?.modelTraining as any)?.candidates || []),
+      ...((state.stageOutputs?.modelTrainingCodeNode as any)?.candidates || []),
       ...((state.trainingConfiguration as any)?.configuration?.model_selection?.candidates || []),
       ...((state.trainingConfiguration as any)?.configuration?.model_selection?.models || []),
     ];

@@ -1,6 +1,7 @@
 "use client";
 
 import React from "react";
+import { TableProperties } from "lucide-react";
 import { Badge, SectionHeader, DynamicTable } from "./utils";
 
 interface SchemaResolverStepOutputProps {
@@ -18,19 +19,10 @@ export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolv
         ? [resolveSchema]
         : [];
 
-  const getTopicBadgeVariant = (topic: string) => {
-    const norm = topic.toLowerCase();
-    if (norm.includes("customer")) return "primary";
-    if (norm.includes("order") || norm.includes("sale") || norm.includes("revenue")) return "teal";
-    if (norm.includes("product") || norm.includes("inventory")) return "purple";
-    if (norm.includes("finance") || norm.includes("payment")) return "success";
-    return "neutral";
-  };
-
   if (sources.length === 0) {
     return (
       <div className="p-6 text-center border border-dashed border-border bg-surface-muted/20 select-none">
-        <span className="text-xl block mb-1">🔗</span>
+        <TableProperties className="w-6 h-6 mx-auto mb-1.5 text-muted-foreground/60" />
         <p className="text-xs text-muted-foreground">No schema mappings found in payload.</p>
       </div>
     );
@@ -38,15 +30,6 @@ export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolv
 
   return (
     <div className="space-y-6 select-none">
-
-      <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5 shadow-sm font-semibold select-none">
-        <span className="text-sm">✓</span>
-        <div>
-          <strong className="block text-emerald-900 dark:text-emerald-400">Schema Resolution Finalized</strong>
-          <p className="text-emerald-700/90 dark:text-emerald-300/80 mt-0.5">The mapping logic between physical dataset tables and downstream business models has been successfully established and compiled.</p>
-        </div>
-      </div>
-
       {sources.map((src: any, srcIdx: number) => {
         const srcName = src.connectorName || src.connectorId || `Source #${srcIdx + 1}`;
         const domain = src.domain || "general";
@@ -66,11 +49,6 @@ export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolv
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground block select-none">Alignment Strategy</span>
-                  <p className="text-xs text-foreground/90 leading-relaxed font-semibold">{strategy}</p>
-                </div>
-
                 {resolvedTables.length > 0 && (
                   <div className="space-y-1">
                     <span className="text-[9px] font-bold uppercase tracking-wider text-muted-foreground block select-none">Resolved Entity Tables</span>

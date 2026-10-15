@@ -1,8 +1,10 @@
 "use client";
 
 import React from "react";
-import { AgentPersona, AgentPersonaId } from "./types";
+import { Bot, X, Check } from "lucide-react";
+import { AgentPersonaId } from "./types";
 import { AGENT_PERSONAS } from "./constants";
+import PersonaIcon from "./PersonaIcon";
 
 interface ChatAgentPersonaModalProps {
   isOpen: boolean;
@@ -24,11 +26,10 @@ export default function ChatAgentPersonaModal({
   return (
     <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in select-none">
       <div className="relative w-full max-w-2xl bg-surface border border-border rounded-2xl shadow-2xl p-6 space-y-5 animate-scale-up max-h-[90vh] flex flex-col">
-
         <div className="flex items-center justify-between border-b border-border pb-3 shrink-0">
           <div>
             <h2 className="text-base font-bold text-foreground flex items-center gap-2">
-              <span>🤖</span>
+              <Bot className="w-5 h-5 text-primary" />
               <span>Select Specialized AI Agent Persona</span>
             </h2>
             <p className="text-xs text-muted-foreground mt-0.5">
@@ -40,7 +41,7 @@ export default function ChatAgentPersonaModal({
             onClick={onClose}
             className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-surface-muted text-muted-foreground hover:text-foreground text-sm transition-colors cursor-pointer"
           >
-            ✕
+            <X className="w-4 h-4" />
           </button>
         </div>
 
@@ -63,7 +64,9 @@ export default function ChatAgentPersonaModal({
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2.5">
-                      <span className="text-2xl">{persona.avatar}</span>
+                      <div className="w-8 h-8 rounded-lg bg-surface-muted border border-border/80 flex items-center justify-center">
+                        <PersonaIcon icon={persona.avatar} className="w-4 h-4" />
+                      </div>
                       <div>
                         <h4 className="text-xs font-bold text-foreground leading-tight">
                           {persona.name}
@@ -72,7 +75,8 @@ export default function ChatAgentPersonaModal({
                       </div>
                     </div>
                     {isSelected && (
-                      <span className="text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary text-primary-foreground shadow-xs">
+                      <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-primary text-primary-foreground shadow-xs">
+                        <Check className="w-2.5 h-2.5" />
                         Active
                       </span>
                     )}

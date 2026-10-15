@@ -51,6 +51,16 @@ export class PostgresWorkspaceRepository implements IWorkspaceRepository {
     return workspace;
   }
 
+  async update(id: string, name: string): Promise<Workspace | undefined> {
+    const res = await this.db
+      .update(schema.workspaces)
+      .set({ name })
+      .where(eq(schema.workspaces.id, id))
+      .returning();
+    if (res.length === 0) return undefined;
+    return this.mapRowToWorkspace(res[0]);
+  }
+
   async delete(id: string): Promise<boolean> {
     const res = await this.db.delete(schema.workspaces).where(eq(schema.workspaces.id, id));
     return (res.rowCount ?? 0) > 0;

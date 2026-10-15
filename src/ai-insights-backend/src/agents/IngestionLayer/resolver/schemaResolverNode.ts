@@ -2,7 +2,7 @@ import { RunnableConfig } from "@langchain/core/runnables";
 import * as path from "path";
 import * as fsSync from "fs";
 import * as yaml from "js-yaml";
-import { AgentState, IngestionServices } from "../../state";
+import { AgentState, IngestionServices, checkWorkflowInterrupt } from "../../state";
 import {
   getModel,
   invokeAgentJson,
@@ -247,10 +247,8 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
   if (!services) {
     throw new Error("Services dependency is not provided in config");
   }
-  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
-    console.info(`[Workflow] schemaResolverNode skipping execution because workflow is stopped/paused.`);
-    return { status: state.status || "failed" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "schemaResolverNode");
+  if (interrupt) return interrupt;
   const { connectorService } = services;
   const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await connectorService.getById(connectorId)));
   const validConnectors = connectors.filter((connector) => !!connector);
@@ -291,11 +289,11 @@ export async function schemaResolverNode(state: typeof AgentState.State, config?
   );
   return {
     runTimestamp: activeRunTimestamp,
-    schemaResolution: { sources: resolvedSources },
+    resolveSchema: { sources: resolvedSources },
     batchedTables: updatedBatchedTables,
-    status: "completed",
+    status: "In-Progress",
     summary: "Schema resolution completed",
-    steps: [{ name: "Schema Resolver", status: "completed", summary: "Schema mapping prepared" }],
+    steps: [{ name: "Schema Resolver", status: "Completed", summary: "Schema mapping prepared" }],
     stageOutputs: { resolveSchema: { sources: resolvedSources } },
     stageStatuses: { resolveSchema: "Completed" },
   };

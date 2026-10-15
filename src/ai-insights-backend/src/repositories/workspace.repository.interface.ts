@@ -5,5 +5,6 @@ export interface IWorkspaceRepository {
   getById(id: string): Promise<Workspace | undefined>;
   getByName(name: string): Promise<Workspace | undefined>;
   create(workspace: Workspace): Promise<Workspace>;
+  update(id: string, name: string): Promise<Workspace | undefined>;
   delete(id: string): Promise<boolean>;
 }

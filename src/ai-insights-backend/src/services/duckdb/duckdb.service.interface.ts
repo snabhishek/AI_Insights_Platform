@@ -29,6 +29,7 @@ export interface IDuckDBService {
   applyCleaningOperations(type: ConnectorType, config: ConnectionConfig, tableName: string, operations: any[], projectName?: string, workspaceName?: string, folderPath?: string): Promise<{ results: any[] }>;
 
   getDuckDbPath(fileName: string, sheetName?: string, projectName?: string, workspaceName?: string, folderPath?: string): string;
+  getProjectDuckDbPath(projectName: string, workspaceName?: string, folderPath?: string): string;
 
   findColumnLocation(fieldId: string, preferredTable?: string): Promise<ColumnLocationResult | null>;
 

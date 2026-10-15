@@ -16,6 +16,8 @@ interface ModelTrainingValidationOutputProps {
   projectId?: string;
   activeSubstep?: string;
   activeRunTimestamp?: string;
+  isConfigurationComplete?: boolean;
+  nextStepInProgress?: boolean;
   onSelectionConfirmed?: (selectedModels: string[]) => void;
   onApproveTraining?: (selectedModels: string[], splitEndDate?: string) => void;
   onApprove?: (selectedModels?: string[], splitEndDate?: string) => void;
@@ -34,6 +36,8 @@ export default function ModelTrainingValidationStepOutput({
   projectId,
   activeSubstep,
   activeRunTimestamp,
+  isConfigurationComplete = false,
+  nextStepInProgress = false,
   onSelectionConfirmed,
   onApproveTraining,
   onApprove,
@@ -61,19 +65,20 @@ export default function ModelTrainingValidationStepOutput({
       <ModelSelectionStepOutput
         modelSelection={modelSelection}
         projectId={projectId}
+        nextStepInProgress={nextStepInProgress}
         onSelectionConfirmed={onSelectionConfirmed}
       />
     );
   }
 
   if (
-    activeSubstep === "Training Configuration" ||
-    (!activeSubstep && Boolean(trainingConfiguration?.contractPath || trainingConfiguration?.status === "Completed") &&
+    (isConfigurationComplete && activeSubstep === "Training Configuration") ||
+    (!activeSubstep && isConfigurationComplete && Boolean(trainingConfiguration?.contractPath || trainingConfiguration?.status === "Completed") &&
       !preFlight &&
       !modelTraining &&
       !modelValidation)
   ) {
-    if (!trainingConfiguration) {
+    if (!isConfigurationComplete || !trainingConfiguration) {
       return (
         <div className="p-8 text-center text-muted-foreground flex flex-col items-center justify-center min-h-[200px]">
           <p className="text-sm font-semibold text-foreground">Training Configuration</p>
@@ -86,9 +91,10 @@ export default function ModelTrainingValidationStepOutput({
     return (
       <TrainingConfigurationStepOutput
         projectId={projectId}
-        trainingConfiguration={trainingConfiguration}
         modelSelection={modelSelection}
         activeRunTimestamp={activeRunTimestamp}
+        isConfigurationComplete={isConfigurationComplete}
+        nextStepInProgress={nextStepInProgress}
         onApprove={onApprove}
         isApproving={isApproving}
       />
@@ -115,6 +121,7 @@ export default function ModelTrainingValidationStepOutput({
         projectId={projectId}
         activeRunTimestamp={activeRunTimestamp}
         onApprovePreFlight={onApprovePreFlight}
+        nextStepInProgress={nextStepInProgress}
         isApproving={isApproving}
       />
     );
@@ -128,7 +135,6 @@ export default function ModelTrainingValidationStepOutput({
       <ModelTrainingStepOutput
         modelTraining={modelTraining || {}}
         trainingConfiguration={trainingConfiguration}
-        modelSelection={modelSelection}
         projectId={projectId}
         activeRunTimestamp={activeRunTimestamp}
         onApproveTraining={onApproveTraining}
@@ -138,6 +144,7 @@ export default function ModelTrainingValidationStepOutput({
             onApproveValidation(12, "Weekly", undefined, selectedModels);
           }
         }}
+        nextStepInProgress={nextStepInProgress}
         isApproving={isApproving}
       />
     );
@@ -156,6 +163,7 @@ export default function ModelTrainingValidationStepOutput({
         projectId={projectId}
         activeRunTimestamp={activeRunTimestamp}
         onApproveValidation={onApproveValidation}
+        nextStepInProgress={nextStepInProgress}
         isApproving={isApproving}
       />
     );

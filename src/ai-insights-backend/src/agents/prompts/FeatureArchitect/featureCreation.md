@@ -142,14 +142,28 @@ if __name__ == '__main__':
 - Return from the function instead of calling `exit(0)` or `sys.exit(0)`.
 - Save the created features to `--output-path` (`feature_created.parquet`) so downstream stages can load them.
 
+### Input Discovery & Artifact Blacklist Rules (CRITICAL)
+- **Only load raw data from `--db-path`**:
+  - Check directly in `--db-path` root for `.duckdb` files (e.g. `<table_name>.duckdb` or project DuckDB databases) or raw data files (`.csv`, `.parquet`) that match the source table names provided in the prompt.
+  - If DuckDB files exist, inspect them (`SHOW TABLES`) and query the raw source tables (`SELECT * FROM "<table_name>"`).
+- **STRICT ARTIFACT BLACKLIST**:
+  - NEVER list or consider any downstream pipeline output artifacts as input candidates (`feature_created.parquet`, `feature_transformation.parquet`, `dataset.parquet`, `feature_extraction.parquet`, `feature_selection.parquet`, `feature_validation.parquet`).
+  - NEVER search `--out-dir` for input data. `--out-dir` is strictly for writing output artifacts!
+  - NEVER perform an unconstrained recursive walk (`os.walk`) through `/workspace` or `--db-path` that enters timestamped subdirectories (e.g. `<timestamp>/python_script/`), as these contain stale artifacts from prior runs.
+- **Mandatory Input Schema Validation**:
+  - After loading the raw DataFrame, verify that `df` is not empty, has more than 1 column, and contains expected domain columns from the source tables.
+  - If a loaded candidate has only 1 column or missing key domain fields, reject it immediately!
+  - If no valid raw dataset can be found in `--db-path`, generate a complete synthetic fallback DataFrame containing all required domain columns (temporal, weather, inventory, pricing, categorical, target) with realistic distributions, rather than silently writing an empty or single-column artifact.
+
 ## Python File & Artifact Rules
 - When persisting created features or intermediate artifacts, use CSV or Parquet only; do NOT use `pickle` or other ad-hoc binary formats.
 - Use `pandas` with `to_parquet(..., engine='pyarrow')` or `to_csv(..., index=False)` and accept target paths via `--output-path` CLI arg.
 - Implement safe writes: write to a temporary file, validate contents, then atomically rename to the final path.
 - Avoid hardcoded paths; create parent directories if they do not exist.
-- Validate written artifacts (row counts, expected columns) and log verification details.
+- Validate written artifacts (row counts > 0, expected feature columns created) and log verification details.
 
 ### Common problems to avoid when generating Python code
+- Self-referential loading: Accidentally reading `feature_created.parquet` from `--out-dir` instead of raw source data — strictly prohibited.
 - Security: Pickle-based artifacts can execute arbitrary code on load — banned for artifact persistence.
 - Portability: Artifacts must be inspectable and loadable across environments and versions; Parquet/CSV with explicit schema are portable.
 - Partial writes: Direct writes can leave partial files if interrupted — use atomic rename strategy.

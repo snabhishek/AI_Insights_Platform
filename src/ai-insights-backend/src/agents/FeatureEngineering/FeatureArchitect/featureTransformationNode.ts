@@ -70,11 +70,16 @@ export async function featureTransformationNode(
   const scriptPath = path.join(pythonScriptDir, scriptName);
   const userPromptText = state.userPrompt ?? DEFAULT_USER_PROMPT;
 
+  const targetCandidate = state.prediction_target_column.length > 0
+    ? state.prediction_target_column
+    : (state.orchestrationDecision?.prediction_target_column || state.orchestrationDecision?.targetColumn || "");
+
   const userMessage = [
     "Design and generate feature transformation and imputation recommendations based on Orchestrator decisions and created features.",
     `User Requirements: ${userPromptText}`,
     `Tables List: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
     `Orchestrator Decisions: ${JSON.stringify(state.orchestrationDecision)}`,
+    ...(targetCandidate ? [`Prediction Target Column: ${targetCandidate}`] : []),
     `Newly Created Features: ${JSON.stringify(state.featureCreation?.recommendations)}`,
     `Input Feature File: ${ARTIFACT_FEATURE_CREATED}`,
     `Target Pipeline File: ${scriptPath}`,
@@ -111,9 +116,11 @@ export async function featureTransformationNode(
     );
 
     const summaryText = result.summary.length > 0 ? result.summary : DEFAULT_TRANSFORMATION_SUCCESS;
+    const resolvedTarget = (result as any)?.prediction_target_column || (result as any)?.targetColumn || targetCandidate;
 
     return {
       featureTransformation: result,
+      ...(resolvedTarget ? { prediction_target_column: resolvedTarget } : {}),
       history: [
         {
           worker: WORKER_FEATURE_TRANSFORMATION,
@@ -125,6 +132,7 @@ export async function featureTransformationNode(
     console.warn("[featureTransformationNode] Execution failed, using fallback", error);
     return {
       featureTransformation: fallback,
+      ...(targetCandidate ? { prediction_target_column: targetCandidate } : {}),
       history: [
         {
           worker: WORKER_FEATURE_TRANSFORMATION,

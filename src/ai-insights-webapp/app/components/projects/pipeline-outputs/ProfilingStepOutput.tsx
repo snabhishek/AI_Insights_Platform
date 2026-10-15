@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
+import { BarChart3 } from "lucide-react";
 import { Badge, DynamicTable } from "./utils";
 
 interface ProfilingStepOutputProps {
@@ -25,7 +26,7 @@ export default function ProfilingStepOutput({ profileData }: ProfilingStepOutput
   if (sources.length === 0) {
     return (
       <div className="p-6 text-center border border-dashed border-border bg-surface-muted/20 select-none">
-        <span className="text-xl block mb-1">📊</span>
+        <BarChart3 className="w-6 h-6 mx-auto mb-1.5 text-muted-foreground/60" />
         <p className="text-xs text-muted-foreground">No profiling results found in payload.</p>
       </div>
     );

@@ -50,10 +50,6 @@ async function runVerificationTests() {
     "modelTrainingCodeNode is included in interruptBefore (train split dates input gate)"
   );
   assert(
-    interruptNodes.includes("modelTrainingExecNode"),
-    "modelTrainingExecNode is included in interruptBefore (Docker candidate selection gate)"
-  );
-  assert(
     interruptNodes.includes("preFlightNode"),
     "preFlightNode is included in interruptBefore (pauses after Training Configuration for YAML review/approval before Preflight runs)"
   );

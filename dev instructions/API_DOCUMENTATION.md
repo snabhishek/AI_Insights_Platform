@@ -151,6 +151,7 @@ Creates an analytical project in a workspace, generates the project schema YAML 
 * **Request Body**:
 ```json
 {
+  "projectName": "Q4 Retail Analysis",
   "name": "Customer Churn Prediction",
   "dataSources": [
     "conn-101"
@@ -163,7 +164,8 @@ Creates an analytical project in a workspace, generates the project schema YAML 
 }
 ```
 * **Field Specifications**:
-  * `name` (`string`, required): Project name.
+  * `projectName` (`string`, optional): Short project identifier (e.g. "Q4 Retail Analysis").
+  * `name` (`string`, required): Use case title (e.g. "Customer Churn Prediction").
   * `dataSources` (`string[]`, required): Non-empty array of connector IDs.
   * `role` (`"OWNER" | "MEMBER"`, optional, default: `"OWNER"`).
   * `domain` (`string`, optional): Business domain.
@@ -174,6 +176,7 @@ Creates an analytical project in a workspace, generates the project schema YAML 
 ```json
 {
   "id": "proj-982c7300-e29b-41d4-a716-446655440022",
+  "projectName": "Q4 Retail Analysis",
   "name": "Customer Churn Prediction",
   "role": "OWNER",
   "dataSources": ["conn-101"],
@@ -202,6 +205,7 @@ Updates an existing project's metadata, status, connected sources, or AI agent s
 * **Request Body**:
 ```json
 {
+  "projectName": "Q4 Retail Analysis v2",
   "name": "Customer Churn Prediction v2",
   "useCase": "Updated scope: churn prediction for premium tier only",
   "dataSources": ["conn-101", "conn-102"],

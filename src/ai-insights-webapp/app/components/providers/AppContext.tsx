@@ -5,6 +5,7 @@ import MessageModal from "../shared/ui/MessageModal";
 import ConfirmationModal from "../shared/ui/ConfirmationModal";
 import CreateWorkspaceModal from "../shared/ui/CreateWorkspaceModal";
 import ToastNotification, { ToastItem } from "../shared/ui/ToastNotification";
+import type { WorkflowAgentState } from "../projects/pipelineNames";
 
 export interface ConnectionConfig {
   host?: string;
@@ -40,8 +41,42 @@ export interface Connector {
 
 export type DataSource = Connector;
 
+export function getDataSourceCategory(ds: DataSource | null | undefined): string {
+  if (!ds) return "";
+
+  const type = ds.type ? ds.type.toLowerCase() : "";
+  if (type === "postgres" || type === "mysql" || type === "sqlserver" || type === "mongodb") {
+    return "Database";
+  }
+  if (type === "snowflake") {
+    return "Data Warehouse";
+  }
+  if (type === "restapi") {
+    return "API";
+  }
+  if (type === "excel" || type === "csv" || type === "tsv") {
+    const sub = ds.subtext ? ds.subtext.toLowerCase() : "";
+    const name = ds.name ? ds.name.toLowerCase() : "";
+    if (sub.includes("cloud") || sub.includes("storage") || name.includes("cloud storage") || name.includes("s3")) {
+      return "Cloud Storage";
+    }
+    return "File";
+  }
+
+  const sub = ds.subtext ? ds.subtext.toLowerCase() : "";
+  const name = ds.name ? ds.name.toLowerCase() : "";
+  if (sub.includes("warehouse") || name.includes("warehouse")) return "Data Warehouse";
+  if (sub.includes("database") || name.includes("database")) return "Database";
+  if (sub.includes("api") || name.includes("api")) return "API";
+  if (sub.includes("cloud") || sub.includes("storage") || name.includes("cloud") || name.includes("storage")) return "Cloud Storage";
+  if (sub.includes("file") || sub.endsWith(".csv") || sub.endsWith(".xlsx") || sub.endsWith(".xls") || sub.endsWith(".tsv")) return "File";
+
+  return ds.type || ds.subtext || "";
+}
+
 export interface Project {
   id: string;
+  projectName?: string;
   name: string;
   role: "OWNER" | "MEMBER";
   dataSources: string[];
@@ -53,7 +88,7 @@ export interface Project {
   subDomain?: string;
   status?: string;
   splitDate?: string;
-  agentState?: Record<string, unknown>;
+  agentState?: WorkflowAgentState;
 }
 
 export interface UserProfile {
@@ -77,11 +112,12 @@ interface AppContextType {
   activeWorkspaceId: string;
   setActiveWorkspaceId: (id: string) => void;
   addWorkspace: (name: string) => Promise<void>;
+  renameWorkspace: (id: string, name: string) => Promise<void>;
   deleteWorkspace: (id: string) => Promise<void>;
   projects: Project[];
   setProjects: React.Dispatch<React.SetStateAction<Project[]>>;
   refreshProjects: () => Promise<void>;
-  addProject: (name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string) => Promise<Project | null>;
+  addProject: (projectName: string, name: string, role: "OWNER" | "MEMBER", dataSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string) => Promise<Project | null>;
   updateProject: (id: string, updates: Partial<Project> & { replaceAgentState?: boolean }) => Promise<void>;
   deleteProject: (id: string) => Promise<void>;
   connectors: Connector[];
@@ -107,7 +143,7 @@ interface AppContextType {
   showToast: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
   showNotification: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; duration?: number }) => void;
   showAlert: (config: { title?: string; message?: string; type?: "success" | "error" | "info" | "warning"; logs?: string; isModal?: boolean }) => void;
-  showConfirm: (config: { title: string; message: string; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
+  showConfirm: (config: { title: string; message: React.ReactNode; confirmText?: string; cancelText?: string; onConfirm: () => void }) => void;
   openCreateWorkspace: () => void;
 }
 
@@ -204,7 +240,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [confirmConfig, setConfirmConfig] = useState<{
     title: string;
-    message: string;
+    message: React.ReactNode;
     confirmText?: string;
     cancelText?: string;
     onConfirm: () => void;
@@ -345,6 +381,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setActiveWorkspaceId(data.id);
   };
 
+  const renameWorkspace = async (id: string, name: string) => {
+    const res = await fetch(`${BACKEND_URL}/workspaces/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name }),
+    });
+    const contentType = res.headers.get("content-type");
+    let data: any = {};
+    if (contentType && contentType.includes("application/json")) {
+      data = await res.json();
+    } else {
+      const text = await res.text();
+      throw new Error(
+        res.ok
+          ? "Unexpected non-JSON response from server."
+          : `Server returned status ${res.status}. Please ensure backend is running.`
+      );
+    }
+    if (!res.ok) throw new Error(data.message || "Failed to rename workspace");
+    setWorkspaces((prev) =>
+      prev.map((w) => (w.id === id ? { ...w, name: data.name || name } : w))
+    );
+  };
+
   const deleteWorkspace = async (id: string) => {
     const res = await fetch(`${BACKEND_URL}/workspaces/${id}`, { method: "DELETE" });
     const data = await res.json();
@@ -364,7 +424,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     });
   };
 
-  const addProject = async (name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string): Promise<Project | null> => {
+  const addProject = async (projectName: string, name: string, role: "OWNER" | "MEMBER", dsSources: string[], useCase: string, domain?: string, subDomain?: string, splitDate?: string): Promise<Project | null> => {
     const initials = userProfile.name
       .split(" ")
       .map((n) => n[0])
@@ -377,7 +437,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, role, dataSources: dsSources, initials, useCase, domain, subDomain, splitDate }),
+        body: JSON.stringify({ projectName, name, role, dataSources: dsSources, initials, useCase, domain, subDomain, splitDate }),
       });
       if (res.ok) {
         const newProject = await res.json();
@@ -385,7 +445,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         return newProject;
       } else {
         const err = await res.json();
-        showAlert({ title: err.message || "A project with this title already exists", type: "error" });
+        showAlert({ title: err.message || "A project with this name already exists", type: "error" });
         return null;
       }
     } catch (err: any) {
@@ -607,6 +667,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         activeWorkspaceId,
         setActiveWorkspaceId,
         addWorkspace,
+        renameWorkspace,
         deleteWorkspace,
         projects,
         setProjects,

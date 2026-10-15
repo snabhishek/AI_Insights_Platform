@@ -21,6 +21,7 @@ interface ProjectWorkspaceProps {
   onTabChange?: (tab: ProjectTabType) => void;
   onGoToList: () => void;
   onSaveProject: (
+    projectName: string,
     name: string,
     useCase: string,
     sources: string[],
@@ -41,9 +42,14 @@ interface ProjectWorkspaceProps {
   lastRunTime: string;
   activeStage: string | null;
   stageOutputs: Record<string, any>;
-  requiresApproval: boolean;
   workflowMessage: string;
+  workflowError: string | null;
   isApproving: boolean;
+  isSubmittingWorkflow: boolean;
+  isPausing?: boolean;
+  isStopping?: boolean;
+  isResuming?: boolean;
+  isRetrying?: boolean;
   isPaused: boolean;
   pausedAtPhase: string | null;
   approvalNextStep: string | null;
@@ -100,9 +106,14 @@ function ProjectWorkspaceContent({
   lastRunTime,
   activeStage,
   stageOutputs,
-  requiresApproval,
   workflowMessage,
+  workflowError,
   isApproving,
+  isSubmittingWorkflow,
+  isPausing,
+  isStopping,
+  isResuming,
+  isRetrying,
   isPaused,
   pausedAtPhase,
   approvalNextStep,
@@ -209,7 +220,7 @@ function ProjectWorkspaceContent({
           <ProjectCreatePage
             dataSources={dataSources}
             project={project}
-            isWorkflowActiveOrPaused={runStatus === "Running" || runStatus === "Paused" || isPaused}
+            isWorkflowActiveOrPaused={runStatus === "In-Progress" || runStatus === "Paused" || isPaused}
             startInEditMode={startInEditMode}
             onEditModeChange={setStartInEditMode}
             onCancel={onGoToList}
@@ -246,11 +257,16 @@ function ProjectWorkspaceContent({
             }
             activeStage={activeStage}
             stageOutputs={stageOutputs}
-            requiresApproval={requiresApproval}
             workflowMessage={workflowMessage}
+            workflowError={workflowError}
             onSelectStage={onStageSelect}
             onApprove={onApprove}
             isApproving={isApproving}
+            isSubmittingWorkflow={isSubmittingWorkflow}
+            isPausing={isPausing}
+            isStopping={isStopping}
+            isResuming={isResuming}
+            isRetrying={isRetrying}
             onRetry={onRetry}
             isPaused={isPaused}
             pausedAtPhase={pausedAtPhase}

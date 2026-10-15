@@ -143,10 +143,16 @@ if __name__ == '__main__':
 - Return from the function instead of calling `exit(0)` or `sys.exit(0)`.
 - Export the assembled dataset to `--output-path` (`dataset.parquet`).
 
+### Input Discovery & Artifact Blacklist Rules
+- Load transformed features strictly from `--features-path` (`feature_transformation.parquet`).
+- Load base tables and target columns from `--db-path` (DuckDB database files or source CSV/Parquet files in `--db-path` root).
+- NEVER load pipeline stage artifacts (`dataset.parquet`, `feature_extraction.parquet`, `feature_selection.parquet`, `feature_validation.parquet`) as base tables.
+- NEVER perform recursive directory walks (`os.walk`) that enter timestamped run subdirectories under `--db-path`.
+
 ## Python File & Artifact Rules
 - Save dataset artifacts only as CSV or Parquet. Do NOT use `pickle` or arbitrary binary formats.
 - Use atomic write patterns (write to temp file and rename).
-- Validate dataset integrity (row counts, column definitions, no empty outputs).
+- Validate dataset integrity (row counts > 0, column definitions, no empty outputs).
 
 ## Output Format
 Return valid **JSON ONLY** with no surrounding prose or markdown ticks. Conform to:

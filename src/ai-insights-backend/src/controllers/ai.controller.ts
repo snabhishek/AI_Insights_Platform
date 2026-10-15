@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { IIngestionAgentService } from "../services/ai/ingestion-agent/ingestionAgent.service.interface";
 import { IAgentThinkingService } from "../services/ai/agent-thinking/agentThinking.service.interface";
-import { getPipelineForSubstep } from "../agents/pipelineFlowConfig";
 
 export class AIController {
   constructor(
@@ -24,22 +23,13 @@ export class AIController {
     try {
       if (substep) {
         if (!pipeline) {
-          res.status(400).json({ success: false, message: "pipeline query parameter is required when substep is provided" });
+          res.status(400).json({ success: false, message: "pipeline query parameter is required for subprocess logs" });
           return;
         }
-        let thinkingRecord = await this.agentThinkingService.getThinking(projectId, pipeline, substep);
-        if (!thinkingRecord) {
-          const canonicalPipeline = getPipelineForSubstep(substep);
-          if (canonicalPipeline && canonicalPipeline !== pipeline) {
-            thinkingRecord = await this.agentThinkingService.getThinking(projectId, canonicalPipeline, substep);
-          }
-          if (!thinkingRecord && pipeline !== "Data Ingestion") {
-            thinkingRecord = await this.agentThinkingService.getThinking(projectId, "Data Ingestion", substep);
-          }
-        }
+        const thinkingRecord = await this.agentThinkingService.getThinking(projectId, pipeline, substep);
         res.json({
           success: true,
-          data: thinkingRecord ? { thinking: thinkingRecord.thinking } : null,
+          data: { thinking: thinkingRecord ? thinkingRecord.thinking : [] },
         });
         return;
       }
@@ -116,10 +106,37 @@ export class AIController {
     res.setHeader("X-Accel-Buffering", "no");
     res.flushHeaders();
 
+    const streamId = crypto.randomUUID();
     let clientDisconnected = false;
+    let isStreamCompleted = false;
+    let runningSessionId = sessionId;
+
+    this.ingestionAgentService.setActiveStream?.(streamId, sessionId, projectId);
+
+    const handleClientDisconnect = (reason: string) => {
+      if (isStreamCompleted) return;
+      clientDisconnected = true;
+      // Allow brief grace period so stage advancement/approval can register the replacement stream
+      setTimeout(async () => {
+        if (isStreamCompleted) return;
+        const resolvedSessionId = runningSessionId || this.ingestionAgentService.findSessionIdForProject?.(projectId);
+        const isStillActive = this.ingestionAgentService.isStreamActive?.(streamId, resolvedSessionId, projectId);
+        if (isStillActive === false) {
+          console.info(`[Workflow] Disconnected stream ${streamId} superseded by a newer stream; skipping auto-pause.`);
+          return;
+        }
+        console.warn(`[Workflow] Client disconnected (${reason}). Auto-pausing workflow for session: ${resolvedSessionId || "unknown"}, project: ${projectId || "unknown"}`);
+        try {
+          await this.ingestionAgentService.pause(resolvedSessionId, projectId);
+        } catch (err: any) {
+          console.error(`[Workflow] Failed to auto-pause on disconnect:`, err?.message || err);
+        }
+      }, 500);
+    };
+
     res.on("close", () => {
-      if (!res.writableEnded) {
-        clientDisconnected = true;
+      if (!res.writableEnded && !isStreamCompleted) {
+        handleClientDisconnect("response closed prematurely");
       }
     });
 
@@ -128,7 +145,7 @@ export class AIController {
         try {
           res.write(": keep-alive\n\n");
         } catch {
-          clientDisconnected = true;
+          handleClientDisconnect("heartbeat write failed");
         }
       }
     }, 10000);
@@ -145,11 +162,19 @@ export class AIController {
         predictionHorizon,
         predictionFrequency,
         predictionObjectiveStartDate,
+        streamId,
       });
 
       for await (const update of stream) {
+        if (!runningSessionId && update?.sessionId) {
+          runningSessionId = update.sessionId;
+        }
+
         if (clientDisconnected || res.writableEnded || res.closed) {
-          console.info(`[Workflow] Client disconnected from SSE stream for session ${sessionId || "unknown"}`);
+          console.info(`[Workflow] Client disconnected from SSE stream for session ${runningSessionId || sessionId || "unknown"}`);
+          if (!isStreamCompleted) {
+            void handleClientDisconnect("stream loop detected closed socket");
+          }
           break;
         }
         const canWrite = res.write(`data: ${JSON.stringify({ success: true, data: update })}\n\n`);
@@ -159,11 +184,13 @@ export class AIController {
       }
 
       if (!clientDisconnected && !res.writableEnded && !res.closed) {
+        isStreamCompleted = true;
         res.write("data: [DONE]\n\n");
         res.end();
       }
     } catch (error: any) {
       if (!clientDisconnected && !res.writableEnded && !res.closed) {
+        isStreamCompleted = true;
         res.write(`data: ${JSON.stringify({ success: false, message: error.message || "AI workflow failed" })}\n\n`);
         res.end();
       }

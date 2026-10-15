@@ -1,11 +1,20 @@
 import { FormBuilderOutput, HierarchicalFormSchema, FormFieldDefinition } from "./state";
 import { RelationshipSchemaOutput } from "../RelationshipBuilder/state";
 
+function getControlType(fieldId: string, role: string, cardinality: number): string {
+  const isDailyDate = /date|timestamp/i.test(fieldId) && !/year|quarter|month|week|dayofweek/i.test(fieldId);
+  const isCalendarUnit = /year|quarter|month|week|dayofweek/i.test(fieldId) || (role === "temporal" && !isDailyDate);
+
+  if (isDailyDate) return "date_range";
+  if (isCalendarUnit || cardinality <= 50) return "dropdown";
+  return "searchable_dropdown";
+}
+
 export interface GenerateFormsInput {
   relationshipBuilderOutput?: RelationshipSchemaOutput;
   schemaResolution?: Record<string, unknown>;
   userPrompt?: string;
-  sourceId?: string;
+  sourceId?: string | string[];
 }
 
 export async function generateHierarchicalFormsTool(
@@ -14,7 +23,8 @@ export async function generateHierarchicalFormsTool(
   const relOutput = input.relationshipBuilderOutput;
   const nodes = relOutput?.nodes || [];
   const relationships = relOutput?.relationships || [];
-  const sourceId = input.sourceId || (relOutput as any)?.sourceId;
+  const resolvedInputSourceId = Array.isArray(input.sourceId) ? input.sourceId[0] : input.sourceId;
+  const sourceId = resolvedInputSourceId || (relOutput as any)?.sourceId;
 
   const filterGroups: HierarchicalFormSchema[] = [];
 
@@ -36,17 +46,6 @@ export async function generateHierarchicalFormsTool(
       const parentRels = relationships.filter((r) => r.child === node.id && r.status !== "rejected");
       const parentFields = parentRels.map((r) => r.parent);
 
-      const isDailyDate = /date|timestamp/i.test(node.id) && !/year|quarter|month|week|dayofweek/i.test(node.id);
-      const isCalendarUnit = /year|quarter|month|week|dayofweek/i.test(node.id) || (node.role === "temporal" && !isDailyDate);
-
-      const controlType = isDailyDate
-        ? "date_range"
-        : (isCalendarUnit || (node.cardinality > 0 && node.cardinality <= 50))
-        ? "dropdown"
-        : node.role === "location"
-        ? "searchable_dropdown"
-        : "dropdown";
-
       const colName = node.columnName || node.aliasOf?.[0] || node.id;
 
       fields.push({
@@ -56,7 +55,7 @@ export async function generateHierarchicalFormsTool(
         tableName: node.tableName,
         label: node.aliasOf && node.aliasOf[0] ? node.aliasOf[0].replace(/_/g, " ").toUpperCase() : colName,
         description: `Filter field in ${entityScope} (Role: ${node.role})`,
-        controlType,
+        controlType: getControlType(colName, node.role, node.cardinality),
         parentField: parentFields[0] || null,
         parentFields,
         options: node.sampleValues && node.sampleValues.length > 0 ? node.sampleValues : undefined,
@@ -69,7 +68,7 @@ export async function generateHierarchicalFormsTool(
       filterGroups.push({
         formId: `group-${entityScope}`,
         groupName: entityScope.charAt(0).toUpperCase() + entityScope.slice(1),
-        priority: entityScope === "general" || entityScope === "time" ? "primary" : "secondary",
+        priority: entityScope === "general" || entityScope === "time" || entityScope === "temporal" ? "primary" : "secondary",
         title: `${entityScope.toUpperCase()} Filters`,
         description: `Cascading hierarchical feature filters for ${entityScope}`,
         targetEntity: entityScope,
@@ -92,11 +91,17 @@ export async function generateHierarchicalFormsTool(
 export function normalizeAndEnforceFormSchema(
   output: any,
   relationshipSchema?: RelationshipSchemaOutput,
-  fallbackSourceId?: string
+  fallbackSourceId?: string | string[]
 ): FormBuilderOutput {
   if (!output) return output;
 
-  const resolvedSourceId = output.sourceId || (relationshipSchema as any)?.sourceId || fallbackSourceId;
+  const rawFallbackSource = Array.isArray(fallbackSourceId) ? fallbackSourceId[0] : fallbackSourceId;
+  const rawSource = output.sourceId || (relationshipSchema as any)?.sourceId || rawFallbackSource;
+  const resolvedSourceId = Array.isArray(rawSource)
+    ? rawSource[0]
+    : typeof rawSource === "string"
+      ? rawSource
+      : "default_source";
 
   const rawGroups: any[] = Array.isArray(output.filterGroups)
     ? output.filterGroups
@@ -112,7 +117,7 @@ export function normalizeAndEnforceFormSchema(
   const normalizedGroups = rawGroups.map((group: any) => {
     const rawFields = Array.isArray(group.fields) ? group.fields : [];
     const normalizedFields = rawFields.map((field: any) => {
-      const fieldId = field.columnName || field.fieldId || field.name || field.id;
+      const fieldId = field.fieldId || field.columnName || field.name || field.id;
       visitedNodeIds.add(fieldId);
 
       const relNode = relNodes.find(
@@ -126,15 +131,9 @@ export function normalizeAndEnforceFormSchema(
         ? field.parentFields
         : activeParentRels.map((r) => r.parent);
 
-      const isDailyDate = /date|timestamp/i.test(fieldId) && !/year|quarter|month|week|dayofweek/i.test(fieldId);
-      const isCalendarUnit = /year|quarter|month|week|dayofweek/i.test(fieldId) || (relNode?.role === "temporal" && !isDailyDate);
-
-      let controlType = field.controlType || "dropdown";
-      if (isDailyDate) {
-        controlType = "date_range";
-      } else if (isCalendarUnit) {
-        controlType = "dropdown";
-      }
+      const controlType = relNode
+        ? getControlType(fieldId, relNode.role, relNode.cardinality)
+        : field.controlType || "dropdown";
 
       const { optionsSource, optionsEndpoint, ...cleanField } = field;
 
@@ -147,11 +146,11 @@ export function normalizeAndEnforceFormSchema(
         ...cleanField,
         fieldId,
         name: fieldId,
-        columnName: field.columnName || relNode?.columnName || fieldId,
+        columnName: relNode?.columnName || fieldId,
         tableName: field.tableName || relNode?.tableName,
         label: field.label || (relNode?.aliasOf?.[0] ? relNode.aliasOf[0].replace(/_/g, " ").toUpperCase() : fieldId),
         controlType,
-        parentField: parentFields[0] || field.parentField || null,
+        parentField: parentFields[0] || null,
         parentFields,
         requiredParentParams: parentFields,
         options: resolvedOptions,
@@ -174,8 +173,6 @@ export function normalizeAndEnforceFormSchema(
     if (!hasEdges) {
       visitedNodeIds.add(node.id);
       visitedNodeIds.add(colName);
-      const isDailyDate = /date|timestamp/i.test(colName) && !/year|quarter|month|week|dayofweek/i.test(colName);
-
       standaloneFields.push({
         fieldId: colName,
         name: colName,
@@ -183,7 +180,7 @@ export function normalizeAndEnforceFormSchema(
         tableName: node.tableName,
         label: node.aliasOf && node.aliasOf[0] ? node.aliasOf[0].replace(/_/g, " ").toUpperCase() : colName,
         description: `Standalone feature filter (Role: ${node.role})`,
-        controlType: isDailyDate ? "date_range" : "dropdown",
+        controlType: getControlType(colName, node.role, node.cardinality),
         parentField: null,
         parentFields: [],
         options: node.sampleValues && node.sampleValues.length > 0 ? node.sampleValues : undefined,

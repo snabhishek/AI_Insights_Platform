@@ -1,7 +1,9 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import { ScanSearch } from "lucide-react";
 import { Badge, DataTypeIcon, SectionHeader, DynamicTable } from "./utils";
+import ModernSelect from "../../shared/ui/ModernSelect";
 
 interface IngestionStepOutputProps {
   inspectOutput: any;
@@ -37,13 +39,13 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
   }, [selectedSourceIndex, sources, tables.length]);
 
   useEffect(() => {
-    setIsSchemaOpen(false);
+    setIsSchemaOpen(true);
   }, [selectedTableKey]);
 
   if (sources.length === 0) {
     return (
       <div className="p-6 text-center border border-dashed border-border bg-surface-muted/20 select-none">
-        <span className="text-xl block mb-1">🔍</span>
+        <ScanSearch className="w-6 h-6 mx-auto mb-1.5 text-muted-foreground/60" />
         <p className="text-xs text-muted-foreground">No ingestion details found in payload.</p>
       </div>
     );
@@ -60,6 +62,34 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
 
   const selectedTableName = selectedTable?.name || selectedTable?.tableName || null;
 
+  const explicitRelationships: any[] = Array.isArray(selectedTable?.relationships?.explicit)
+    ? selectedTable.relationships.explicit
+    : [];
+  const inferredRelationships: any[] = Array.isArray(selectedTable?.relationships?.inferred)
+    ? selectedTable.relationships.inferred
+    : Array.isArray(selectedTable?.relationships)
+      ? selectedTable.relationships
+      : [];
+
+  const isValidRelationship = (r: any) => {
+    if (!r) return false;
+    if (typeof r === "string") return r.trim().length > 0;
+    const from = (r.from ?? r.source ?? r.sourceColumn ?? "").toString().trim();
+    const to = (r.to ?? r.target ?? r.targetColumn ?? "").toString().trim();
+    return from.length > 0 && to.length > 0;
+  };
+
+  const getRelationshipLabel = (r: any) => {
+    if (typeof r === "string") return r;
+    const from = (r.from ?? r.source ?? r.sourceColumn ?? "").toString().trim();
+    const to = (r.to ?? r.target ?? r.targetColumn ?? "").toString().trim();
+    return `${from} ➔ ${to}`;
+  };
+
+  const validExplicitRelationships = explicitRelationships.filter(isValidRelationship);
+  const validInferredRelationships = inferredRelationships.filter(isValidRelationship);
+  const hasRelationships = validExplicitRelationships.length > 0 || validInferredRelationships.length > 0;
+
   return (
     <div className="space-y-6 select-none">
       <div className="p-4 border border-border bg-surface-muted/30">
@@ -68,23 +98,20 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
             <span className="text-[10px] font-bold uppercase tracking-wider text-indigo-500 block mb-0.5">Data Ingestion Source</span>
             <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
               {sources.length > 1 ? (
-                <label className="flex flex-col gap-1 text-sm font-medium text-foreground">
+                <div className="flex flex-col gap-1 text-sm font-medium text-foreground">
                   <span className="text-xs uppercase text-muted-foreground tracking-wide">Select source</span>
-                  <select
-                    value={selectedSourceIndex}
-                    onChange={(event) => setSelectedSourceIndex(Number(event.target.value))}
-                    className="rounded-md border border-border bg-background px-3 py-2 text-sm focus:border-indigo-500 focus:ring-indigo-500"
-                  >
-                    {sources.map((src: any, srcIdx: number) => {
-                      const name = src.connectorName || src.connectorId || `Data Connector #${srcIdx + 1}`;
-                      return (
-                        <option key={srcIdx} value={srcIdx}>
-                          {name}
-                        </option>
-                      );
-                    })}
-                  </select>
-                </label>
+                  <div className="w-60">
+                    <ModernSelect
+                      value={String(selectedSourceIndex)}
+                      onChange={(val) => setSelectedSourceIndex(Number(val))}
+                      options={sources.map((src: any, srcIdx: number) => ({
+                        value: String(srcIdx),
+                        label: src.connectorName || src.connectorId || `Data Connector #${srcIdx + 1}`,
+                      }))}
+                      triggerClassName="h-9 text-xs"
+                    />
+                  </div>
+                </div>
               ) : (
                 <span className="text-sm font-extrabold text-foreground">{srcName}</span>
               )}
@@ -159,20 +186,20 @@ export default function IngestionStepOutput({ inspectOutput }: IngestionStepOutp
                 )}
               </div>
 
-              {((selectedTable.relationships?.explicit?.length ?? 0) > 0 || (selectedTable.relationships?.inferred?.length ?? 0) > 0) && (
+              {hasRelationships && (
                 <div className="rounded-lg border border-indigo-500/10 bg-indigo-500/[0.02] p-4 space-y-3">
                   <span className="text-[9px] font-bold uppercase tracking-wider text-indigo-500 block">Relationships</span>
                   <div className="space-y-2 text-xs">
-                    {(selectedTable.relationships?.explicit ?? []).map((r: any, rIdx: number) => (
+                    {validExplicitRelationships.map((r: any, rIdx: number) => (
                       <div key={`explicit-${rIdx}`} className="flex items-center gap-2 text-foreground font-medium">
                         <span className="rounded px-2 py-0.5 bg-emerald-50 text-emerald-600 border border-emerald-100 text-[9px]">Explicit</span>
-                        <span>{r.from} ➔ {r.to}</span>
+                        <span>{getRelationshipLabel(r)}</span>
                       </div>
                     ))}
-                    {(selectedTable.relationships?.inferred ?? []).map((r: any, rIdx: number) => (
+                    {validInferredRelationships.map((r: any, rIdx: number) => (
                       <div key={`inferred-${rIdx}`} className="flex items-center gap-2 text-foreground font-medium">
                         <span className="rounded px-2 py-0.5 bg-purple-50 text-purple-600 border border-purple-100 text-[9px]">Inferred</span>
-                        <span>{r.from} ➔ {r.to}</span>
+                        <span>{getRelationshipLabel(r)}</span>
                       </div>
                     ))}
                   </div>

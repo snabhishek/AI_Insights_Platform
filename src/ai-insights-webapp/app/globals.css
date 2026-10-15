@@ -1,4 +1,34 @@
 @import "tailwindcss";
+
+.subprocess-log-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #475569 #080c14;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+}
+
+.subprocess-log-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.subprocess-log-scroll::-webkit-scrollbar-track {
+    background: #080c14;
+}
+
+.subprocess-log-scroll::-webkit-scrollbar-thumb {
+    background: #475569;
+    border: 2px solid #080c14;
+    border-radius: 999px;
+}
+
+.subprocess-log-scroll::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+.subprocess-log-scroll::-webkit-scrollbar-button {
+    display: none;
+}
 @source "../app/components/projects/**/*.{js,ts,jsx,tsx,mdx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -16,6 +46,16 @@
 
     --app-shadow-soft: 0 1px 2px rgba(16, 24, 40, 0.06), 0 4px 12px rgba(16, 24, 40, 0.08);
     --app-shadow-soft-hover: 0 2px 4px rgba(16, 24, 40, 0.08), 0 8px 20px rgba(16, 24, 40, 0.12);
+
+    /* Pipeline Status Colors */
+    --status-none: #596579;          /* Obsidian Silver */
+    --status-pending: #006D77;       /* Abyssal Teal */
+    --status-in-progress: #4338CA;   /* Electric Indigo */
+    --status-awaiting-approval: #6D28D9; /* Imperial Violet */
+    --status-user-input: #0369A1;    /* Deep Azure */
+    --status-completed: #047857;     /* Jade Empire */
+    --status-failed: #881337;        /* Oxblood */
+    --status-stopped: #A21CAF;       /* Royal Magenta */
 }
 
 .dark {
@@ -28,6 +68,17 @@
     --app-border: #2d3342;
     --app-foreground: #ffffff;
     --app-muted-foreground: #9ca3af;
+
+    /* Pipeline Status Colors */
+    --status-none: #596579;          /* Obsidian Silver */
+    --status-pending: #decc0b;       /* Abyssal Teal */
+    --status-in-progress: #4338CA;   /* Electric Indigo */
+    --status-awaiting-approval: #6D28D9; /* Imperial Violet */
+    --status-user-input: #0369A1;    /* Deep Azure */
+    --status-completed: #047857;     /* Jade Empire */
+    --status-failed: #de0b43;        /* Oxblood */
+    --status-stopped: #A21CAF;       /* Royal Magenta */
+    --status-paused: #B45309;        /* Warm Amber */
 
     --app-shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.4), 0 4px 12px rgba(0, 0, 0, 0.45);
     --app-shadow-soft-hover: 0 2px 4px rgba(0, 0, 0, 0.45), 0 8px 20px rgba(0, 0, 0, 0.5);
@@ -44,9 +95,55 @@
     --color-foreground: var(--app-foreground);
     --color-muted-foreground: var(--app-muted-foreground);
 
+    --color-status-none: var(--status-none);
+    --color-status-pending: var(--status-pending);
+    --color-status-in-progress: var(--status-in-progress);
+    --color-status-awaiting-approval: var(--status-awaiting-approval);
+    --color-status-user-input: var(--status-user-input);
+    --color-status-completed: var(--status-completed);
+    --color-status-failed: var(--status-failed);
+    --color-status-stopped: var(--status-stopped);
+
     --shadow-soft: var(--app-shadow-soft);
     --shadow-soft-hover: var(--app-shadow-soft-hover);
 }
+
+/* Explicit status background, text, and border utilities */
+.bg-status-none { background-color: var(--status-none); }
+.text-status-none { color: var(--status-none); }
+.border-status-none { border-color: var(--status-none); }
+
+.bg-status-pending { background-color: var(--status-pending); }
+.text-status-pending { color: var(--status-pending); }
+.border-status-pending { border-color: var(--status-pending); }
+
+.bg-status-in-progress { background-color: var(--status-in-progress); }
+.text-status-in-progress { color: var(--status-in-progress); }
+.border-status-in-progress { border-color: var(--status-in-progress); }
+
+.bg-status-awaiting-approval { background-color: var(--status-awaiting-approval); }
+.text-status-awaiting-approval { color: var(--status-awaiting-approval); }
+.border-status-awaiting-approval { border-color: var(--status-awaiting-approval); }
+
+.bg-status-user-input { background-color: var(--status-user-input); }
+.text-status-user-input { color: var(--status-user-input); }
+.border-status-user-input { border-color: var(--status-user-input); }
+
+.bg-status-completed { background-color: var(--status-completed); }
+.text-status-completed { color: var(--status-completed); }
+.border-status-completed { border-color: var(--status-completed); }
+
+.bg-status-failed { background-color: var(--status-failed); }
+.text-status-failed { color: var(--status-failed); }
+.border-status-failed { border-color: var(--status-failed); }
+
+.bg-status-stopped { background-color: var(--status-stopped); }
+.text-status-stopped { color: var(--status-stopped); }
+.border-status-stopped { border-color: var(--status-stopped); }
+
+.bg-status-paused { background-color: var(--status-paused); }
+.text-status-paused { color: var(--status-paused); }
+.border-status-paused { border-color: var(--status-paused); }
 
 html,
 body {
@@ -74,6 +171,18 @@ th {
 
 .font-semibold {
     font-weight: 700 !important;
+}
+
+/* Keep long equations readable within chat bubbles on narrow screens. */
+.markdown-content .katex-display {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.5rem 0;
+}
+
+.markdown-content .katex {
+    font-size: 1.1em;
 }
 
 @keyframes slideUp {
@@ -106,6 +215,21 @@ th {
 
 .animate-scale-up {
     animation: scaleUp 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@keyframes approvalGlow {
+    0%, 100% {
+        box-shadow: 0 0 16px rgba(245, 158, 11, 0.45), 0 0 32px rgba(245, 158, 11, 0.25);
+        border-color: rgba(245, 158, 11, 0.85);
+    }
+    50% {
+        box-shadow: 0 0 28px rgba(245, 158, 11, 0.85), 0 0 55px rgba(245, 158, 11, 0.45);
+        border-color: #f59e0b;
+    }
+}
+
+.animate-approval-glow {
+    animation: approvalGlow 1.8s ease-in-out infinite;
 }
 
 .hover-lift {

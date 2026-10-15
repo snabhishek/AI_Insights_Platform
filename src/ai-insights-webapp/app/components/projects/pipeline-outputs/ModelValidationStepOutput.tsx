@@ -4,6 +4,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { Badge } from "./utils";
 import { BACKEND_URL } from "../../providers/AppContext";
 import ModelValidationApexChart from "./ModelValidationApexChart";
+import ModernSelect from "../../shared/ui/ModernSelect";
 
 export interface MetricDetail {
   value: number | null;
@@ -71,6 +72,7 @@ export interface ModelValidationStepOutputProps {
   projectId?: string;
   activeRunTimestamp?: string;
   onApproveValidation?: (horizon: number, frequency: string, startDate?: string) => void;
+  nextStepInProgress?: boolean;
   isApproving?: boolean;
 }
 
@@ -225,6 +227,7 @@ export default function ModelValidationStepOutput({
   projectId,
   activeRunTimestamp,
   onApproveValidation,
+  nextStepInProgress = false,
   isApproving,
 }: ModelValidationStepOutputProps) {
 
@@ -546,6 +549,7 @@ export default function ModelValidationStepOutput({
                 max={52}
                 value={horizonInput}
                 onChange={(e) => setHorizonInput(Math.max(1, parseInt(e.target.value) || 1))}
+                disabled={nextStepInProgress}
                 className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition"
               />
               <span className="absolute right-3 top-2 text-xs text-muted-foreground pointer-events-none">
@@ -558,15 +562,17 @@ export default function ModelValidationStepOutput({
             <label className="block text-[11px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">
               Frequency
             </label>
-            <select
+            <ModernSelect
               value={frequencyInput}
-              onChange={(e) => setFrequencyInput(e.target.value as any)}
-              className="w-full h-9 px-3 rounded-lg border border-border bg-background text-sm font-medium text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 transition cursor-pointer"
-            >
-              <option value="Weekly">Weekly</option>
-              <option value="Monthly">Monthly</option>
-              <option value="Yearly">Yearly</option>
-            </select>
+              onChange={(val) => setFrequencyInput(val as any)}
+              disabled={nextStepInProgress}
+              options={[
+                { value: "Weekly", label: "Weekly" },
+                { value: "Monthly", label: "Monthly" },
+                { value: "Yearly", label: "Yearly" },
+              ]}
+              triggerClassName="h-9 text-xs"
+            />
           </div>
 
           <div>
@@ -580,6 +586,7 @@ export default function ModelValidationStepOutput({
                 max={maxSelectableDate}
                 value={startDateInput}
                 onChange={(e) => setStartDateInput(e.target.value)}
+                disabled={nextStepInProgress}
                 className={`w-full h-9 px-3 rounded-lg border ${
                   isDateOutOfRange
                     ? "border-amber-500 focus:ring-amber-500/40 text-amber-500"
@@ -592,7 +599,7 @@ export default function ModelValidationStepOutput({
           <div className="flex items-end">
             <button
               type="button"
-              disabled={isApproving || isDateOutOfRange}
+              disabled={nextStepInProgress || isApproving || isDateOutOfRange}
               onClick={handleRunValidation}
               className="w-full h-9 px-4 rounded-xl bg-primary text-primary-foreground font-semibold text-xs tracking-wide hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed shadow-sm transition-all flex items-center justify-center gap-2 cursor-pointer"
             >
@@ -664,6 +671,7 @@ export default function ModelValidationStepOutput({
                 return (
                   <button
                     key={candId}
+                    disabled={nextStepInProgress}
                     onClick={() => setSelectedModelId(candId)}
                     className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-all cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                       isSelected
@@ -1160,6 +1168,7 @@ export default function ModelValidationStepOutput({
                           <td className="py-2.5 text-right">
                             <button
                               type="button"
+                              disabled={nextStepInProgress}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedModelId(candId);

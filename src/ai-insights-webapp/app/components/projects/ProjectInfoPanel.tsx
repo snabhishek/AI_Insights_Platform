@@ -14,6 +14,17 @@ export default function ProjectInfoPanel({ project }: ProjectInfoPanelProps) {
         Project Description & Details
       </h2>
 
+      {project.projectName && (
+        <div className="mb-4">
+          <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1">
+            Project Name
+          </p>
+          <p className="text-sm font-medium text-foreground">
+            {project.projectName}
+          </p>
+        </div>
+      )}
+
       <div className="text-xs leading-relaxed text-muted-foreground">
         <p className="whitespace-pre-wrap">
           {project.useCase

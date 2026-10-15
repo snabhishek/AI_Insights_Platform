@@ -1,7 +1,7 @@
 import { RunnableConfig } from "@langchain/core/runnables";
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { AgentState, IngestionServices } from "../../state";
+import { AgentState, IngestionServices, checkWorkflowInterrupt } from "../../state";
 import { createGetSchemaTool, createInspectTool } from "../../tools/inspection";
 import {
   getModel,
@@ -251,29 +251,27 @@ export async function inspectorNode(state: typeof AgentState.State, config?: Run
   if (!services) {
     throw new Error("Services dependency is not provided in config");
   }
-  if (services.isCancelled?.() || services.abortSignal?.aborted || state.status === "failed" || state.status === "paused") {
-    console.info(`[Workflow] inspectorNode skipping execution because workflow is stopped/paused.`);
-    return { status: state.status || "failed" };
-  }
+  const interrupt = checkWorkflowInterrupt(services, "inspectorNode");
+  if (interrupt) return interrupt;
   const { connectorService } = services;
   const connectors = await Promise.all(state.connectorId.map(async (connectorId) => await connectorService.getById(connectorId)));
   const validConnectors = connectors.filter((connector) => !!connector);
   if (validConnectors.length === 0) {
     return {
-      status: "failed",
+      status: "Failed",
       summary: "Connector not found",
-      steps: [{ name: "Inspector", status: "failed", summary: "Connector not found" }],
+      steps: [{ name: "Inspector", status: "Failed", summary: "Connector not found" }],
       stageStatuses: { inspect: "Failed" },
     };
   }
   const inspections = await Promise.all(validConnectors.map(async (connector) => await runInspectorWithTools(connector, services)));
   const batchedTables = inspections.flatMap((inspection: any) => Array.isArray(inspection?.batchedTables) ? inspection.batchedTables : []);
   return {
-    inspection: { sources: inspections },
+    inspect: { sources: inspections },
     batchedTables: mergeBatchedTableStates(state.batchedTables, batchedTables),
-    status: "running",
+    status: "In-Progress",
     summary: "Inspection completed",
-    steps: [{ name: "Inspector", status: "completed", summary: "Source inspection finished" }],
+    steps: [{ name: "Inspector", status: "Completed", summary: "Source inspection finished" }],
     stageOutputs: { inspect: { sources: inspections } },
     stageStatuses: { inspect: "Completed" },
   };

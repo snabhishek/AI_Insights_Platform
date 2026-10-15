@@ -27,7 +27,7 @@ export class WorkspaceService {
     private projectRepository: IProjectRepository,
     private connectorRepository?: IConnectorRepository,
     private duckDBService?: IDuckDBService
-  ) {}
+  ) { }
 
   async getAllWorkspaces(): Promise<Workspace[]> {
     return this.workspaceRepository.getAll();
@@ -58,6 +58,44 @@ export class WorkspaceService {
 
     const created = await this.workspaceRepository.create(newWorkspace);
     return { success: true, data: created };
+  }
+
+  async renameWorkspace(id: string, name: string): Promise<ServiceResult<Workspace>> {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return { success: false, reason: "BAD_REQUEST", message: "Workspace name cannot be empty." };
+    }
+    const ws = await this.workspaceRepository.getById(id);
+    if (!ws) {
+      return { success: false, reason: "NOT_FOUND", message: "Workspace not found." };
+    }
+    const existing = await this.workspaceRepository.getByName(trimmedName);
+    if (existing && existing.id !== id) {
+      return {
+        success: false,
+        reason: "DUPLICATE",
+        message: `Workspace named "${trimmedName}" already exists.`,
+      };
+    }
+
+    const oldDir = getWorkspaceDir(ws.name);
+    const updated = await this.workspaceRepository.update(id, trimmedName);
+    if (!updated) {
+      return { success: false, reason: "NOT_FOUND", message: "Failed to update workspace." };
+    }
+
+    if (fs.existsSync(oldDir) && ws.name !== trimmedName) {
+      const newDir = getWorkspaceDir(trimmedName);
+      try {
+        ensureDirectoryExists(path.dirname(newDir));
+        fs.renameSync(oldDir, newDir);
+        console.log(`[workspaceService] Renamed workspace directory from ${oldDir} to ${newDir}`);
+      } catch (e: any) {
+        console.warn(`[workspaceService] Could not rename workspace directory:`, e?.message || e);
+      }
+    }
+
+    return { success: true, data: updated };
   }
 
   async deleteWorkspace(id: string): Promise<ServiceResult<boolean>> {
@@ -103,7 +141,8 @@ export class WorkspaceService {
       return { success: false, reason: "WORKSPACE_NOT_FOUND", message: "Workspace not found." };
     }
 
-    const name = projectData.name.trim();
+    const effectiveProjectName = (projectData.projectName && projectData.projectName.trim()) || projectData.name.trim();
+    const useCaseTitle = projectData.name.trim();
     const dataSources = projectData.dataSources || [];
 
     if (!Array.isArray(dataSources) || dataSources.length === 0) {
@@ -123,26 +162,31 @@ export class WorkspaceService {
     };
 
     const isDuplicate = existingProjects.some(
-      (p) =>
-        p.name.toLowerCase() === name.toLowerCase() &&
-        areSourceArraysEqual(p.dataSources || [], dataSources)
+      (p) => {
+        const existingProjectName = (p.projectName && p.projectName.trim()) || p.name.trim();
+        return (
+          existingProjectName.toLowerCase() === effectiveProjectName.toLowerCase() &&
+          areSourceArraysEqual(p.dataSources || [], dataSources)
+        );
+      }
     );
 
     if (isDuplicate) {
       return {
         success: false,
         reason: "DUPLICATE",
-        message: `A project with name "${name}" and the same selected data sources already exists in this workspace.`,
+        message: `A project with name "${effectiveProjectName}" and the same selected data sources already exists in this workspace.`,
       };
     }
 
     const projectId = `proj-${uuidv4()}`;
-    const projectDir = getProjectDir(ws.name, name);
+    const projectDir = getProjectDir(ws.name, effectiveProjectName);
     ensureDirectoryExists(projectDir);
 
     const newProject: Project = {
       id: projectId,
-      name,
+      projectName: effectiveProjectName,
+      name: useCaseTitle,
       role: projectData.role || "OWNER",
       dataSources,
       initials: projectData.initials || "US",
@@ -170,7 +214,7 @@ export class WorkspaceService {
             }
           }
           if (projectSourceInputs.length > 0) {
-            await this.duckDBService.ingestProjectSources(newProject.name, projectSourceInputs, ws.name);
+            await this.duckDBService.ingestProjectSources(newProject.projectName || newProject.name, projectSourceInputs, ws.name);
           }
         } catch (ingestErr: any) {
           console.warn(`[workspaceService] Warning during project DuckDB source ingestion:`, ingestErr?.message || ingestErr);
@@ -189,6 +233,10 @@ export class WorkspaceService {
       return { success: false, reason: "NOT_FOUND", message: "Project not found." };
     }
 
+    const updatedProjectName =
+      typeof updateData.projectName === "string"
+        ? updateData.projectName.trim()
+        : existing.projectName;
     const updatedName =
       typeof updateData.name === "string" && updateData.name.trim()
         ? updateData.name.trim()
@@ -198,11 +246,18 @@ export class WorkspaceService {
     const updatedSources = Array.isArray(updateData.dataSources)
       ? updateData.dataSources
       : existing.dataSources;
+    const updatedDomain =
+      updateData.domain !== undefined ? updateData.domain : existing.domain;
+    const updatedSubDomain =
+      updateData.subDomain !== undefined ? updateData.subDomain : existing.subDomain;
 
     await this.projectRepository.updateProject(pid, {
+      projectName: updatedProjectName,
       name: updatedName,
       useCase: updatedUseCase,
       dataSources: updatedSources,
+      domain: updatedDomain,
+      subDomain: updatedSubDomain,
       status: updateData.status,
     });
 
@@ -295,11 +350,10 @@ export class WorkspaceService {
     for (const run of runs) {
       const state = (run.agentState as any) || {};
       const candidates = [
-        state.stageOutputs?.formBuilder,
-        state.stageOutputs?.hierarchyMapper?.formBuilder,
+        state.stageOutputs?.hierarchyMapperNode?.formBuilder,
         state.hierarchyMapper?.formBuilder,
         state.formBuilder,
-        state.stageOutputs?.hierarchyMapper,
+        state.stageOutputs?.hierarchyMapperNode,
         state.hierarchyMapper,
       ];
 

@@ -36,7 +36,7 @@ export class PythonCapabilityAdapter {
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 3500);
+      // const timeoutId = setTimeout(() => controller.abort(), 10000);
 
       const res = await fetch(`${this.serviceUrl}/preflight/pipeline`, {
         method: "POST",
@@ -45,7 +45,7 @@ export class PythonCapabilityAdapter {
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
+      // clearTimeout(timeoutId);
 
       if (res.ok) {
         const data = (await res.json()) as any;
@@ -59,7 +59,7 @@ export class PythonCapabilityAdapter {
         };
       }
     } catch (httpErr: any) {
-
+      console.warn("[PythonCapabilityAdapter] HTTP request warning:", httpErr?.message || httpErr);
     }
 
     try {
