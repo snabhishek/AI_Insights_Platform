@@ -15,6 +15,7 @@ export interface SendChatMessageInput {
   executionState?: Record<string, any>;
   interactionId?: string;
   onThinkingUpdate?: (steps: SparrowThinkingStep[]) => void;
+  onResponseDelta?: (delta: string, signal: AbortSignal) => Promise<void>;
 }
 
 export interface ISparrowChatService {

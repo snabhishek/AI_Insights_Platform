@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { invokeSparrowJson } from "./llm";
+import { streamSparrowResponse } from "./llm";
 import { AnalysisPlan, ExecutionToolResult, QueryUnderstanding, SparrowChatResponse, SparrowThinkingStep } from "./types";
 
 const responseSchema = z.object({
@@ -24,7 +24,7 @@ export class InsightsResponder {
     toolResults: ExecutionToolResult[], projectContext: Record<string, any>,
     thinkingSteps: SparrowThinkingStep[], memory?: Record<string, unknown>
   ): Promise<SparrowChatResponse> {
-    const result = await invokeSparrowJson("insightsResponder.md", {
+    const result = await streamSparrowResponse({
       userQuery, understanding, plan, toolResults, projectContext, memory,
     }, responseSchema);
     return {

@@ -1,12 +1,16 @@
 import { AsyncLocalStorage } from "node:async_hooks";
-import { SparrowChatResponse, SparrowThinkingStep } from "./types";
+import { SparrowChatResponse, SparrowThinkingStep, SparrowTokenUsage } from "./types";
 import type { ChatMode } from "./chatMode";
+import type { SparrowModelAdapter } from "./modelAdapter";
 
 export interface SparrowRunContext {
   signal: AbortSignal; projectId: string; conversationId: string; requestId: string;
   thinking: SparrowThinkingStep[];
   chatMode?: ChatMode;
   modeStrategy?: "application" | "application+native";
+  modelAdapter?: SparrowModelAdapter;
+  usage?: SparrowTokenUsage;
+  onResponseDelta?: (delta: string, signal: AbortSignal) => Promise<void>;
 }
 export const sparrowRunContext = new AsyncLocalStorage<SparrowRunContext>();
 export function throwIfSparrowStopped() { sparrowRunContext.getStore()?.signal.throwIfAborted(); }

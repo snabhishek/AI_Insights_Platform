@@ -88,7 +88,8 @@ export async function generateAgentChatResponse(
   conversationHistory?: Array<{ role: string; content: string }>,
   conversationId?: string,
   interactionId?: string,
-  requestContext?: ChatRequestContext
+  requestContext?: ChatRequestContext,
+  onResponseDelta?: (delta: string) => void
 ): Promise<Partial<ChatMessage>> {
   if (!selectedProject?.id) {
     return {
@@ -105,7 +106,7 @@ export async function generateAgentChatResponse(
   });
   if (!res.ok) throw new Error(`Sparrow could not process the request (HTTP ${res.status}). Please try again.`);
   const json = res.headers.get("content-type")?.includes("text/event-stream")
-    ? { success: true, data: await readSparrowStream(res, onThinkingUpdate) }
+    ? { success: true, data: await readSparrowStream(res, onThinkingUpdate, onResponseDelta) }
     : await res.json();
   if (!json.success || !json.data) throw new Error(json.error || "Sparrow returned an invalid response.");
   const data = json.data;
@@ -118,6 +119,7 @@ export async function generateAgentChatResponse(
   return {
     requestId: data.requestId,
     chatMode: data.chatMode, modeStrategy: data.modeStrategy,
+    usage: data.usage,
     role: "assistant", content: data.content,
     timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
     thinking, isThinking: false, agentId: personaId, agentName: "Sparrow", agentBadge: "Insights Agent",
