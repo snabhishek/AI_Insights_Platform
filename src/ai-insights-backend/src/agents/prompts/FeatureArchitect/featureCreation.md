@@ -141,6 +141,7 @@ if __name__ == '__main__':
 - Accept `--db-path`, `--output-path`, and `--out-dir`.
 - Return from the function instead of calling `exit(0)` or `sys.exit(0)`.
 - Save the created features to `--output-path` (`feature_created.parquet`) so downstream stages can load them.
+- **STRICT FAIL FAST - NO CODE FALLBACKS OR ERROR SUPPRESSION**: DO NOT write try-except blocks that catch errors, suppress exceptions, or fall back to dummy/synthetic data. In case of any error, explicitly raise an Exception so execution terminates immediately.
 
 ### Input Discovery & Artifact Blacklist Rules (CRITICAL)
 - **Only load raw data from `--db-path`**:
@@ -150,10 +151,10 @@ if __name__ == '__main__':
   - NEVER list or consider any downstream pipeline output artifacts as input candidates (`feature_created.parquet`, `feature_transformation.parquet`, `dataset.parquet`, `feature_extraction.parquet`, `feature_selection.parquet`, `feature_validation.parquet`).
   - NEVER search `--out-dir` for input data. `--out-dir` is strictly for writing output artifacts!
   - NEVER perform an unconstrained recursive walk (`os.walk`) through `/workspace` or `--db-path` that enters timestamped subdirectories (e.g. `<timestamp>/python_script/`), as these contain stale artifacts from prior runs.
-- **Mandatory Input Schema Validation**:
+- **Mandatory Input Schema Validation & STRICT FAIL FAST**:
   - After loading the raw DataFrame, verify that `df` is not empty, has more than 1 column, and contains expected domain columns from the source tables.
   - If a loaded candidate has only 1 column or missing key domain fields, reject it immediately!
-  - If no valid raw dataset can be found in `--db-path`, generate a complete synthetic fallback DataFrame containing all required domain columns (temporal, weather, inventory, pricing, categorical, target) with realistic distributions, rather than silently writing an empty or single-column artifact.
+  - **NO SYNTHETIC OR FALLBACK DATA**: DO NOT generate synthetic fallback data, dummy columns, or fallback DataFrames. If no valid raw dataset can be found in `--db-path`, or if any column/schema/load error occurs, explicitly raise an Exception (e.g. `raise FileNotFoundError(...)` or `raise ValueError(...)`) so that execution fails fast immediately with a non-zero exit code.
 
 ## Python File & Artifact Rules
 - When persisting created features or intermediate artifacts, use CSV or Parquet only; do NOT use `pickle` or other ad-hoc binary formats.

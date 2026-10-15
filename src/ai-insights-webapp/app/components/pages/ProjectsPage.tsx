@@ -23,7 +23,7 @@ import {
 import { resolveNextWorkflowPhase, STEP_TO_NODE_MAP, PIPELINE_PHASES, SUBSTEP_TO_PIPELINE_MAP } from "../projects/pipelineFlowConfig";
 import ProjectsListPage from "../projects/ProjectsListPage";
 import ProjectWorkspace, { ProjectTabType } from "../projects/ProjectWorkspace";
-import { executeWorkflowApi, pauseWorkflowApi, stopWorkflowApi, fetchActiveWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
+import { executeWorkflowApi, attachWorkflowStreamApi, pauseWorkflowApi, stopWorkflowApi, fetchActiveWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
 
 interface WorkflowResponse {
   success: boolean;
@@ -357,6 +357,213 @@ export default function ProjectsPage() {
     return "Feature Engineering";
   };
 
+  const processStreamReader = async (
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    targetProjectId?: string,
+    action?: string
+  ) => {
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let lastData: any = null;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (trimmed.startsWith("data: ")) {
+          const dataStr = trimmed.slice(6).trim();
+          if (dataStr === "[DONE]") {
+            break;
+          }
+          try {
+            const chunk = JSON.parse(dataStr);
+            if (chunk.success && chunk.data) {
+              const update = chunk.data;
+              lastData = update;
+              setWorkflowError(null);
+
+              const statusStr = String(update.status || "").toLowerCase();
+              const isChunkAwaitingApproval =
+                statusStr === "awaiting approval" ||
+                statusStr === "awaiting-approval";
+              const isRunning =
+                !isChunkAwaitingApproval &&
+                (statusStr === "in-progress" || statusStr === "queued");
+
+              if (isChunkAwaitingApproval) {
+                setRunStatus("Awaiting Approval");
+                setIsPaused(false);
+                setApprovalNextStep(resolveApprovalNextStep(update));
+                if (update.currentStage || update.currentNode) {
+                  setPausedAtPhase(update.currentNode || update.currentStage);
+                }
+              } else if (isRunning) {
+                setRunStatus("In-Progress");
+                setIsPaused(false);
+                setApprovalNextStep(null);
+                setPausedAtPhase(null);
+              } else if (statusStr === "paused") {
+                setRunStatus("Paused");
+                setIsPaused(true);
+                setApprovalNextStep(null);
+                if (update.currentStage || update.currentNode) {
+                  setPausedAtPhase(update.currentNode || update.currentStage);
+                }
+              } else if (statusStr === "completed") {
+                setRunStatus("Completed");
+                setIsPaused(false);
+                setApprovalNextStep(null);
+              } else if (statusStr === "stopped") {
+                setRunStatus("Stopped");
+                setIsPaused(false);
+                setApprovalNextStep(null);
+              } else if (statusStr === "failed") {
+                setRunStatus("Failed");
+                setIsPaused(false);
+                setApprovalNextStep(null);
+                setWorkflowError(
+                  getWorkflowErrorMessage(
+                    update.error || update.message || update.summary,
+                    "Workflow failed"
+                  )
+                );
+              }
+
+              if (update.stageStatuses) {
+                setPipelineStatuses((prev) => mapStageToPipelineStatus(update.stageStatuses, prev));
+              }
+              if (update.stageOutputs) {
+                setStageOutputs((prev) =>
+                  update.replaceStageOutputs
+                    ? update.stageOutputs
+                    : { ...prev, ...update.stageOutputs }
+                );
+                const stageOutputError = getStageOutputError(update.stageOutputs);
+                if (stageOutputError) {
+                  setRunStatus("Failed");
+                  setWorkflowError(stageOutputError);
+                }
+              }
+              if (update.error) {
+                setRunStatus("Failed");
+                setWorkflowError(getWorkflowErrorMessage(update.error, "Workflow failed"));
+              }
+              if (update.agentThinking) {
+                setAgentThinking((prev) => ({ ...prev, ...update.agentThinking }));
+              }
+              if (update.currentNode || update.currentStage) {
+                setActiveStage(update.currentNode || update.currentStage);
+              }
+              if (update.message || update.summary) {
+                setWorkflowMessage(update.message || update.summary);
+              }
+              if (update.sessionId) {
+                setWorkflowSessionId(update.sessionId);
+              }
+
+              const pId = targetProjectId || selectedProject?.id;
+              if (pId) {
+                setProjects((prev) =>
+                  prev.map((p) =>
+                    p.id === pId
+                      ? {
+                          ...p,
+                          status: update.status || p.status,
+                          agentState: {
+                            ...(p.agentState || {}),
+                            ...update,
+                            stageStatuses: update.stageStatuses || p.agentState?.stageStatuses,
+                            stageOutputs: update.replaceStageOutputs
+                              ? update.stageOutputs
+                              : update.stageOutputs || p.agentState?.stageOutputs,
+                          },
+                        }
+                      : p
+                  )
+                );
+              }
+
+              setIsApproving(false);
+              setIsSubmittingWorkflow(false);
+              setIsResumingWorkflow(false);
+              setIsRetryingWorkflow(false);
+              setIsAwaitingResponse(false);
+            } else if (chunk.success === false) {
+              setIsApproving(false);
+              setIsSubmittingWorkflow(false);
+              setIsResumingWorkflow(false);
+              setIsRetryingWorkflow(false);
+              const message = getWorkflowErrorMessage(chunk.message, "AI workflow failed");
+              setRunStatus("Failed");
+              setWorkflowError(message);
+              setWorkflowMessage(message);
+            }
+          } catch (err: any) {
+            console.warn("Failed to process workflow stream update", err);
+            setRunStatus("Failed");
+            setWorkflowError(getWorkflowErrorMessage(err, "Unable to process workflow update"));
+          }
+        }
+      }
+    }
+
+    if (lastData && lastData.status === "completed") {
+      const completionMsg = lastData.summary || "Workflow completed successfully";
+      if (lastCompletedSummaryRef.current !== completionMsg) {
+        lastCompletedSummaryRef.current = completionMsg;
+        showAlert({ title: completionMsg, type: "success" });
+      }
+    } else if (action === "resume" && lastData && lastData.status !== "failed") {
+      showAlert({
+        title: "Workflow Resumed",
+        type: "success",
+      });
+    }
+  };
+
+  const attachToWorkflowStream = async (projectId: string, sessionId?: string | null) => {
+    if (isExecutingRef.current && activeRunningProjectIdRef.current === projectId) {
+      return;
+    }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    isExecutingRef.current = true;
+    activeRunningProjectIdRef.current = projectId;
+
+    try {
+      const response = await attachWorkflowStreamApi(projectId, sessionId || undefined, controller.signal);
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Response body reader not available");
+      }
+      await processStreamReader(reader, projectId);
+    } catch (err: any) {
+      if (err.name === "AbortError") {
+        console.info(`[ProjectsPage] Attached stream connection aborted.`);
+        return;
+      }
+      console.warn(`[ProjectsPage] Error in attached workflow stream:`, err);
+    } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+        isExecutingRef.current = false;
+        activeRunningProjectIdRef.current = null;
+      }
+    }
+  };
+
   useEffect(() => {
     if (!selectedProjectId) return;
 
@@ -521,6 +728,9 @@ export default function ProjectsPage() {
               setRunStatus("In-Progress");
               setIsPaused(false);
               setApprovalNextStep(null);
+              if (!isExecutingRef.current || activeRunningProjectIdRef.current !== selectedProjectId) {
+                void attachToWorkflowStream(selectedProjectId, freshState.sessionId);
+              }
             } else if (freshStatus === "completed") {
               setRunStatus("Completed");
               setIsPaused(false);
@@ -662,8 +872,10 @@ export default function ProjectsPage() {
           setIsPaused(false);
           setApprovalNextStep(null);
           setPausedAtPhase(null);
-          activeRunningProjectIdRef.current = selectedProjectId;
           lastCompletedSummaryRef.current = null;
+          if (!isExecutingRef.current || activeRunningProjectIdRef.current !== selectedProjectId) {
+            void attachToWorkflowStream(selectedProjectId, freshState.sessionId);
+          }
         } else if (freshStatus === "completed") {
           activeRunningProjectIdRef.current = null;
           isExecutingRef.current = false;
@@ -731,6 +943,12 @@ export default function ProjectsPage() {
     return () => {
       isMounted = false;
       clearInterval(interval);
+      if (abortControllerRef.current) {
+        abortControllerRef.current.abort();
+        abortControllerRef.current = null;
+      }
+      isExecutingRef.current = false;
+      activeRunningProjectIdRef.current = null;
     };
   }, [selectedProjectId, activeWorkspaceId, setProjects, showAlert]);
 
@@ -837,174 +1055,7 @@ export default function ProjectsPage() {
         throw new Error("Response body reader not available");
       }
       setIsSubmittingWorkflow(false);
-
-      const decoder = new TextDecoder();
-      let buffer = "";
-
-      while (true) {
-        const { value, done } = await reader.read();
-        if (done) break;
-
-        buffer += decoder.decode(value, { stream: true });
-        const lines = buffer.split("\n\n");
-        buffer = lines.pop() || "";
-
-        for (const line of lines) {
-          const trimmed = line.trim();
-          if (trimmed.startsWith("data: ")) {
-            const dataStr = trimmed.slice(6).trim();
-            if (dataStr === "[DONE]") {
-              break;
-            }
-            try {
-              const chunk = JSON.parse(dataStr);
-              if (chunk.success && chunk.data) {
-                const update = chunk.data;
-                lastData = update;
-                setWorkflowError(null);
-
-                const statusStr = String(update.status || "").toLowerCase();
-                const isChunkAwaitingApproval =
-                  statusStr === "awaiting approval" ||
-                  statusStr === "awaiting-approval" 
-                  // ||
-                  // (update.stageStatuses && Object.values(update.stageStatuses).some((s: any) =>
-                  //   s?.status === "Awaiting Approval" || s === "Awaiting Approval"
-                  // ));
-                const isRunning =
-                  !isChunkAwaitingApproval &&
-                  (statusStr === "in-progress" ||
-                    statusStr === "queued");
-
-                if (isChunkAwaitingApproval) {
-                  setRunStatus("Awaiting Approval");
-                  setIsPaused(false);
-                  setApprovalNextStep(resolveApprovalNextStep(update));
-                  if (update.currentStage || update.currentNode) {
-                    setPausedAtPhase(update.currentNode || update.currentStage);
-                  }
-                } else if (isRunning) {
-                  setRunStatus("In-Progress");
-                  setIsPaused(false);
-                  setApprovalNextStep(null);
-                  setPausedAtPhase(null);
-                } else if (statusStr === "paused") {
-                  setRunStatus("Paused");
-                  setIsPaused(true);
-                  setApprovalNextStep(null);
-                  if (update.currentStage || update.currentNode) {
-                    setPausedAtPhase(update.currentNode || update.currentStage);
-                  }
-                } else if (statusStr === "completed") {
-                  setRunStatus("Completed");
-                  setIsPaused(false);
-                  setApprovalNextStep(null);
-                } else if (statusStr === "stopped") {
-                  setRunStatus("Stopped");
-                  setIsPaused(false);
-                  setApprovalNextStep(null);
-                } else if (statusStr === "failed") {
-                  setRunStatus("Failed");
-                  setIsPaused(false);
-                  setApprovalNextStep(null);
-                  setWorkflowError(
-                    getWorkflowErrorMessage(
-                      update.error || update.message || update.summary,
-                      "Workflow failed"
-                    )
-                  );
-                }
-
-                if (update.stageStatuses) {
-                  setPipelineStatuses((prev) => mapStageToPipelineStatus(update.stageStatuses, prev));
-                }
-                if (update.stageOutputs) {
-                  setStageOutputs((prev) =>
-                    update.replaceStageOutputs
-                      ? update.stageOutputs
-                      : { ...prev, ...update.stageOutputs }
-                  );
-                  const stageOutputError = getStageOutputError(update.stageOutputs);
-                  if (stageOutputError) {
-                    setRunStatus("Failed");
-                    setWorkflowError(stageOutputError);
-                  }
-                }
-                if (update.error) {
-                  setRunStatus("Failed");
-                  setWorkflowError(getWorkflowErrorMessage(update.error, "Workflow failed"));
-                }
-                if (update.agentThinking) {
-                  setAgentThinking((prev) => ({ ...prev, ...update.agentThinking }));
-                }
-                if (update.currentNode || update.currentStage) {
-                  setActiveStage(update.currentNode || update.currentStage);
-                }
-                if (update.message || update.summary) {
-                  setWorkflowMessage(update.message || update.summary);
-                }
-                if (update.sessionId) {
-                  setWorkflowSessionId(update.sessionId);
-                }
-
-                if (selectedProject?.id) {
-                  setProjects((prev) =>
-                    prev.map((p) =>
-                      p.id === selectedProject.id
-                        ? {
-                            ...p,
-                            status: update.status || p.status,
-                            agentState: {
-                              ...(p.agentState || {}),
-                              ...update,
-                              stageStatuses: update.stageStatuses || p.agentState?.stageStatuses,
-                              stageOutputs: update.replaceStageOutputs
-                                ? update.stageOutputs
-                                : update.stageOutputs || p.agentState?.stageOutputs,
-                            },
-                          }
-                        : p
-                    )
-                  );
-                }
-
-                // Backend has responded with the new step/state: clear button loading spinners
-                setIsApproving(false);
-                setIsSubmittingWorkflow(false);
-                setIsResumingWorkflow(false);
-                setIsRetryingWorkflow(false);
-                setIsAwaitingResponse(false);
-              } else if (chunk.success === false) {
-                setIsApproving(false);
-                setIsSubmittingWorkflow(false);
-                setIsResumingWorkflow(false);
-                setIsRetryingWorkflow(false);
-                const message = getWorkflowErrorMessage(chunk.message, "AI workflow failed");
-                setRunStatus("Failed");
-                setWorkflowError(message);
-                setWorkflowMessage(message);
-              }
-            } catch (err: any) {
-              console.warn("Failed to process workflow stream update", err);
-              setRunStatus("Failed");
-              setWorkflowError(getWorkflowErrorMessage(err, "Unable to process workflow update"));
-            }
-          }
-        }
-      }
-
-      if (lastData && lastData.status === "completed") {
-        const completionMsg = lastData.summary || "Workflow completed successfully";
-        if (lastCompletedSummaryRef.current !== completionMsg) {
-          lastCompletedSummaryRef.current = completionMsg;
-          showAlert({ title: completionMsg, type: "success" });
-        }
-      } else if (action === "resume" && lastData && lastData.status !== "failed") {
-        showAlert({
-          title: "Workflow Resumed",
-          type: "success",
-        });
-      }
+      await processStreamReader(reader, selectedProject.id, action);
     } catch (error: any) {
       setIsApproving(false);
       setIsSubmittingWorkflow(false);

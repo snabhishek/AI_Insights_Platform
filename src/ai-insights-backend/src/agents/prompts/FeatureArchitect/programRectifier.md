@@ -132,6 +132,7 @@ if __name__ == '__main__':
 ## Python Code Requirements
 - Ensure the corrected code inside the failed region accepts command-line arguments via `args_list` (e.g., `def main_<region_name>(args_list=None):` and `parser.parse_args(args_list)`).
 - Ensure there are no early `exit(0)` calls inside the functions; use `return` instead.
+- **STRICT FAIL FAST - NO CODE FALLBACKS OR ERROR SUPPRESSION**: When rectifying code, DO NOT add try-except blocks that catch errors, suppress exceptions, or substitute dummy/synthetic fallback data. Fix the root cause directly and ensure code explicitly raises an Exception on any failure.
 
 ## Output Format
 Return valid **JSON ONLY** with no surrounding prose or markdown formatting:

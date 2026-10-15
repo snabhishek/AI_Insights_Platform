@@ -259,6 +259,7 @@ async function runFromLastState() {
   const config = {
     configurable: {
       thread_id: threadId,
+      checkpoint_ns: "",
       services,
     },
   };

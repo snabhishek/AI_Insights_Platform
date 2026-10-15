@@ -5,6 +5,8 @@ export default function createAIRouter(controller: AIController): Router {
   const router = Router();
 
   router.post("/ingestion", controller.runIngestionWorkflow);
+  router.get("/ingestion/stream", controller.attachIngestionStream);
+  router.post("/ingestion/stream", controller.attachIngestionStream);
   router.post("/ingestion/pause", controller.pauseIngestionWorkflow);
   router.post("/ingestion/stop", controller.stopIngestionWorkflow);
   router.get("/thinking", controller.getThinking);

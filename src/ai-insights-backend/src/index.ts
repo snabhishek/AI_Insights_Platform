@@ -1,5 +1,6 @@
 import { setupTimestampedLogging } from "./utils/logger";
 setupTimestampedLogging();
+import "./utils/langgraphMemoryPatch";
 
 // Polyfill BigInt.prototype.toJSON to prevent "Do not know how to serialize a BigInt" across Express and LangGraph
 if (typeof BigInt !== "undefined" && !(BigInt.prototype as any).toJSON) {

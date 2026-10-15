@@ -148,6 +148,7 @@ if __name__ == '__main__':
 - Exclude the target column (`prediction_target_column`) from all feature extraction and dimensionality reduction steps.
 - Return from the function instead of calling `exit(0)` or `sys.exit(0)`.
 - Save the extracted features to `--output-path` (`feature_extraction.parquet`).
+- **STRICT FAIL FAST - NO CODE FALLBACKS OR ERROR SUPPRESSION**: DO NOT write try-except blocks that catch errors, suppress exceptions, or fall back to dummy/synthetic extracted components. If `--input-path` (`dataset.parquet`) is missing or invalid, or if feature extraction fails, explicitly raise an Exception so execution terminates immediately.
 
 ## Output Format
 Return valid **JSON ONLY** with no surrounding prose or markdown ticks. Conform to:

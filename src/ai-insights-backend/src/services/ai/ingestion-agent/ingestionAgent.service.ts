@@ -1,4 +1,5 @@
 import { setMaxListeners } from "events";
+import "../../../utils/langgraphMemoryPatch";
 import { MemorySaver } from "@langchain/langgraph";
 import { ConnectorService } from "../../connector/connector.service";
 import { ConnectionTesterService } from "../../connector/connectionTester.service";
@@ -336,11 +337,6 @@ export class IngestionAgentService implements IIngestionAgentService {
         return true;
       }
     }
-    for (const [sessionId, meta] of this.sessionMeta.entries()) {
-      if (meta.projectId === projectId && !this.stoppedSessions.has(sessionId) && !this.pausedSessions.has(sessionId)) {
-        return true;
-      }
-    }
     return false;
   }
 
@@ -356,6 +352,69 @@ export class IngestionAgentService implements IIngestionAgentService {
       }
     }
     return { active: false, projectId: null, sessionId: null, status: "None" };
+  }
+
+  async *attachStream(
+    projectId: string,
+    sessionId?: string
+  ): AsyncGenerator<IngestionAgentRunResult, void, unknown> {
+    const threadId = sessionId || this.findSessionIdForProject(projectId);
+    console.info(`[Workflow] Client attaching to stream for project: ${projectId}, session: ${threadId || "none"}`);
+
+    try {
+      const proj = await this.projectService.getById(projectId);
+      if (proj?.agentState) {
+        const state = proj.agentState as any;
+        const thinking = state.agentThinking || (await this.getAllProjectPipelineThinking(projectId).catch(() => ({})));
+        yield {
+          connectorId: state.connectorId || [],
+          status: state.status || "In-Progress",
+          summary: state.summary || state.message || "Reconnected to workflow",
+          steps: state.steps || [],
+          sessionId: threadId || state.sessionId,
+          stageStatuses: state.stageStatuses,
+          stageOutputs: state.stageOutputs,
+          agentThinking: thinking,
+          currentNode: state.currentNode,
+          currentStage: state.currentStage,
+          nextStep: state.nextStep,
+          message: state.message,
+          runTimestamp: state.runTimestamp,
+        };
+      }
+    } catch (snapErr) {
+      console.warn(`[Workflow] Could not yield initial snapshot for attached project ${projectId}:`, snapErr);
+    }
+
+    if (!threadId || !this.activeRuns.has(threadId)) {
+      console.info(`[Workflow] No active running task in memory for thread ${threadId || "none"}; closing attached stream.`);
+      return;
+    }
+
+    const queue = new PushQueue<IngestionAgentRunResult>();
+    const onJobUpdate = (result: any) => {
+      queue.push(result);
+    };
+    const onJobClose = () => {
+      queue.close();
+    };
+
+    agentJobEvents.on(`job:update:${threadId}`, onJobUpdate);
+    agentJobEvents.once(`job:close:${threadId}`, onJobClose);
+
+    if (!this.activeRuns.has(threadId)) {
+      queue.close();
+    }
+
+    try {
+      for await (const update of queue) {
+        yield update;
+      }
+    } finally {
+      agentJobEvents.off(`job:update:${threadId}`, onJobUpdate);
+      agentJobEvents.off(`job:close:${threadId}`, onJobClose);
+      console.info(`[Workflow] Client detached from stream for project: ${projectId}, thread: ${threadId}`);
+    }
   }
 
   constructor(
@@ -816,6 +875,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       const config = {
         configurable: {
           thread_id: threadId,
+          checkpoint_ns: "",
           services,
         },
         recursionLimit: 100,
@@ -1392,7 +1452,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                         modelSelection: modelSel,
                       };
                     }
-                    const trainConfig = savedAgentState.stageOutputs?.trainingConfigurationNode || savedAgentState.trainingConfiguration;
+                    const trainConfig = savedAgentState.stageOutputs?.trainingConfigurationNode || {};
                     if (trainConfig) {
                       calculatedBase.stageOutputs = {
                         ...(calculatedBase.stageOutputs || {}),
@@ -1483,6 +1543,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               const freshConfig = {
                 configurable: {
                   thread_id: threadId,
+                  checkpoint_ns: "",
                   services,
                 },
                 recursionLimit: 100,
@@ -1564,6 +1625,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 const retryConfig = {
                   configurable: {
                     thread_id: threadId,
+                    checkpoint_ns: "",
                     checkpoint_id: retryCheckpointId,
                     services,
                   },
@@ -1886,7 +1948,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                     } else if (effSplit) {
                       stateUpdates.splitDate = effSplit;
                       stateUpdates.splitEndDate = effSplit;
-                      const existingTC = savedAgentState.trainingConfiguration || savedAgentState.stageOutputs?.trainingConfigurationNode;
+                      const existingTC = savedAgentState.stageOutputs?.trainingConfigurationNode;
                       if (existingTC) {
                         const updatedTC = {
                           ...existingTC,
@@ -1949,20 +2011,20 @@ export class IngestionAgentService implements IIngestionAgentService {
                       summary: `Advancing to ${options.step || "Feature Engineering"}`,
                       splitDate: clearSplitDatesForRun ? SPLIT_DATE_RESET_MARKER : effSplit,
                       splitEndDate: clearSplitDatesForRun ? SPLIT_DATE_RESET_MARKER : effSplit,
-                      ...(effSplit && (savedAgentState.trainingConfiguration || savedAgentState.stageOutputs?.trainingConfigurationNode) ? {
+                      ...(effSplit && savedAgentState.stageOutputs?.trainingConfigurationNode ? {
                         trainingConfiguration: {
-                          ...(savedAgentState.trainingConfiguration || savedAgentState.stageOutputs?.trainingConfigurationNode || {}),
+                          ...(savedAgentState.stageOutputs?.trainingConfigurationNode || {}),
                           splitDate: effSplit,
                           splitEndDate: effSplit,
                           configuration: {
-                            ...((savedAgentState.trainingConfiguration || savedAgentState.stageOutputs?.trainingConfigurationNode || {}).configuration || {}),
+                            ...((savedAgentState.stageOutputs?.trainingConfigurationNode || {}).configuration || {}),
                             splitDate: effSplit,
                             splitEndDate: effSplit,
                             split: {
-                              ...((savedAgentState.trainingConfiguration || savedAgentState.stageOutputs?.trainingConfigurationNode || {}).configuration?.split || {}),
+                              ...((savedAgentState.stageOutputs?.trainingConfigurationNode || {}).configuration?.split || {}),
                               split_date: effSplit,
                             },
-                          },
+                          }, 
                         },
                       } : {}),
                       ...(savedAgentState.stageOutputs ? {
@@ -3040,6 +3102,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         const config = {
           configurable: {
             thread_id: resolvedSessionId,
+            checkpoint_ns: "",
             services,
           }
         };
@@ -3147,6 +3210,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         const config = {
           configurable: {
             thread_id: resolvedSessionId,
+            checkpoint_ns: "",
             services,
           }
         };

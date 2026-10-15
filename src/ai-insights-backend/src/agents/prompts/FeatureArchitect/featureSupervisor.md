@@ -244,3 +244,9 @@ Return valid JSON with no surrounding prose. Use this schema:
 - The Supervisor MUST require all worker agents to follow the project's Python File & Artifact Rules: CSV or Parquet only for datasets, no `pickle` for persisted artifacts, atomic writes, CLI-driven output paths, and validation after writes.
 - When dispatching workers, the Supervisor must validate worker-provided `artifacts` in the `executionChecklist` — if an artifact violates artifact rules, the Supervisor must mark the stage `ERROR` and instruct the worker to re-run with compliant outputs.
 - The Supervisor should include artifact format checks (file extension, readable by `pandas.read_parquet` / `read_csv`) as part of its validation gate.
+
+## Strict Fail Fast & No Error Fallbacks Mandate for Subagents
+- The Supervisor MUST enforce that all worker agents (featureCreation, featureTransformation, buildDataset, dataValidation, featureExtraction, featureSelection, featureValidator, programRectifier) write strictly fail-fast Python code:
+  - DO NOT write `try-except` blocks that catch errors, suppress exceptions, or swallow failure tracebacks.
+  - DO NOT generate synthetic, dummy, or fallback datasets when source tables or files are missing or invalid.
+  - In case of ANY error (missing table, missing column, schema error, calculation error, join mismatch), the code MUST explicitly raise an Exception (e.g., `FileNotFoundError`, `ValueError`, `RuntimeError`) so execution terminates immediately with a non-zero exit code.

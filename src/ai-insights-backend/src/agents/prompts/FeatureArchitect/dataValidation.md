@@ -139,6 +139,7 @@ if __name__ == '__main__':
 - Use `parser.parse_args(args_list)` inside your function (not `sys.argv` directly).
 - Accept `--db-path`, `--dataset-path`, and `--output-path`.
 - Load the dataset (`dataset.parquet`) and run validations (null rate, leakage check, anomalies). Save the JSON report to `--output-path` (`validation_report.json`).
+- **STRICT FAIL FAST - NO CODE FALLBACKS OR ERROR SUPPRESSION**: DO NOT write try-except blocks that catch errors, suppress validation exceptions, or generate fake/dummy validation reports. If `--dataset-path` (`dataset.parquet`) is missing or invalid, or if loading fails, explicitly raise an Exception (e.g. `raise FileNotFoundError(...)` or `raise ValueError(...)`) so execution terminates immediately.
 
 ## Output Format
 Return valid **JSON ONLY** with no surrounding prose or markdown ticks. Conform to:
