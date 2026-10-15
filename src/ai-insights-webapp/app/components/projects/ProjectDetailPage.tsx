@@ -136,7 +136,6 @@ export default function ProjectDetailPage({
   onApprove,
   onRetry,
   isPaused,
-  pausedAtPhase,
   onPause,
   onResume,
   approvalNextStep,
@@ -337,37 +336,12 @@ export default function ProjectDetailPage({
     return status;
   };
 
-  const isModelTrainingSubprocess =
-    effectiveApprovalNextStep === "Training Configuration" ||
-    effectiveApprovalNextStep === "trainingConfigurationNode" ||
-    effectiveApprovalNextStep === "Pre Flight" ||
-    effectiveApprovalNextStep === "preFlightNode" ||
-    effectiveApprovalNextStep === "Model Training" ||
-    effectiveApprovalNextStep === "modelTrainingNode" ||
-    effectiveApprovalNextStep === "modelTrainingCodeNode" ||
-    effectiveApprovalNextStep === "Model Training Code Generation" ||
-    effectiveApprovalNextStep === "Model Validation" ||
-    effectiveApprovalNextStep === "modelValidationNode" ||
-    pausedAtPhase === "Training Configuration" ||
-    pausedAtPhase === "Pre Flight" ||
-    pausedAtPhase === "Model Training";
+  const modelTrainingReview = isAwaitingApprovalWorkflow
+    ? resolveModelTrainingReviewStep(effectiveApprovalNextStep)
+    : null;
 
-  const isStepAwaitingApproval = (stepId: string, stageId: string): boolean => {
-    if (!isAwaitingApprovalWorkflow) return false;
-
-    if (stageId === "modelTrainingValidation") {
-      const reviewInfo = resolveModelTrainingReviewStep(
-        displayPipelineStatuses,
-        effectiveApprovalNextStep || pausedAtPhase
-      );
-      return stepId === reviewInfo.stepId;
-    }
-
-    const rawStatus = displayPipelineStatuses[stepId];
-    if (rawStatus === "Awaiting Approval" || rawStatus === "User Input") return true;
-    if (rawStatus === "Completed") return false;
-    return false;
-  };
+  const isModelTrainingReviewStep = (stepId: string, stageId: string): boolean =>
+    stageId === "modelTrainingValidation" && modelTrainingReview?.stepId === stepId;
 
 
   const handleSelectStage = (stepId: string) => {
@@ -390,11 +364,7 @@ export default function ProjectDetailPage({
   const renderStepCircleIcon = (stepItem: WorkflowStep, stageId: string) => {
     const stepStatus = displayPipelineStatuses[stepItem.id] ?? "Pending";
     const isCompleted = stepStatus === "Completed";
-    const isAwaiting =
-      !isCompleted &&
-      (stepStatus === "Awaiting Approval" ||
-        stepStatus === "User Input" ||
-        isStepAwaitingApproval(stepItem.id, stageId));
+    const isAwaiting = !isCompleted && isModelTrainingReviewStep(stepItem.id, stageId);
     const isStepInProgress =
       !isAwaiting &&
       !isCompleted &&
@@ -528,32 +498,22 @@ export default function ProjectDetailPage({
           <div className="flex items-center gap-2.5 flex-wrap shrink-0">
             {isAwaitingApprovalWorkflow ? (
               <>
-                {isModelTrainingSubprocess ? (
-                  (() => {
-                    const reviewInfo = resolveModelTrainingReviewStep(
-                      displayPipelineStatuses,
-                      effectiveApprovalNextStep || pausedAtPhase
-                    );
-                    const buttonLabel = reviewInfo.buttonLabel;
-
-                    return (
-                      <button
-                        type="button"
-                        onClick={() => handleSelectStage(reviewInfo.stepId)}
-                        disabled={isAnyActionLoading}
-                        className={`inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
-                          isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"
-                        }`}
-                        title="Open Model Training & Validation to review the active sub-process"
-                      >
-                        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <path d="M9 11l3 3L22 4" />
-                          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
-                        </svg>
-                        <span>{buttonLabel}</span>
-                      </button>
-                    );
-                  })()
+                {modelTrainingReview ? (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectStage(modelTrainingReview.stepId)}
+                    disabled={isAnyActionLoading}
+                    className={`inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
+                      isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"
+                    }`}
+                    title="Open Model Training & Validation to review the active sub-process"
+                  >
+                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                      <path d="M9 11l3 3L22 4" />
+                      <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
+                    </svg>
+                    <span>{modelTrainingReview.buttonLabel}</span>
+                  </button>
                 ) : (
                   <button
                     type="button"
@@ -844,7 +804,7 @@ export default function ProjectDetailPage({
                 {/* Steps List */}
                 <div className="flex flex-col gap-2">
                   {steps.map((stepItem) => {
-                    const isStepGlowing = isStepAwaitingApproval(stepItem.id, stageId);
+                    const isStepGlowing = isModelTrainingReviewStep(stepItem.id, stageId);
                     const isStepSelected = selectedSubstepId === stepItem.id;
                     const stepStatus = displayPipelineStatuses[stepItem.id] ?? "Pending";
                     const isAwaitingApprovalStepNotRetryable =

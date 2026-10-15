@@ -75,13 +75,9 @@ export interface FeatureExtractionOutput extends Record<string, unknown> {
   status: string;
   summary: string;
   recommendations?: Array<{
-    tableName: string;
-    extractions: Array<{
-      technique: string;
-      targetColumns: string[];
-      numberOfComponents: number;
-      rationale: string;
-    }>;
+    method: string;
+    extractedFeaturesCount: number;
+    description: string;
   }>;
   pythonCode?: string;
   requiredPackages?: string[];
@@ -92,13 +88,10 @@ export interface FeatureSelectionOutput extends Record<string, unknown> {
   status: string;
   summary: string;
   recommendations?: Array<{
-    tableName: string;
-    selections: Array<{
-      selectedFeatures: string[];
-      discardedFeatures: string[];
-      methodology: string;
-      rationale: string;
-    }>;
+    method: string;
+    selectedFeatures: string[];
+    droppedFeatures: string[];
+    description: string;
   }>;
   pythonCode?: string;
   requiredPackages?: string[];

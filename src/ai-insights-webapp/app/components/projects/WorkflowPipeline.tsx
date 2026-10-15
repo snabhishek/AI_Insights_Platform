@@ -164,7 +164,6 @@ export default function WorkflowPipeline({
   onApprove,
   onRetry,
   isPaused,
-  pausedAtPhase,
   onPause,
   onResume,
   isApproving,
@@ -243,6 +242,10 @@ export default function WorkflowPipeline({
     }
     return "Feature Engineering";
   })();
+
+  const modelTrainingReview = isAwaitingApprovalWorkflow
+    ? resolveModelTrainingReviewStep(effectiveApprovalNextStep)
+    : null;
 
   const isWorkflowStoppedOrFailed =
     effectiveRunStatus === "Stopped" ||
@@ -459,28 +462,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
           {isAwaitingApprovalWorkflow ? (
             <>
               {(() => {
-                const isModelTrainingSubprocess =
-                  effectiveApprovalNextStep === "Training Configuration" ||
-                  effectiveApprovalNextStep === "trainingConfigurationNode" ||
-                  effectiveApprovalNextStep === "Pre Flight" ||
-                  effectiveApprovalNextStep === "preFlightNode" ||
-                  effectiveApprovalNextStep === "Model Training" ||
-                  effectiveApprovalNextStep === "modelTrainingNode" ||
-                  effectiveApprovalNextStep === "modelTrainingCodeNode" ||
-                  effectiveApprovalNextStep === "Model Training Code Generation" ||
-                  effectiveApprovalNextStep === "Model Validation" ||
-                  effectiveApprovalNextStep === "modelValidationNode" ||
-                  pausedAtPhase === "Training Configuration" ||
-                  pausedAtPhase === "Pre Flight" ||
-                  pausedAtPhase === "Model Training";
-
-                if (isModelTrainingSubprocess) {
-                  const reviewInfo = resolveModelTrainingReviewStep(
-                    pipelineStatuses,
-                    effectiveApprovalNextStep || pausedAtPhase
-                  );
-                  const buttonLabel = reviewInfo.buttonLabel;
-
+                if (modelTrainingReview) {
                   return (
                     <button
                       type="button"
@@ -493,7 +475,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
                         <path d="M9 11l3 3L22 4" />
                         <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11" />
                       </svg>
-                      <span>{buttonLabel}</span>
+                      <span>{modelTrainingReview.buttonLabel}</span>
                     </button>
                   );
                 }
