@@ -57,7 +57,8 @@ async function main() {
       if (url.pathname.endsWith("/chat/message")) {
         const body = request.postDataJSON();
         messageRequests.push(body);
-        const response = { id: body.messageId, role: "assistant", content: "Beta-only answer", status: "complete", thinking: [] };
+        const response = { id: body.messageId, role: "assistant", content: body.chatMode === "expert" ? "Expert Beta answer" : body.chatMode === "fast" ? "Fast Beta answer" : "Beta-only answer",
+          status: "complete", thinking: [], chatMode: body.chatMode };
         const target = database.find(session => session.projectId === body.projectId && session.id === body.conversationId);
         target.messages.push({ id: body.userMessageId, role: "user", content: body.userQuery, timestamp: "12:00 PM" }, response);
         data = { success: true, data: response };
@@ -100,10 +101,27 @@ async function main() {
     await page.getByText("Beta-only answer", { exact: true }).waitFor();
     assert.equal(messageRequests[0].projectId, "ui-p2");
     assert.equal(messageRequests[0].conversationId, id, "Send the raw conversation ID to the backend, not its UI key");
+    assert.equal(messageRequests[0].chatMode, undefined, "A mode is optional and must not be inferred");
+    const modeButton = page.getByRole("button", { name: "Response mode", exact: true });
+    assert.equal(await modeButton.innerText(), "Response mode");
+    for (const [label, mode, answer] of [["Expert", "expert", "Expert Beta answer"], ["Fast", "fast", "Fast Beta answer"]]) {
+      await modeButton.click();
+      await page.getByRole("menuitemradio", { name: new RegExp(`^${label}`) }).click();
+      await page.getByPlaceholder("Ask anything, @ to mention, / for actions").fill(`Use ${label} for Beta`);
+      await page.getByPlaceholder("Ask anything, @ to mention, / for actions").press("Enter");
+      await page.getByText(answer, { exact: true }).waitFor();
+      assert.equal(messageRequests.at(-1).chatMode, mode);
+      await page.reload();
+      await page.getByRole("button", { name: "AI Agent Chat", exact: true }).click();
+      await page.getByText(answer, { exact: true }).waitFor();
+      assert.equal(await modeButton.innerText(), label, "Reload must restore the conversation's selected mode");
+    }
     await page.getByText("Alpha conversation", { exact: true }).click();
     await page.getByText("Alpha transcript", { exact: true }).waitFor();
+    assert.equal(await modeButton.innerText(), "Response mode", "Switching conversations must not leak response modes");
     assert.equal(await page.getByText("Beta-only answer", { exact: true }).count(), 0);
     await page.getByText("Renamed Beta conversation", { exact: true }).click();
+    assert.equal(await modeButton.innerText(), "Fast");
     const renamedRow = page.locator("div.group.relative").filter({ has: page.getByText("Renamed Beta conversation", { exact: true }) });
     await renamedRow.getByRole("button", { name: "Conversation options" }).click();
     await renamedRow.getByRole("button", { name: "Delete", exact: true }).click();

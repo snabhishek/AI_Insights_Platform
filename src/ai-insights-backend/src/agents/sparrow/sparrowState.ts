@@ -1,9 +1,10 @@
 import { Annotation } from "@langchain/langgraph";
 import { SparrowIntent } from "../../repositories/sparrowIntent.repository";
 import { AnalysisPlan, ExecutionToolResult, QueryUnderstanding, SparrowChatResponse, SparrowClarification, SparrowInteraction, SparrowThinkingStep } from "./types";
+import type { ChatMode } from "./chatMode";
 
 export interface SparrowMessage { role: "user" | "assistant"; content: string }
-export type SparrowAction = "resolve" | "context" | "tool" | "rectify" | "clarify" | "respond" | "finish";
+export type SparrowAction = "resolve" | "context" | "tool" | "rectify" | "clarify" | "review" | "respond" | "finish";
 
 function channel<T>(initial: () => T) {
   return Annotation<T>({
@@ -20,6 +21,8 @@ function arrayChannel<T>() {
 }
 
 export const SparrowAnnotation = Annotation.Root({
+  chatMode: Annotation<ChatMode | null>({ reducer: (_left, right) => right }),
+  reviewedEvidenceCount: Annotation<number | null>({ reducer: (_left, right) => right }),
   projectId: channel(() => ""),
   userQuery: channel(() => ""),
   messages: arrayChannel<SparrowMessage>(),

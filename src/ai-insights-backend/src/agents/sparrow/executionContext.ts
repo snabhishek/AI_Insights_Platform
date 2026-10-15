@@ -1,9 +1,12 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { SparrowChatResponse, SparrowThinkingStep } from "./types";
+import type { ChatMode } from "./chatMode";
 
 export interface SparrowRunContext {
   signal: AbortSignal; projectId: string; conversationId: string; requestId: string;
   thinking: SparrowThinkingStep[];
+  chatMode?: ChatMode;
+  modeStrategy?: "application" | "application+native";
 }
 export const sparrowRunContext = new AsyncLocalStorage<SparrowRunContext>();
 export function throwIfSparrowStopped() { sparrowRunContext.getStore()?.signal.throwIfAborted(); }
