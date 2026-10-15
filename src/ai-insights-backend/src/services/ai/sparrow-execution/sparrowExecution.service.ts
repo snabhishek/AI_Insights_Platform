@@ -9,6 +9,7 @@ import { getPromptFromFile } from "../../../agents/utils/agentUtils";
 import { bindSparrowTools, getSparrowModel } from "../../../agents/sparrow/modelAdapter";
 import { CHAT_MODE_POLICIES, chatModeInstructions } from "../../../agents/sparrow/chatMode";
 import { decisionTransportSchema } from "../../../agents/sparrow/llm";
+import { sparrowUsageCallbacks } from "../../../agents/sparrow/modelUsage";
 import { executePythonScript, cleanupRunContainer } from "../../../agents/tools/helpers/pythonExecutor";
 import { IngestionServices } from "../../../agents/state";
 import { advancePeriod, dateOnly } from "../../../agents/sparrow/forecastWindow";
@@ -84,7 +85,8 @@ export class SparrowScriptAgent {
     const inspected = new Set<string>();
     for (let step = 0; step < 16; step++) {
       throwIfSparrowStopped();
-      const message = await llm.invoke(messages, { signal: sparrowSignal(mode ? CHAT_MODE_POLICIES[mode].scriptTimeoutMs : 120000) });
+      const message = await llm.invoke(messages, { signal: sparrowSignal(mode ? CHAT_MODE_POLICIES[mode].scriptTimeoutMs : 120000),
+        callbacks: sparrowUsageCallbacks("script_worker") });
       throwIfSparrowStopped();
       if (message.invalid_tool_calls?.length || message.tool_calls?.length !== 1) throw new Error("Sparrow script worker must select one valid action at a time.");
       messages.push(message);

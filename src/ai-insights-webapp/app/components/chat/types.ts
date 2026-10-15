@@ -62,6 +62,7 @@ export interface ClarificationPrompt {
 }
 
 export interface ChatMessage {
+  usage?: { modelCalls: number; inputTokens: number; outputTokens: number; totalTokens: number; cachedTokens?: number; reasoningTokens?: number };
   chatMode?: ChatMode;
   modeStrategy?: "application" | "application+native";
   requestId?: string;

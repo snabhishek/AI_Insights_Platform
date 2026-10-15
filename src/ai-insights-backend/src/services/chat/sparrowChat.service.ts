@@ -70,6 +70,9 @@ export class SparrowChatService implements ISparrowChatService {
     }
     const controller = new AbortController();
     const context: SparrowRunContext = { signal: controller.signal, projectId: turn.projectId, conversationId: turn.conversationId, requestId: turn.requestId, thinking: [] };
+    context.onResponseDelta = async (delta, signal) => {
+      if (!controller.signal.aborted) await input.onResponseDelta?.(delta, signal);
+    };
     let done!: () => void;
     const finished = new Promise<void>(resolve => { done = resolve; });
     this.active.set(key, { controller, context, turn, finished });
@@ -124,6 +127,7 @@ export class SparrowChatService implements ISparrowChatService {
       }
       if (controller.signal.aborted) response = stoppedResponse(context.thinking, { projectId: turn.projectId, threadId: turn.conversationId });
       if (context.chatMode) response = { ...response, chatMode: context.chatMode, modeStrategy: context.modeStrategy };
+      if (context.usage) response = { ...response, usage: context.usage };
       await writes;
       const persisted = await this.repository.finish(turn, response);
       if (!persisted) throw new Error("The chat response could not be saved.");

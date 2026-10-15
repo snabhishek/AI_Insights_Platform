@@ -183,6 +183,10 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       if (state.response) return { nextAction: "finish" as const };
       if (!state.queryUnderstanding) return { nextAction: "resolve" as const };
       const understanding = state.queryUnderstanding;
+      if (understanding.isGeneralConversation && !understanding.needsClarification && !understanding.requiresWebSearch) {
+        return { nextAction: "respond" as const, plan: { action: "respond", planType: "general_response", steps: [],
+          rationale: understanding.intent } };
+      }
       if (!understanding.isGeneralConversation && !understanding.isProjectIrrelevant && !state.contextInspected) {
         return { nextAction: "context" as const };
       }
