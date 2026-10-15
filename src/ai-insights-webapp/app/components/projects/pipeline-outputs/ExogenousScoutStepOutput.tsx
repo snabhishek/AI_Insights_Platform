@@ -60,10 +60,6 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
     ? payload.searchQueriesExecuted
     : [];
 
-  const summaryText = typeof payload?.summary === "string"
-    ? payload.summary
-    : "Exogenous data scout agent executed successfully.";
-
   if (tables.length === 0) {
     return (
       <div className="p-6 text-center border border-dashed border-border bg-surface-muted/20 select-none">
@@ -90,18 +86,6 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
 
   return (
     <div className="space-y-6 select-none">
-
-      <div className="p-4 bg-indigo-50 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/60 text-xs text-indigo-900 dark:text-indigo-300 flex items-start gap-3 shadow-sm font-semibold select-none rounded-lg">
-        <Radar className="w-4.5 h-4.5 text-indigo-600 dark:text-indigo-400 shrink-0 mt-0.5" />
-        <div>
-          <strong className="block text-indigo-950 dark:text-indigo-300 font-extrabold text-sm">
-            Exogenous Scout Analysis Completed
-          </strong>
-          <p className="text-indigo-700/90 dark:text-indigo-300/80 mt-0.5 font-normal">
-            {summaryText}
-          </p>
-        </div>
-      </div>
 
       {searchQueries.length > 0 && (
         <div className="p-4 border border-border bg-surface/50 rounded-lg space-y-2 select-text">

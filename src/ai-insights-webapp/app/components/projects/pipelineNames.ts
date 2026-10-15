@@ -11,6 +11,10 @@ export type PipelineStepStatus =
 
 export type StageKey = "dataIngestion" | "featureEngineering" | "modelTrainingValidation";
 
+export function canViewSubprocessLogs(status: PipelineStepStatus | undefined, runStatus: string): boolean {
+  return status === "Completed" || (status === "In-Progress" && runStatus === "In-Progress");
+}
+
 export const GRAPH_NODE_KEYS = [
   "inspect",
   "profileData",

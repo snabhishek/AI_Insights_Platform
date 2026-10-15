@@ -39,15 +39,6 @@ export default function SchemaResolverStepOutput({ resolveSchema }: SchemaResolv
 
   return (
     <div className="space-y-6 select-none">
-
-      <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5 shadow-sm font-semibold select-none">
-        <span className="text-sm">✓</span>
-        <div>
-          <strong className="block text-emerald-900 dark:text-emerald-400">Schema Resolution Finalized</strong>
-          <p className="text-emerald-700/90 dark:text-emerald-300/80 mt-0.5">The mapping logic between physical dataset tables and downstream business models has been successfully established and compiled.</p>
-        </div>
-      </div>
-
       {sources.map((src: any, srcIdx: number) => {
         const srcName = src.connectorName || src.connectorId || `Source #${srcIdx + 1}`;
         const domain = src.domain || "general";

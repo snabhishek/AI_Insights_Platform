@@ -110,15 +110,16 @@ export async function stopWorkflowApi(sessionId?: string, projectId?: string): P
 export async function fetchAgentThinkingApi(
   projectId: string,
   pipeline: string,
-  substep: string
-): Promise<{ success: boolean; data?: { thinking: Array<{ time: string; text: string; done: boolean }> } }> {
+  substep: string,
+  signal: AbortSignal,
+): Promise<{ success: boolean; data: { thinking: Array<{ time: string; text: string; done: boolean }> } }> {
   const url = `${BACKEND_URL}/ai/thinking?projectId=${encodeURIComponent(projectId)}&pipeline=${encodeURIComponent(pipeline)}&substep=${encodeURIComponent(substep)}`;
   const res = await fetch(url, {
     method: "GET",
     headers: { "Content-Type": "application/json" },
+    signal,
   });
   if (!res.ok) {
-    if (res.status === 404) return { success: true };
     throw new Error(`Failed to fetch agent thinking: ${res.statusText}`);
   }
   return res.json();

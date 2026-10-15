@@ -220,7 +220,7 @@ export default function PreFlightStepOutput({
   });
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="w-full space-y-6">
 
       <div className={`p-5 rounded-2xl border ${decisionBadge.bg} flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-sm backdrop-blur-sm`}>
         <div className="flex items-start gap-3.5">

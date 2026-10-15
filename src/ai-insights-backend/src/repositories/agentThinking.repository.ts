@@ -114,7 +114,6 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
   async getThinking(projectId: string, pipeline: string, substep: string): Promise<AgentThinking | undefined> {
     try {
       const candidates = getSubstepCandidates(substep);
-      const normalizedPipe = normalizePipeline(pipeline);
 
       // 1. Exact match
       let res = await this.db.select()
@@ -128,37 +127,15 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
         );
       if (res.length > 0) return this.mapRowToAgentThinking(res[0]);
 
-      // 2. Match candidate aliases with normalized or given pipeline
-      const pipeConditions = [eq(agentThinking.projectId, projectId), inArray(agentThinking.substep, candidates)];
-      if (normalizedPipe) {
-        pipeConditions.push(eq(agentThinking.pipeline, normalizedPipe));
-      }
+      // Resolve subprocess aliases within the requested pipeline only.
       res = await this.db.select()
         .from(agentThinking)
-        .where(and(...pipeConditions));
+        .where(and(
+          eq(agentThinking.projectId, projectId),
+          eq(agentThinking.pipeline, pipeline),
+          inArray(agentThinking.substep, candidates)
+        ));
       if (res.length > 0) return this.mapRowToAgentThinking(res[0]);
-
-      // 3. Fallback: match candidates across ANY pipeline in the same project
-      res = await this.db.select()
-        .from(agentThinking)
-        .where(
-          and(
-            eq(agentThinking.projectId, projectId),
-            inArray(agentThinking.substep, candidates)
-          )
-        );
-      if (res.length > 0) return this.mapRowToAgentThinking(res[0]);
-
-      // 4. Case-insensitive check on all records for this project
-      const allProjectRows = await this.db.select()
-        .from(agentThinking)
-        .where(eq(agentThinking.projectId, projectId));
-
-      const lowerCandidates = new Set(candidates.map((c) => c.toLowerCase()));
-      const matchedRow = allProjectRows.find((row) =>
-        lowerCandidates.has((row.substep || "").toLowerCase())
-      );
-      if (matchedRow) return this.mapRowToAgentThinking(matchedRow);
 
       return undefined;
     } catch (err: any) {
@@ -171,7 +148,9 @@ export class PostgresAgentThinkingRepository implements IAgentThinkingRepository
     try {
       const allRows = await this.db.select()
         .from(agentThinking)
-        .where(eq(agentThinking.projectId, projectId));
+        .where(pipeline
+          ? and(eq(agentThinking.projectId, projectId), eq(agentThinking.pipeline, pipeline))
+          : eq(agentThinking.projectId, projectId));
 
       const map: Record<string, ThinkingLog[]> = {};
 

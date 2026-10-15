@@ -23,10 +23,13 @@ import {
 function normalizePersistedAgentState(value: unknown): AgentStateType | undefined {
   if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
   const state = value as Record<string, unknown>;
+  const stageOutputs = normalizeStageOutputs(state.stageOutputs);
+  const trainingConfiguration = stageOutputs.trainingConfigurationNode;
   return {
     ...state,
+    ...(trainingConfiguration?.status === "Completed" ? { trainingConfiguration } : {}),
     stageStatuses: normalizeGroupedStageStatuses(state.stageStatuses),
-    stageOutputs: normalizeStageOutputs(state.stageOutputs),
+    stageOutputs,
   } as AgentStateType;
 }
 

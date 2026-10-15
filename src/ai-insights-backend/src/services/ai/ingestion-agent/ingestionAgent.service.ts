@@ -1058,7 +1058,7 @@ export class IngestionAgentService implements IIngestionAgentService {
           ...(options?.selectedModels && options.selectedModels.length > 0 ? { selectedModels: options.selectedModels } : {}),
         };
 
-        if (resolvedSplit) {
+        if (resolvedSplit && (isApprovingPreFlight || isApprovingModelTrainingCode || isApprovingModelValidation)) {
           const pWs = await this.projectService.getProjectWithWorkspace(options.projectId);
           if (!pWs?.project) {
             throw new Error(`Project "${options.projectId}" was not found while synchronizing the split date.`);

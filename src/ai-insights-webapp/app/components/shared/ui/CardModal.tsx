@@ -2,10 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { createPortal } from "react-dom";
-import { Inbox } from "lucide-react";
+import { Inbox, ScrollText } from "lucide-react";
 import { Workflow, WorkflowStep, PipelineStatus, WorkflowAgentState } from "../../projects/types";
 import { resolveModelTrainingReviewStep } from "../../projects/pipelineFlowConfig";
 import SubProcessLogModal from "./SubProcessLogModal";
+import { canViewSubprocessLogs } from "../../projects/pipelineNames";
 
 export type CardModalTabType = "output" | "thinking";
 
@@ -18,15 +19,9 @@ interface CardModalProps {
   pipelineStatuses?: Record<string, PipelineStatus>;
   stepOutputs?: Record<string, React.ReactNode>;
   runStatus?: string;
-  workflowMessage?: string;
   projectId?: string;
   agentState?: WorkflowAgentState;
-  agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
   approvalNextStep?: string | null;
-  isApproving?: boolean;
-  isAwaitingResponse?: boolean;
-  onApprove?: (overrideTargetPhase?: string, selectedModels?: string[]) => void;
-  onSubstepChange?: (substepId: string) => void;
 }
 
 export default function CardModal(props: CardModalProps) {
@@ -44,15 +39,9 @@ function CardModalContent({
   pipelineStatuses = {},
   stepOutputs = {},
   runStatus = "None",
-  workflowMessage = "",
   projectId,
   agentState,
-  agentThinking,
   approvalNextStep = null,
-  isApproving = false,
-  isAwaitingResponse = false,
-  onApprove,
-  onSubstepChange,
 }: CardModalProps) {
   const [mounted, setMounted] = useState(false);
   const [isLogModalOpen, setIsLogModalOpen] = useState(false);
@@ -224,9 +213,8 @@ function CardModalContent({
   const activeStep = stepsList[activeStepIndex] || null;
   const activeStepStatus = activeStep ? (pipelineStatuses[activeStep.id] ?? "Pending") : "Pending";
 
-  const handleOpenLogs = (stepToOpen?: WorkflowStep | null) => {
-    const target = stepToOpen || activeStep;
-    if (target) {
+  const handleOpenLogs = (target: WorkflowStep) => {
+    if (canViewSubprocessLogs(pipelineStatuses[target.id], runStatus)) {
       setLogModalSubstep(target);
       setIsLogModalOpen(true);
     }
@@ -253,6 +241,11 @@ function CardModalContent({
   const hasOutput = stepOutputContent !== undefined && stepOutputContent !== null;
 
   const cardStatus = pipelineStatuses[workflowCard.id] ?? "Pending";
+  const headerIcon = activeStep?.icon || workflowCard.icon;
+  const headerTitle = activeStep ? activeStep.title : `${workflowCard.title} Node`;
+  const effectiveHeaderStatus = activeStep
+    ? pipelineStatuses[activeStep.id]
+    : isCardAwaitingApproval ? "Awaiting Approval" : cardStatus;
 
   return createPortal(
     <div className="fixed inset-0 z-[200] p-3 sm:p-4 bg-slate-900/60 backdrop-blur-sm animate-fade-in select-none">
@@ -262,72 +255,68 @@ function CardModalContent({
         <div className="flex-1 flex flex-col min-h-0 bg-background/30 relative overflow-hidden">
 
           <div className="flex items-center justify-between px-5 py-3 border-b border-border/80 bg-surface-muted/60 shrink-0 select-none">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 flex items-center justify-center border border-indigo-500/20 text-indigo-500 bg-indigo-500/5 rounded-lg shadow-inner">
-                {workflowCard.icon}
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="w-9 h-9 flex items-center justify-center border border-indigo-500/20 text-indigo-500 bg-indigo-500/5 rounded-lg shadow-inner shrink-0 [&>svg]:w-5 [&>svg]:h-5">
+                {headerIcon}
               </div>
-              <div>
-                <h2 className="text-sm font-bold text-foreground leading-snug">
-                  {workflowCard.title} Node
-                </h2>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className={`w-2 h-2 rounded-full ${
-                    isCardAwaitingApproval ? "bg-status-awaiting-approval animate-pulse" :
-                    cardStatus === "Completed" ? "bg-status-completed" :
-                    isInProgressStatus(cardStatus) ? "bg-status-in-progress animate-ping" :
-                    cardStatus === "Pending" ? "bg-status-pending" :
-                    cardStatus === "User Input" ? "bg-status-user-input" :
-                    cardStatus === "Stopped" ? "bg-status-stopped" :
-                    cardStatus === "Failed" ? "bg-status-failed" : "bg-status-none"
-                  }`} />
-                  <span className="text-[11px] font-semibold text-muted-foreground">
-                    {isCardAwaitingApproval ? "Awaiting Approval" : cardStatus}
+              <div className="min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="text-sm font-bold text-foreground leading-snug">
+                    {headerTitle}
+                  </h2>
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      effectiveHeaderStatus === "Completed"
+                        ? "bg-status-completed/15 text-status-completed border border-status-completed/30"
+                        : isInProgressStatus(effectiveHeaderStatus)
+                          ? "bg-status-in-progress/15 text-status-in-progress border border-status-in-progress/30 animate-pulse"
+                          : effectiveHeaderStatus === "Awaiting Approval"
+                            ? "bg-status-awaiting-approval/15 text-status-awaiting-approval border border-status-awaiting-approval/30 animate-pulse"
+                            : effectiveHeaderStatus === "User Input"
+                              ? "bg-status-user-input/15 text-status-user-input border border-status-user-input/30"
+                              : effectiveHeaderStatus === "Stopped"
+                                ? "bg-status-stopped/15 text-status-stopped border border-status-stopped/30"
+                                : effectiveHeaderStatus === "Failed"
+                                  ? "bg-status-failed/15 text-status-failed border border-status-failed/30"
+                                  : effectiveHeaderStatus === "Pending"
+                                    ? "bg-status-pending/15 text-status-pending border border-status-pending/30"
+                                    : "bg-surface-muted text-muted-foreground border border-border"
+                    }`}
+                  >
+                    <span
+                      className={`w-1.5 h-1.5 rounded-full ${
+                        effectiveHeaderStatus === "Completed"
+                          ? "bg-status-completed"
+                          : isInProgressStatus(effectiveHeaderStatus)
+                            ? "bg-status-in-progress animate-ping"
+                            : effectiveHeaderStatus === "Awaiting Approval"
+                              ? "bg-status-awaiting-approval animate-pulse"
+                              : effectiveHeaderStatus === "User Input"
+                                ? "bg-status-user-input"
+                                : effectiveHeaderStatus === "Stopped"
+                                  ? "bg-status-stopped"
+                                  : effectiveHeaderStatus === "Failed"
+                                    ? "bg-status-failed"
+                                    : effectiveHeaderStatus === "Pending"
+                                      ? "bg-status-pending"
+                                      : "bg-status-none"
+                      }`}
+                    />
+                    {effectiveHeaderStatus}
                   </span>
+                  {activeStep?.description && (
+                    <span
+                      className="text-[11px] text-muted-foreground truncate hidden md:inline border-l border-border/70 pl-2.5"
+                      title={activeStep.description}
+                    >
+                      {activeStep.description}
+                    </span>
+                  )}
                 </div>
               </div>
             </div>
 
             <div className="flex items-center gap-2">
-              {(() => {
-                const isModelTrainingCard = workflowCard?.id === "modelTrainingValidation" || workflowCard?.title === "Model Training & Validation";
-                const isSubProcessApproval = isModelTrainingCard || [
-                  "Model Selection", "modelSelection", "modelSelectionNode",
-                  "Training Configuration", "trainingConfiguration", "trainingConfigurationNode",
-                  "Pre Flight", "preFlight", "preFlightNode",
-                  "Model Training", "modelTraining", "modelTrainingNode", "modelTrainingCodeNode",
-                  "Model Validation", "modelValidation", "modelValidationNode",
-                ].includes(approvalNextStep || "");
-
-                if (!isCardAwaitingApproval || isSubProcessApproval) return null;
-
-                return (
-                  <button
-                    type="button"
-                    onClick={() => onApprove?.(approvalNextStep || undefined)}
-                    disabled={isApproving}
-                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all shadow-sm active:scale-95 cursor-pointer ${
-                      isApproving ? "opacity-75 cursor-not-allowed" : "animate-pulse"
-                    }`}
-                  >
-                    {isApproving ? (
-                      <>
-                        <svg className="animate-spin" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                          <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
-                        </svg>
-                        <span>Advancing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="3">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                        <span>Proceed to Next Phase</span>
-                      </>
-                    )}
-                  </button>
-                );
-              })()}
-
               <button
                 onClick={onClose}
                 className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-background border border-border text-muted-foreground transition-colors cursor-pointer"
@@ -338,94 +327,6 @@ function CardModalContent({
             </div>
           </div>
 
-          {activeStep && (
-            <div className="flex items-center justify-between px-6 py-2.5 bg-surface/90 dark:bg-slate-900/60 border-b border-border/70 shrink-0 select-none">
-              <div className="flex items-center gap-2.5 min-w-0">
-                {activeStep.icon && (
-                  <span className="w-4 h-4 flex items-center justify-center shrink-0 text-primary [&>svg]:w-4 [&>svg]:h-4">
-                    {activeStep.icon}
-                  </span>
-                )}
-                <span className="text-xs font-bold text-foreground truncate">
-                  {activeStep.title}
-                </span>
-                <span
-                  className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                    activeStepStatus === "Completed"
-                      ? "bg-status-completed/15 text-status-completed border border-status-completed/30"
-                      : isInProgressStatus(activeStepStatus)
-                        ? "bg-status-in-progress/15 text-status-in-progress border border-status-in-progress/30 animate-pulse"
-                        : activeStepStatus === "Awaiting Approval"
-                          ? "bg-status-awaiting-approval/15 text-status-awaiting-approval border border-status-awaiting-approval/30 animate-pulse"
-                          : activeStepStatus === "User Input"
-                            ? "bg-status-user-input/15 text-status-user-input border border-status-user-input/30"
-                            : activeStepStatus === "Stopped"
-                              ? "bg-status-stopped/15 text-status-stopped border border-status-stopped/30"
-                              : activeStepStatus === "Failed"
-                                ? "bg-status-failed/15 text-status-failed border border-status-failed/30"
-                                : activeStepStatus === "Pending"
-                                  ? "bg-status-pending/15 text-status-pending border border-status-pending/30"
-                                  : "bg-surface-muted text-muted-foreground border border-border"
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      activeStepStatus === "Completed"
-                        ? "bg-status-completed"
-                        : isInProgressStatus(activeStepStatus)
-                          ? "bg-status-in-progress animate-ping"
-                          : activeStepStatus === "Awaiting Approval"
-                            ? "bg-status-awaiting-approval animate-pulse"
-                            : activeStepStatus === "User Input"
-                              ? "bg-status-user-input"
-                              : activeStepStatus === "Stopped"
-                                ? "bg-status-stopped"
-                                : activeStepStatus === "Failed"
-                                  ? "bg-status-failed"
-                                  : activeStepStatus === "Pending"
-                                    ? "bg-status-pending"
-                                    : "bg-status-none"
-                    }`}
-                  />
-                  {activeStepStatus}
-                </span>
-                {activeStep.description && (
-                  <span className="text-[11px] text-muted-foreground truncate hidden md:inline border-l border-border/70 pl-2.5">
-                    {activeStep.description}
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => handleOpenLogs(activeStep)}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-white hover:bg-slate-50 text-primary border border-primary dark:bg-surface dark:hover:bg-surface-muted dark:text-primary-foreground dark:border-primary shadow-xs transition-all active:scale-95 cursor-pointer group"
-                  title={`View execution logs for ${activeStep.title}`}
-                >
-                  <svg
-                    viewBox="0 0 24 24"
-                    width="13"
-                    height="13"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    className="text-primary dark:text-primary-foreground group-hover:scale-110 transition-transform"
-                  >
-                    <polyline points="4 17 10 11 4 5" />
-                    <line x1="12" y1="19" x2="20" y2="19" />
-                  </svg>
-                  <span>Logs</span>
-                  {isInProgressStatus(activeStepStatus) && (
-                    <span className="relative flex h-2 w-2">
-                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-                    </span>
-                  )}
-                </button>
-              </div>
-            </div>
-          )}
 
           <div className="flex-1 flex flex-col min-h-0 select-text overflow-hidden">
             {activeStep ? (
@@ -435,66 +336,20 @@ function CardModalContent({
                 </div>
               ) : (
                 <div className="flex-1 flex flex-col justify-center items-center p-8 text-center text-sm text-muted-foreground bg-surface-muted/10 select-none">
-                  {runStatus === "Awaiting Approval" || isCardAwaitingApproval ? (
-                    <div className="flex flex-col items-center max-w-md p-6 rounded-2xl bg-amber-500/10 border border-amber-500/20 text-foreground animate-fadeIn">
-                      <div className="w-12 h-12 rounded-full bg-amber-500/20 flex items-center justify-center text-amber-500 mb-3">
-                        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                          <circle cx="12" cy="12" r="10" />
-                          <line x1="12" y1="8" x2="12" y2="12" />
-                          <line x1="12" y1="16" x2="12.01" y2="16" />
-                        </svg>
-                      </div>
-                      <strong className="text-base font-bold text-foreground">
-                        Awaiting Approval
-                      </strong>
-                      <p className="text-xs text-muted-foreground mt-1.5 leading-relaxed text-center">
-                        {workflowMessage || `This pipeline stage is paused awaiting your approval to proceed to ${approvalNextStep || activeStep?.title || "the next phase"}.`}
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => onApprove?.(approvalNextStep || undefined)}
-                        disabled={isApproving}
-                        className={`mt-4 inline-flex items-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer ${
-                          isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105"
-                        }`}
-                      >
-                        {isApproving ? (
-                          <>
-                            <svg className="animate-spin" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3">
-                              <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
-                            </svg>
-                            <span>Advancing Workflow...</span>
-                          </>
-                        ) : (
-                          <>
-                            <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="3">
-                              <polyline points="20 6 9 17 4 12" />
-                            </svg>
-                            <span>Proceed to Next Phase</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-                  ) : (
-                    <>
-                      <Inbox className="w-8 h-8 mb-2 text-muted-foreground/60" strokeWidth={1.5} />
-                      <strong className="text-foreground">Output is not received yet.</strong>
-                      <span className="text-xs max-w-sm mt-1 leading-normal">
-                        The execution results will be displayed here as soon as this pipeline step completes and provides output.
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => handleOpenLogs(activeStep)}
-                        className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-slate-50 text-primary border border-primary dark:bg-surface dark:text-primary-foreground dark:border-primary transition-colors cursor-pointer shadow-xs"
-                      >
-                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2" className="text-primary dark:text-primary-foreground">
-                          <polyline points="4 17 10 11 4 5" />
-                          <line x1="12" y1="19" x2="20" y2="19" />
-                        </svg>
-                        <span>View Step Logs</span>
-                      </button>
-                    </>
-                  )}
+                  <Inbox className="w-8 h-8 mb-2 text-muted-foreground/60" strokeWidth={1.5} />
+                  <strong className="text-foreground">Output is not received yet.</strong>
+                  <span className="text-xs max-w-sm mt-1 leading-normal">
+                    The execution results will be displayed here as soon as this pipeline step completes and provides output.
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleOpenLogs(activeStep)}
+                    disabled={!canViewSubprocessLogs(activeStepStatus, runStatus)}
+                    className="mt-4 inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold bg-white enabled:hover:bg-slate-50 text-primary border border-primary dark:bg-surface dark:text-primary-foreground dark:border-primary transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-xs"
+                  >
+                    <ScrollText size={14} strokeWidth={2} className="text-primary dark:text-primary-foreground" />
+                    <span>View Step Logs</span>
+                  </button>
                 </div>
               )
             ) : (
@@ -508,22 +363,15 @@ function CardModalContent({
 
       </div>
 
-      <SubProcessLogModal
+      {logModalSubstep && projectId && <SubProcessLogModal
         isOpen={isLogModalOpen}
         onClose={() => setIsLogModalOpen(false)}
-        substep={logModalSubstep || activeStep}
-        pipelineTitle={workflowCard.title || "Workflow Pipeline"}
+        substep={logModalSubstep}
+        pipelineTitle={workflowCard.title}
         projectId={projectId}
-        pipelineStatuses={pipelineStatuses}
-        stepsList={stepsList}
-        agentThinking={agentThinking}
-        agentState={agentState}
+        status={pipelineStatuses[logModalSubstep.id]}
         runStatus={runStatus}
-        onSelectSubstep={(st) => {
-          onSubstepChange?.(st.id);
-          setLogModalSubstep(st);
-        }}
-      />
+      />}
     </div>,
     document.body
   );

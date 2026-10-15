@@ -41,17 +41,6 @@ export default function FeatureArchitectStepOutput({
 
   return (
     <div className="space-y-6 select-none">
-
-      <div className="p-4 bg-blue-50 dark:bg-blue-950/20 border border-blue-100 dark:border-blue-900 text-xs text-blue-800 dark:text-blue-300 flex items-start gap-2.5 shadow-sm font-semibold select-none">
-        <span className="text-sm">✓</span>
-        <div>
-          <strong className="block text-blue-900 dark:text-blue-400">Feature Architect Completed</strong>
-          <p className="text-blue-700/90 dark:text-blue-300/80 mt-0.5">
-            Engineered candidate features, transformations, component extractions, and feature selection routines.
-          </p>
-        </div>
-      </div>
-
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="p-3 bg-surface-muted border border-border rounded">
           <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Problem Type</div>
