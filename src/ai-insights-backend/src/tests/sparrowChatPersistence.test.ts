@@ -17,10 +17,12 @@ test("PostgreSQL saves complete/stopped chat transcripts and restores them acros
     await runMigrations(pool, schema);
     await pool.query("INSERT INTO workspaces(id,name) VALUES('w1','Chat fixture'); INSERT INTO projects(id,name,workspace_id) VALUES('p1','Chat fixture','w1'),('p2','Other project','w1')");
     const repository = new PostgresSparrowChatRepository(pool);
-    const turn = { projectId: "p1", conversationId: "c1", requestId: "r1", messageId: "a1", userMessageId: "u1", userQuery: "Predict", session: { title: "My question", agentPersona: "orchestrator" } };
+    const turn = { projectId: "p1", conversationId: "c1", requestId: "r1", messageId: "a1", userMessageId: "u1", userQuery: "Predict", chatMode: "expert" as const,
+      session: { title: "My question", agentPersona: "orchestrator", chatMode: "expert" as const } };
     await repository.begin(turn);
     await repository.finish(turn, { status: "complete", content: "Revenue is 125", thinking: [], tables: [{ columns: ["revenue"], rows: [{ revenue: 125 }] }], chart: [{ type: "bar", title: "Revenue", labels: ["Month"], data: [125] }] });
-    const next = { ...turn, requestId: "r2", messageId: "a2", userMessageId: "u2", userQuery: "Compare models" };
+    const next = { ...turn, requestId: "r2", messageId: "a2", userMessageId: "u2", userQuery: "Compare models", chatMode: "fast" as const,
+      session: { ...turn.session, chatMode: "fast" as const } };
     await repository.begin(next);
     const trace = [{ time: "17:48:09", timestamp: "2026-10-09T12:18:09Z", text: "Running script", done: false }];
     await repository.progress(next, trace);
@@ -29,6 +31,8 @@ test("PostgreSQL saves complete/stopped chat transcripts and restores them acros
     await repository.finish(next, { status: "complete", content: "Late answer", thinking: [] });
     const restored = await new PostgresSparrowChatRepository(pool).list(["p1"]);
     assert.equal(restored[0].messages.length, 4); assert.equal(restored[0].messages[0].content, "Predict");
+    assert.equal(restored[0].chatMode, "fast");
+    assert.deepEqual(restored[0].messages.map((message: any) => message.chatMode), ["expert", "expert", "fast", "fast"]);
     assert.equal(restored[0].messages[1].tables[0].rows[0].revenue, 125); assert.equal(restored[0].messages[1].chart.data[0], 125);
     assert.equal(restored[0].messages[3].content, "Agent was stopped"); assert.equal(restored[0].messages[3].isThinking, false);
     assert.equal(restored[0].messages[3].thinking[0].status, "stopped"); assert.equal(restored[0].messages[3].thinking[0].text, "Running script");

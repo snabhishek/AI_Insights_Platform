@@ -28,6 +28,7 @@ import { createCalculateMetricTool } from "./tools/calculation.tools";
 import { ISparrowExecutionService, SparrowExecutionService } from "../../services/ai/sparrow-execution/sparrowExecution.service";
 import { createExecuteProjectScriptTool } from "./tools/scriptExecution.tools";
 import { sparrowRunContext, stoppedResponse, throwIfSparrowStopped } from "./executionContext";
+import { ChatMode, chatModeSchema, resolveTurnChatMode } from "./chatMode";
 
 if (typeof BigInt !== "undefined" && !(BigInt.prototype as any).toJSON) {
   (BigInt.prototype as any).toJSON = function () {
@@ -60,6 +61,7 @@ export interface SparrowOrchestratorDependencies {
 }
 
 export interface RunSparrowInput {
+  chatMode?: ChatMode;
   resetStoppedTurn?: boolean;
   userQuery: string;
   projectId: string;
@@ -100,6 +102,7 @@ export class SparrowOrchestrator {
       // Expiry stops the active interaction window; the native interrupt remains
       // checkpointed and can still be resumed by a later answer.
       return { status: "awaiting_user_input" as const, clarification: clarificationSchema.parse(prompt), interaction,
+        ...(snapshot.values.chatMode ? { chatMode: snapshot.values.chatMode } : {}),
         clarificationReplies: (snapshot.values.clarificationHistory ?? []).map((reply: { question: string; answer: string }) => ({ question: reply.question, answer: reply.answer })),
         serverNow: new Date(this.deps.now?.() ?? Date.now()).toISOString(),
         executionState: { projectId, threadId: input.conversationId } };
@@ -144,6 +147,10 @@ export class SparrowOrchestrator {
     const pendingInterrupt = !input.resetStoppedTurn && snapshot.tasks.some((task) => task.interrupts?.length);
     const retryIncompleteTurn = !input.resetStoppedTurn && hasCheckpoint && !pendingInterrupt && snapshot.next.length > 0 && snapshot.values.response?.status !== "stopped";
     if (hasCheckpoint && snapshot.values.projectId !== projectId) throw new Error("Checkpoint project mismatch.");
+    const chatMode = resolveTurnChatMode(chatModeSchema.optional().parse(input.chatMode), snapshot.values.chatMode,
+      pendingInterrupt || retryIncompleteTurn || input.interactionId !== undefined);
+    const runContext = sparrowRunContext.getStore();
+    if (runContext) runContext.chatMode = chatMode;
     const stateToken = { projectId, threadId: conversationId };
     if (input.interactionId) {
       const acceptedAnswer = snapshot.values.clarificationHistory?.find((reply: { id: string; answer: string }) => reply.id === input.interactionId);
@@ -151,6 +158,7 @@ export class SparrowOrchestrator {
       if (alreadyAccepted && pendingInterrupt && snapshot.values.interaction?.id !== input.interactionId) {
         const currentPrompt = clarificationSchema.parse(snapshot.tasks.flatMap(task => task.interrupts ?? [])[0].value);
         return { status: "awaiting_user_input", content: currentPrompt.question, clarification: currentPrompt,
+          ...(chatMode ? { chatMode } : {}),
           interaction: interactionAt(snapshot.values.interaction, this.deps.now?.()),
           serverNow: new Date(this.deps.now?.() ?? Date.now()).toISOString(), thinking: snapshot.values.thinking,
           executionState: stateToken };
@@ -178,7 +186,7 @@ export class SparrowOrchestrator {
       result = await graph.invoke(pendingInterrupt ? new Command({ resume: {
       answer: input.userQuery.trim(), intentCatalog: intents, interaction: savedInteraction(snapshot),
     } }) : retryIncompleteTurn ? null : {
-      projectId, userQuery: input.userQuery.trim(),
+      projectId, userQuery: input.userQuery.trim(), chatMode: chatMode === undefined ? null : chatMode, reviewedEvidenceCount: null,
       messages: [...(hasCheckpoint && Array.isArray(snapshot.values?.messages) ? snapshot.values.messages : seedHistory), { role: "user" as const, content: input.userQuery.trim() }].slice(-24),
       projectContext: { ...projectBusinessContext(project), projectId },
       intentCatalog: intents, queryUnderstanding: null, plan: null, response: null,
@@ -203,6 +211,7 @@ export class SparrowOrchestrator {
       const interaction = interactionAt(savedInteraction(next), this.deps.now?.());
       return {
         status: "awaiting_user_input", content: prompt.question,
+        ...(chatMode ? { chatMode } : {}),
         clarification: prompt, interaction, serverNow: new Date(this.deps.now?.() ?? Date.now()).toISOString(), thinking: Array.isArray(next.values?.thinking) ? next.values.thinking : [],
         executionState: stateToken,
       };

@@ -1,3 +1,5 @@
+import type { ChatMode } from "./chatMode";
+
 // Intent definitions are administered in sparrow_intents, not a code enum.
 export type QueryIntent = string;
 
@@ -99,6 +101,8 @@ export interface ChartData {
 }
 
 export interface SparrowChatResponse {
+  chatMode?: ChatMode;
+  modeStrategy?: "application" | "application+native";
   status: "complete" | "awaiting_user_input" | "error" | "stopped";
   content: string;
   thinking: SparrowThinkingStep[];

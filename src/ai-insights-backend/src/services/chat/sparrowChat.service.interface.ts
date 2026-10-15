@@ -1,11 +1,13 @@
 import { SparrowChatResponse, SparrowThinkingStep } from "../../agents/sparrow/types";
+import type { ChatMode } from "../../agents/sparrow/chatMode";
 
 export interface SendChatMessageInput {
+  chatMode?: ChatMode;
   requestId?: string;
   messageId?: string;
   userMessageId?: string;
   userContent?: string;
-  session?: { title?: string; agentPersona?: string; projectName?: string; pinned?: boolean };
+  session?: { title?: string; agentPersona?: string; projectName?: string; pinned?: boolean; chatMode?: ChatMode };
   userQuery: string;
   projectId: string;
   conversationId?: string;

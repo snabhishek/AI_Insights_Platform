@@ -3,6 +3,10 @@ import * as fsSync from "fs";
 import * as path from "path";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { AzureChatOpenAI, ChatOpenAI } from "@langchain/openai";
+import { ChatAnthropic } from "@langchain/anthropic";
+import { ChatOllama } from "@langchain/ollama";
+import { BaseChatModel } from "@langchain/core/language_models/chat_models";
+import { ModelRuntimeParameters, parseModelParameters, requiredModelSetting, requiredModelTokenLimit, validateRuntimeTarget } from "./modelRuntime";
 import { BaseMessage, HumanMessage } from "@langchain/core/messages";
 import { createAgent, summarizationMiddleware, todoListMiddleware, toolRetryMiddleware, contextEditingMiddleware, ClearToolUsesEdit } from "langchain";
 import { BatchedTableState, IngestionServices } from "../state";
@@ -22,7 +26,7 @@ import {
   normalizeStageOutputs,
 } from "../pipelineNames";
 
-export type SupportedChatModel = ChatOpenAI | AzureChatOpenAI | ChatGoogleGenerativeAI;
+export type SupportedChatModel = BaseChatModel;
 export type InspectionPayload = Record<string, unknown> & {
   tables?: Array<Record<string, unknown>>;
 };
@@ -202,17 +206,18 @@ export class AgentTraceHelper {
   }
 }
 
-export function createLiteLLMModel() {
+export function createLiteLLMModel(runtime?: ModelRuntimeParameters) {
   if (!process.env.LITELLM_PROXY_URL) {
     throw new Error("No LiteLLM")
   }
 
   const liteLLMModel = process.env.LITELLM_MODEL || process.env.LITELLM_MODEL_NAME || "gemini/gemini-3.1-pro-preview";
+  validateRuntimeTarget(runtime, "litellm", liteLLMModel);
 
   return new ChatOpenAI({
     model: liteLLMModel,
-    temperature: 0.4,
     maxTokens: 32000,
+    ...(runtime ? parseModelParameters("litellm", runtime.parameters) : { temperature: 0.4 }),
     configuration: {
       apiKey: process.env.LITELLM_VIRTUAL_KEY,
       baseURL: process.env.LITELLM_PROXY_URL
@@ -220,21 +225,24 @@ export function createLiteLLMModel() {
   });
 }
 
-export function createGeminiModel() {
+export function createGeminiModel(runtime?: ModelRuntimeParameters) {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {
     return null;
   }
 
+  const model = process.env.GEMINI_MODEL || "gemini-3.1-pro-preview";
+  validateRuntimeTarget(runtime, "gemini", model);
   return new ChatGoogleGenerativeAI({
     apiKey,
-    model: process.env.GEMINI_MODEL || "gemini-3.1-pro-preview",
+    model,
     temperature: 0,
     maxOutputTokens: 32000,
+    ...(runtime ? parseModelParameters("gemini", runtime.parameters) : {}),
   });
 }
 
-export function createAzureOpenAIModel() {
+export function createAzureOpenAIModel(runtime?: ModelRuntimeParameters) {
   const apiKey = process.env.AZURE_OPENAI_API_KEY;
   const endpoint = process.env.AZURE_OPENAI_ENDPOINT || process.env.AZURE_OPENAI_BASE_PATH || process.env.AZURE_OPENAI_INSTANCE_ENDPOINT;
   const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || process.env.AZURE_OPENAI_DEPLOYMENT;
@@ -245,47 +253,87 @@ export function createAzureOpenAIModel() {
     return null;
   }
 
+  const model = process.env.AZURE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
+  validateRuntimeTarget(runtime, "azure", deploymentName);
   return new AzureChatOpenAI({
     azureOpenAIApiKey: apiKey,
     azureOpenAIApiVersion: apiVersion,
     azureOpenAIApiDeploymentName: deploymentName,
     azureOpenAIEndpoint: endpoint,
-    model: process.env.AZURE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini",
-    temperature: 0,
+    model,
     maxTokens: 32000,
+    ...(runtime ? parseModelParameters("azure", runtime.parameters) : { temperature: 0 }),
   });
 }
 
-export function createOpenAIModel() {
+export function createOpenAIModel(runtime?: ModelRuntimeParameters) {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) {
     return null;
   }
 
+  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini-2026-03-17";
+  validateRuntimeTarget(runtime, "openai", model);
   return new ChatOpenAI({
     apiKey,
-    model: process.env.OPENAI_MODEL || "gpt-5.4-mini-2026-03-17",
-    temperature: 0,
+    model,
     maxTokens: 32000,
+    ...(runtime ? parseModelParameters("openai", runtime.parameters) : { temperature: 0 }),
   });
 }
 
-export function getModel(): SupportedChatModel | null {
+export function createAnthropicModel(runtime?: ModelRuntimeParameters) {
+  const model = requiredModelSetting("ANTHROPIC_MODEL");
+  validateRuntimeTarget(runtime, "anthropic", model);
+  return new ChatAnthropic({
+    model, apiKey: requiredModelSetting("ANTHROPIC_API_KEY"),
+    maxTokens: requiredModelTokenLimit("ANTHROPIC_MAX_TOKENS"),
+    ...(runtime ? parseModelParameters("anthropic", runtime.parameters) : {}),
+  });
+}
+
+export function createOllamaModel(runtime?: ModelRuntimeParameters) {
+  const model = requiredModelSetting("OLLAMA_MODEL");
+  validateRuntimeTarget(runtime, "ollama", model);
+  return new ChatOllama({
+    model, baseUrl: requiredModelSetting("OLLAMA_BASE_URL"),
+    ...(runtime ? parseModelParameters("ollama", runtime.parameters) : {}),
+  });
+}
+
+export function createOpenAICompatibleModel(runtime?: ModelRuntimeParameters) {
+  const model = requiredModelSetting("OPENAI_COMPATIBLE_MODEL");
+  validateRuntimeTarget(runtime, "openai-compatible", model);
+  return new ChatOpenAI({
+    model, apiKey: requiredModelSetting("OPENAI_COMPATIBLE_API_KEY"),
+    configuration: { baseURL: requiredModelSetting("OPENAI_COMPATIBLE_BASE_URL") },
+    ...(runtime ? parseModelParameters("openai-compatible", runtime.parameters) : {}),
+  });
+}
+
+export function getModel(runtime?: ModelRuntimeParameters): SupportedChatModel | null {
   const provider = (process.env.AI_PROVIDER || "").toLowerCase().trim();
   if (provider === "gemini" || provider === "google") {
-    const gemini = createGeminiModel();
+    const gemini = createGeminiModel(runtime);
     if (gemini) return gemini;
   } else if (provider === "azure" || provider === "azure_openai") {
-    const azure = createAzureOpenAIModel();
+    const azure = createAzureOpenAIModel(runtime);
     if (azure) return azure;
   } else if (provider === "openai") {
-    const openai = createOpenAIModel();
+    const openai = createOpenAIModel(runtime);
     if (openai) return openai;
   } else if (provider === "litellm") {
-    const litellm = createLiteLLMModel();
+    const litellm = createLiteLLMModel(runtime);
     if (litellm) return litellm;
+  } else if (provider === "anthropic" || provider === "claude") {
+    return createAnthropicModel(runtime);
+  } else if (provider === "ollama") {
+    return createOllamaModel(runtime);
+  } else if (provider === "openai-compatible") {
+    return createOpenAICompatibleModel(runtime);
   }
 
+  if (runtime) throw new Error("Configure the model provider explicitly before applying Sparrow native mode capabilities.");
   return createGeminiModel() || createAzureOpenAIModel() || createOpenAIModel();
 }
 

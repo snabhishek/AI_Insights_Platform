@@ -258,7 +258,7 @@ export default function AIAgentChatPage() {
 
   const handleSendMessage = async (
     text: string,
-    options?: { modelId?: string; attachments?: File[]; clarificationMessageId?: string }
+    options?: { modelId?: string; attachments?: File[]; clarificationMessageId?: string; retryMessageId?: string }
   ) => {
     if (!text.trim() || isGenerating || !activeSession?.projectId || activeSession.projectId !== selectedProjectId) return;
     const sessionKey = chatSessionKey(activeSession);
@@ -266,6 +266,10 @@ export default function AIAgentChatPage() {
       ? activeSession?.messages.find(message => message.id === options.clarificationMessageId)
       : [...(activeSession?.messages ?? [])].reverse().find(message => message.status === "awaiting_user_input" && message.clarification);
     if (options?.clarificationMessageId && (!clarificationMessage || clarificationMessage.status !== "awaiting_user_input")) return;
+    const originalMessage = clarificationMessage || (options?.retryMessageId
+      ? activeSession.messages.find(message => message.id === options.retryMessageId) : undefined);
+    if (options?.retryMessageId && !originalMessage) return;
+    const chatMode = originalMessage ? originalMessage.chatMode : activeSession.chatMode;
 
     abortGenerationRef.current = false;
     const generationEpoch = ++generationEpochRef.current;
@@ -278,6 +282,7 @@ export default function AIAgentChatPage() {
         : "";
 
     const userMessage: ChatMessage = {
+      chatMode,
       id: userMessageId,
       role: "user",
       content: `${text}${attachmentNote}`,
@@ -287,9 +292,9 @@ export default function AIAgentChatPage() {
     const assistantMessageId = clarificationMessage?.id ?? `msg-a-${crypto.randomUUID()}`;
     const requestId = crypto.randomUUID();
     const requestController = new AbortController();
-    const requestContext: ChatRequestContext = { requestId, messageId: assistantMessageId, userMessageId, userContent: userMessage.content,
+    const requestContext: ChatRequestContext = { requestId, messageId: assistantMessageId, userMessageId, userContent: userMessage.content, chatMode,
       session: { title: activeSession?.messages.length ? activeSession.title : text.slice(0, 36), agentPersona: selectedPersonaId,
-        projectName: currentScopedProject?.projectName || currentScopedProject?.name, pinned: activeSession?.pinned }, signal: requestController.signal };
+        projectName: currentScopedProject?.projectName || currentScopedProject?.name, pinned: activeSession?.pinned, chatMode: activeSession.chatMode }, signal: requestController.signal };
     activeRequestRef.current = { projectId: selectedProjectId, conversationId: activeSession.id, userQuery: text, context: requestContext, controller: requestController };
     const modelNote =
       options?.modelId && options.modelId !== "any"
@@ -297,6 +302,7 @@ export default function AIAgentChatPage() {
         : "";
 
     const initialAssistantMessage: ChatMessage = {
+      chatMode,
       id: assistantMessageId,
       requestId,
       role: "assistant",
@@ -578,7 +584,7 @@ export default function AIAgentChatPage() {
           onRetry={(mId) => {
             const idx = activeSession.messages.findIndex((m) => m.id === mId);
             if (idx > 0 && activeSession.messages[idx - 1].role === "user") {
-              handleSendMessage(activeSession.messages[idx - 1].content);
+              handleSendMessage(activeSession.messages[idx - 1].content, { retryMessageId: mId });
             }
           }}
           onFeedback={handleFeedback}
@@ -593,6 +599,14 @@ export default function AIAgentChatPage() {
           activePersona={activePersona}
           isChatEnabled={Boolean(selectedProjectId)}
           trainedModels={trainedModels}
+          chatMode={activeSession?.chatMode}
+          onChatModeChange={(chatMode) => {
+            if (!activeSession?.projectId || isGenerating) return;
+            const updated = { ...activeSession, chatMode };
+            const key = chatSessionKey(activeSession);
+            setSessions(previous => previous.map(session => chatSessionKey(session) === key ? { ...session, chatMode } : session));
+            void saveChatSessionMetadata(updated).catch(error => setHistoryError(error.message));
+          }}
           suggestions={suggestions}
           onOpenTemplates={() => setIsTemplatesModalOpen(true)}
           onOpenPersonaModal={() => setIsPersonaModalOpen(true)}

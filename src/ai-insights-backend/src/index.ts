@@ -12,6 +12,7 @@ if (typeof BigInt !== "undefined" && !(BigInt.prototype as any).toJSON) {
 
 import express from "express";
 import cors from "cors";
+import { corsOptions } from "./config/cors.config";
 import dotenv from "dotenv";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { LocalFileService } from "./services/file/file.service";
@@ -70,20 +71,7 @@ const app = express();
 const PORT = Number(process.env.PORT!);
 const HOST = process.env.HOST!;
 
-app.use(
-  cors({
-    origin: (origin, callback) => {
-
-      if (!origin || /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/.test(origin)) {
-        callback(null, true);
-      } else {
-        callback(null, true);
-      }
-    },
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    credentials: true,
-  })
-);
+app.use(cors(corsOptions));
 
 app.use(express.json({ limit: "500mb" }));
 app.use(express.urlencoded({ limit: "500mb", extended: true }));

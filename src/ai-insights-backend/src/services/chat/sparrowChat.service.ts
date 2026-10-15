@@ -12,10 +12,11 @@ import { z } from "zod";
 import { ISparrowChatRepository, PostgresSparrowChatRepository, StoredChatTurn } from "../../repositories/sparrowChat.repository";
 import { sparrowRunContext, SparrowRunContext, stoppedResponse } from "../../agents/sparrow/executionContext";
 import { setupTimestampedLogging } from "../../utils/logger";
+import { chatModeSchema, resolveTurnChatMode } from "../../agents/sparrow/chatMode";
 
 const identifier = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 const metadataSchema = z.object({ title: z.string().max(255).optional(), agentPersona: z.string().max(100).optional(),
-  projectName: z.string().max(255).optional(), pinned: z.boolean().optional() }).strict();
+  projectName: z.string().max(255).optional(), pinned: z.boolean().optional(), chatMode: chatModeSchema.optional() }).strict();
 
 export class SparrowChatService implements ISparrowChatService {
   private orchestrator: Pick<SparrowOrchestrator, "run" | "getInteraction">;
@@ -81,8 +82,20 @@ export class SparrowChatService implements ISparrowChatService {
       void writes.catch(error => console.error("[Sparrow] Could not persist chat progress:", error.message));
     };
     try {
-      const previous = await this.repository.latest(turn.projectId, turn.conversationId);
+      const [previous, existing] = await Promise.all([
+        this.repository.latest(turn.projectId, turn.conversationId), this.repository.get(turn),
+      ]);
+      if (existing && turn.chatMode !== undefined && existing.chatMode !== turn.chatMode) {
+        throw new Error("The existing request has a different response mode.");
+      }
+      turn.chatMode = resolveTurnChatMode(turn.chatMode, chatModeSchema.optional().parse(existing ? existing.chatMode : previous?.chatMode),
+        existing !== undefined || input.interactionId !== undefined || previous?.status === "awaiting_user_input");
+      context.chatMode = turn.chatMode;
+      if (existing && existing.status !== "sending") return existing;
       const saved = await this.repository.begin(turn);
+      if (saved && saved.requestId === turn.requestId && saved.chatMode !== turn.chatMode) {
+        throw new Error("The existing request has a different response mode.");
+      }
       if (saved?.status !== "sending") return saved;
       poll = setInterval(() => {
         if (polling || controller.signal.aborted) return;
@@ -91,7 +104,7 @@ export class SparrowChatService implements ISparrowChatService {
           if (message?.status === "stopped") controller.abort(new Error("Agent was stopped"));
         }).catch(error => console.error("[Sparrow] Could not check chat cancellation:", error.message)).finally(() => { polling = false; });
       }, 500);
-      console.info(`[Sparrow] Chat execution started (project=${turn.projectId} conversation=${turn.conversationId} request=${turn.requestId})`);
+      console.info(`[Sparrow] Chat execution started (project=${turn.projectId} conversation=${turn.conversationId} request=${turn.requestId}${turn.chatMode ? ` mode=${turn.chatMode}` : ""})`);
       let response: SparrowChatResponse;
       try {
         response = await sparrowRunContext.run(context, () => this.orchestrator.run({ ...input, ...turn, resetStoppedTurn: previous?.status === "stopped",
@@ -110,6 +123,7 @@ export class SparrowChatService implements ISparrowChatService {
         }
       }
       if (controller.signal.aborted) response = stoppedResponse(context.thinking, { projectId: turn.projectId, threadId: turn.conversationId });
+      if (context.chatMode) response = { ...response, chatMode: context.chatMode, modeStrategy: context.modeStrategy };
       await writes;
       const persisted = await this.repository.finish(turn, response);
       if (!persisted) throw new Error("The chat response could not be saved.");
@@ -125,6 +139,7 @@ export class SparrowChatService implements ISparrowChatService {
     const projectId = z.string().trim().min(1).max(50).parse(input.projectId);
     if (!await this.projectService.getById(projectId)) throw new Error("Project does not exist or access is restricted.");
     return { projectId, conversationId: identifier.parse(input.conversationId ?? input.executionState?.threadId ?? randomUUID()),
+      chatMode: chatModeSchema.optional().parse(input.chatMode),
       requestId: identifier.parse(input.requestId ?? randomUUID()), messageId: identifier.parse(input.messageId ?? randomUUID()),
       userMessageId: identifier.parse(input.userMessageId ?? randomUUID()), userQuery: z.string().trim().min(1).max(12000).parse(input.userQuery),
       userContent: input.userContent === undefined ? undefined : z.string().max(16000).parse(input.userContent),
@@ -161,8 +176,10 @@ export class SparrowChatService implements ISparrowChatService {
   public async importSessions(sessions: any[]) {
     for (const session of z.array(z.object({ id: identifier, projectId: z.string().min(1).max(50), title: z.string().max(255),
       agentPersona: z.string().max(100), projectName: z.string().max(255).optional(), createdAt: z.string().optional(), updatedAt: z.string().optional(), pinned: z.boolean().optional(),
+      chatMode: chatModeSchema.optional(),
       messages: z.array(z.object({ id: identifier, role: z.enum(["user", "assistant", "system"]), content: z.string().max(100000), timestamp: z.string(),
         requestId: identifier.optional(), isThinking: z.boolean().optional(),
+        chatMode: chatModeSchema.optional(), modeStrategy: z.enum(["application", "application+native"]).optional(),
         thinking: z.array(z.object({ time: z.string(), text: z.string(), done: z.boolean(), timestamp: z.string().optional(),
           status: z.enum(["running", "completed", "stopped", "failed"]).optional() }).passthrough()).optional()
       }).passthrough()).max(1000) }).strict()).max(200).parse(sessions)) {
