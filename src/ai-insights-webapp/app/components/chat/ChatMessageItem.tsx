@@ -4,7 +4,6 @@ import React, { useState } from "react";
 import { BarChart3, Copy, Check, Sparkles, ThumbsUp, ThumbsDown } from "lucide-react";
 import { ChatMessage } from "./types";
 import ChatClarification from "./ChatClarification";
-import ChatThinkingAccordion from "./ChatThinkingAccordion";
 import MarkdownRenderer from "../shared/MarkdownRenderer";
 
 interface ChatMessageItemProps {
@@ -55,12 +54,12 @@ export default function ChatMessageItem({
           </div>
         )}
 
-        {!isUser && message.thinking && message.thinking.length > 0 && (
-          <ChatThinkingAccordion
-            thinking={message.thinking}
-            isStreaming={message.isThinking}
-            defaultExpanded={false}
-          />
+        {!isUser && message.isThinking && (
+          <div className="flex items-center gap-2 py-1 select-none">
+            <span className="text-xs text-muted-foreground/60 animate-pulse font-normal tracking-wide">
+              Thinking...
+            </span>
+          </div>
         )}
 
         {message.status === "stopped" && <p role="status" className="text-sm text-muted-foreground">Agent was stopped</p>}
