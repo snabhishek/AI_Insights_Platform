@@ -113,31 +113,9 @@ export class AIController {
 
     this.ingestionAgentService.setActiveStream?.(streamId, sessionId, projectId);
 
-    const handleClientDisconnect = (reason: string) => {
-      if (isStreamCompleted) return;
-      clientDisconnected = true;
-      // Allow brief grace period so stage advancement/approval can register the replacement stream
-      setTimeout(async () => {
-        if (isStreamCompleted) return;
-        const resolvedSessionId = runningSessionId || this.ingestionAgentService.findSessionIdForProject?.(projectId);
-        const isStillActive = this.ingestionAgentService.isStreamActive?.(streamId, resolvedSessionId, projectId);
-        if (isStillActive === false) {
-          console.info(`[Workflow] Disconnected stream ${streamId} superseded by a newer stream; skipping auto-pause.`);
-          return;
-        }
-        console.warn(`[Workflow] Client disconnected (${reason}). Auto-pausing workflow for session: ${resolvedSessionId || "unknown"}, project: ${projectId || "unknown"}`);
-        try {
-          await this.ingestionAgentService.pause(resolvedSessionId, projectId);
-        } catch (err: any) {
-          console.error(`[Workflow] Failed to auto-pause on disconnect:`, err?.message || err);
-        }
-      }, 500);
-    };
-
     res.on("close", () => {
-      if (!res.writableEnded && !isStreamCompleted) {
-        handleClientDisconnect("response closed prematurely");
-      }
+      clientDisconnected = true;
+      console.info(`[Workflow] Client disconnected from SSE stream for session ${runningSessionId || sessionId || "unknown"}, project ${projectId || "unknown"}. Workflow continues running in backend.`);
     });
 
     const heartbeat = setInterval(() => {
@@ -145,7 +123,7 @@ export class AIController {
         try {
           res.write(": keep-alive\n\n");
         } catch {
-          handleClientDisconnect("heartbeat write failed");
+          clientDisconnected = true;
         }
       }
     }, 10000);
@@ -171,10 +149,7 @@ export class AIController {
         }
 
         if (clientDisconnected || res.writableEnded || res.closed) {
-          console.info(`[Workflow] Client disconnected from SSE stream for session ${runningSessionId || sessionId || "unknown"}`);
-          if (!isStreamCompleted) {
-            void handleClientDisconnect("stream loop detected closed socket");
-          }
+          console.info(`[Workflow] Stream socket closed for session ${runningSessionId || sessionId || "unknown"}. Workflow continues running in backend.`);
           break;
         }
         const canWrite = res.write(`data: ${JSON.stringify({ success: true, data: update })}\n\n`);
@@ -192,6 +167,75 @@ export class AIController {
       if (!clientDisconnected && !res.writableEnded && !res.closed) {
         isStreamCompleted = true;
         res.write(`data: ${JSON.stringify({ success: false, message: error.message || "AI workflow failed" })}\n\n`);
+        res.end();
+      }
+    } finally {
+      clearInterval(heartbeat);
+    }
+  };
+
+  attachIngestionStream = async (req: Request, res: Response): Promise<void> => {
+    const projectId = (req.query.projectId || req.body?.projectId) as string | undefined;
+    const sessionId = (req.query.sessionId || req.body?.sessionId) as string | undefined;
+
+    if (!projectId && !sessionId) {
+      console.warn(`[Workflow] Attach stream rejected: projectId or sessionId is required`);
+      res.status(400).json({ success: false, message: "projectId or sessionId is required" });
+      return;
+    }
+
+    req.setTimeout(0);
+    res.setTimeout(0);
+
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.flushHeaders();
+
+    let clientDisconnected = false;
+    let isStreamCompleted = false;
+
+    res.on("close", () => {
+      clientDisconnected = true;
+      console.info(`[Workflow] Client disconnected from attached SSE stream for project ${projectId || "unknown"}`);
+    });
+
+    const heartbeat = setInterval(() => {
+      if (!res.writableEnded && !clientDisconnected && !res.closed) {
+        try {
+          res.write(": keep-alive\n\n");
+        } catch {
+          clientDisconnected = true;
+        }
+      }
+    }, 10000);
+
+    try {
+      if (!this.ingestionAgentService.attachStream) {
+        throw new Error("attachStream is not supported by ingestionAgentService");
+      }
+      const stream = this.ingestionAgentService.attachStream(projectId!, sessionId);
+      for await (const update of stream) {
+        if (clientDisconnected || res.writableEnded || res.closed) {
+          console.info(`[Workflow] Attached SSE stream closed by client for project ${projectId || "unknown"}`);
+          break;
+        }
+        const canWrite = res.write(`data: ${JSON.stringify({ success: true, data: update })}\n\n`);
+        if (!canWrite) {
+          await new Promise<void>((resolve) => res.once("drain", resolve));
+        }
+      }
+
+      if (!clientDisconnected && !res.writableEnded && !res.closed) {
+        isStreamCompleted = true;
+        res.write("data: [DONE]\n\n");
+        res.end();
+      }
+    } catch (error: any) {
+      if (!clientDisconnected && !res.writableEnded && !res.closed) {
+        isStreamCompleted = true;
+        res.write(`data: ${JSON.stringify({ success: false, message: error.message || "Failed to attach stream" })}\n\n`);
         res.end();
       }
     } finally {

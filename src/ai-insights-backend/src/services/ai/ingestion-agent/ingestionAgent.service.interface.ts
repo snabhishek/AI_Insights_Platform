@@ -51,4 +51,5 @@ export interface IIngestionAgentService {
   isProjectActive?(projectId?: string): boolean;
   findSessionIdForProject?(projectId?: string): string | undefined;
   getActiveWorkflow(): { active: boolean; projectId: string | null; sessionId: string | null; status: PipelineStepStatus };
+  attachStream?(projectId: string, sessionId?: string): AsyncGenerator<IngestionAgentRunResult, void, unknown>;
 }
