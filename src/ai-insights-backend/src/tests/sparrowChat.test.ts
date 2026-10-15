@@ -81,6 +81,89 @@ test("schema-aware execution returns to the supervisor after each worker", async
   assert.deepEqual(result.history.map((item) => item.node), ["queryResolver", "projectContext", "queryResolver", "supervisor", "toolExecutor", "supervisor", "responder"]);
 });
 
+test("Expert reviews evidence once before answering; Fast preserves required analytics with a brief answer style", async () => {
+  for (const chatMode of ["expert", "fast"] as const) {
+    let reviews = 0;
+    let answerStyle = "";
+    let calculations = 0;
+    const f = fixture({
+      query: async () => { calculations++; return { success: true, rows: [{ total: 125 }] }; },
+      plan: async (_understanding: unknown, _context: unknown, execution: any) => {
+        assert.equal(execution.chatMode, chatMode);
+        if (execution.reviewingEvidence) reviews++;
+        return execution.toolResults.some((result: any) => result.toolName === "queryProjectData" && result.success)
+          ? responsePlan : toolPlan("SELECT SUM(revenue) AS total FROM transactions");
+      },
+      respond: async (_query: unknown, resolved: QueryUnderstanding) => {
+        answerStyle = resolved.responseStyle;
+        return { status: "complete", content: "Revenue is 125.", thinking: [] };
+      },
+    });
+    const result = await f.graph.invoke({ ...seed, chatMode }, config(`mode-${chatMode}`));
+    assert.equal(reviews, chatMode === "expert" ? 1 : 0);
+    assert.equal(calculations, 1);
+    assert.equal(answerStyle, chatMode === "expert" ? "detailed" : "brief");
+    assert.equal(result.response?.chatMode, chatMode);
+  }
+});
+
+test("Expert can investigate a review gap and then finish without repeating prior work", async () => {
+  let calculations = 0;
+  let reviews = 0;
+  const f = fixture({
+    query: async () => ({ success: true, rows: [{ total: ++calculations }] }),
+    plan: async (_u: unknown, _c: unknown, execution: any) => {
+      if (execution.reviewingEvidence && ++reviews === 1) return toolPlan("SELECT COUNT(*) AS count FROM transactions");
+      return execution.toolResults.some((result: any) => result.toolName === "queryProjectData")
+        ? responsePlan : toolPlan("SELECT SUM(revenue) AS total FROM transactions");
+    },
+  });
+  const result = await f.graph.invoke({ ...seed, chatMode: "expert" }, config("expert-review-gap"));
+  assert.equal(calculations, 2);
+  assert.equal(reviews, 2);
+  assert.equal(result.response?.status, "complete");
+});
+
+test("mode is checkpointed through clarification and can be cleared explicitly for a later legacy turn", async () => {
+  const f = fixture({ resolve: async (_q: unknown, _c: unknown, _h: unknown, _i: unknown, memory: any) => memory.clarificationAnswer
+    ? understanding : { ...understanding, needsClarification: true, clarificationQuestion: "Which metric?", missingField: "targetMetric" } });
+  const thread = config("mode-clarification");
+  await f.graph.invoke({ ...seed, chatMode: "expert" }, thread);
+  assert.equal((await f.graph.getState(thread)).values.chatMode, "expert");
+  const resumed = await createSparrowGraph(f.deps).invoke(new Command({ resume: "Revenue" }), thread);
+  assert.equal(resumed.response?.chatMode, "expert");
+  const next = await f.graph.invoke({ ...seed, chatMode: null, reviewedEvidenceCount: null,
+    response: null, queryUnderstanding: { ...understanding, isGeneralConversation: true }, decisionReady: false }, thread);
+  assert.equal(next.chatMode, null);
+  assert.equal(next.response?.chatMode, undefined);
+});
+
+test("Expert reviews clarified evidence again without repeating completed calculations", async () => {
+  let reviews = 0;
+  let calculations = 0;
+  const f = fixture({
+    query: async () => { calculations++; return { success: true, rows: [{ total: 125 }] }; },
+    plan: async (_u: unknown, _c: unknown, execution: any) => {
+      if (!execution.toolResults.some((result: any) => result.toolName === "queryProjectData")) {
+        return toolPlan("SELECT SUM(revenue) AS total FROM transactions");
+      }
+      if (execution.reviewingEvidence && ++reviews === 1) {
+        return { action: "clarify", planType: "clarification", steps: [], rationale: "Confirm the comparison period",
+          clarification: { question: "Which comparison period?", missingField: "timeRange" } };
+      }
+      return responsePlan;
+    },
+  });
+  const thread = config("expert-review-clarification");
+  await f.graph.invoke({ ...seed, chatMode: "expert" }, thread);
+  assert.equal(reviews, 1);
+  const result = await createSparrowGraph(f.deps).invoke(new Command({ resume: "This year" }), thread);
+  assert.equal(reviews, 2);
+  assert.equal(calculations, 1);
+  assert.equal(result.response?.status, "complete");
+  assert.equal(result.response?.chatMode, "expert");
+});
+
 test("a tool failure is corrected using its error and schema before answering", async () => {
   let calls = 0;
   let repaired = false;

@@ -1,10 +1,12 @@
 import { Pool } from "pg";
 import { SparrowChatResponse, SparrowThinkingStep } from "../agents/sparrow/types";
+import type { ChatMode } from "../agents/sparrow/chatMode";
 
 export interface ChatTurnIdentity { projectId: string; conversationId: string; requestId: string; messageId: string }
 export interface StoredChatTurn extends ChatTurnIdentity {
+  chatMode?: ChatMode;
   userQuery: string; userMessageId: string; userContent?: string;
-  session?: { title?: string; agentPersona?: string; projectName?: string; pinned?: boolean };
+  session?: { title?: string; agentPersona?: string; projectName?: string; pinned?: boolean; chatMode?: ChatMode };
 }
 export interface ISparrowChatRepository {
   begin(turn: StoredChatTurn): Promise<any>;
@@ -30,12 +32,12 @@ export class PostgresSparrowChatRepository implements ISparrowChatRepository {
       await client.query("BEGIN");
       await client.query(`INSERT INTO sparrow_chat_sessions(project_id,id,metadata) VALUES ($1,$2,$3::jsonb)
         ON CONFLICT(project_id,id) DO UPDATE SET metadata=sparrow_chat_sessions.metadata || EXCLUDED.metadata,updated_at=NOW()`,
-        [turn.projectId, turn.conversationId, JSON.stringify({ title: turn.userQuery.slice(0, 36), agentPersona: "orchestrator", ...turn.session })]);
+        [turn.projectId, turn.conversationId, JSON.stringify({ title: turn.userQuery.slice(0, 36), agentPersona: "orchestrator", ...(turn.chatMode ? { chatMode: turn.chatMode } : {}), ...turn.session })]);
       if (turn.userQuery) await client.query(`INSERT INTO sparrow_chat_messages(project_id,conversation_id,id,request_id,payload)
         VALUES ($1,$2,$3,$4,$5::jsonb) ON CONFLICT(project_id,conversation_id,id) DO NOTHING`,
-        [turn.projectId, turn.conversationId, turn.userMessageId, turn.requestId, JSON.stringify({ id: turn.userMessageId, role: "user", content: turn.userContent ?? turn.userQuery, timestamp: clock() })]);
+        [turn.projectId, turn.conversationId, turn.userMessageId, turn.requestId, JSON.stringify({ id: turn.userMessageId, role: "user", content: turn.userContent ?? turn.userQuery, timestamp: clock(), ...(turn.chatMode ? { chatMode: turn.chatMode } : {}) })]);
       const payload = { id: turn.messageId, role: "assistant", timestamp: clock(), agentId: turn.session?.agentPersona ?? "orchestrator", agentName: "Sparrow", agentBadge: "Master Agent",
-        requestId: turn.requestId, content: "", thinking: [], status: "sending", isThinking: true, ...response };
+        requestId: turn.requestId, content: "", thinking: [], status: "sending", isThinking: true, ...(turn.chatMode ? { chatMode: turn.chatMode } : {}), ...response };
       if (response) payload.isThinking = false;
       await client.query(`INSERT INTO sparrow_chat_messages(project_id,conversation_id,id,request_id,payload) VALUES($1,$2,$3,$4,$5::jsonb)
         ON CONFLICT(project_id,conversation_id,id) DO UPDATE SET request_id=EXCLUDED.request_id,payload=EXCLUDED.payload,

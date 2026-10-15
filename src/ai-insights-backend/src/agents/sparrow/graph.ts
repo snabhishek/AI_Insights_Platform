@@ -33,17 +33,19 @@ export function createSparrowGraph(deps: SparrowGraphDependencies) {
     .addNode("toolExecutorNode", logged("toolExecutorNode", nodes.toolExecutorNode))
     .addNode("programRectificationNode", logged("programRectificationNode", nodes.programRectificationNode))
     .addNode("clarificationNode", logged("clarificationNode", nodes.clarificationNode))
+    .addNode("evidenceReviewNode", logged("evidenceReviewNode", nodes.evidenceReviewNode))
     .addNode("responderNode", logged("responderNode", nodes.responderNode))
     .addEdge("__start__", "supervisorNode")
     .addConditionalEdges("supervisorNode", routeSparrow, {
       resolve: "queryResolverNode", context: "projectContextNode", tool: "toolExecutorNode",
-      rectify: "programRectificationNode", clarify: "clarificationNode", respond: "responderNode", finish: "__end__",
+      rectify: "programRectificationNode", clarify: "clarificationNode", review: "evidenceReviewNode", respond: "responderNode", finish: "__end__",
     })
     .addEdge("queryResolverNode", "supervisorNode")
     .addEdge("projectContextNode", "supervisorNode")
     .addEdge("toolExecutorNode", "supervisorNode")
     .addEdge("programRectificationNode", "supervisorNode")
     .addEdge("clarificationNode", "supervisorNode")
+    .addEdge("evidenceReviewNode", "supervisorNode")
     .addEdge("responderNode", "supervisorNode")
     .compile({ checkpointer: deps.checkpointer });
 }

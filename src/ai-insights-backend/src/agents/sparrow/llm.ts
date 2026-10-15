@@ -2,8 +2,18 @@ import { readFile } from "fs/promises";
 import { HumanMessage, SystemMessage } from "@langchain/core/messages";
 import { z } from "zod";
 import { toJsonSchema } from "@langchain/core/utils/json_schema";
-import { getModel, resolvePromptFilePath } from "../utils/agentUtils";
-import { sparrowSignal, throwIfSparrowStopped } from "./executionContext";
+import { resolvePromptFilePath } from "../utils/agentUtils";
+import { sparrowRunContext, sparrowSignal, throwIfSparrowStopped } from "./executionContext";
+import { CHAT_MODE_POLICIES, chatModeInstructions } from "./chatMode";
+import { bindSparrowTools, getSparrowModel } from "./modelAdapter";
+
+function invocationSettings(prompt: string) {
+  const mode = sparrowRunContext.getStore()?.chatMode;
+  return {
+    prompt: mode ? `${prompt}\n\n${chatModeInstructions(mode)}` : prompt,
+    signal: sparrowSignal(mode ? CHAT_MODE_POLICIES[mode].llmTimeoutMs : 60_000),
+  };
+}
 
 export interface SparrowDecisionTool {
   name: string;
@@ -25,16 +35,16 @@ export function decisionTransportSchema(schema: z.ZodType): Record<string, unkno
 // without combining the entire registry into one union-shaped JSON plan.
 export async function invokeSparrowDecision(payload: unknown, tools: SparrowDecisionTool[]) {
   throwIfSparrowStopped();
-  const model = getModel();
-  if (!model) throw new Error("Configure an LLM provider before using Sparrow.");
+  const adapter = getSparrowModel();
   const prompt = await readFile(resolvePromptFilePath("analysisPlanner.md"), "utf8");
   if (!prompt.trim()) throw new Error("Sparrow planner prompt is empty.");
   const definitions = tools.map(tool => ({ type: "function" as const, function: {
     name: tool.name, description: tool.description, parameters: decisionTransportSchema(tool.schema),
   } }));
-  const result = await model.bindTools(definitions, { tool_choice: "any" }).invoke([
-    new SystemMessage(prompt), new HumanMessage(JSON.stringify(payload)),
-  ], { signal: sparrowSignal(60_000) });
+  const settings = invocationSettings(prompt);
+  const result = await bindSparrowTools(adapter, definitions).invoke([
+    new SystemMessage(settings.prompt), new HumanMessage(JSON.stringify(payload)),
+  ], { signal: settings.signal });
   throwIfSparrowStopped();
   if (result.invalid_tool_calls?.length || result.tool_calls?.length !== 1) {
     throw new Error("Supervisor must select exactly one valid next action.");
@@ -48,17 +58,17 @@ export async function invokeSparrowDecision(payload: unknown, tools: SparrowDeci
 // One prompt source; configuration and malformed output errors stay explicit.
 export async function invokeSparrowJson<T extends Record<string, unknown>>(promptName: string, payload: unknown, schema: z.ZodType<T>): Promise<T> {
   throwIfSparrowStopped();
-  const model = getModel();
-  if (!model) throw new Error("Configure an LLM provider before using Sparrow.");
+  const { model } = getSparrowModel();
   
   const prompt = await readFile(resolvePromptFilePath(promptName), "utf8");
   if (!prompt.trim()) throw new Error(`Sparrow prompt '${promptName}' is empty.`);
   
   const structuredModel = model.withStructuredOutput(schema, { name: "sparrow_output", method: "functionCalling" });
   
+  const settings = invocationSettings(prompt);
   const result = await structuredModel.invoke([
-    new SystemMessage(prompt), new HumanMessage(JSON.stringify(payload)),
-  ], { signal: sparrowSignal(60_000) });
+    new SystemMessage(settings.prompt), new HumanMessage(JSON.stringify(payload)),
+  ], { signal: settings.signal });
   throwIfSparrowStopped();
   
   return schema.parse(result);

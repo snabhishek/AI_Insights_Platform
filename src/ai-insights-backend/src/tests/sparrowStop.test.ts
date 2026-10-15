@@ -11,9 +11,11 @@ const thinking = [{ time: "17:48:01", timestamp: "2026-10-09T12:18:01Z", text: "
 const turn = { projectId: "p1", conversationId: "c1", requestId: "r1", messageId: "a1", userMessageId: "u1", userQuery: "Analyze" };
 function fixture(run: (input: any) => Promise<any>) {
   const messages = new Map<string, any>();
+  const imported: any[] = [];
   const repo: any = {
+    importSession: async (session: any) => { imported.push(session); },
     latest: async () => [...messages.values()].at(-1),
-    begin: async (input: any) => { const saved = messages.get(input.messageId); if (!saved || saved.requestId !== input.requestId) messages.set(input.messageId, { requestId: input.requestId, status: "sending", thinking: [] }); return messages.get(input.messageId); },
+    begin: async (input: any) => { const saved = messages.get(input.messageId); if (!saved || saved.requestId !== input.requestId) messages.set(input.messageId, { requestId: input.requestId, chatMode: input.chatMode, status: "sending", thinking: [] }); return messages.get(input.messageId); },
     get: async (input: any) => { const saved = messages.get(input.messageId); return saved?.requestId === input.requestId ? saved : undefined; },
     progress: async (input: any, steps: any) => { const saved = await repo.get(input); if (saved?.status === "sending") saved.thinking = steps; },
     finish: async (input: any, response: any) => { const saved = await repo.get(input); if (saved?.status === "sending") Object.assign(saved, response, { isThinking: false }); return saved; },
@@ -22,7 +24,7 @@ function fixture(run: (input: any) => Promise<any>) {
   };
   const service = new SparrowChatService({ getById: async () => ({ id: "p1" }) } as any, {} as any, {} as any,
     { checkpointer: new MemorySaver(), intentRepository: {} as any, lockPool: {} as any, chatRepository: repo, orchestrator: { run, getInteraction: async () => ({}) } });
-  return { service, messages };
+  return { service, messages, imported };
 }
 
 test("Stop ends ordinary and clarification UI messages, retaining completed steps without a pending spinner", () => {
@@ -34,6 +36,49 @@ test("Stop ends ordinary and clarification UI messages, retaining completed step
   }
   assert.match(traceClock(thinking[1]), /^\d{2}:\d{2}:\d{2}$/);
   assert.equal(traceClock({ time: "00:01", done: false, text: "legacy" }), "—");
+});
+
+test("API callers select a mode without UI state and same-request mode changes are rejected", async () => {
+  let calls = 0;
+  const f = fixture(async input => {
+    calls++;
+    assert.equal(input.chatMode, "expert");
+    assert.equal(sparrowRunContext.getStore()?.chatMode, "expert");
+    return { status: "complete", content: "Evidence reviewed.", thinking: [] };
+  });
+  const result = await f.service.sendMessage({ ...turn, chatMode: "expert" });
+  assert.equal(result.chatMode, "expert");
+  assert.equal(f.messages.get("a1").chatMode, "expert");
+  assert.equal((await f.service.sendMessage(turn)).chatMode, "expert");
+  await assert.rejects(() => f.service.sendMessage({ ...turn, chatMode: "fast" }), /different response mode/);
+  assert.equal(calls, 1);
+});
+
+test("cached sessions import explicit response modes without changing message-level choices", async () => {
+  const f = fixture(async () => { throw new Error("Import must not execute the agent."); });
+  const session = { id: "c1", projectId: "p1", title: "Saved inquiry", agentPersona: "orchestrator", chatMode: "fast",
+    messages: [{ id: "a1", role: "assistant", content: "Detailed findings", timestamp: "5:48 PM", chatMode: "expert", modeStrategy: "application" }] };
+  await f.service.importSessions([session]);
+  assert.deepEqual(f.imported, [session]);
+  await assert.rejects(() => f.service.importSessions([{ ...session, chatMode: "auto" }]));
+  assert.equal(f.imported.length, 1);
+});
+
+test("a clarification retains the saved mode and rejects changing it before execution", async () => {
+  let calls = 0;
+  const f = fixture(async input => {
+    calls++;
+    assert.equal(input.chatMode, "expert");
+    return calls === 1 ? { status: "awaiting_user_input", content: "Which region?", thinking: [] }
+      : { status: "complete", content: "Region analyzed.", thinking: [] };
+  });
+  await f.service.sendMessage({ ...turn, chatMode: "expert" });
+  const answer = { ...turn, requestId: "r2", userMessageId: "u2", userQuery: "North", interactionId: "i1" };
+  await assert.rejects(() => f.service.sendMessage({ ...answer, chatMode: "fast" }), /original request/);
+  assert.equal(calls, 1);
+  const resumed = await f.service.sendMessage(answer);
+  assert.equal(resumed.chatMode, "expert");
+  assert.equal(calls, 2);
 });
 
 test("Stop aborts active work and saves the stopped trace; late completion cannot replace it", async () => {

@@ -2,8 +2,44 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { EventEmitter } from "node:events";
 import express from "express";
+import cors from "cors";
+import { corsOptions } from "../config/cors.config";
 import { SparrowChatController } from "../controllers/sparrowChat.controller";
+import createSparrowChatRouter from "../routes/sparrowChat";
 const { readSparrowStream } = require("../../../ai-insights-webapp/app/services/sparrowStream");
+
+test("cross-origin session updates allow PATCH preflight and reach the metadata handler", async t => {
+  const updates: any[] = [];
+  const controller = new SparrowChatController({ updateSession: async (...args: any[]) => { updates.push(args); } } as any);
+  const app = express();
+  app.use(cors(corsOptions));
+  app.use(express.json());
+  app.use("/api/chat", createSparrowChatRouter(controller));
+  const server = app.listen(0, "127.0.0.1");
+  await new Promise<void>(resolve => server.once("listening", resolve));
+  t.after(() => { server.close(); });
+  const address = server.address() as any;
+  const url = `http://127.0.0.1:${address.port}/api/chat/sessions/session-welcome`;
+  const origin = "http://localhost:3000";
+  const preflight = await fetch(url, { method: "OPTIONS", headers: {
+    Origin: origin, "Access-Control-Request-Method": "PATCH", "Access-Control-Request-Headers": "content-type",
+  } });
+  assert.equal(preflight.status, 204);
+  assert.equal(preflight.headers.get("access-control-allow-origin"), origin);
+  assert.equal(preflight.headers.get("access-control-allow-credentials"), "true");
+  assert.ok(preflight.headers.get("access-control-allow-methods")?.split(",").map(method => method.trim()).includes("PATCH"),
+    "The browser must be allowed to send the session metadata PATCH.");
+  assert.ok(preflight.headers.get("access-control-allow-headers")?.toLowerCase().includes("content-type"));
+  assert.equal(updates.length, 0);
+  for (const chatMode of ["expert", "fast"]) {
+    const response = await fetch(url, { method: "PATCH", headers: { Origin: origin, "Content-Type": "application/json" },
+      body: JSON.stringify({ projectId: "p1", metadata: { chatMode } }) });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("access-control-allow-origin"), origin);
+    assert.deepEqual(await response.json(), { success: true });
+  }
+  assert.deepEqual(updates, [["p1", "session-welcome", { chatMode: "expert" }], ["p1", "session-welcome", { chatMode: "fast" }]]);
+});
 
 function mockResponse() {
   const response: any = new EventEmitter(); const chunks: string[] = [];

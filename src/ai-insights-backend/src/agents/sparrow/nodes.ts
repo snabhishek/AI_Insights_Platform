@@ -9,7 +9,8 @@ import { clarificationSchema, createClarificationInteraction } from "./clarifica
 import { advancePeriod, dateOnly, resolveForecastRange } from "./forecastWindow";
 import { compactMemory, compactProjectContext, compactToolResults } from "./projectContext";
 import { setupTimestampedLogging } from "../../utils/logger";
-import { throwIfSparrowStopped } from "./executionContext";
+import { sparrowRunContext, throwIfSparrowStopped } from "./executionContext";
+import { CHAT_MODE_POLICIES, chatModeInstructions } from "./chatMode";
 
 export interface SparrowGraphDependencies {
   tools: Map<string, any>;
@@ -72,7 +73,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
     liveThinking = liveThinking.map(step => ({ ...step, done: true, status: "completed" }));
     return { thinking: report(state, text), history: [{ node, summary: text }] };
   };
-  const executionContext = (state: SparrowState, repairing = false) => {
+  const executionContext = (state: SparrowState, repairing = false, reviewingEvidence?: boolean) => {
     const toolResults = getToolResults(state);
     return {
       userQuery: state.userQuery, messages: Array.isArray(state.messages) ? state.messages : [], memory: compactMemory(state.memory),
@@ -81,6 +82,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       toolResults, previousPlan: state.plan, toolCatalog,
       toolSchemas: Array.from(deps.tools, ([name, tool]) => ({ name, schema: tool.schema })),
       repairing, remainingToolCalls: MAX_TOOL_CALLS - state.toolCalls,
+      chatMode: state.chatMode, modeInstructions: chatModeInstructions(state.chatMode), reviewingEvidence,
       intentDefinition: (Array.isArray(state.intentCatalog) ? state.intentCatalog : []).find((intent) => intent.code === state.queryUnderstanding?.intent),
       inferenceCapabilities: { segmentFilters: false, featureScenarioChanges: false },
     };
@@ -155,14 +157,14 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
     }
   };
 
-  const decide = async (state: SparrowState, repairing: boolean): Promise<Partial<SparrowState>> => {
-    begin(state, repairing ? "Reviewing the execution failure and choosing a correction." : "Reviewing the evidence and choosing the next action.");
+  const decide = async (state: SparrowState, repairing: boolean, reviewingEvidence?: boolean): Promise<Partial<SparrowState>> => {
+    begin(state, reviewingEvidence ? "Checking the evidence and completeness of the Expert analysis." : repairing ? "Reviewing the execution failure and choosing a correction." : "Reviewing the evidence and choosing the next action.");
     try {
-      const plan = analysisPlanSchema.parse(await agents.plan(state.queryUnderstanding!, compactProjectContext(state.projectContext), executionContext(state, repairing)));
+      const plan = analysisPlanSchema.parse(await agents.plan(state.queryUnderstanding!, compactProjectContext(state.projectContext), executionContext(state, repairing, reviewingEvidence)));
       if (plan.action === "tool" && !deps.tools.has(plan.steps[0].toolName)) {
         throw new Error(`Planner selected unregistered tool '${plan.steps[0].toolName}'.`);
       }
-      const trace = progress(state, "supervisor", `Decision: ${plan.rationale}`);
+      const trace = progress(state, reviewingEvidence ? "evidenceReview" : "supervisor", `Decision: ${plan.rationale}`);
       return { ...trace, plan, decisionReady: true, hitlState: plan.clarification ?? null,
         ...(plan.action === "clarify" ? { interaction: createClarificationInteraction(deps.now?.()) } : {}) };
     } catch (error) {
@@ -198,15 +200,22 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       const update = state.decisionReady ? {} : await decide(state, false);
       const plan = update.plan ?? state.plan;
       if (update.decisionReady === false) return { ...update, nextAction: "rectify" as const };
+      if (state.chatMode && CHAT_MODE_POLICIES[state.chatMode].reviewEvidence
+        && !understanding.isGeneralConversation && !understanding.isProjectIrrelevant
+        && plan!.action === "respond" && state.reviewedEvidenceCount !== toolResults.length) {
+        return { ...update, nextAction: "review" as const, decisionReady: false };
+      }
       return { ...update, nextAction: plan!.action!, decisionReady: false };
     },
     queryResolverNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
       begin(state, "Interpreting your request and identifying the required evidence.");
       const clockContext = { ...compactProjectContext(state.projectContext), currentDate: new Date(deps.now?.() ?? Date.now()).toISOString().slice(0, 10) };
-      const understanding = await agents.resolve(state.userQuery, clockContext, state.messages, state.intentCatalog, {
+      const resolved = await agents.resolve(state.userQuery, clockContext, state.messages, state.intentCatalog, {
         ...compactMemory(state.memory), clarificationAnswer: state.clarificationAnswer, pendingUnderstanding: state.queryUnderstanding,
         clarificationHistory: state.clarificationHistory,
+        chatMode: state.chatMode, modeInstructions: chatModeInstructions(state.chatMode),
       });
+      const understanding = state.chatMode ? { ...resolved, responseStyle: CHAT_MODE_POLICIES[state.chatMode].responseStyle } : resolved;
       if (state.intentCatalog.find(intent => intent.code === understanding.intent)?.allowsInference) {
         understanding.timeRange = resolveForecastRange(understanding.timeRange, deps.now?.() ?? Date.now());
       }
@@ -244,6 +253,10 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
         correctedResultsCount: getToolResults(state).length,
         ...progress(state, "programRectification", "Reassessed the failed operation using available schema and results.") };
     },
+    evidenceReviewNode: async (state: SparrowState): Promise<Partial<SparrowState>> => ({
+      ...await decide(state, false, true),
+      reviewedEvidenceCount: getToolResults(state).length,
+    }),
     clarificationNode: async (state: SparrowState): Promise<Partial<SparrowState>> => {
       // LangGraph saves the pending task; only the checkpoint token leaves the server.
       const prompt = clarificationSchema.parse(state.hitlState);
@@ -254,6 +267,7 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       if (typeof answer !== "string" || !answer.trim()) throw new Error("Clarification answer is required.");
       return {
         clarificationAnswer: answer.trim(), queryUnderstanding: null, plan: null, hitlState: null, decisionReady: false,
+        reviewedEvidenceCount: null,
         intentCatalog: typeof resumed === "object" && Array.isArray(resumed?.intentCatalog) ? resumed.intentCatalog : state.intentCatalog,
         interaction: interaction ? { ...interaction, status: "answered", answeredAt: new Date(deps.now?.() ?? Date.now()).toISOString() } : null,
         clarificationHistory: [...(Array.isArray(state.clarificationHistory) ? state.clarificationHistory : []), ...(interaction
@@ -269,10 +283,12 @@ export function createSparrowNodes(deps: SparrowGraphDependencies) {
       const response = await agents.respond(state.userQuery, state.queryUnderstanding!, plan, toolResults, compactProjectContext(state.projectContext), state.thinking, {
         ...compactMemory(state.memory), messages: state.messages, clarificationAnswer: state.clarificationAnswer, stopReason: state.stopReason,
         clarificationHistory: state.clarificationHistory,
+        chatMode: state.chatMode, modeInstructions: chatModeInstructions(state.chatMode),
       });
       const update = progress(state, "responder", "Prepared an answer from the available evidence.");
       return {
-        ...update, response: { ...response, thinking: update.thinking },
+        ...update, response: { ...response, thinking: update.thinking,
+          ...(state.chatMode ? { chatMode: state.chatMode, modeStrategy: sparrowRunContext.getStore()?.modeStrategy } : {}) },
         messages: [...(Array.isArray(state.messages) ? state.messages : []), { role: "assistant" as const, content: response.content }].slice(-24),
         memory: {
           previousUnderstanding: state.queryUnderstanding,

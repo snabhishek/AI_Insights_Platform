@@ -1,3 +1,5 @@
+export type ChatMode = "expert" | "fast";
+
 export type AgentPersonaId =
   | "orchestrator"
   | "data-engineer"
@@ -60,6 +62,8 @@ export interface ClarificationPrompt {
 }
 
 export interface ChatMessage {
+  chatMode?: ChatMode;
+  modeStrategy?: "application" | "application+native";
   requestId?: string;
   id: string;
   role: "user" | "assistant" | "system";
@@ -96,6 +100,7 @@ export interface ChatMessage {
 }
 
 export interface ChatSession {
+  chatMode?: ChatMode;
   id: string;
   title: string;
   createdAt: string;

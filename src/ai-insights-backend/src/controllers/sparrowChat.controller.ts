@@ -2,6 +2,7 @@ import { Request, Response } from "express";
 import { ISparrowChatService } from "../services/chat/sparrowChat.service.interface";
 import { SparrowThinkingStep } from "../agents/sparrow/types";
 import { z } from "zod";
+import { chatModeSchema } from "../agents/sparrow/chatMode";
 
 const idSchema = z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/);
 
@@ -37,7 +38,12 @@ export class SparrowChatController {
     };
     try {
       const { userQuery, message, text, projectId, conversationId, conversationHistory, executionState, interactionId,
-        requestId, messageId, userMessageId, userContent, session } = req.body;
+        requestId, messageId, userMessageId, userContent, session, chatMode } = req.body;
+      const parsedMode = chatModeSchema.optional().safeParse(chatMode);
+      if (!parsedMode.success) {
+        res.status(400).json({ success: false, error: "chatMode must be expert or fast when provided." });
+        return;
+      }
       const rawQuery = userQuery || message || text;
       const effectiveQuery = typeof rawQuery === "string" ? rawQuery.trim() : "";
 
@@ -79,6 +85,7 @@ export class SparrowChatController {
         executionState: executionState && typeof executionState === "object" ? executionState : undefined,
         onThinkingUpdate: streaming ? streamThinking : undefined,
         requestId, messageId, userMessageId, userContent, session,
+        chatMode: parsedMode.data,
       });
 
       if (streaming) {

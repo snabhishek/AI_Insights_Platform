@@ -1,4 +1,4 @@
-import { ChatMessage, ChatSession, AgentPersonaId, ThinkingStep } from "../components/chat/types";
+import { ChatMessage, ChatSession, AgentPersonaId, ThinkingStep, ChatMode } from "../components/chat/types";
 import { INITIAL_CHAT_SESSIONS } from "../components/chat/constants";
 import { Project, DataSource, BACKEND_URL } from "../components/providers/AppContext";
 import { readSparrowStream } from "./sparrowStream";
@@ -9,8 +9,9 @@ const ACTIVE_SESSION_ID_KEY = "ai_insights_active_session_id_v1";
 const ACTIVE_SESSION_KEY = "ai_insights_active_session_key_v2";
 
 export interface ChatRequestContext {
+  chatMode?: ChatMode;
   requestId: string; messageId: string; userMessageId: string; userContent: string;
-  session: { title: string; agentPersona: string; projectName?: string; pinned?: boolean };
+  session: { title: string; agentPersona: string; projectName?: string; pinned?: boolean; chatMode?: ChatMode };
   signal?: AbortSignal;
 }
 async function chatApi(path: string, options?: RequestInit) {
@@ -26,9 +27,9 @@ export async function loadDatabaseChatSessions(projectIds: string[], cached: Cha
 }
 export async function saveChatSessionMetadata(session: ChatSession): Promise<void> {
   if (!session.projectId) return;
-  const { title, agentPersona, projectName, pinned } = session;
+  const { title, agentPersona, projectName, pinned, chatMode } = session;
   await chatApi(`/sessions/${encodeURIComponent(session.id)}`, { method: "PATCH", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ projectId: session.projectId, metadata: { title, agentPersona, projectName, pinned } }) });
+    body: JSON.stringify({ projectId: session.projectId, metadata: { title, agentPersona, projectName, pinned, chatMode } }) });
 }
 export async function deleteDatabaseChatSession(session: ChatSession): Promise<void> {
   if (session.projectId) await chatApi(`/sessions/${encodeURIComponent(session.id)}?${new URLSearchParams({ projectId: session.projectId })}`, { method: "DELETE" });
@@ -108,11 +109,15 @@ export async function generateAgentChatResponse(
     : await res.json();
   if (!json.success || !json.data) throw new Error(json.error || "Sparrow returned an invalid response.");
   const data = json.data;
+  if (requestContext?.chatMode !== undefined && data.chatMode !== requestContext.chatMode) {
+    throw new Error("Sparrow returned a response with a different response mode.");
+  }
   if (data.status === "error") throw new Error(data.error || data.content);
   const thinking: ThinkingStep[] = Array.isArray(data.thinking) ? data.thinking : [];
   onThinkingUpdate?.(thinking);
   return {
     requestId: data.requestId,
+    chatMode: data.chatMode, modeStrategy: data.modeStrategy,
     role: "assistant", content: data.content,
     timestamp: new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }),
     thinking, isThinking: false, agentId: personaId, agentName: "Sparrow", agentBadge: "Insights Agent",
