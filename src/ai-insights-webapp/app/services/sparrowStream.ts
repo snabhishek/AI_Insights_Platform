@@ -1,7 +1,8 @@
 import type { ThinkingStep } from "../components/chat/types";
 
 /** Decode SSE incrementally, including split UTF-8 characters and CRLF frames. */
-export async function readSparrowStream(response: Response, onThinkingUpdate?: (steps: ThinkingStep[]) => void): Promise<any> {
+export async function readSparrowStream(response: Response, onThinkingUpdate?: (steps: ThinkingStep[]) => void,
+  onResponseDelta?: (delta: string) => void): Promise<any> {
   if (!response.body) throw new Error("Sparrow returned an empty stream.");
   const reader = response.body.getReader();
   const decoder = new TextDecoder();
@@ -12,6 +13,10 @@ export async function readSparrowStream(response: Response, onThinkingUpdate?: (
     if (!data) return;
     const event = JSON.parse(data);
     if (event.type === "thinking" && Array.isArray(event.thinking)) onThinkingUpdate?.(event.thinking);
+    else if (event.type === "response_delta") {
+      if (typeof event.delta !== "string") throw new Error("Sparrow returned an invalid response fragment.");
+      onResponseDelta?.(event.delta);
+    }
     else if (event.type === "result") result = event.data;
     else if (event.type === "error") throw new Error(event.error || "Sparrow execution failed.");
   };

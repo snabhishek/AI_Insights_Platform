@@ -67,7 +67,7 @@ export default function ChatMessageList({
   }, [onRegisterScrollToBottom]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    bottomRef.current?.scrollIntoView({ behavior: isGenerating ? "auto" : "smooth" });
     setIsScrolledUp(false);
   }, [messages, isGenerating]);
 

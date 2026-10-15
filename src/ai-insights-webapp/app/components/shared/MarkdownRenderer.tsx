@@ -11,7 +11,7 @@ interface MarkdownRendererProps {
   className?: string;
 }
 
-export default function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
+function MarkdownRenderer({ content, className = "" }: MarkdownRendererProps) {
   return (
     <div className={`markdown-content prose prose-sm dark:prose-invert min-w-0 max-w-none text-sm leading-relaxed text-foreground/90 space-y-2.5 select-text ${className}`}>
       <ReactMarkdown
@@ -121,6 +121,8 @@ export default function MarkdownRenderer({ content, className = "" }: MarkdownRe
     </div>
   );
 }
+
+export default React.memo(MarkdownRenderer);
 
 function CodeBlock({ children, language }: { children: string; language?: string }) {
   const [copied, setCopied] = useState(false);

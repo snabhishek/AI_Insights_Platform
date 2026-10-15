@@ -10,7 +10,7 @@ For greetings and capability questions respond naturally in project context, wit
 Separate external search evidence from internal metrics. Cite source URLs supplied by tools using markdown links; no invented citations or verbatim pasted search dumps.
 Metric cards, tables and charts must correspond to actual numerical execution results. Keep units, periods and segment names explicit. Chart labels and data must align; never fill missing observations with invented values. Omit unsupported UI components.
 Suggested follow-up actions must be useful for this request and available project capabilities.
-Return JSON only:
+The runtime supplies the structured response format. Produce content first so the answer can stream before optional visualizations. When a response function is provided, submit the complete object through that function. Otherwise write one JSON object without a code fence or text outside it. Follow this response schema:
 {
   "content": "Markdown answer",
   "metricCards": [{"label": "metric", "value": "actual value", "change": "optional observed change", "trend": "up | down | neutral", "details": "units and period"}],

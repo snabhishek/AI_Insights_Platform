@@ -91,10 +91,10 @@ export default function AIAgentChatPage() {
   }, []);
 
   useEffect(() => {
-    if (sessions.length > 0) {
+    if (sessions.length > 0 && !isGenerating) {
       saveChatSessions(sessions);
     }
-  }, [sessions]);
+  }, [sessions, isGenerating]);
 
   useEffect(() => {
     if (activeSessionKey) {
@@ -356,6 +356,23 @@ export default function AIAgentChatPage() {
       content: m.content,
     })) || [];
 
+    let responseFrame: number | undefined;
+    let responseParts: string[] = [];
+    let responseStarted = false;
+    const flushResponse = () => {
+      if (responseFrame !== undefined) cancelAnimationFrame(responseFrame);
+      responseFrame = undefined;
+      const delta = responseParts.join("");
+      responseParts = [];
+      if (!delta || generationEpoch !== generationEpochRef.current) return;
+      const first = !responseStarted;
+      responseStarted = true;
+      setSessions(previous => previous.map(session => chatSessionKey(session) === sessionKey ? {
+        ...session, messages: session.messages.map(message => message.id === assistantMessageId && message.requestId === requestId
+          ? { ...message, content: first ? delta : message.content + delta, isThinking: false } : message),
+      } : session));
+    };
+
     try {
       const response = await generateAgentChatResponse(
         text,
@@ -383,8 +400,14 @@ export default function AIAgentChatPage() {
         conversationHistory,
         activeSession.id,
         clarificationMessage?.interaction?.id,
-        requestContext
+        requestContext,
+        delta => {
+          if (generationEpoch !== generationEpochRef.current) return;
+          responseParts.push(delta);
+          if (responseFrame === undefined) responseFrame = requestAnimationFrame(flushResponse);
+        }
       );
+      flushResponse();
 
       if (abortGenerationRef.current || generationEpoch !== generationEpochRef.current) {
         return;
@@ -443,6 +466,8 @@ export default function AIAgentChatPage() {
         })
       );
     } finally {
+      if (responseFrame !== undefined) cancelAnimationFrame(responseFrame);
+      responseParts = [];
       if (activeRequestRef.current?.context.requestId === requestId) activeRequestRef.current = null;
       if (generationEpoch === generationEpochRef.current) setIsGenerating(false);
     }

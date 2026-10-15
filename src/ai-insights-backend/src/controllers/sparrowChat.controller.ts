@@ -20,10 +20,27 @@ export class SparrowChatController {
     const sendEvent = (event: object) => {
       if (!disconnected && !res.writableEnded) backpressured = res.write(`data: ${JSON.stringify(event)}\n\n`) === false;
     };
+    const waitForDrain = async (signal?: AbortSignal) => {
+      signal?.throwIfAborted();
+      while (backpressured && !disconnected && !res.writableEnded) {
+        await new Promise<void>(resolve => {
+          const resume = () => {
+            res.off("drain", resume);
+            res.off("close", resume);
+            signal?.removeEventListener("abort", resume);
+            resolve();
+          };
+          res.once("drain", resume);
+          res.once("close", resume);
+          signal?.addEventListener("abort", resume, { once: true });
+        });
+        signal?.throwIfAborted();
+      }
+    };
     const flushThinking = () => {
       if (progressTimer) clearTimeout(progressTimer);
       progressTimer = undefined;
-      if (pendingThinking) {
+      if (pendingThinking && !backpressured && !disconnected) {
         sendEvent({ type: "thinking", thinking: pendingThinking });
         pendingThinking = undefined;
         lastProgressAt = Date.now();
@@ -35,6 +52,13 @@ export class SparrowChatController {
       if (backpressured || disconnected) return;
       if (Date.now() - lastProgressAt >= 100) flushThinking();
       else if (!progressTimer) progressTimer = setTimeout(flushThinking, 100);
+    };
+    const streamResponse = async (delta: string, signal: AbortSignal) => {
+      await waitForDrain(signal);
+      flushThinking();
+      await waitForDrain(signal);
+      sendEvent({ type: "response_delta", delta });
+      await waitForDrain(signal);
     };
     try {
       const { userQuery, message, text, projectId, conversationId, conversationHistory, executionState, interactionId,
@@ -74,7 +98,9 @@ export class SparrowChatController {
         res.on("close", () => { disconnected = true; if (heartbeat) clearInterval(heartbeat); if (progressTimer) clearTimeout(progressTimer); });
         res.on("drain", () => { backpressured = false; flushThinking(); });
         sendEvent({ type: "thinking", thinking: [{ time: new Date().toLocaleTimeString("en-GB", { hour12: false }), timestamp: new Date().toISOString(), text: "Connected to Sparrow; loading the conversation.", done: false }] });
-        heartbeat = setInterval(() => { if (!disconnected && !res.writableEnded) res.write(": heartbeat\n\n"); }, 10000);
+        heartbeat = setInterval(() => {
+          if (!disconnected && !res.writableEnded && !backpressured) backpressured = res.write(": heartbeat\n\n") === false;
+        }, 10000);
       }
       const response = await this.sparrowChatService.sendMessage({
         userQuery: effectiveQuery,
@@ -84,13 +110,17 @@ export class SparrowChatController {
         conversationHistory: Array.isArray(conversationHistory) ? conversationHistory : [],
         executionState: executionState && typeof executionState === "object" ? executionState : undefined,
         onThinkingUpdate: streaming ? streamThinking : undefined,
+        onResponseDelta: streaming ? streamResponse : undefined,
         requestId, messageId, userMessageId, userContent, session,
         chatMode: parsedMode.data,
       });
 
       if (streaming) {
+        await waitForDrain();
         flushThinking();
+        await waitForDrain();
         sendEvent({ type: "result", data: response });
+        await waitForDrain();
         res.end();
         return;
       }
@@ -102,8 +132,11 @@ export class SparrowChatController {
     } catch (err: any) {
       console.error("[SparrowChatController] Error handling chat message:", err);
       if (streaming) {
+        await waitForDrain();
         flushThinking();
+        await waitForDrain();
         sendEvent({ type: "error", error: err?.message || "Internal server error" });
+        await waitForDrain();
         res.end();
         return;
       }

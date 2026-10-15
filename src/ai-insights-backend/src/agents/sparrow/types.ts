@@ -100,7 +100,17 @@ export interface ChartData {
   data: number[];
 }
 
+export interface SparrowTokenUsage {
+  modelCalls: number;
+  inputTokens: number;
+  outputTokens: number;
+  totalTokens: number;
+  cachedTokens?: number;
+  reasoningTokens?: number;
+}
+
 export interface SparrowChatResponse {
+  usage?: SparrowTokenUsage;
   chatMode?: ChatMode;
   modeStrategy?: "application" | "application+native";
   status: "complete" | "awaiting_user_input" | "error" | "stopped";
