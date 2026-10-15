@@ -178,6 +178,10 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     (result: any) => TrainingConfigValidator.validate(result?.configuration || result)
   );
 
+  if (output.status !== "Completed" || !output.contractPath || !fs.existsSync(output.contractPath)) {
+    throw new Error("Training Configuration did not complete with a persisted contract file.");
+  }
+
   try {
     const { extractDatasetDateRange } = await import("../tools/helpers/datasetDateRangeHelper");
     const wsName = (state as any).workspaceName || services.workspaceName || "DefaultWorkspace";
@@ -227,7 +231,7 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
   }
 
   return {
-    trainingConfigurationNode: output,
+    trainingConfiguration: output,
     status: "In-Progress",
     summary: output.summary,
     stageOutputs: { trainingConfigurationNode: output },

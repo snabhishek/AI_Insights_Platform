@@ -54,17 +54,6 @@ export default function HierarchyMapperStepOutput({
 
   return (
     <div className="space-y-6 select-none">
-
-      <div className="p-4 bg-emerald-50 dark:bg-emerald-950/20 border border-emerald-100 dark:border-emerald-900 text-xs text-emerald-800 dark:text-emerald-300 flex items-start gap-2.5 shadow-sm font-semibold select-none">
-        <span className="text-sm">✓</span>
-        <div>
-          <strong className="block text-emerald-900 dark:text-emerald-400">Hierarchy Mapper Completed</strong>
-          <p className="text-emerald-700/90 dark:text-emerald-300/80 mt-0.5">
-            Functional dependencies, entity hierarchies, and dynamic form schemas have been discovered and compiled.
-          </p>
-        </div>
-      </div>
-
       <div className="flex border-b border-border gap-4 text-xs font-semibold">
         <button
           onClick={() => setActiveTab("relationships")}

@@ -19,6 +19,8 @@ export interface AgentPersona {
 }
 
 export interface ThinkingStep {
+  status?: "running" | "completed" | "stopped" | "failed";
+  timestamp?: string;
   time: string;
   text: string;
   done: boolean;
@@ -50,7 +52,15 @@ export interface ChartData {
   data: number[];
 }
 
+export interface ClarificationPrompt {
+  question: string;
+  missingField: string;
+  options?: string[];
+  context?: Record<string, any>;
+}
+
 export interface ChatMessage {
+  requestId?: string;
   id: string;
   role: "user" | "assistant" | "system";
   content: string;
@@ -71,7 +81,15 @@ export interface ChatMessage {
   agentName?: string;
   agentBadge?: string;
   agentAvatar?: string;
-  status?: "sending" | "complete" | "error";
+  status?: "sending" | "complete" | "error" | "awaiting_user_input" | "stopped";
+  clarification?: ClarificationPrompt;
+  interaction?: { id: string; requestedAt: string; expiresAt: string; status: "waiting" | "timed_out" | "answered" };
+  serverNow?: string;
+  serverClockOffset?: number;
+  clarificationDraft?: string;
+  clarificationReplies?: Array<{ question: string; answer: string }>;
+  clarificationError?: string;
+  executionState?: Record<string, any>;
   error?: string;
   userLiked?: boolean;
   userDisliked?: boolean;

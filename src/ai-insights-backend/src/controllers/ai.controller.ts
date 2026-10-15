@@ -1,7 +1,6 @@
 import { Request, Response } from "express";
 import { IIngestionAgentService } from "../services/ai/ingestion-agent/ingestionAgent.service.interface";
 import { IAgentThinkingService } from "../services/ai/agent-thinking/agentThinking.service.interface";
-import { getPipelineForSubstep } from "../agents/pipelineFlowConfig";
 
 export class AIController {
   constructor(
@@ -23,17 +22,11 @@ export class AIController {
 
     try {
       if (substep) {
-        const effectivePipeline = pipeline || getPipelineForSubstep(substep) || "Data Ingestion";
-        let thinkingRecord = await this.agentThinkingService.getThinking(projectId, effectivePipeline, substep);
-        if (!thinkingRecord) {
-          const canonicalPipeline = getPipelineForSubstep(substep);
-          if (canonicalPipeline && canonicalPipeline !== effectivePipeline) {
-            thinkingRecord = await this.agentThinkingService.getThinking(projectId, canonicalPipeline, substep);
-          }
-          if (!thinkingRecord && effectivePipeline !== "Data Ingestion") {
-            thinkingRecord = await this.agentThinkingService.getThinking(projectId, "Data Ingestion", substep);
-          }
+        if (!pipeline) {
+          res.status(400).json({ success: false, message: "pipeline query parameter is required for subprocess logs" });
+          return;
         }
+        const thinkingRecord = await this.agentThinkingService.getThinking(projectId, pipeline, substep);
         res.json({
           success: true,
           data: { thinking: thinkingRecord ? thinkingRecord.thinking : [] },

@@ -3,6 +3,7 @@
 import React, { useState } from "react";
 import { BarChart3, Copy, Check, Sparkles, ThumbsUp, ThumbsDown } from "lucide-react";
 import { ChatMessage } from "./types";
+import ChatClarification from "./ChatClarification";
 import ChatThinkingAccordion from "./ChatThinkingAccordion";
 import MarkdownRenderer from "../shared/MarkdownRenderer";
 
@@ -10,13 +11,17 @@ interface ChatMessageItemProps {
   message: ChatMessage;
   onSelectAction?: (actionText: string) => void;
   onRetry?: (messageId: string) => void;
+  isGenerating?: boolean;
+  onClarificationReply?: (messageId: string, answer: string) => void;
+  onClarificationDraft?: (messageId: string, draft: string) => void;
+  onClarificationExpire?: (messageId: string, interactionId: string) => void;
   onFeedback?: (messageId: string, type: "like" | "dislike") => void;
 }
 
 export default function ChatMessageItem({
   message,
   onSelectAction,
-  onFeedback,
+  onFeedback, isGenerating, onClarificationReply, onClarificationDraft, onClarificationExpire,
 }: ChatMessageItemProps) {
   const [copied, setCopied] = useState(false);
   const [codeCopied, setCodeCopied] = useState(false);
@@ -35,27 +40,20 @@ export default function ChatMessageItem({
   };
 
   return (
-    <div
-      className={`flex gap-3.5 rounded-2xl transition-all p-2 ${
-        isUser
-          ? "bg-surface border border-border/40 max-w-[50%] lg:max-w-[40%] relative left-[100%] -translate-x-[100%]"
-          : "bg-surface-muted/20"
-      }`}
-    >
-      <div className="flex-1 min-w-0 space-y-3">
-        <div className="flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs font-bold text-foreground">
-              {isUser ? "You" : message.agentName || "Sparrow"}
-            </span>
-            {!isUser && message.agentBadge && (
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-primary/10 text-primary border border-primary/20">
-                {message.agentBadge}
-              </span>
-            )}
+    <div className={`w-full flex ${isUser ? "justify-end" : "justify-start"} animate-fade-in`}>
+      <div
+        className={`min-w-0 rounded-2xl transition-all ${
+          isUser
+            ? "bg-primary text-white border border-transparent shadow-md max-w-[85%] sm:max-w-[75%] lg:max-w-[65%] p-3.5 sm:p-4 space-y-2"
+            : "max-w-full p-4 sm:p-5 w-full space-y-3"
+        }`}
+      >
+        {isUser && (
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-xs font-bold text-white">You</span>
+            <span className="text-[10px] text-white/80">{message.timestamp}</span>
           </div>
-          <span className="text-[10px] text-muted-foreground">{message.timestamp}</span>
-        </div>
+        )}
 
         {!isUser && message.thinking && message.thinking.length > 0 && (
           <ChatThinkingAccordion
@@ -65,7 +63,10 @@ export default function ChatMessageItem({
           />
         )}
 
-        <MarkdownRenderer content={message.content} />
+        {message.status === "stopped" && <p role="status" className="text-sm text-muted-foreground">Agent was stopped</p>}
+        {message.status === "stopped" && message.error && <p role="alert" className="text-xs text-amber-600">{message.error}</p>}
+        {message.status !== "stopped" && (isUser || !message.clarification || message.content !== message.clarification.question) &&
+          <MarkdownRenderer content={message.content} className={isUser ? "text-white [&_*]:!text-white" : ""} />}
 
         {message.metricCards && message.metricCards.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 pt-2">
@@ -108,21 +109,21 @@ export default function ChatMessageItem({
                 key={tIdx}
                 className="overflow-x-auto rounded-xl border border-border/80 bg-surface/60 shadow-inner"
               >
-                <table className="w-full text-left text-[11px]">
-                  <thead className="bg-surface-muted/60 text-muted-foreground border-b border-border/80 font-bold uppercase text-[9px] tracking-wider">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-surface-muted/60 text-muted-foreground border-b border-border/80 font-bold uppercase text-[11px] tracking-wider">
                     <tr>
                       {table.columns.map((col, cIdx) => (
-                        <th key={cIdx} className="px-3 py-2">
+                        <th key={cIdx} className="px-3.5 py-2.5 font-bold">
                           {col}
                         </th>
                       ))}
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/40 font-mono">
+                  <tbody className="divide-y divide-border/40 font-mono text-xs">
                     {table.rows.map((row, rIdx) => (
                       <tr key={rIdx} className="hover:bg-surface-muted/30 transition-colors">
                         {table.columns.map((col, cIdx) => (
-                          <td key={cIdx} className="px-3 py-1.5 whitespace-nowrap text-foreground/85">
+                          <td key={cIdx} className="px-3.5 py-2 whitespace-nowrap text-foreground/85">
                             {row[col] ?? "-"}
                           </td>
                         ))}
@@ -193,7 +194,12 @@ export default function ChatMessageItem({
           </div>
         )}
 
-        {!isUser && message.suggestedActions && message.suggestedActions.length > 0 && (
+        {!isUser && message.status !== "stopped" && message.clarification && (
+          <ChatClarification message={message} disabled={isGenerating || message.isThinking}
+            onReply={onClarificationReply} onDraft={onClarificationDraft} onExpire={onClarificationExpire} />
+        )}
+
+        {!isUser && !message.clarification && message.suggestedActions && message.suggestedActions.length > 0 && (
           <div className="pt-2 flex flex-wrap gap-1.5">
             {message.suggestedActions.map((action, aIdx) => (
               <button
@@ -210,46 +216,51 @@ export default function ChatMessageItem({
         )}
 
         {!isUser && (
-          <div className="flex items-center gap-3 pt-1 text-muted-foreground text-[10px] select-none">
-            <button
-              type="button"
-              onClick={handleCopyMessage}
-              className="hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
-              title="Copy message text"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3 h-3 text-emerald-500" />
-                  <span className="text-emerald-500 font-bold">Copied</span>
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3 h-3" />
-                  <span>Copy</span>
-                </>
-              )}
-            </button>
-            <button
-              type="button"
-              onClick={() => onFeedback?.(message.id, "like")}
-              className={`hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer ${
-                message.userLiked ? "text-emerald-500 font-bold" : ""
-              }`}
-              title="Helpful"
-            >
-              <ThumbsUp className="w-3 h-3" />
-              <span>Helpful</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => onFeedback?.(message.id, "dislike")}
-              className={`hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer ${
-                message.userDisliked ? "text-rose-500 font-bold" : ""
-              }`}
-              title="Not helpful"
-            >
-              <ThumbsDown className="w-3 h-3" />
-            </button>
+          <div className="flex items-center justify-between gap-3 pt-1 text-muted-foreground text-[10px] select-none">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={handleCopyMessage}
+                className="hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer"
+                title="Copy message text"
+              >
+                {copied ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span className="text-emerald-400 font-bold">Copied</span>
+                  </>
+                ) : (
+                  <>
+                    <Copy className="w-3 h-3" />
+                    <span>Copy</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => onFeedback?.(message.id, "like")}
+                className={`hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer ${
+                  message.userLiked ? "text-emerald-500 font-bold" : ""
+                }`}
+                title="Helpful"
+              >
+                <ThumbsUp className="w-3 h-3" />
+                <span>Helpful</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => onFeedback?.(message.id, "dislike")}
+                className={`hover:text-foreground transition-colors flex items-center gap-1 cursor-pointer ${
+                  message.userDisliked ? "text-rose-500 font-bold" : ""
+                }`}
+                title="Not helpful"
+              >
+                <ThumbsDown className="w-3 h-3" />
+              </button>
+            </div>
+            {message.timestamp && (
+              <span className="text-[10px] text-muted-foreground">{message.timestamp}</span>
+            )}
           </div>
         )}
       </div>

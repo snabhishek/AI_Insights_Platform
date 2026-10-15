@@ -1226,6 +1226,16 @@ export async function syncTrainingConfigSplitDate(
   }
 
   const splitVal = splitDate.trim();
+  const existingTC = targetState.stageOutputs?.trainingConfigurationNode;
+  const savedContractPath = existingTC?.contractPath;
+  if (typeof savedContractPath !== "string" || !savedContractPath.trim() || !fsSync.existsSync(savedContractPath)) {
+    throw new Error("Cannot synchronize split date: the active training configuration contract file is unavailable.");
+  }
+  const rawContract = await fs.readFile(savedContractPath, "utf-8");
+  const contractData = yaml.load(rawContract) as Record<string, any>;
+  if (!contractData || typeof contractData !== "object" || Array.isArray(contractData)) {
+    throw new Error(`Training configuration contract is not a YAML object at ${savedContractPath}.`);
+  }
   const effectiveTs = resolveProjectRunTimestamp(
     workspaceName,
     projectName,
@@ -1235,7 +1245,6 @@ export async function syncTrainingConfigSplitDate(
   targetState.splitDate = splitVal;
   targetState.splitEndDate = splitVal;
 
-  const existingTC = targetState.trainingConfiguration || targetState.stageOutputs?.trainingConfigurationNode || {};
   const updatedTC = {
     ...existingTC,
     splitDate: splitVal,
@@ -1264,30 +1273,7 @@ export async function syncTrainingConfigSplitDate(
   if (!targetState.stageOutputs) {
     targetState.stageOutputs = {};
   }
-  targetState.stageOutputs.trainingConfigurationNode = {
-    ...(targetState.stageOutputs.trainingConfigurationNode || {}),
-    ...updatedTC,
-    splitDate: splitVal,
-    splitEndDate: splitVal,
-    configuration: {
-      ...(targetState.stageOutputs.trainingConfigurationNode?.configuration || {}),
-      ...updatedTC.configuration,
-      splitDate: splitVal,
-      splitEndDate: splitVal,
-      split: {
-        ...(targetState.stageOutputs.trainingConfigurationNode?.configuration?.split || {}),
-        ...updatedTC.configuration.split,
-        split_date: splitVal,
-      },
-    },
-  };
-
-  const savedContractPath = updatedTC.contractPath;
-  if (!savedContractPath || !fsSync.existsSync(savedContractPath)) {
-    throw new Error("Cannot synchronize split date: the active training configuration contract file is unavailable.");
-  }
-  const rawContract = await fs.readFile(savedContractPath, "utf-8");
-  const contractData = (yaml.load(rawContract) as Record<string, any>) || {};
+  targetState.stageOutputs.trainingConfigurationNode = updatedTC;
   if (!contractData.split) contractData.split = {};
   contractData.split.split_date = splitVal;
   if (contractData.split.temporal) {

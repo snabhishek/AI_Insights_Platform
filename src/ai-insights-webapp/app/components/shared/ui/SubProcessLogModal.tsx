@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef, useMemo } from "react";
 import { createPortal } from "react-dom";
 import { WorkflowStep, PipelineStatus } from "../../projects/types";
 import { fetchAgentThinkingApi } from "../../../services/aiWorkflowService";
+import { canViewSubprocessLogs } from "../../projects/pipelineNames";
 
 export interface LogEntry {
   time: string;
@@ -15,15 +16,11 @@ export interface LogEntry {
 export interface SubProcessLogModalProps {
   isOpen: boolean;
   onClose: () => void;
-  substep: WorkflowStep | null;
-  pipelineTitle?: string;
-  projectId?: string;
-  pipelineStatuses?: Record<string, PipelineStatus>;
-  stepsList?: WorkflowStep[];
-  agentThinking?: Record<string, Array<{ time: string; text: string; done: boolean }>>;
-  agentState?: Record<string, any>;
-  runStatus?: string;
-  onSelectSubstep?: (substep: WorkflowStep) => void;
+  substep: WorkflowStep;
+  pipelineTitle: string;
+  projectId: string;
+  status: PipelineStatus;
+  runStatus: string;
 }
 
 function getLogLevel(log: { text: string; done: boolean }): "error" | "warn" | "reason" | "info" {
@@ -41,41 +38,30 @@ function getLogLevel(log: { text: string; done: boolean }): "error" | "warn" | "
   return "info";
 }
 
-export default function SubProcessLogModal({
-  isOpen,
+export default function SubProcessLogModal(props: SubProcessLogModalProps) {
+  if (!props.isOpen || !canViewSubprocessLogs(props.status, props.runStatus) || typeof document === "undefined") return null;
+
+  return <SubProcessLogModalContent key={`${props.projectId}:${props.pipelineTitle}:${props.substep.id}`} {...props} />;
+}
+
+function SubProcessLogModalContent({
   onClose,
   substep,
-  pipelineTitle = "Workflow Pipeline",
+  pipelineTitle,
   projectId,
-  pipelineStatuses = {},
-  stepsList = [],
-  agentThinking,
-  agentState,
-  runStatus = "None",
-  onSelectSubstep,
+  status,
+  runStatus,
 }: SubProcessLogModalProps) {
-  const [mounted, setMounted] = useState(false);
-  const [currentStep, setCurrentStep] = useState<WorkflowStep | null>(substep);
   const [thinkingLogs, setThinkingLogs] = useState<Array<{ time: string; text: string; done: boolean }>>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [logLevel, setLogLevel] = useState<"all" | "reason" | "info" | "warn" | "error">("all");
   const [isMaximized, setIsMaximized] = useState(false);
   const [copied, setCopied] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement>(null);
-  const logsEndRef = useRef<HTMLDivElement>(null);
+  const followLatestLogsRef = useRef(true);
 
   useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (substep) {
-      setCurrentStep(substep);
-    }
-  }, [substep?.id]);
-
-  useEffect(() => {
-    if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         onClose();
@@ -83,92 +69,37 @@ export default function SubProcessLogModal({
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+  }, [onClose]);
 
-  const currentStepId = currentStep?.id || "";
-  const currentStepStatus: PipelineStatus = currentStepId
-    ? (pipelineStatuses[currentStepId] ?? "Pending")
-    : "Pending";
-  const isRunning = currentStepStatus === "In-Progress" && runStatus !== "Stopped";
+  const isRunning = status === "In-Progress" && runStatus === "In-Progress";
 
   useEffect(() => {
-    if (!isOpen || !currentStepId) return;
-
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
     const loadThinking = async () => {
-      if (!projectId) return;
       try {
-        const candidateSubsteps = [currentStepId, currentStep?.title].filter(Boolean) as string[];
-        for (const sub of candidateSubsteps) {
-          const res = await fetchAgentThinkingApi(projectId, pipelineTitle, sub);
-          if (res.success && res.data?.thinking && res.data.thinking.length > 0) {
-            setThinkingLogs(res.data.thinking);
-            return;
-          }
-        }
-        for (const sub of candidateSubsteps) {
-          const feRes = await fetchAgentThinkingApi(projectId, "Feature Engineering", sub);
-          if (feRes.success && feRes.data?.thinking && feRes.data.thinking.length > 0) {
-            setThinkingLogs(feRes.data.thinking);
-            return;
-          }
-        }
-        for (const sub of candidateSubsteps) {
-          const diRes = await fetchAgentThinkingApi(projectId, "Data Ingestion", sub);
-          if (diRes.success && diRes.data?.thinking && diRes.data.thinking.length > 0) {
-            setThinkingLogs(diRes.data.thinking);
-            return;
-          }
+        const response = await fetchAgentThinkingApi(projectId, pipelineTitle, substep.title, controller.signal);
+        if (!controller.signal.aborted) {
+          setThinkingLogs(response.data.thinking);
+          setLoadError(null);
         }
       } catch (err) {
-        console.warn("Failed to fetch logs in modal:", err);
+        if (!controller.signal.aborted) setLoadError(String(err));
+      } finally {
+        if (isRunning && !controller.signal.aborted) timer = setTimeout(loadThinking, 2000);
       }
     };
-
-    const streamed =
-      agentThinking?.[currentStepId] ||
-      agentThinking?.[currentStep?.title || ""] ||
-      agentState?.agentThinking?.[currentStepId] ||
-      agentState?.agentThinking?.[currentStep?.title || ""] ||
-      [];
-
-    if (streamed.length > 0) {
-      setThinkingLogs(streamed);
-    } else {
-      loadThinking();
-    }
-  }, [
-    isOpen,
-    currentStepId,
-    currentStep?.title,
-    currentStepStatus,
-    projectId,
-    pipelineTitle,
-    agentThinking,
-    agentState?.agentThinking,
-  ]);
+    void loadThinking();
+    return () => {
+      controller.abort();
+      if (timer) clearTimeout(timer);
+    };
+  }, [projectId, pipelineTitle, substep.title, isRunning]);
 
   useEffect(() => {
-    if (!isOpen || !isRunning || !projectId || !currentStepId) return;
-    const interval = setInterval(async () => {
-      try {
-        const candidateSubsteps = [currentStepId, currentStep?.title].filter(Boolean) as string[];
-        for (const sub of candidateSubsteps) {
-          const res = await fetchAgentThinkingApi(projectId, pipelineTitle, sub);
-          if (res.success && res.data?.thinking && res.data.thinking.length > 0) {
-            setThinkingLogs(res.data.thinking);
-            break;
-          }
-        }
-      } catch {
-
-      }
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [isOpen, isRunning, projectId, pipelineTitle, currentStepId, currentStep?.title]);
-
-  useEffect(() => {
-    if (logsContainerRef.current) {
-      logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const container = logsContainerRef.current;
+    if (container && followLatestLogsRef.current) {
+      container.scrollTop = container.scrollHeight;
     }
   }, [thinkingLogs]);
 
@@ -190,7 +121,7 @@ export default function SubProcessLogModal({
   const handleCopyLogs = async () => {
     if (thinkingLogs.length === 0) return;
     const logText = thinkingLogs
-      .map((l, idx) => `[${l.time}] [${l.done ? "INFO" : "RUNNING"}] ${l.text}`)
+      .map((l) => `[${l.time}] [${l.done ? "INFO" : "RUNNING"}] ${l.text}`)
       .join("\n");
     try {
       await navigator.clipboard.writeText(logText);
@@ -207,7 +138,7 @@ export default function SubProcessLogModal({
       `======================================================================`,
       `AI Insights Platform - Execution Log Stream`,
       `Pipeline:    ${pipelineTitle}`,
-      `Sub-process: ${currentStep?.title || "Unknown"}`,
+      `Sub-process: ${substep.title}`,
       `Timestamp:   ${new Date().toISOString()}`,
       `Total Lines: ${thinkingLogs.length}`,
       `======================================================================`,
@@ -220,7 +151,7 @@ export default function SubProcessLogModal({
     const blob = new Blob([logText], { type: "text/plain;charset=utf-8" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    const sanitizedName = (currentStep?.title || "subprocess").toLowerCase().replace(/\s+/g, "_");
+    const sanitizedName = substep.title.toLowerCase().replace(/\s+/g, "_");
     link.href = url;
     link.download = `${sanitizedName}_logs_${Date.now()}.log`;
     document.body.appendChild(link);
@@ -228,8 +159,6 @@ export default function SubProcessLogModal({
     document.body.removeChild(link);
     URL.revokeObjectURL(url);
   };
-
-  if (!isOpen || !mounted) return null;
 
   return createPortal(
     <div className="fixed inset-0 z-[250] flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md select-none animate-fade-in">
@@ -275,13 +204,6 @@ export default function SubProcessLogModal({
                 +
               </span>
             </button>
-
-            <div className="ml-3 pl-3 border-l border-slate-800 flex items-center gap-2">
-              <span className="text-emerald-400 font-mono text-xs font-bold select-none">&gt;_</span>
-              <span className="font-mono text-xs text-slate-300 font-semibold tracking-wide truncate max-w-[200px] sm:max-w-md">
-                logs: ~/{pipelineTitle.toLowerCase().replace(/\s+/g, "-")}/{currentStep?.title || "subprocess"}.log
-              </span>
-            </div>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">
@@ -294,7 +216,7 @@ export default function SubProcessLogModal({
                 </span>
                 <span>STREAMING</span>
               </span>
-            ) : currentStepStatus === "Completed" ? (
+            ) : status === "Completed" ? (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-status-completed/15 text-status-completed border border-status-completed/30">
                 <span className="w-1.5 h-1.5 rounded-full bg-status-completed"></span>
                 <span>COMPLETED</span>
@@ -302,7 +224,7 @@ export default function SubProcessLogModal({
             ) : (
               <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-slate-800/80 text-slate-400 border border-slate-700/60">
                 <span className="w-1.5 h-1.5 rounded-full bg-status-none"></span>
-                <span>{currentStepStatus}</span>
+                <span>{status}</span>
               </span>
             )}
 
@@ -342,67 +264,6 @@ export default function SubProcessLogModal({
             </button>
           </div>
         </div>
-
-        {stepsList.length > 1 && (
-          <div className="flex items-center gap-1.5 px-4 py-2 bg-[#090d16] border-slate-800/80 border-b overflow-x-auto shrink-0 select-none scrollbar-none">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mr-2 shrink-0">
-              Sub-processes:
-            </span>
-            {stepsList.map((st) => {
-              const isSelected = st.id === currentStep?.id;
-              const stepStatus = pipelineStatuses[st.id] ?? "Pending";
-              const stepLogsCount = (
-                agentThinking?.[st.id] ||
-                agentThinking?.[st.title] ||
-                agentState?.agentThinking?.[st.id] ||
-                agentState?.agentThinking?.[st.title] ||
-                []
-              ).length;
-
-              return (
-                <button
-                  key={st.id}
-                  type="button"
-                  onClick={() => {
-                    setCurrentStep(st);
-                    onSelectSubstep?.(st);
-                  }}
-                  className={`inline-flex items-center gap-2 px-3 py-1 rounded-lg text-xs font-semibold transition-all cursor-pointer shrink-0 border ${
-                    isSelected
-                      ? "bg-slate-800 text-slate-100 border-slate-600 shadow-sm"
-                      : "bg-slate-900/60 text-slate-400 border-slate-800/80 hover:bg-slate-800/50 hover:text-slate-300"
-                  }`}
-                >
-                  <span
-                    className={`w-1.5 h-1.5 rounded-full ${
-                      stepStatus === "Completed"
-                        ? "bg-status-completed"
-                        : stepStatus === "In-Progress"
-                          ? "bg-status-in-progress animate-ping"
-                          : stepStatus === "Awaiting Approval"
-                            ? "bg-status-awaiting-approval animate-pulse"
-                            : stepStatus === "User Input"
-                              ? "bg-status-user-input"
-                              : stepStatus === "Stopped"
-                                ? "bg-status-stopped"
-                                : stepStatus === "Failed"
-                                  ? "bg-status-failed"
-                                  : stepStatus === "Pending"
-                                    ? "bg-status-pending"
-                                    : "bg-status-none"
-                    }`}
-                  />
-                  <span>{st.title}</span>
-                  {stepLogsCount > 0 && (
-                    <span className="text-[10px] font-mono text-slate-400 bg-slate-950/60 px-1.5 py-0.2 rounded">
-                      {stepLogsCount}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </div>
-        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-2.5 bg-[#0e1424] border-b border-slate-800 text-xs shrink-0 select-none">
 
@@ -508,8 +369,13 @@ export default function SubProcessLogModal({
 
         <div
           ref={logsContainerRef}
-          className="flex-1 overflow-y-auto p-4 font-mono text-xs sm:text-[13px] leading-relaxed bg-[#080c14] select-text"
+          onScroll={(event) => {
+            const container = event.currentTarget;
+            followLatestLogsRef.current = container.scrollHeight - container.scrollTop - container.clientHeight <= 48;
+          }}
+          className="subprocess-log-scroll flex-1 overflow-y-auto p-4 font-mono text-xs sm:text-[13px] leading-relaxed bg-[#080c14] select-text"
         >
+          {loadError && <p role="alert" className="mb-3 text-rose-300">{loadError}</p>}
 
           {filteredLogs.length > 0 ? (
             <div className="space-y-1">
@@ -569,7 +435,6 @@ export default function SubProcessLogModal({
                   </div>
                 );
               })}
-              <div ref={logsEndRef} />
             </div>
           ) : (
             <div className="py-14 text-center select-none text-slate-500 font-mono text-xs">

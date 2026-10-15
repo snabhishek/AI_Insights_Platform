@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
-import { BrainCircuit, ChevronDown, Check } from "lucide-react";
+import React, { useEffect, useRef, useState } from "react";
+import { BrainCircuit, ChevronDown, Check, Square, CircleAlert } from "lucide-react";
 import { ThinkingStep } from "./types";
+import { traceClock } from "../../services/chatLifecycle";
 
 interface ChatThinkingAccordionProps {
   thinking: ThinkingStep[];
@@ -16,6 +17,10 @@ export default function ChatThinkingAccordion({
   defaultExpanded = false,
 }: ChatThinkingAccordionProps) {
   const [isExpanded, setIsExpanded] = useState(defaultExpanded);
+  const traceRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (isStreaming && traceRef.current) traceRef.current.scrollTop = traceRef.current.scrollHeight;
+  }, [thinking, isStreaming, isExpanded]);
 
   if (!thinking || thinking.length === 0) return null;
 
@@ -30,7 +35,7 @@ export default function ChatThinkingAccordion({
       >
         <div className="flex items-center gap-2 text-indigo-400 font-semibold truncate">
           <BrainCircuit className="w-4 h-4 text-indigo-400 shrink-0" />
-          <span>Agent Reasoning & Pipeline Trace</span>
+          <span>Agent Activity & Execution Trace</span>
           {isStreaming ? (
             <span className="flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 animate-pulse border border-indigo-500/30">
               <span className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-ping" />
@@ -52,18 +57,22 @@ export default function ChatThinkingAccordion({
       </button>
 
       {isExpanded && (
-        <div className="p-3 bg-surface-muted/30 font-mono text-[11px] space-y-1.5 max-h-56 overflow-y-auto select-text">
+        <div ref={traceRef} className="p-3 bg-surface-muted/30 font-mono text-[11px] space-y-1.5 max-h-56 overflow-y-auto select-text">
           {thinking.map((step, idx) => (
             <div key={idx} className="flex items-start gap-2.5 py-0.5 text-foreground/90">
-              <span className="text-muted-foreground shrink-0 select-none">{step.time}</span>
+              <span title={step.timestamp} className="text-muted-foreground shrink-0 select-none">{traceClock(step)}</span>
               <span className="shrink-0 select-none">
                 {step.done ? (
                   <Check className="w-3.5 h-3.5 text-emerald-500" />
+                ) : step.status === "failed" ? (
+                  <CircleAlert className="w-3.5 h-3.5 text-amber-500" />
+                ) : step.status === "stopped" || !isStreaming ? (
+                  <Square className="w-3.5 h-3.5 text-muted-foreground" />
                 ) : (
                   <span className="inline-block w-2.5 h-2.5 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin" />
                 )}
               </span>
-              <span className={step.done ? "text-foreground" : "text-indigo-300 font-semibold animate-pulse"}>
+              <span className={step.done || !isStreaming || step.status === "stopped" ? "text-foreground" : "text-indigo-300 font-semibold animate-pulse"}>
                 {step.text}
               </span>
             </div>

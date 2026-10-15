@@ -1,4 +1,34 @@
 @import "tailwindcss";
+
+.subprocess-log-scroll {
+    scrollbar-width: thin;
+    scrollbar-color: #475569 #080c14;
+    scrollbar-gutter: stable;
+    overscroll-behavior: contain;
+}
+
+.subprocess-log-scroll::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+.subprocess-log-scroll::-webkit-scrollbar-track {
+    background: #080c14;
+}
+
+.subprocess-log-scroll::-webkit-scrollbar-thumb {
+    background: #475569;
+    border: 2px solid #080c14;
+    border-radius: 999px;
+}
+
+.subprocess-log-scroll::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+}
+
+.subprocess-log-scroll::-webkit-scrollbar-button {
+    display: none;
+}
 @source "../app/components/projects/**/*.{js,ts,jsx,tsx,mdx}";
 @custom-variant dark (&:where(.dark, .dark *));
 
@@ -141,6 +171,18 @@ th {
 
 .font-semibold {
     font-weight: 700 !important;
+}
+
+/* Keep long equations readable within chat bubbles on narrow screens. */
+.markdown-content .katex-display {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0.5rem 0;
+}
+
+.markdown-content .katex {
+    font-size: 1.1em;
 }
 
 @keyframes slideUp {

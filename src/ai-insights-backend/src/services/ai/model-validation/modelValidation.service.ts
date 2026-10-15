@@ -104,6 +104,7 @@ export class ModelValidationService implements IModelValidationService {
       predictionObjectiveStartDate: input.predictionObjectiveStartDate.trim(),
       selectedModels: input.selectedModels,
       filters: input.filters,
+      executionMode: input.executionMode,
       maxRetries: VALIDATION_PIPELINE_CONSTANTS.DEFAULT_MAX_RETRIES,
     });
 

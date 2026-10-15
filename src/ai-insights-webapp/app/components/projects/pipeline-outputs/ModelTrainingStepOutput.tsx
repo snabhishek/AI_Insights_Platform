@@ -373,7 +373,7 @@ export default function ModelTrainingStepOutput({
   };
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="w-full space-y-6">
 
       <div className="rounded-2xl border border-border bg-surface p-5 shadow-xs transition-all">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

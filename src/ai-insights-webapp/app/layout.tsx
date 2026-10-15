@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { Noto_Sans } from "next/font/google";
+import "katex/dist/katex.min.css";
 import "./globals.css";
 import Header from "./components/shared/header/Header";
 import Navbar from "./components/shared/navbar/Navbar";

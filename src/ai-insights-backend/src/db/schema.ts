@@ -4,3 +4,6 @@ export * from "./agentThinking";
 export * from "./modelSelection";
 export * from "./modelValidation";
 export * from "./chatSuggestions";
+export * from "./sparrowIntents";
+export * from "./sparrowChat";
+export * from "./domains";

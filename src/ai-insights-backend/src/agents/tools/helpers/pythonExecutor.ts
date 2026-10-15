@@ -1,7 +1,8 @@
 import fs from "fs";
 import path from "path";
-import { exec, spawn } from "child_process";
+import { exec, execFile, spawn } from "child_process";
 import Docker from "dockerode";
+import { getFormattedTimestamp } from "../../../utils/logger";
 import { IngestionServices } from "../../state";
 import {
   ensureDirectoryExists,
@@ -22,6 +23,13 @@ export interface ExecutionResult {
 export interface PythonExecutionOptions {
   mountMode?: "project" | "python_script_only";
   serviceName?: string;
+  projectRootDir?: string;
+  effectiveTimestamp?: string;
+  sessionId?: string;
+  isolated?: boolean;
+  writableRelativePath?: string;
+  onLog?: (line: string) => void;
+  signal?: AbortSignal;
 }
 
 export function generateLogTimestamp(): string {
@@ -124,7 +132,7 @@ async function ensureDockerDaemon(docker: Docker): Promise<boolean> {
   return false;
 }
 
-function executeProcess(
+export function executeProcess(
   command: string,
   options: {
     cwd: string;
@@ -133,26 +141,39 @@ function executeProcess(
     onLog?: (line: string) => void;
     silentConsole?: boolean;
     logFilePath?: string;
+    signal?: AbortSignal;
   }
 ): Promise<{ exitCode: number; stdout: string; stderr: string }> {
   return new Promise((resolve) => {
+    if (options.signal?.aborted) { resolve({ exitCode: 130, stdout: "", stderr: "Agent was stopped" }); return; }
     const isWindows = process.platform === "win32";
     const shell = isWindows ? (process.env.ComSpec || "cmd.exe") : "/bin/sh";
     const shellFlag = isWindows ? "/d /s /c" : "-c";
 
     let stdoutData = "";
     let stderrData = "";
+    let timedOut = false;
+    const pending = { stdout: "", stderr: "" };
     const silentConsole = options.silentConsole !== false;
 
     const child = spawn(shell, [shellFlag, command], {
       cwd: options.cwd,
       env: { ...process.env, ...(options.env || {}) },
       windowsVerbatimArguments: isWindows,
+      windowsHide: true,
     });
 
     let timeoutTimer: NodeJS.Timeout | undefined;
+    const terminate = () => {
+      if (isWindows && child.pid) execFile("taskkill", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true }, () => undefined);
+      else child.kill("SIGTERM");
+    };
+    const onAbort = () => terminate();
+    options.signal?.addEventListener("abort", onAbort, { once: true });
+    if (options.signal?.aborted) onAbort();
     if (options.timeoutMs) {
       timeoutTimer = setTimeout(() => {
+        timedOut = true;
         try {
           if (options.logFilePath) {
             fs.appendFileSync(
@@ -161,11 +182,17 @@ function executeProcess(
               "utf-8"
             );
           }
-          child.kill("SIGTERM");
+          terminate();
         } catch {}
       }, options.timeoutMs);
     }
 
+    const emitLine = (line: string, isErr: boolean) => {
+      const stamped = `[${getFormattedTimestamp()}] [${isErr ? "stderr" : "stdout"}] ${line}`;
+      if (options.logFilePath) fs.appendFileSync(options.logFilePath, `${stamped}\n`, "utf-8");
+      if (!silentConsole) console.log(`[DockerExecutor] ${line}`);
+      options.onLog?.(stamped);
+    };
     const processChunk = (chunk: Buffer | string, isErr = false) => {
       const text = chunk.toString();
       if (isErr) {
@@ -174,40 +201,29 @@ function executeProcess(
         stdoutData += text;
       }
 
-      if (options.logFilePath) {
-        try {
-          fs.appendFileSync(options.logFilePath, text, "utf-8");
-        } catch {}
-      }
-
-      if (!silentConsole) {
-        const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-        for (const line of lines) {
-          console.log(`[DockerExecutor] ${line}`);
-        }
-      }
-
-      if (options.onLog) {
-        const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0);
-        for (const line of lines) {
-          options.onLog(line);
-        }
-      }
+      const channel = isErr ? "stderr" : "stdout";
+      const lines = (pending[channel] + text).split(/\r?\n/);
+      pending[channel] = lines.pop() || "";
+      for (const line of lines) if (line.trim()) emitLine(line, isErr);
     };
 
     child.stdout?.on("data", (chunk) => processChunk(chunk, false));
     child.stderr?.on("data", (chunk) => processChunk(chunk, true));
 
     child.on("close", (code) => {
+      options.signal?.removeEventListener("abort", onAbort);
       if (timeoutTimer) clearTimeout(timeoutTimer);
+      if (pending.stdout) emitLine(pending.stdout, false);
+      if (pending.stderr) emitLine(pending.stderr, true);
       resolve({
-        exitCode: code ?? 0,
+        exitCode: options.signal?.aborted ? 130 : timedOut ? 124 : code ?? 1,
         stdout: stdoutData,
         stderr: stderrData,
       });
     });
 
     child.on("error", (err) => {
+      options.signal?.removeEventListener("abort", onAbort);
       if (timeoutTimer) clearTimeout(timeoutTimer);
       if (options.logFilePath) {
         try {
@@ -223,7 +239,7 @@ function executeProcess(
   });
 }
 
-const activeComposeSessions = new Map<string, { composeDir: string; composeFile: string }>();
+const activeComposeSessions = new Map<string, { composeDir: string; composeFile: string; composePrefix: string }>();
 
 export function ensureRequirementsTxt(
   targetDir: string,
@@ -306,9 +322,15 @@ export function ensureDockerCompose(
   targetDir: string,
   serviceName: string = "app",
   resourceLimits?: { cpus?: string; memory?: string; hasGpu?: boolean },
-  options?: PythonExecutionOptions
+  options?: PythonExecutionOptions | { writableRelativePath: string },
+  isolation?: { writableRelativePath: string }
 ): string {
-  const isPythonScriptOnly = options?.mountMode === "python_script_only";
+  const effectiveIsolation =
+    isolation ||
+    (options && "writableRelativePath" in options && typeof options.writableRelativePath === "string"
+      ? { writableRelativePath: options.writableRelativePath }
+      : undefined);
+  const isPythonScriptOnly = (options as PythonExecutionOptions)?.mountMode === "python_script_only";
   const composeYml = isPythonScriptOnly
     ? path.join(targetDir, "docker-compose.test.yml")
     : path.join(targetDir, "docker-compose.yml");
@@ -352,9 +374,7 @@ export function ensureDockerCompose(
         "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro\"",
       ]
     : [
-        "      - \".:/workspace\"",
-        "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/python_script:ro\"",
-        "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro\"",
+        "      - \".:/workspace\""
       ];
 
   const content = [
@@ -364,12 +384,15 @@ export function ensureDockerCompose(
     "      context: .",
     "      dockerfile: Dockerfile",
     "      network: host",
-    "    network_mode: host",
+    effectiveIsolation ? "    network_mode: none" : "    network_mode: host",
+    ...(effectiveIsolation ? ["    read_only: true", "    cap_drop: [ALL]", "    security_opt: [no-new-privileges:true]", "    tmpfs: [/tmp]"] : []),
     "    volumes:",
     ...volumeMounts,
     "    working_dir: /workspace",
     "    environment:",
     "      - PYTHONPATH=/workspace",
+    "      - PYTHONDONTWRITEBYTECODE=1",
+    "      - PYTHONUNBUFFERED=1",
     "    deploy:",
     "      resources:",
     "        limits:",
@@ -426,6 +449,7 @@ export async function executePythonScript(
   resourceLimits?: { cpus?: string; memory?: string; hasGpu?: boolean },
   options?: PythonExecutionOptions
 ): Promise<ExecutionResult> {
+  options?.signal?.throwIfAborted();
   let workspaceName = "Default_Workspace";
   let projectName = projectId || "default";
 
@@ -441,7 +465,7 @@ export async function executePythonScript(
     }
   }
 
-  const projectRootDir = path.join(
+  const projectRootDir = options?.projectRootDir || path.join(
     getFileServerBasePath(),
     "workspaces",
     sanitizeFolderName(workspaceName),
@@ -452,13 +476,14 @@ export async function executePythonScript(
   const normProjectDir = path.resolve(projectRootDir).replace(/\\/g, "/");
 
   const effectiveTimestamp =
+    options?.effectiveTimestamp ||
     getLatestProjectTimestamp(workspaceName, projectName) ||
     (runTimestamp && runTimestamp !== "default" ? runTimestamp.trim() : undefined) ||
     resolveProjectEffectiveTimestamp(workspaceName, projectName, runTimestamp) ||
     runTimestamp ||
     "default";
 
-  const baseDir = getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
+  const baseDir = options?.isolated ? path.dirname(path.resolve(scriptName)) : getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
   ensureDirectoryExists(baseDir);
 
   let scriptPath: string;
@@ -477,6 +502,10 @@ export async function executePythonScript(
       }
     }
     if (code && code.trim().length > 0) {
+      if (options?.isolated) {
+        const relative = path.relative(projectRootDir, scriptPath);
+        if (relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Execution script must remain inside the project.");
+      }
       ensureDirectoryExists(path.dirname(scriptPath));
       fs.writeFileSync(scriptPath, code, "utf-8");
     }
@@ -494,6 +523,7 @@ export async function executePythonScript(
   }
 
   const relFromProjectRoot = path.relative(projectRootDir, scriptPath).replace(/\\/g, "/");
+  if (options?.isolated && (relFromProjectRoot.startsWith("../") || path.isAbsolute(relFromProjectRoot))) throw new Error("Execution script must remain inside the project.");
   const scriptDirRel = path.relative(projectRootDir, path.dirname(scriptPath)).replace(/\\/g, "/");
   const containerOutDir = scriptDirRel && scriptDirRel !== "." ? `/workspace/${scriptDirRel}`.replace(/\/+/g, "/") : "/workspace";
 
@@ -549,17 +579,27 @@ export async function executePythonScript(
 
   ensureRequirementsTxt(execDir, requiredPackages);
   ensureDockerfile(execDir);
-  const composeFile = ensureDockerCompose(execDir, options?.serviceName || "app", resourceLimits, options);
+  const composeFile = ensureDockerCompose(
+    execDir,
+    options?.serviceName || "app",
+    resourceLimits,
+    options,
+    options?.isolated ? { writableRelativePath: scriptDirRel } : undefined
+  );
   const composeFileName = path.basename(composeFile);
 
-  const sessionKey = `${projectId || "default"}__${effectiveTimestamp}`;
-  activeComposeSessions.set(sessionKey, { composeDir: execDir, composeFile });
+  const sessionKey = `${projectId || "default"}__${options?.sessionId || effectiveTimestamp}`;
+  const composePrefix = options?.sessionId
+    ? `docker compose -p "sparrow_${options.sessionId.replace(/[^a-zA-Z0-9_-]/g, "").toLowerCase()}"`
+    : "docker compose";
+  activeComposeSessions.set(sessionKey, { composeDir: execDir, composeFile, composePrefix });
 
   const env: NodeJS.ProcessEnv = {
     HOST_PROJECT_ROOT: normProjectDir,
     HOST_PYTHON_SCRIPT_DIR: normPythonScriptDir,
     RUN_TIMESTAMP: effectiveTimestamp,
     PYTHONPATH: "/workspace",
+    HOST_EXECUTION_DIR: path.resolve(execDir).replace(/\\/g, "/"),
   };
 
   console.info(`[DockerExecutor] Building and running via Docker Compose in [${execDir}] for script [${relFromProjectRoot}] (mountMode: ${options?.mountMode || "project"})`);
@@ -600,7 +640,7 @@ export async function executePythonScript(
 
   console.info(`[DockerExecutor] Docker container logs writing to: ${logFilePath}`);
 
-  const buildCmd = `docker compose -f "${composeFileName}" build`;
+  const buildCmd = `${composePrefix} -f "${composeFileName}" build`;
   fs.appendFileSync(
     logFilePath,
     [
@@ -615,6 +655,8 @@ export async function executePythonScript(
   );
 
   const buildResult = await executeProcess(buildCmd, {
+    signal: options?.signal,
+    onLog: options?.onLog,
     cwd: execDir,
     env,
     timeoutMs: 300000,
@@ -666,7 +708,7 @@ export async function executePythonScript(
     }
   } catch {}
 
-  const runCmd = `docker compose -f "${composeFileName}" run --rm ${serviceName} python "${scriptInContainer}" ${effectiveArgs.join(" ")}`;
+  const runCmd = `${composePrefix} -f "${composeFileName}" run --rm ${serviceName} python -u "${scriptInContainer}" ${effectiveArgs.join(" ")}`;
   fs.appendFileSync(
     logFilePath,
     [
@@ -681,6 +723,8 @@ export async function executePythonScript(
   );
 
   const execResult = await executeProcess(runCmd, {
+    signal: options?.signal,
+    onLog: options?.onLog,
     cwd: execDir,
     env,
     timeoutMs: 600000,
@@ -726,7 +770,7 @@ export async function cleanupRunContainer(projectId: string, runTimestamp?: stri
     try {
       console.info(`[DockerExecutor] Tearing down Docker Compose in [${session.composeDir}]`);
       await executeProcess(
-        `docker compose -f "${path.basename(session.composeFile)}" down --volumes --remove-orphans`,
+        `${session.composePrefix} -f "${path.basename(session.composeFile)}" down --volumes --remove-orphans`,
         { cwd: session.composeDir, silentConsole: true }
       );
       activeComposeSessions.delete(sessionKey);
@@ -736,10 +780,10 @@ export async function cleanupRunContainer(projectId: string, runTimestamp?: stri
   }
 
   for (const [key, sess] of activeComposeSessions.entries()) {
-    if (key.startsWith(`${safeProj}__`)) {
+    if (!runTimestamp && key.startsWith(`${safeProj}__`)) {
       try {
         await executeProcess(
-          `docker compose -f "${path.basename(sess.composeFile)}" down --volumes --remove-orphans`,
+          `${sess.composePrefix} -f "${path.basename(sess.composeFile)}" down --volumes --remove-orphans`,
           { cwd: sess.composeDir, silentConsole: true }
         );
         activeComposeSessions.delete(key);
@@ -753,7 +797,7 @@ export async function cleanupAllRunContainers(): Promise<void> {
     try {
       if (fs.existsSync(sess.composeFile)) {
         await executeProcess(
-          `docker compose -f "${path.basename(sess.composeFile)}" down --volumes --remove-orphans`,
+          `${sess.composePrefix} -f "${path.basename(sess.composeFile)}" down --volumes --remove-orphans`,
           { cwd: sess.composeDir, silentConsole: true }
         );
       }

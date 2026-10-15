@@ -354,23 +354,19 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     };
   }
 
-  let contractPath = "";
-  if (services.projectService && projectId) {
-    try {
-      const pWs = await services.projectService.getProjectWithWorkspace(projectId);
-      if (pWs?.project) {
-        const saveRes = await ContractPersistence.saveModularTrainingConfigContract(
-          pWs.workspaceName || "DefaultWorkspace",
-          pWs.project.name,
-          finalConfig,
-          runTimestamp
-        );
-        contractPath = saveRes.contractPath;
-      }
-    } catch (saveErr: any) {
-      console.warn("[TrainingConfigGraph] Error saving Training Job Contract YAML:", saveErr?.message || saveErr);
-    }
+  if (!services.projectService || !projectId || !runTimestamp) {
+    throw new Error("Training configuration persistence requires a project service, project ID, and active run timestamp.");
   }
+  const pWs = await services.projectService.getProjectWithWorkspace(projectId);
+  if (!pWs?.project?.name || !pWs.workspaceName) {
+    throw new Error(`Project and workspace metadata is unavailable for training configuration project "${projectId}".`);
+  }
+  const { contractPath } = await ContractPersistence.saveModularTrainingConfigContract(
+    pWs.workspaceName,
+    pWs.project.name,
+    finalConfig,
+    runTimestamp
+  );
 
   const splitStrategy = finalConfig.split?.strategy || "standard";
   const trainRatio = finalConfig.split?.train_ratio != null ? (finalConfig.split.train_ratio * 100).toFixed(0) : "70";

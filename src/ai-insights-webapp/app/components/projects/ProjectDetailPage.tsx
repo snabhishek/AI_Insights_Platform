@@ -5,9 +5,11 @@ import { Project, DataSource, UserProfile } from "../providers/AppContext";
 import { PipelineStatus, PipelineStatuses, RunStatus, StageOutputs, Workflow, WorkflowStep, WorkflowAgentState } from "./types";
 import { getMainStepId, toDisplayStatuses } from "./WorkflowPipeline";
 import CardModal from "../shared/ui/CardModal";
+import SubProcessLogModal from "../shared/ui/SubProcessLogModal";
+import { ScrollText } from "lucide-react";
 import { PIPELINE_STEPS } from "./constants";
 import { resolveModelTrainingReviewStep } from "./pipelineFlowConfig";
-import { normalizeStageOutputs, StageKey } from "./pipelineNames";
+import { canViewSubprocessLogs, normalizeStageOutputs, StageKey } from "./pipelineNames";
 import IngestionStepOutput from "./pipeline-outputs/IngestionStepOutput";
 import ProfilingStepOutput from "./pipeline-outputs/ProfilingStepOutput";
 import SchemaResolverStepOutput from "./pipeline-outputs/SchemaResolverStepOutput";
@@ -145,13 +147,21 @@ export default function ProjectDetailPage({
   isStopping,
   isResuming,
   isRetrying,
-  agentThinking,
   showAlert,
 }: ProjectDetailPageProps) {
   const [isExecutionModalOpen, setIsExecutionModalOpen] = useState<boolean>(false);
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(null);
   const [selectedSubstepId, setSelectedSubstepId] = useState<string | null>(null);
   const [retryingStepId, setRetryingStepId] = useState<string | null>(null);
+  const [isLogModalOpen, setIsLogModalOpen] = useState(false);
+  const [logModalSubstep, setLogModalSubstep] = useState<WorkflowStep | null>(null);
+  const [logModalPipelineTitle, setLogModalPipelineTitle] = useState<string | null>(null);
+
+  const handleOpenLogs = (stepItem: WorkflowStep, stageTitle: string) => {
+    setLogModalSubstep(stepItem);
+    setLogModalPipelineTitle(stageTitle);
+    setIsLogModalOpen(true);
+  };
 
   const displayPipelineStatuses = toDisplayStatuses(pipelineStatuses);
   const signalStatus: Record<string, StepStatus> = Object.fromEntries(
@@ -359,47 +369,20 @@ export default function ProjectDetailPage({
     return false;
   };
 
-  const isStageAwaitingApproval = (stageId: string): boolean => {
-    if (!isAwaitingApprovalWorkflow) return false;
-    return getWorkflowStageStatus(stageId) === "Awaiting Approval";
-  };
 
   const handleSelectStage = (stepId: string) => {
+    // Stage cards themselves are not navigable; only subprocess items are navigable.
+    const isMainStageId = PIPELINE_STEPS.some((item) => item.id === stepId);
+    if (isMainStageId) {
+      return;
+    }
+
     const mainId = getMainStepId(stepId);
     onSelectStage(mainId);
     const match = PIPELINE_STEPS.find((item) => item.id === mainId);
     if (match) {
       setSelectedWorkflow(match);
-      if (stepId !== mainId) {
-        setSelectedSubstepId(stepId);
-      } else if (mainId === "modelTrainingValidation") {
-        if (isAwaitingApprovalWorkflow) {
-          const reviewInfo = resolveModelTrainingReviewStep(
-            displayPipelineStatuses,
-            effectiveApprovalNextStep || pausedAtPhase
-          );
-          setSelectedSubstepId(reviewInfo.stepId);
-        } else {
-          const substeps = [
-            ["modelTrainingCodeNode", "Model Training"],
-            ["preFlightNode", "Pre Flight"],
-            ["trainingConfigurationNode", "Training Configuration"],
-            ["modelSelectionNode", "Model Selection"],
-          ] as const;
-          const awaiting = substeps.find(
-            ([key]) =>
-              displayPipelineStatuses[key] === "User Input" ||
-              displayPipelineStatuses[key] === "Awaiting Approval"
-          );
-          const inProgress = substeps.find(([key]) => displayPipelineStatuses[key] === "In-Progress");
-          const withOutput = substeps.find(
-            ([key]) => stageOutputs?.[key] != null || displayPipelineStatuses[key] === "Completed"
-          );
-          setSelectedSubstepId(inProgress?.[0] || awaiting?.[0] || withOutput?.[0] || "modelSelectionNode");
-        }
-      } else {
-        setSelectedSubstepId(null);
-      }
+      setSelectedSubstepId(stepId);
       setIsExecutionModalOpen(true);
     }
   };
@@ -556,7 +539,7 @@ export default function ProjectDetailPage({
                     return (
                       <button
                         type="button"
-                        onClick={() => handleSelectStage("modelTrainingValidation")}
+                        onClick={() => handleSelectStage(reviewInfo.stepId)}
                         disabled={isAnyActionLoading}
                         className={`inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold tracking-wide uppercase transition-all shadow-md active:scale-95 cursor-pointer shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
                           isApproving ? "opacity-75 cursor-not-allowed" : "hover:scale-105 animate-pulse"
@@ -804,8 +787,6 @@ export default function ProjectDetailPage({
               (s) => displayPipelineStatuses[s.id] === "Completed"
             ).length;
 
-            const isStageGlowing = isStageAwaitingApproval(stageId);
-
             // Per-stage accent colors
             const stageColorTheme =
               stageId === "dataIngestion"
@@ -832,16 +813,10 @@ export default function ProjectDetailPage({
             return (
               <div
                 key={stage.id}
-                className={`h-full min-h-[430px] rounded-2xl border border-border/80 border-t-4 bg-surface p-4 shadow-xs transition-all duration-300 ${stageColorTheme.border} ${
-                  isStageGlowing ? "animate-approval-glow ring-2 ring-amber-400 dark:ring-amber-500" : ""
-                }`}
+                className={`h-full min-h-[430px] rounded-2xl border border-border/80 border-t-4 bg-surface p-4 shadow-xs transition-all duration-300 ${stageColorTheme.border}`}
               >
                 {/* Stage Header */}
-                <div
-                  className="cursor-pointer select-none"
-                  onClick={() => handleSelectStage(stage.id)}
-                  title="Click to view stage details"
-                >
+                <div className="select-none">
                   <div className="flex items-center justify-between gap-3">
                     <div className="flex min-w-0 items-center gap-3">
                       <div
@@ -905,7 +880,7 @@ export default function ProjectDetailPage({
                           </p>
                         </div>
 
-                        <div className="shrink-0">
+                        <div className="shrink-0 flex items-center gap-1.5">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -919,25 +894,60 @@ export default function ProjectDetailPage({
                               isAwaitingApprovalStepNotRetryable ||
                               isAnyActionLoading
                             }
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border hover:border-primary/60 bg-surface hover:bg-surface-muted text-xs font-bold text-foreground transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs shrink-0 select-none"
-                            title={`Retry ${stepItem.title}`}
+                            className="group/btn relative inline-flex items-center justify-center w-8 h-8 rounded-lg border border-border hover:border-primary/60 bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs shrink-0 select-none"
+                            aria-label={`Retry ${stepItem.title}`}
                           >
                             {isRetrying && retryingStepId === stepItem.id ? (
-                              <>
-                                <svg className="animate-spin" viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                  <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
-                                </svg>
-                                <span>Retrying...</span>
-                              </>
+                              <svg className="animate-spin text-primary" viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                <circle cx="12" cy="12" r="10" strokeDasharray="30" strokeLinecap="round" />
+                              </svg>
                             ) : (
-                              <>
-                                <svg viewBox="0 0 24 24" width="11" height="11" fill="none" stroke="currentColor" strokeWidth="2.5">
-                                  <path d="M21 12a9 9 0 1 1-3-6.7" />
-                                  <path d="M21 3v6h-6" />
-                                </svg>
-                                <span>Retry</span>
-                              </>
+                              <svg
+                                viewBox="0 0 24 24"
+                                width="15"
+                                height="15"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2.2"
+                                className="text-muted-foreground group-hover/btn:text-primary dark:group-hover/btn:text-primary-foreground group-hover/btn:scale-110 transition-all"
+                              >
+                                <path d="M21 12a9 9 0 1 1-3-6.7" />
+                                <path d="M21 3v6h-6" />
+                              </svg>
                             )}
+
+                            {/* Modern hover pill */}
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900/95 dark:bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-white dark:text-slate-900 opacity-0 shadow-md transition-all duration-150 group-hover/btn:opacity-100 group-hover/btn:-translate-y-0.5 z-30">
+                              {isRetrying && retryingStepId === stepItem.id ? "Retrying..." : "Retry"}
+                            </span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleOpenLogs(stepItem, stage.title);
+                            }}
+                            disabled={!canViewSubprocessLogs(stepStatus, effectiveRunStatus)}
+                            className="group/btn relative inline-flex items-center justify-center w-8 h-8 rounded-lg border border-border enabled:hover:border-primary/60 bg-surface enabled:hover:bg-surface-muted text-foreground transition-all cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs shrink-0 select-none"
+                            aria-label={`View execution logs for ${stepItem.title}`}
+                          >
+                            <ScrollText
+                              size={16}
+                              strokeWidth={2}
+                              className="text-muted-foreground group-hover/btn:text-primary dark:group-hover/btn:text-primary-foreground group-hover/btn:scale-110 transition-all"
+                            />
+                            {stepStatus === "In-Progress" && effectiveRunStatus === "In-Progress" && (
+                              <span className="absolute -top-1 -right-1 flex h-2 w-2">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                              </span>
+                            )}
+
+                            {/* Modern hover pill */}
+                            <span className="pointer-events-none absolute -top-8 left-1/2 -translate-x-1/2 whitespace-nowrap rounded-full bg-slate-900/95 dark:bg-slate-100 px-2.5 py-0.5 text-[10px] font-semibold text-white dark:text-slate-900 opacity-0 shadow-md transition-all duration-150 group-hover/btn:opacity-100 group-hover/btn:-translate-y-0.5 z-30">
+                              Logs
+                            </span>
                           </button>
                         </div>
                       </div>
@@ -1141,18 +1151,22 @@ export default function ProjectDetailPage({
             pipelineStatuses={displayPipelineStatuses}
             stepOutputs={stepOutputs}
             runStatus={runStatus}
-            workflowMessage={workflowMessage}
             projectId={project.id}
             agentState={project.agentState}
-            agentThinking={agentThinking}
             approvalNextStep={approvalNextStep}
-            isApproving={isApproving}
-            isAwaitingResponse={isAwaitingResponse}
-            onApprove={onApprove}
-            onSubstepChange={setSelectedSubstepId}
           />
         );
       })()}
+
+      {logModalSubstep && logModalPipelineTitle && <SubProcessLogModal
+        isOpen={isLogModalOpen}
+        onClose={() => setIsLogModalOpen(false)}
+        substep={logModalSubstep}
+        pipelineTitle={logModalPipelineTitle}
+        projectId={project.id}
+        status={displayPipelineStatuses[logModalSubstep.id]}
+        runStatus={effectiveRunStatus}
+      />}
     </>
   );
 }

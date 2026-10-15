@@ -1,0 +1,7 @@
+Sparrow executes through agents/sparrow/graph.ts using SparrowAnnotation.
+The supervisor routes query resolution, project/schema inspection, one tool at a time, bounded rectification, clarification and response synthesis. Every worker returns to the supervisor.
+The planner prompt in analysis-planner/analysisPlanner.md is the active supervisor decision contract. This file documents lifecycle policy and is not a competing runtime prompt.
+Persist each node transition with the PostgreSQL LangGraph checkpointer. Clarification uses interrupt and Command resume on the same project-scoped conversation thread. The client holds only a thread token, never authoritative intent, filters or tool results.
+Preserve messages, prior understanding, dated evidence and current-turn execution history. Reset current-turn work for each new query while retaining conversation memory. Reassess dependent steps after results; never execute a static speculative tool sequence.
+Load active intent definitions from sparrow_intents on every turn. Use only tools registered for the selected project and actual schemas. Reject unavailable tools and malformed decisions; preserve failures for rectification or a truthful partial answer.
+Do not invent business defaults or substitute a forecast for an unsupported what-if simulation. Stop within bounded tool/correction/recursion limits. Report concrete available evidence and remaining gaps.

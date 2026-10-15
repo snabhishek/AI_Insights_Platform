@@ -44,30 +44,6 @@ export default function FeatureValidatorStepOutput({
 
   return (
     <div className="space-y-6 select-none">
-
-      <div
-        className={`p-4 border text-xs flex items-start gap-2.5 shadow-sm font-semibold select-none ${
-          hasLeakage
-            ? "bg-amber-50 dark:bg-amber-950/20 border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300"
-            : "bg-emerald-50 dark:bg-emerald-950/20 border-emerald-100 dark:border-emerald-900 text-emerald-800 dark:text-emerald-300"
-        }`}
-      >
-        <span className="text-sm">{hasLeakage ? "⚠" : "✓"}</span>
-        <div>
-          <strong
-            className={`block ${
-              hasLeakage ? "text-amber-900 dark:text-amber-400" : "text-emerald-900 dark:text-emerald-400"
-            }`}
-          >
-            {hasLeakage ? "Feature Validation Completed with Leakage Remediation" : "Feature Validation Completed Successfully"}
-          </strong>
-          <p className={hasLeakage ? "text-amber-700/90 dark:text-amber-300/80 mt-0.5" : "text-emerald-700/90 dark:text-emerald-300/80 mt-0.5"}>
-            {payload?.summary ||
-              "Feature matrix audited for target leakage, multicollinearity, and population drift. Validated dataset compiled."}
-          </p>
-        </div>
-      </div>
-
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
         <div className="p-3 bg-surface-muted border border-border rounded">
           <div className="text-[10px] uppercase font-bold text-muted-foreground tracking-wider">Validated Kept</div>
