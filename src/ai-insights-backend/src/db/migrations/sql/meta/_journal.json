@@ -15,6 +15,13 @@
       "when": 1791549397043,
       "tag": "0001_sparrow_chat_history",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1792146087352,
+      "tag": "0002_fancy_loners",
+      "breakpoints": true
     }
   ]
 }
