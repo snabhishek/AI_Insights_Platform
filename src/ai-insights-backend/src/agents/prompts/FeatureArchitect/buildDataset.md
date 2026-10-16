@@ -142,17 +142,19 @@ if __name__ == '__main__':
 - Load transformed features from `--features-path` (`feature_transformation.parquet`).
 - Return from the function instead of calling `exit(0)` or `sys.exit(0)`.
 - Export the assembled dataset to `--output-path` (`dataset.parquet`).
+- **STRICT FAIL FAST - NO CODE FALLBACKS OR ERROR SUPPRESSION**: DO NOT write try-except blocks that catch errors, suppress merge failures, or generate dummy/synthetic fallback datasets. If base tables in `--db-path` or transformed features in `--features-path` are missing, empty, or cannot be joined cleanly, or if the target column is missing, explicitly raise an Exception (e.g. `raise FileNotFoundError(...)` or `raise ValueError(...)`) so execution terminates immediately.
 
 ### Input Discovery & Artifact Blacklist Rules
 - Load transformed features strictly from `--features-path` (`feature_transformation.parquet`).
 - Load base tables and target columns from `--db-path` (DuckDB database files or source CSV/Parquet files in `--db-path` root).
+- If required tables or features cannot be found, DO NOT fall back to dummy or synthetic tables; explicitly raise FileNotFoundError or ValueError immediately.
 - NEVER load pipeline stage artifacts (`dataset.parquet`, `feature_extraction.parquet`, `feature_selection.parquet`, `feature_validation.parquet`) as base tables.
 - NEVER perform recursive directory walks (`os.walk`) that enter timestamped run subdirectories under `--db-path`.
 
 ## Python File & Artifact Rules
 - Save dataset artifacts only as CSV or Parquet. Do NOT use `pickle` or arbitrary binary formats.
 - Use atomic write patterns (write to temp file and rename).
-- Validate dataset integrity (row counts > 0, column definitions, no empty outputs).
+- Validate dataset integrity (row counts > 0, column definitions, no empty outputs). If validation fails, explicitly raise an Exception instead of saving a broken artifact.
 
 ## Output Format
 Return valid **JSON ONLY** with no surrounding prose or markdown ticks. Conform to:

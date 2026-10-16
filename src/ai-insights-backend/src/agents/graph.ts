@@ -1,3 +1,4 @@
+import "../utils/langgraphMemoryPatch";
 import { StateGraph } from "@langchain/langgraph";
 import { AgentState } from "./state";
 import { inspectorNode } from "./IngestionLayer/inspector/inspectorNode";

@@ -43,7 +43,8 @@ Before writing code:
    - [ ] 7. Implement sequential training orchestrator in `pipeline.py`
    - [ ] 8. Create `requirements.txt`, `Dockerfile`, and `docker-compose.yml`
    - [ ] 9. Create `main.py` CLI entrypoint
-   - [ ] 10. Verify all project files and finalize
+   - [ ] 10. Post-Execution Reasoning: Inspect generated metrics and plots to assess model performance on the problem type
+   - [ ] 11. Code-Level Refinement / Stop: If performance is not good, reason on code-level improvements and update code; if good, stop execution cleanly
 2. Update the status of each item as you progress (`in_progress`, `completed`).
 
 ---
@@ -270,6 +271,41 @@ services:
 
 ---
 
+## POST-TRAINING PERFORMANCE REASONING & CODE REFINEMENT PROTOCOL
+
+Once the model training pipeline executes successfully and generates evaluation artifacts, the agent must perform the following post-training reasoning and iterative refinement workflow:
+
+### 1. Reasoning on Generated Metrics & Plots
+After successful training execution:
+- Inspect `model_training_report.json` and the visualization plots generated in `artifacts/plots/` (actual vs. predicted plots, residual distribution plots, confusion matrices, ROC/PR curves, and candidate comparison bar charts).
+- Perform technical reasoning on whether the trained model(s) achieve **good performance** appropriate for the problem type and domain objective:
+  - **For Regression & Continuous Forecasting**:
+    - Evaluate whether primary metrics ($R^2$, RMSE, MAE, WAPE, MAPE) demonstrate strong predictive accuracy over a naive mean baseline.
+    - Check whether $R^2$ is positive and robust ($R^2 > 0$), percentage errors (WAPE/MAPE) are bounded, and residuals are homoscedastic and centered near zero.
+    - Inspect actual vs. predicted and residual scatter plots: verify the model is not underfitting, severely biased, or collapsing into flat horizontal predictions (predicting the mean).
+  - **For Classification**:
+    - Evaluate Accuracy, Precision, Recall, F1-Score (macro and weighted), and ROC-AUC.
+    - Inspect the Confusion Matrix and ROC/PR curves: verify the model effectively discriminates classes and does not suffer from majority-class collapse or zero recall on minority classes in imbalanced scenarios.
+  - Determine decisively whether the model training outcome is **Good** or **Not Good**.
+
+### 2. Code-Level Reasoning & Code Update (If Model Training Is Not Good)
+If model training performance is **NOT good** (e.g. low or negative $R^2$, high residual errors, severe underfitting, poor class discrimination):
+- Inspect the code across project components to diagnose the root cause:
+  - `data/data_loader.py`: Check feature preprocessing, scaling (e.g. `RobustScaler` or `StandardScaler`), handling of skewed target distributions (e.g. log1p transformations), and categorical encoding (frequency encoding or native categorical handling).
+  - `models/*_trainer.py`: Check estimator hyperparameters (e.g. `learning_rate`, `n_estimators`, tree depth `max_depth`, regularization `reg_alpha`/`reg_lambda`, `min_child_samples`, `class_weight='balanced'`).
+  - `configs/training_config.yaml`: Check feature selection, search space bounds, and optimization objectives.
+  - `pipeline.py`: Check feature alignment, loss function alignment with the primary metric, and cross-validation setup.
+- Reason on how the code can be improved at the code level to achieve superior model performance.
+- **Update the code**: Use your file editing tools (`edit_file` / `write_file`) to apply the code improvements directly to the project files.
+
+### 3. Immediate Execution Stop on Good Performance
+- If model training is **Good** (e.g. the models achieve satisfactory metrics, balanced residuals, and strong predictive capability on the problem type):
+  - **No further validation, code updates, or reasoning cycles are needed.**
+  - The execution MUST be stopped cleanly.
+  - Deliver the verified artifacts and return the final completion JSON.
+
+---
+
 ## OUTPUT FORMAT
 When you have created all files and verified the project structure, respond with a JSON object:
 ```json
@@ -285,6 +321,11 @@ When you have created all files and verified the project structure, respond with
   ],
   "requiredPackages": [
     "<string: Complete list of Python package dependencies declared in requirements.txt (e.g. scikit-learn, lightgbm, xgboost, duckdb, pandas, numpy, matplotlib, seaborn, pyyaml, joblib)>"
-  ]
+  ],
+  "performanceAssessment": {
+    "isPerformanceGood": "<boolean: true if model performance is good, false if poor>",
+    "reasoning": "<string: Reasoning on generated metrics and plots regarding performance on the problem type>",
+    "codeImprovementsApplied": "<string: Description of code-level adjustments made if performance was not good, or 'None needed' if performance is good>"
+  }
 }
 ```

@@ -68,6 +68,26 @@ export async function executeWorkflowApi(
   return res;
 }
 
+export async function attachWorkflowStreamApi(
+  projectId: string,
+  sessionId?: string,
+  signal?: AbortSignal
+): Promise<Response> {
+  const params = new URLSearchParams({ projectId });
+  if (sessionId) params.append("sessionId", sessionId);
+
+  const res = await fetch(`${BACKEND_URL}/ai/ingestion/stream?${params.toString()}`, {
+    method: "GET",
+    signal,
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to attach to workflow stream: ${res.statusText}`);
+  }
+
+  return res;
+}
+
 export async function fetchActiveWorkflowApi(): Promise<{
   success: boolean;
   data: { active: boolean; projectId?: string | null; sessionId?: string | null; status?: string };

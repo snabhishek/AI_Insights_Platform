@@ -163,6 +163,7 @@ if __name__ == '__main__':
 - Read features from `--input-path` (`feature_selection.parquet`).
 - Save the validated feature matrix to `--output-path` (`feature_validation.parquet`).
 - Write the complete JSON validation report to `--report-path` (`feature_validation_report.json`).
+- **STRICT FAIL FAST - NO CODE FALLBACKS OR ERROR SUPPRESSION**: DO NOT write try-except blocks that catch errors, suppress exceptions, or write empty/dummy validation reports. If `--input-path` (`feature_selection.parquet`) is missing or invalid, or if validation computation fails, explicitly raise an Exception so execution terminates immediately.
 
 ## Output Format
 Return valid **JSON ONLY** with no surrounding prose or markdown formatting:

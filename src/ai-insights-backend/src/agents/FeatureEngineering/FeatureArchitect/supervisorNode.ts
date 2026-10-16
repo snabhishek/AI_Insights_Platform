@@ -152,6 +152,7 @@ export async function supervisorNode(
     `User Requirements: ${userPromptText}`,
     `Selected Tables: ${JSON.stringify(state.batchedTables.map((t) => t.tableName))}`,
     `Execution History: ${JSON.stringify(state.history)}`,
+    "Pipeline Mandate: Enforce strict fail-fast execution across all worker nodes. No worker script should add error fallback code or suppress exceptions; all unrecoverable errors must explicitly raise an Exception.",
   ].join("\n\n");
 
   try {

@@ -147,6 +147,7 @@ if __name__ == '__main__':
 - Read features from `--input-path` (`feature_extraction.parquet`).
 - Return from the function instead of calling `exit(0)` or `sys.exit(0)`.
 - Save selected feature dataset to `--output-path` (`feature_selection.parquet`).
+- **STRICT FAIL FAST - NO CODE FALLBACKS OR ERROR SUPPRESSION**: DO NOT write try-except blocks that catch errors, suppress exceptions, or fall back to returning unfiltered/dummy feature sets. If `--input-path` (`feature_extraction.parquet`) is missing or invalid, or if feature selection calculation fails, explicitly raise an Exception so execution terminates immediately.
 
 ## Output Format
 Return valid **JSON ONLY** with no surrounding prose or markdown ticks. Conform to:

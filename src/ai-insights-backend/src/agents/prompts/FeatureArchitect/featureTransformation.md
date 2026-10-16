@@ -144,6 +144,7 @@ if __name__ == '__main__':
 - Return from the function instead of calling `exit(0)` or `sys.exit(0)`.
 - Save transformed features to `--output-path` (`feature_transformation.parquet`).
 - Fit all scalers, encoders, and imputers ONLY on training splits (to avoid data leakage).
+- **STRICT FAIL FAST - NO CODE FALLBACKS OR ERROR SUPPRESSION**: DO NOT write try-except blocks that catch errors, suppress exceptions, or fall back to dummy/default values or unengineered features. If any error occurs or input files/columns are missing or invalid, explicitly raise an Exception so execution terminates immediately.
 
 ## Python File & Artifact Rules
 - Persist transformed feature tables only as CSV or Parquet. Do NOT persist using `pickle`.
@@ -155,6 +156,7 @@ if __name__ == '__main__':
 - Pickle insecurity and version incompatibility when unpickling across environments.
 - Silent schema mismatches between training and downstream usage; record schema in lineage.
 - Leakage from fitting transformers on full dataset; enforce training-only fits.
+- Fallback code or error suppression: Catching exceptions with try-except blocks or falling back to dummy/untransformed data masks pipeline bugs — strictly prohibited. Explicitly raise an Exception on any error.
 
 ## Output Format
 Return valid **JSON ONLY** with no surrounding prose or markdown ticks. Conform to:
