@@ -226,6 +226,92 @@ Synthesize a comprehensive, production-grade configuration that populates the fo
 - `serialization_format`: Identify the format to serialize the model.
 - `explainability_method`: Identify the approach that should be used to explain the trained model when explainability is required.
 
+## O. Model Export Format Planning & Capability Definition (`export_capabilities`)
+
+### Objective
+
+Determine and return the complete set of technically appropriate model export formats for every candidate in `model_selection.models[]` during Training Configuration synthesis. These formats are planned before training; actual serialization, conversion, and artifact validation occur after training.
+
+The frontend will consume this metadata to dynamically display export formats for each model. Therefore, the output must contain an explicit, populated `formats` array for every model, rather than only a single default format.
+
+### O.1. Per-Model Export Capabilities (`model_selection.models[].export_capabilities`)
+
+- `default_format`: The identifier of the recommended default export format for this specific model. It MUST reference an entry present in that model's `formats` array and MUST be selectable. Do not hardcode ONNX or any other format as the universal default. Use `null` if no format can be responsibly recommended.
+- `selection_rationale`: A concise technical explanation of why the default format was chosen and why the other listed formats are relevant alternatives.
+- `post_training_validation_required`: A boolean indicating whether actual export and inference validation must be performed after training. MUST always be `true`.
+- `formats`: A populated array of all relevant, verified or conditionally compatible export-format options for the specific model. Each entry must follow Section O.2.
+
+### O.2. Export Format Entry Definition (`formats[]`)
+
+Each entry represents one distinct export format that the UI can identify and display.
+
+- `format_id`: A stable machine-readable identifier for the format. Use the platform's canonical identifier when available. Different formats MUST have different identifiers.
+- `extension`: The standard file extension for the actual model artifact, such as `.onnx`, `.cbm`, `.txt`, `.json`, `.ubj`, `.keras`, or `.safetensors`. Use `null` when the exact extension cannot be established. Do not invent extensions.
+- `format_name`: A human-readable name for display in the UI, such as `ONNX`, `CatBoost Native`, or `XGBoost UBJSON`.
+- `status`: The compatibility classification for the specific model and export path. Allowed values are `supported`, `conditional`, and `unsupported`.
+  - `supported`: Documented support exists for the specific model, framework, and export path.
+  - `conditional`: Export may be possible but depends on model operators, model configuration, preprocessing, library versions, conversion constraints, or target runtime.
+  - `unsupported`: The format is inapplicable or a compatible export path cannot be established.
+- `selectable`: A boolean indicating whether the UI may offer the format as an export choice. MUST be `true` only when `status` is `supported` or `conditional`; MUST be `false` when `status` is `unsupported`.
+- `role`: The primary purpose of the format. Allowed values are `portable_inference`, `native_model`, `transformer_checkpoint`, `quantized_llm`, and `accelerator_optimized`.
+- `runtime`: The inference runtime or framework required to load and execute the exported artifact, or `null` when it is not yet known. Do not imply that a format is runtime-independent.
+- `requires_preprocessing`: A boolean indicating whether the model requires a preprocessing pipeline or transformations outside the exported model to reproduce the expected inference behavior.
+- `required_assets`: An array identifying additional assets required for inference, such as `input_schema`, `preprocessing_pipeline`, `model_config`, `tokenizer`, or `label_mapping`. Use an empty array only when no additional assets are required.
+- `validation_required`: A boolean indicating whether the exported artifact must be reloaded and validated before being declared successful. MUST be `true`.
+- `limitations`: An array of specific compatibility constraints, conversion limitations, runtime requirements, or missing evidence. Use an empty array only when there are no known limitations.
+
+### O.3. Format Discovery and Completeness Rules
+
+1. Inspect every enabled candidate model independently using its exact `framework`, `algorithm`, estimator/model class, task type, and available capability metadata.
+2. Determine all relevant export formats for each model. Consider the appropriate native format, a portable inference format when supported, and other formats only when they provide a meaningful deployment benefit.
+3. Do not stop after identifying ONNX. ONNX is one candidate format, not the universal default or the complete set of export options.
+4. For every candidate, actively evaluate at least:
+   - The model's framework-native serialization format.
+   - ONNX, where the model and its inference pipeline have a documented or conditionally supported conversion path.
+   - Other applicable formats only when a verified export path and a meaningful use case exist.
+5. If two or more distinct formats are applicable, include all relevant options in `formats`. Do not return only the default format when valid alternatives exist.
+6. Do not artificially create multiple options to satisfy a count. If only one format can be established as applicable, return that one option and explain the limitation in `selection_rationale`. If none can be established, return an empty array, set `default_format` to `null`, and explain the reason.
+7. Do not use an empty `formats` array merely because the deployment runtime is unknown. Identify relevant native and portable options, record runtime requirements, and mark uncertain compatibility as `conditional` where justified.
+8. Do not copy the same hardcoded list of formats to every model. Format availability must be determined independently for each candidate.
+9. Do not include a format simply because it appears in a generic list of popular formats. Verify its applicability to the actual algorithm, framework, and model family.
+10. Do not use a file extension alone to identify the format. For example, `.json` may represent different serialization formats; use distinct canonical identifiers and accurate format names.
+11. Include only meaningful, distinct format options. Do not duplicate an identical export path under different labels.
+12. Every selectable option must have a meaningful `format_id`, a valid compatibility status, an accurate extension or explicit `null`, and its runtime and auxiliary-asset requirements.
+
+### O.4. Model-Family-Specific Selection Rules
+
+- ONNX: Consider for portable inference only after assessing support for the specific estimator, required operators, input schema, preprocessing, converter, and ONNX Runtime.
+- Tree-based models: Identify the appropriate native serialization for the actual framework and model, such as CatBoost `.cbm`, LightGBM text model `.txt`, or XGBoost `.json`/`.ubj`. Do not assume that the same native format applies to every tree-based model.
+- Transformer models: Consider the supported checkpoint format, including Safetensors where applicable, and identify any required model configuration, tokenizer, and other inference assets.
+- TensorFlow/Keras models: Select the applicable supported format based on the actual framework version and model type, such as SavedModel or `.keras`. Do not assume `.h5` is universally appropriate.
+- GGUF: Consider only for compatible generative language models and supported GGUF runtimes. Never offer it as a standard export option for conventional tabular models.
+- OpenVINO or other accelerator-specific formats: Include only when the model/export path is supported and the target deployment use case justifies the option.
+
+### O.5. Default Format Selection Rules
+
+1. Choose the default only after the candidate format list has been evaluated.
+2. Consider portability, framework compatibility, inference requirements, preprocessing dependencies, and the available deployment context.
+3. Prefer a portable format when it is genuinely supported and appropriate; otherwise, prefer the most suitable verified native format.
+4. Do not select ONNX solely because it is portable or because it is the platform's existing default.
+5. Ensure `default_format` exactly matches the `format_id` of one selectable entry in the same model's `formats` array.
+6. If no format can be reliably recommended, set `default_format` to `null` and explain why.
+
+### O.6. Output Validation Rules
+
+Before returning `CONFIG_SYNTHESIZED`:
+
+- Every model in `model_selection.models[]` must contain an `export_capabilities` object.
+- Each `export_capabilities` object must contain `default_format`, `selection_rationale`, `post_training_validation_required`, and `formats`.
+- `formats` must be an array, not a string or object.
+- Each format entry must include every field defined in Section O.2.
+- Use only the enumerated values for `status` and `role`.
+- Ensure `selectable` is consistent with `status`.
+- Ensure `default_format` is either `null` or references a selectable entry in the same array.
+- Do not claim an export has already succeeded during configuration synthesis.
+- Preserve all existing model-selection decisions, estimator choices, training steps, and training objectives. Export planning must not alter the selected training strategy.
+
+The downstream export service must independently re-check compatibility, execute the requested export, reload the artifact using the target runtime, validate inference behavior, and record the actual export result. A planned capability must never be treated as proof of successful conversion.
+
 ---
 
 ## 4. Strict Output Schema
@@ -447,6 +533,26 @@ Return this when you have sufficient information and have researched the trainin
             "<Explain why this model is appropriate for the prediction problem and available training information.>"
           ]
         },
+        "export_capabilities": {
+          "default_format": null,
+          "selection_rationale": "<Explain why the recommended default and alternative formats are appropriate for this exact model>",
+          "post_training_validation_required": true,
+          "formats": [
+            {
+              "format_id": "<Canonical identifier for this specific export format>",
+              "extension": "<Verified file extension or null>",
+              "format_name": "<Human-readable format name>",
+              "status": "<supported|conditional|unsupported>",
+              "selectable": true,
+              "role": "<portable_inference|native_model|transformer_checkpoint|quantized_llm|accelerator_optimized>",
+              "runtime": "<Required inference runtime or null>",
+              "requires_preprocessing": true,
+              "required_assets": [],
+              "validation_required": true,
+              "limitations": []
+            }
+          ]
+        },
         "training_steps": {
           "package_dependencies": [
             "<List pip package dependencies required to train this candidate model with version specifiers.>"
@@ -519,7 +625,7 @@ Return this when you have sufficient information and have researched the trainin
       "explainability": false,
       "training_config": true
     },
-    "serialization_format": "<Identify the format to serialize the model.>",
+    "serialization_format": "A backward-compatible legacy field representing the recommended default format for the primary recommended model, when a reliable default is available. This field must not override or replace the per-model `model_selection.models[].export_capabilities.formats` array. Do not hardcode `"onnx"`. Set the value to the selected default format identifier, or `null` when no reliable default exists.",
     "explainability_method": "<Identify the approach that should be used to explain the trained model when explainability is required.>"
   },
   "summary": "<Write a concise human-readable summary of the synthesized training configuration and execution recipe.>"

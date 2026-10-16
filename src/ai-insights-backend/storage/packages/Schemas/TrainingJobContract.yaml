@@ -600,6 +600,41 @@ model_selection:
       parameters:
         "<Specify the model parameters that should remain fixed during training rather than being searched automatically.>"
 
+      export_capabilities:
+        default_format: "onnx"
+        selection_rationale: "Portable inference format supported by the selected model, subject to conversion validation."
+        post_training_validation_required: true
+
+        formats:
+          - format_id: "onnx"
+            extension: ".onnx"
+            format_name: "ONNX"
+            status: "conditional"
+            selectable: true
+            role: "portable_inference"
+            runtime: "ONNX Runtime"
+            requires_preprocessing: true
+            required_assets:
+              - "input_schema"
+              - "preprocessing_pipeline"
+            validation_required: true
+            limitations:
+              - "Verify converter support for the selected algorithm and model configuration."
+
+          - format_id: "framework_native"
+            extension: null
+            format_name: "Framework Native"
+            status: "supported"
+            selectable: true
+            role: "native_model"
+            runtime: null
+            requires_preprocessing: true
+            required_assets:
+              - "input_schema"
+              - "preprocessing_pipeline"
+            validation_required: true
+            limitations: []
+
       hyperparameter_optimization:
 
         enabled:
@@ -646,9 +681,16 @@ artifacts:
     explainability: false
     training_config: true
 
-  # serialization_format: "<enum: pickle|joblib|onnx|safetensors|framework_native>"
-  # :CHECK: need to check the common serialization format to support all the OS
-  serialization_format: "onnx"
+  serialization_format: null
 
-  explainability_method:
-    "<Identify the approach that should be used to explain the trained model when explainability is required.>"
+  export_policy:
+    mode: "multiple_formats"
+    default_format: "framework_native"
+    include_native_format: true
+    include_conditional_formats: true
+    validate_after_export: true
+    require_prediction_parity: true
+    include_preprocessing_assets: true
+    include_inference_manifest: true
+
+  explainability_method: "model_appropriate"
