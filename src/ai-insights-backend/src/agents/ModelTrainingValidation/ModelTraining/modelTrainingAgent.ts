@@ -35,6 +35,11 @@ interface CodingAgentResult extends Record<string, unknown> {
   files?: string[];
   candidateModels?: string[];
   requiredPackages?: string[];
+  performanceAssessment?: {
+    isPerformanceGood?: boolean;
+    reasoning?: string;
+    codeImprovementsApplied?: string;
+  };
 }
 
 interface RectifierResult extends Record<string, unknown> {
@@ -437,6 +442,10 @@ export class ModelTrainingAgent {
       `2. Execute models sequentially in pipeline.py.`,
       `3. Always generate model evaluation metrics and comparison visualization plots in artifacts/plots/.`,
       `4. Generate model_training_report.json at completion.`,
+      `--- Post-Training Performance Reasoning & Code Refinement ---`,
+      `1. After successful training execution, reason on the generated metrics and evaluation plots to assess whether the candidate models achieve good performance on the ${problemType || "ML"} problem type.`,
+      `2. If model training performance is NOT good, inspect the code across data_loader.py, models/*_trainer.py, and training_config.yaml, reason on code-level improvements (e.g. scaling, hyperparameter tuning, loss objectives, categorical handling), and update the code accordingly.`,
+      `3. If model training performance is good, no further validation iterations or code updates are needed; stop execution cleanly.`,
       `Use 'write_todos' to track task progress as you create the files.`,
     ].join("\n\n");
 
@@ -504,7 +513,7 @@ export class ModelTrainingAgent {
               tools: agentTools,
               useDeepAgent: true,
               enableTodoList: true,
-              recursionLimit: 200,
+              recursionLimit: 500,
               messages: agentMessages,
               middlewareOptions: {
                 summarization: {
@@ -601,7 +610,7 @@ export class ModelTrainingAgent {
                 systemPrompt: rectifierPrompt,
                 traceLabel: "modelTraining:rectifierAdvisor",
                 tools: readOnlyFsTools,
-                recursionLimit: 200,
+                recursionLimit: 500,
                 messages: rectifierMessages,
                 middlewareOptions: {
                   summarization: {
@@ -853,6 +862,7 @@ export class ModelTrainingAgent {
             `5. Update 'requirements.txt' if any new package is required for the new model(s).`,
             `6. All models to train in this execution: ${effectiveSelectedModels.join(", ")}.`,
             `7. Always generate model evaluation metrics, comparison visualization plots in artifacts/plots/, and model_training_report.json at completion.`,
+            `8. Post-training reasoning: Reason on generated metrics and plots. If model performance is not good on the problem type, check code and apply code-level improvements. If good, stop execution cleanly.`,
             `Use 'write_todos' to track task progress as you update the files. Return the updated project status JSON.`,
           ].join("\n\n");
 
@@ -868,7 +878,7 @@ export class ModelTrainingAgent {
               tools: agentTools,
               useDeepAgent: true,
               enableTodoList: true,
-              recursionLimit: 200,
+              recursionLimit: 500,
               messages: agentMessages,
               middlewareOptions: {
                 summarization: {
@@ -901,7 +911,7 @@ export class ModelTrainingAgent {
             tools: agentTools,
             useDeepAgent: true,
             enableTodoList: true,
-            recursionLimit: 200,
+            recursionLimit: 500,
             messages: agentMessages,
             middlewareOptions: {
               summarization: {
@@ -1092,7 +1102,7 @@ export class ModelTrainingAgent {
               systemPrompt: rectifierPrompt,
               traceLabel: "modelTraining:rectifierAdvisor",
               tools: readOnlyFsTools,
-              recursionLimit: 200,
+              recursionLimit: 500,
               messages: rectifierMessages,
               middlewareOptions: {
                 summarization: {
