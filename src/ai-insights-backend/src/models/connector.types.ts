@@ -21,6 +21,7 @@ export type ConnectorType =
   | "excel"
   | "csv"
   | "tsv"
+  | "parquet"
   | "restapi";
 
 export type ConnectorStatus = "Connected" | "Disconnected" | "Syncing";

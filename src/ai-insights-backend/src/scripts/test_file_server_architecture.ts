@@ -90,6 +90,10 @@ async function runFileServerArchitectureTest() {
 
   console.log(`[DuckDB] Master project database created at: ${masterDbPath}`);
   if (!fs.existsSync(masterDbPath)) throw new Error("Project DuckDB master file was not created on disk");
+  const expectedMasterDbPath = path.join(absoluteProjectPath, "datasource", `${duckdbService.sanitizeFileName(projectName)}.duckdb`);
+  if (path.resolve(masterDbPath) !== path.resolve(expectedMasterDbPath)) {
+    throw new Error(`Master DB path mismatch: expected ${expectedMasterDbPath}, got ${masterDbPath}`);
+  }
 
   const tables = await duckdbService.runQuery(masterDbPath, "SHOW TABLES");
   console.log(`[DuckDB] Tables in project database:`, tables);
@@ -98,7 +102,7 @@ async function runFileServerArchitectureTest() {
   const sampleRows = await duckdbService.runQuery(masterDbPath, `SELECT * FROM "orders_q1" LIMIT 2`);
   console.log(`[DuckDB] Sample rows from project table:`, sampleRows);
   if (sampleRows.length !== 2) throw new Error("Unexpected row count from DuckDB sample query");
-  console.log("✓ DuckDB ingestion and queries verified inside project folder.\n");
+  console.log("✓ DuckDB ingestion and queries verified inside project datasource folder.\n");
 
   const projectDir = getProjectDirectory({
     projectName,
@@ -113,15 +117,15 @@ async function runFileServerArchitectureTest() {
   });
 
   console.log(`[Project Dir] Project Root Path: ${projectDir}`);
-  console.log(`[Python Script Dir] Python Script Path: ${pythonScriptDir}`);
+  console.log(`[Feature Engineering Dir] Feature Engineering Path: ${pythonScriptDir}`);
 
   if (path.resolve(projectDir) !== path.resolve(absoluteProjectPath)) {
     throw new Error(`Project dir (${projectDir}) does not match expected project path (${absoluteProjectPath})`);
   }
 
-  const expectedPythonScriptDir = path.join(absoluteProjectPath, "python_script");
-  if (path.resolve(pythonScriptDir) !== path.resolve(expectedPythonScriptDir)) {
-    throw new Error(`Python script dir (${pythonScriptDir}) does not match expected (${expectedPythonScriptDir})`);
+  const expectedFeatureEngDir = path.join(absoluteProjectPath, `${sanitizeFolderName(projectName)}_feature_engineering`);
+  if (path.resolve(pythonScriptDir) !== path.resolve(expectedFeatureEngDir)) {
+    throw new Error(`Feature Engineering dir (${pythonScriptDir}) does not match expected (${expectedFeatureEngDir})`);
   }
 
   const tools = await getMcpFilesystemTools({

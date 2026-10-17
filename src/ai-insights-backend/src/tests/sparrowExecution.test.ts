@@ -42,9 +42,9 @@ test("independent execution reuses a copy, forwards isolation/logging, and keeps
   const f = fixture(t); const updates: string[] = []; const dirs: string[] = [];
   const service = new SparrowExecutionService(f.projectService, { resolveRoot: () => f.root,
     prepare: async (_context, read, report) => {
-      assert.match(read("run/model_validation/predict.py"), /existing saved-model/);
+      assert.match(read("project/model_validation/predict.py"), /existing saved-model/);
       report("Adapting existing prediction code.");
-      return { script: "# adapted runner", requirements: ["statsmodels"], reusedSources: ["run/model_validation/predict.py"], explanation: "Reuse" };
+      return { script: "# adapted runner", requirements: ["statsmodels"], reusedSources: ["project/model_validation/predict.py"], explanation: "Reuse" };
     },
     execute: async (script, code, project, run, services, connectors, requirements, args, limits, options) => {
       assert.equal(options?.isolated, true); assert.equal(options?.projectRootDir, f.root);
@@ -95,7 +95,7 @@ test("artifact access stays within the current run and rejects traversal", t => 
   const f = fixture(t);
   assert.throws(() => insideProject(f.root, "../outside"), /relative/);
   assert.throws(() => insideProject(f.root, f.source), /relative/);
-  assert.deepEqual(inspectScriptArtifacts(f.root, "run").map(item => item.path), ["run/model_validation/predict.py"]);
+  assert.deepEqual(inspectScriptArtifacts(f.root, "run").map(item => item.path), ["project/model_validation/predict.py"]);
 });
 
 test("isolated Docker compose preserves read-only inputs and confines writable output", t => {
@@ -103,8 +103,10 @@ test("isolated Docker compose preserves read-only inputs and confines writable o
   const file = ensureDockerCompose(path.dirname(f.source), "app", undefined, { writableRelativePath: "run/sparrow/id" });
   const compose: any = yaml.load(fs.readFileSync(file, "utf8")); const config = compose.services.app;
   assert.equal(config.read_only, true); assert.equal(config.network_mode, "none");
-  assert.deepEqual(config.cap_drop, ["ALL"]); assert.ok(config.volumes.includes("${HOST_PROJECT_ROOT:-.}:/workspace:ro"));
-  assert.ok(config.volumes.includes("${HOST_EXECUTION_DIR}:/workspace/run/sparrow/id:rw"));
+  assert.deepEqual(config.cap_drop, ["ALL"]);
+  assert.ok(config.volumes.includes("${HOST_RUN_DIR:-${HOST_PROJECT_ROOT}/${RUN_TIMESTAMP}}:/workspace/project:ro") || config.volumes.includes("${HOST_RUN_DIR}:/workspace/project:ro"));
+  assert.ok(config.volumes.includes("${HOST_DATASOURCE_DIR}:/workspace/datasource:ro"));
+  assert.ok(config.volumes.includes("${HOST_EXECUTION_DIR}:/workspace/chat_execution/id:rw"));
 });
 
 test("subprocess logs stream complete timestamped lines before completion, including partial final lines", async t => {
@@ -134,20 +136,20 @@ test("Stop terminates a running subprocess and prevents its delayed side effect"
 
 test("actual configured script worker inspects and reuses existing prediction source", { skip: process.env.SPARROW_EXECUTOR_LIVE !== "1", timeout: 180000 }, async () => {
   const context = { request: { projectId: "fixture", task: "Adapt this saved prediction helper to forecast the requested dates", prediction }, projectName: "Fixture", runTimestamp: "run",
-    artifacts: [{ path: "run/model_training/predict.py", bytes: 200 }], requestFile: "/workspace/run/sparrow/id/request.json", outputFile: "/workspace/run/sparrow/id/result.json", outputDirectory: "/workspace/run/sparrow/id" };
+    artifacts: [{ path: "project/model_training/predict.py", bytes: 200 }], requestFile: "/workspace/chat_execution/id/request.json", outputFile: "/workspace/chat_execution/id/result.json", outputDirectory: "/workspace/chat_execution/id" };
   const reads: string[] = [];
-  const result = await SparrowScriptAgent.prepare(context, file => { reads.push(file); return "import joblib\ndef predict_periods(periods):\n    model = joblib.load('/workspace/run/model_training/model.joblib')\n    return model.predict([[period.year, period.month] for period in periods]).tolist()\n"; }, console.log);
-  assert.ok(reads.length); assert.ok(result.reusedSources.includes("run/model_training/predict.py"));
+  const result = await SparrowScriptAgent.prepare(context, file => { reads.push(file); return "import joblib\ndef predict_periods(periods):\n    model = joblib.load('/workspace/project/model_training/model.joblib')\n    return model.predict([[period.year, period.month] for period in periods]).tolist()\n"; }, console.log);
+  assert.ok(reads.length); assert.ok(result.reusedSources.includes("project/model_training/predict.py"));
   assert.match(result.script, /joblib|predict_periods/); assert.ok(result.script.length > 100);
 });
 
 test("actual worker and Docker reuse a saved fixture model with read-only project inputs", { skip: process.env.SPARROW_EXECUTOR_DOCKER !== "1", timeout: 600000 }, async t => {
   const f = fixture(t);
-  const source = "import json\nfrom pathlib import Path\ndef predict_periods(periods):\n    parameters = json.loads(Path('/workspace/run/model_validation/model.json').read_text())\n    return [parameters['intercept'] + parameters['slope'] * (period.year * 12 + period.month - parameters['origin_month']) for period in periods]\n";
+  const source = "import json\nfrom pathlib import Path\ndef predict_periods(periods):\n    parameters = json.loads(Path('/workspace/project/model_validation/model.json').read_text())\n    return [parameters['intercept'] + parameters['slope'] * (period.year * 12 + period.month - parameters['origin_month']) for period in periods]\n";
   fs.writeFileSync(f.source, source);
   fs.writeFileSync(path.join(path.dirname(f.source), "model.json"), JSON.stringify({ modelId: "m1", targetColumn: "units", intercept: 10, slope: 2, origin_month: 2026 * 12 + 11 }));
   const service = new SparrowExecutionService(f.projectService, { resolveRoot: () => f.root });
-  const result = await service.execute({ projectId: "fixture", task: "Forecast units with saved model m1. Inspect and adapt predict.py, loading its saved parameters from model.json. Preserve the existing inference function. In the runner verify attempting to write /workspace/run/model_validation/predict.py fails (read-only filesystem), and print INPUTS_READ_ONLY after this check. Save the requested dated prediction contract.", prediction }, console.log);
+  const result = await service.execute({ projectId: "fixture", task: "Forecast units with saved model m1. Inspect and adapt predict.py, loading its saved parameters from model.json. Preserve the existing inference function. In the runner verify attempting to write /workspace/project/model_validation/predict.py fails (read-only filesystem), and print INPUTS_READ_ONLY after this check. Save the requested dated prediction contract.", prediction }, console.log);
   assert.equal(result.success, true, result.error);
   assert.deepEqual(result.output.modelResults[0].periods, output.modelResults[0].periods);
   assert.equal(fs.readFileSync(f.source, "utf8"), source);

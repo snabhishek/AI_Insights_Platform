@@ -86,7 +86,9 @@ export class DuckDBService implements IDuckDBService {
   public getProjectDuckDbPath(projectName: string, workspaceName?: string, folderPath?: string): string {
     const safeProject = this.sanitizeFileName(projectName);
     const projectDir = this.getProjectPath(projectName, workspaceName, folderPath);
-    return path.join(projectDir, `${safeProject}.duckdb`);
+    const datasourceDir = path.join(projectDir, "datasource");
+    ensureDirectoryExists(datasourceDir);
+    return path.join(datasourceDir, `${safeProject}.duckdb`);
   }
 
   getDuckDbPath(fileName: string, sheetName?: string, projectName?: string, workspaceName?: string, folderPath?: string): string {
@@ -102,10 +104,13 @@ export class DuckDBService implements IDuckDBService {
 
     if (projectName || folderPath) {
       const projectDir = this.getProjectPath(projectName || "default", workspaceName, folderPath);
-      const specificDb = path.join(projectDir, `${safeFile}.duckdb`);
+      const datasourceDir = path.join(projectDir, "datasource");
+      ensureDirectoryExists(datasourceDir);
+      const specificDb = path.join(datasourceDir, `${safeFile}.duckdb`);
       if (fs.existsSync(specificDb)) return specificDb;
       const masterDb = this.getProjectDuckDbPath(projectName || "default", workspaceName, folderPath);
       if (fs.existsSync(masterDb)) return masterDb;
+      return specificDb;
     }
 
     const workspacesBase = getWorkspacesBasePath();
@@ -117,20 +122,23 @@ export class DuckDBService implements IDuckDBService {
           if (fs.existsSync(projsDir)) {
             const projDirs = fs.readdirSync(projsDir, { withFileTypes: true }).filter((d) => d.isDirectory());
             for (const projDir of projDirs) {
-              const directInSub = path.join(projsDir, projDir.name, `${safeFile}.duckdb`);
-              if (fs.existsSync(directInSub)) return directInSub;
+              const dsDir = path.join(projsDir, projDir.name, "datasource");
+              if (fs.existsSync(dsDir)) {
+                const directInDs = path.join(dsDir, `${safeFile}.duckdb`);
+                if (fs.existsSync(directInDs)) return directInDs;
 
-              const filesInSub = fs.readdirSync(path.join(projsDir, projDir.name)).filter((f) => f.endsWith(".duckdb"));
-              const matchInSub = filesInSub.find((f) => {
-                const base = path.basename(f, ".duckdb").toLowerCase();
-                return (
-                  base === safeFile.toLowerCase() ||
-                  base.startsWith(`${safeFile.toLowerCase()}_`) ||
-                  safeFile.toLowerCase().startsWith(base) ||
-                  base.replace(/[^a-z0-9]/g, "") === safeFile.toLowerCase().replace(/[^a-z0-9]/g, "")
-                );
-              });
-              if (matchInSub) return path.join(projsDir, projDir.name, matchInSub);
+                const filesInDs = fs.readdirSync(dsDir).filter((f) => f.endsWith(".duckdb"));
+                const matchInDs = filesInDs.find((f) => {
+                  const base = path.basename(f, ".duckdb").toLowerCase();
+                  return (
+                    base === safeFile.toLowerCase() ||
+                    base.startsWith(`${safeFile.toLowerCase()}_`) ||
+                    safeFile.toLowerCase().startsWith(base) ||
+                    base.replace(/[^a-z0-9]/g, "") === safeFile.toLowerCase().replace(/[^a-z0-9]/g, "")
+                  );
+                });
+                if (matchInDs) return path.join(dsDir, matchInDs);
+              }
             }
           }
         }
@@ -157,7 +165,8 @@ export class DuckDBService implements IDuckDBService {
       } catch {}
     }
 
-    return path.join(this.getProjectPath(projectName || "default", workspaceName, folderPath), `${safeFile}.duckdb`);
+    const pDir = this.getProjectPath(projectName || "default", workspaceName, folderPath);
+    return path.join(pDir, "datasource", `${safeFile}.duckdb`);
   }
 
   private getDbPathForTarget(fileName: string, tableName?: string, projectName?: string): string {
@@ -165,34 +174,34 @@ export class DuckDBService implements IDuckDBService {
       const projMaster = this.getProjectDuckDbPath(projectName);
       if (fs.existsSync(projMaster)) return projMaster;
       const projectDir = this.getProjectPath(projectName);
+      const datasourceDir = path.join(projectDir, "datasource");
       if (tableName) {
         const safeTable = this.sanitizeFileName(tableName);
-        const directSheetDb = path.join(projectDir, `${safeTable}.duckdb`);
+        const directSheetDb = path.join(datasourceDir, `${safeTable}.duckdb`);
         if (fs.existsSync(directSheetDb)) {
           return directSheetDb;
         }
 
         try {
-          const files = fs.readdirSync(projectDir).filter((f) => f.endsWith(".duckdb"));
-          const match = files.find(
-            (f) =>
-              path.basename(f, ".duckdb").toLowerCase() === tableName.toLowerCase() ||
-              path.basename(f, ".duckdb").toLowerCase() === safeTable.toLowerCase()
-          );
-          if (match) {
-            return path.join(projectDir, match);
+          if (fs.existsSync(datasourceDir)) {
+            const files = fs.readdirSync(datasourceDir).filter((f) => f.endsWith(".duckdb"));
+            const match = files.find(
+              (f) =>
+                path.basename(f, ".duckdb").toLowerCase() === tableName.toLowerCase() ||
+                path.basename(f, ".duckdb").toLowerCase() === safeTable.toLowerCase()
+            );
+            if (match) {
+              return path.join(datasourceDir, match);
+            }
           }
         } catch {}
       }
 
-      const masterPath = path.join(projectDir, "_master.duckdb");
-      if (fs.existsSync(masterPath)) {
-        return masterPath;
-      }
-
-      const sheetFiles = fs.readdirSync(projectDir).filter((f) => f.endsWith(".duckdb"));
-      if (sheetFiles.length > 0) {
-        return path.join(projectDir, sheetFiles[0]);
+      if (fs.existsSync(datasourceDir)) {
+        const sheetFiles = fs.readdirSync(datasourceDir).filter((f) => f.endsWith(".duckdb"));
+        if (sheetFiles.length > 0) {
+          return path.join(datasourceDir, sheetFiles[0]);
+        }
       }
     }
 
@@ -683,25 +692,28 @@ export class DuckDBService implements IDuckDBService {
     }
 
     const safeFile = this.sanitizeFileName(fileName);
-    const targetDir = projectName || folderPath ? this.getProjectPath(projectName || "default", workspaceName, folderPath) : this.dbStorageDir;
-    if (!fs.existsSync(targetDir)) {
-      fs.mkdirSync(targetDir, { recursive: true });
-    }
+    const targetDir = projectName || folderPath
+      ? path.join(this.getProjectPath(projectName || "default", workspaceName, folderPath), "datasource")
+      : this.dbStorageDir;
+    ensureDirectoryExists(targetDir);
 
     const dbPath = path.join(targetDir, `${safeFile}.duckdb`);
 
-    if (["csv", "tsv"].includes(type)) {
+    if (["csv", "tsv", "parquet"].includes(type)) {
       const tableName = this.sanitizeTableName(fileName);
       const delim = type === "tsv" ? "\\t" : ",";
       const normalizedPath = filePath.replace(/\\/g, "/");
+      const readSql = type === "parquet"
+        ? `read_parquet('${normalizedPath}')`
+        : `read_csv_auto('${normalizedPath}', header=true, delim='${delim}', auto_detect=true)`;
 
       await this.withConnection(dbPath, async (conn) => {
         await this.exec(conn, `DROP TABLE IF EXISTS "${tableName}"`);
         await this.exec(
           conn,
-          `CREATE TABLE "${tableName}" AS SELECT * FROM read_csv_auto('${normalizedPath}', header=true, delim='${delim}', auto_detect=true)`
+          `CREATE TABLE "${tableName}" AS SELECT * FROM ${readSql}`
         );
-      });
+      }, false);
       console.info(`[DuckDBService] Ingested ${type.toUpperCase()} file "${fileName}" into DB: ${dbPath}`);
       return dbPath;
     }
@@ -741,7 +753,7 @@ export class DuckDBService implements IDuckDBService {
             }
           }
         }
-      });
+      }, false);
       console.info(`[DuckDBService] Ingested Excel "${fileName}" into DB: ${dbPath}`);
       return dbPath;
     }
@@ -755,7 +767,7 @@ export class DuckDBService implements IDuckDBService {
           conn,
           `INSERT INTO "${tableName}" VALUES ('${config.url || "api_endpoint"}', '200 OK', '12ms')`
         );
-      });
+      }, false);
       return dbPath;
     }
 
@@ -785,6 +797,9 @@ export class DuckDBService implements IDuckDBService {
     const projectDir = this.getProjectPath(projectName, workspaceName, folderPath);
     ensureDirectoryExists(projectDir);
 
+    const datasourceDir = path.join(projectDir, "datasource");
+    ensureDirectoryExists(datasourceDir);
+
     const masterDbPath = this.getProjectDuckDbPath(projectName, workspaceName, folderPath);
 
     await this.withConnection(masterDbPath, async (conn) => {
@@ -793,26 +808,29 @@ export class DuckDBService implements IDuckDBService {
         const sourceName = source.name || fileName || "source_data";
         const primaryTableName = this.sanitizeTableName(fileName || sourceName);
 
-        if (["csv", "tsv"].includes(source.type) && fileName) {
+        if (["csv", "tsv", "parquet"].includes(source.type) && fileName) {
           const filePath = this.resolveFilePath(fileName, source.name);
           if (filePath) {
             const delim = source.type === "tsv" ? "\\t" : ",";
             const normPath = filePath.replace(/\\/g, "/");
+            const readSql = source.type === "parquet"
+              ? `read_parquet('${normPath}')`
+              : `read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true)`;
 
             await this.exec(conn, `DROP TABLE IF EXISTS "${primaryTableName}"`);
             await this.exec(
               conn,
-              `CREATE TABLE "${primaryTableName}" AS SELECT * FROM read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true)`
+              `CREATE TABLE "${primaryTableName}" AS SELECT * FROM ${readSql}`
             );
 
-            const separateDbPath = path.join(projectDir, `${this.sanitizeFileName(fileName)}.duckdb`);
+            const separateDbPath = path.join(datasourceDir, `${this.sanitizeFileName(fileName)}.duckdb`);
             await this.withConnection(separateDbPath, async (sepConn) => {
               await this.exec(sepConn, `DROP TABLE IF EXISTS "${primaryTableName}"`);
               await this.exec(
                 sepConn,
-                `CREATE TABLE "${primaryTableName}" AS SELECT * FROM read_csv_auto('${normPath}', header=true, delim='${delim}', auto_detect=true)`
+                `CREATE TABLE "${primaryTableName}" AS SELECT * FROM ${readSql}`
               );
-            });
+            }, false);
           }
         } else if (source.type === "excel" && fileName) {
           const filePath = this.resolveFilePath(fileName, source.name);
@@ -830,7 +848,7 @@ export class DuckDBService implements IDuckDBService {
               const rawCsv = xlsx.utils.sheet_to_csv(worksheet, { blankrows: false });
               const cleanCsv = this.sanitizeCsvHeaders(rawCsv);
               const safeSheet = this.sanitizeFileName(sheetName);
-              const tempCsvPath = path.join(projectDir, `_temp_${Date.now()}_${safeSheet}.csv`).replace(/\\/g, "/");
+              const tempCsvPath = path.join(datasourceDir, `_temp_${Date.now()}_${safeSheet}.csv`).replace(/\\/g, "/");
               fs.writeFileSync(tempCsvPath, cleanCsv, "utf8");
 
               const sheetTableName = this.sanitizeTableName(sheetName);
@@ -859,7 +877,7 @@ export class DuckDBService implements IDuckDBService {
           );
         }
       }
-    });
+    }, false);
 
     console.info(`[DuckDBService] Successfully ingested ${sources.length} sources into project database: ${masterDbPath}`);
     return masterDbPath;

@@ -131,18 +131,33 @@ export async function deleteStepAndSuccessorFiles(
 
   const schemasDirs = new Set<string>();
   const pythonScriptDirs = new Set<string>();
+  const datasetDirs = new Set<string>();
 
   for (const pDir of projectDirs) {
     const sDir = path.join(pDir, "schemas");
     if (fsSync.existsSync(sDir)) schemasDirs.add(sDir);
     const pyDir = path.join(pDir, "python_script");
     if (fsSync.existsSync(pyDir)) pythonScriptDirs.add(pyDir);
+    const dsDir = path.join(pDir, "dataset");
+    if (fsSync.existsSync(dsDir)) datasetDirs.add(dsDir);
   }
   for (const rDir of runDirs) {
     const sDir = path.join(rDir, "schemas");
     if (fsSync.existsSync(sDir)) schemasDirs.add(sDir);
     const pyDir = path.join(rDir, "python_script");
     if (fsSync.existsSync(pyDir)) pythonScriptDirs.add(pyDir);
+    const dsDir = path.join(rDir, "dataset");
+    if (fsSync.existsSync(dsDir)) datasetDirs.add(dsDir);
+    if (fsSync.existsSync(rDir)) {
+      try {
+        const sub = fsSync.readdirSync(rDir, { withFileTypes: true });
+        for (const entry of sub) {
+          if (entry.isDirectory() && entry.name.endsWith("_feature_engineering")) {
+            pythonScriptDirs.add(path.join(rDir, entry.name));
+          }
+        }
+      } catch {}
+    }
   }
 
   if (affectedNodes.has("featureArchitectNode") || affectedNodes.has("modelTrainingCodeNode")) {
@@ -236,6 +251,20 @@ export async function deleteStepAndSuccessorFiles(
       },
       deletedItems
     );
+  }
+
+  if (shouldCleanFeatureEngineering) {
+    for (const dsDir of datasetDirs) {
+      console.info(`[RetryCleanup] Feature Engineering is affected: removing all files in dataset dir ${dsDir}`);
+      try {
+        const entries = await fs.readdir(dsDir, { withFileTypes: true });
+        for (const entry of entries) {
+          await safeDelete(path.join(dsDir, entry.name), deletedItems);
+        }
+      } catch (err: any) {
+        console.warn(`[RetryCleanup] Failed to empty dataset directory ${dsDir}:`, err?.message || err);
+      }
+    }
   }
 
   for (const pyDir of pythonScriptDirs) {

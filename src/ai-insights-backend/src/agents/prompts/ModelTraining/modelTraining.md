@@ -112,9 +112,8 @@ COPY . /workspace
 - Uses `network: host` under `build:` and `network_mode: host` to guarantee external internet and DNS connectivity during container builds and runs.
 - **CONTAINER SANDBOXING & VOLUME MOUNTING MANDATE**:
   - To test that the program is completely error-free without contaminating host project artifacts, DO NOT mount the project directory.
-  - Mount ONLY the `python_script` folder from the project directory (which contains `dataset.parquet`) as read-only:
-    - `"${HOST_PYTHON_SCRIPT_DIR}:/workspace/python_script:ro"`
-    - `"${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro"`
+  - Mount ONLY the dataset folder (`<projectName>/<latest_timestamp>/dataset`) as read-only:
+    - `"${HOST_DATASET_DIR}:/workspace/dataset:ro"`
   - All test execution runs exclusively inside the container's ephemeral writable layer. No data or run artifacts should be stored in any Docker volume or host project folder.
 - Sets working directory to `/workspace`. All project files reside directly in `/workspace` (copied via `COPY . /workspace` in `Dockerfile`). The container CLI entrypoint is `python main.py --out-dir /workspace`. In `main.py`, parse `--out-dir` (defaulting to `/workspace`).
 - **DO NOT** include top-level `version:` in `docker-compose.yml` (the version attribute is obsolete and deprecated in Docker Compose v2).
@@ -131,8 +130,7 @@ services:
       network: host
     network_mode: host
     volumes:
-      - "${HOST_PYTHON_SCRIPT_DIR}:/workspace/python_script:ro"
-      - "${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro"
+      - "${HOST_DATASET_DIR}:/workspace/dataset:ro"
     working_dir: /workspace
     environment:
       - PYTHONPATH=/workspace
@@ -148,8 +146,8 @@ services:
 ## COMPONENT SPECIFICATIONS
 
 ### 1. `data/data_loader.py`
-- **Primary Dataset Path**: ALWAYS check multiple paths to locate `dataset.parquet`: `python_script/dataset.parquet`, `/workspace/python_script/dataset.parquet`, `/workspace/<runTimestamp>/python_script/dataset.parquet`, `dataset.parquet`, or `/workspace/dataset.parquet`.
-- **Feature & Target Extraction**: The training configuration specifies the list of validated features (`features` / `features_list`) and the target column (`target_column` / `prediction_target_column`). The data loader MUST load `dataset.parquet`, extract all specified feature columns plus the target column (and date/timestamp column if temporal splitting), construct the modeling DataFrame containing these columns, and use that DataFrame for training and testing.
+- **Primary Dataset Path**: Strictly load `dataset.parquet` from `/workspace/dataset/dataset.parquet`.
+- **Feature & Target Extraction**: The training configuration specifies the list of validated features (`features` / `features_list`) and the target column (`target_column` / `prediction_target_column`). The data loader MUST load `/workspace/dataset/dataset.parquet`, extract all specified feature columns plus the target column (and date/timestamp column if temporal splitting), construct the modeling DataFrame containing these columns, and use that DataFrame for training and testing.
 - Supports both Parquet (via `duckdb` or `pandas` / `pyarrow`) and CSV fallback.
 - Validates that the target column exists. Drops rows where the target column is null.
 - **CRITICAL TARGET INTEGRITY (STRICT AGENTIC MANDATE)**:

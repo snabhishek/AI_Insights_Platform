@@ -119,13 +119,60 @@ export function getProjectSchemasDir(workspaceName: string, projectName: string,
   return resolveStoragePath(schemasRel);
 }
 
+export function computeProjectDatasourceRelativePath(workspaceName: string, projectName: string): string {
+  return path.posix.join(computeProjectRelativePath(workspaceName, projectName), "datasource");
+}
+
+export function getProjectDatasourceDir(workspaceName: string, projectName: string): string {
+  const dsRel = computeProjectDatasourceRelativePath(workspaceName, projectName);
+  return resolveStoragePath(dsRel);
+}
+
+export function computeProjectDatasetRelativePath(workspaceName: string, projectName: string, timestamp?: string): string {
+  return path.posix.join(computeProjectRunRelativePath(workspaceName, projectName, timestamp), "dataset");
+}
+
+export function getProjectDatasetDir(workspaceName: string, projectName: string, timestamp?: string): string {
+  const datasetRel = computeProjectDatasetRelativePath(workspaceName, projectName, timestamp);
+  return resolveStoragePath(datasetRel);
+}
+
 export function computeProjectPythonScriptRelativePath(workspaceName: string, projectName: string, timestamp?: string): string {
-  return path.posix.join(computeProjectRunRelativePath(workspaceName, projectName, timestamp), "python_script");
+  const safeProj = sanitizeFolderName(projectName || "default_project");
+  return path.posix.join(computeProjectRunRelativePath(workspaceName, projectName, timestamp), `${safeProj}_feature_engineering`);
+}
+
+export function computeProjectFeatureEngineeringRelativePath(workspaceName: string, projectName: string, timestamp?: string): string {
+  return computeProjectPythonScriptRelativePath(workspaceName, projectName, timestamp);
 }
 
 export function getProjectPythonScriptDir(workspaceName: string, projectName: string, timestamp?: string): string {
   const projRel = computeProjectPythonScriptRelativePath(workspaceName, projectName, timestamp);
   return resolveStoragePath(projRel);
+}
+
+export function getProjectFeatureEngineeringDir(workspaceName: string, projectName: string, timestamp?: string): string {
+  return getProjectPythonScriptDir(workspaceName, projectName, timestamp);
+}
+
+export function computeProjectModelTrainingRelativePath(workspaceName: string, projectName: string, timestamp?: string): string {
+  const safeProj = sanitizeFolderName(projectName || "default_project");
+  return path.posix.join(computeProjectRunRelativePath(workspaceName, projectName, timestamp), `${safeProj}_model_training`);
+}
+
+export function getProjectModelTrainingDir(workspaceName: string, projectName: string, timestamp?: string): string {
+  const rel = computeProjectModelTrainingRelativePath(workspaceName, projectName, timestamp);
+  return resolveStoragePath(rel);
+}
+
+export function computeProjectModelValidationRelativePath(workspaceName: string, projectName: string, timestamp?: string): string {
+  const safeProj = sanitizeFolderName(projectName || "default_project");
+  return path.posix.join(computeProjectRunRelativePath(workspaceName, projectName, timestamp), `${safeProj}_model_validation`);
+}
+
+export function getProjectModelValidationDir(workspaceName: string, projectName: string, timestamp?: string): string {
+  const rel = computeProjectModelValidationRelativePath(workspaceName, projectName, timestamp);
+  return resolveStoragePath(rel);
 }
 
 export function resolveStoragePath(relativePath: string): string {
@@ -169,7 +216,7 @@ export function ensureFileServerDirectories(): void {
             const target = path.join(projBase, pd.name);
             try {
               const sub = fs.readdirSync(target);
-              if (sub.length === 0 || (sub.length === 1 && sub[0] === "python_script" && fs.readdirSync(path.join(target, "python_script")).length === 0)) {
+              if (sub.length === 0 || (sub.length === 1 && (sub[0].endsWith("_feature_engineering") || sub[0] === "python_script") && fs.readdirSync(path.join(target, sub[0])).length === 0)) {
                 fs.rmSync(target, { recursive: true, force: true });
               }
             } catch {}

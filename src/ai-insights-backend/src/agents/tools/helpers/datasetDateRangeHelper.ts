@@ -98,58 +98,8 @@ export async function extractDatasetDateRange(
       null;
   }
 
-  const candidateDatasetPaths = [
-    path.join(runDir, "python_scripts", "dataset.parquet"),
-    path.join(runDir, "python_script", "dataset.parquet"),
-    path.join(runDir, "dataset.parquet"),
-    path.join(projectDir, "python_scripts", "dataset.parquet"),
-    path.join(projectDir, "python_script", "dataset.parquet"),
-    path.join(projectDir, "dataset.parquet"),
-    path.join(runDir, "python_scripts", "feature_validation.parquet"),
-    path.join(runDir, "python_script", "feature_validation.parquet"),
-    path.join(runDir, "feature_validation.parquet"),
-    path.join(runDir, "python_scripts", "feature_selection.parquet"),
-    path.join(runDir, "python_script", "feature_selection.parquet"),
-    path.join(runDir, "feature_selection.parquet"),
-    path.join(runDir, "python_scripts", "feature_extraction.parquet"),
-    path.join(runDir, "python_script", "feature_extraction.parquet"),
-    path.join(runDir, "feature_extraction.parquet"),
-    path.join(runDir, "python_scripts", "feature_transformation.parquet"),
-    path.join(runDir, "python_script", "feature_transformation.parquet"),
-    path.join(runDir, "feature_transformation.parquet"),
-    path.join(runDir, "python_scripts", "feature_created.parquet"),
-    path.join(runDir, "python_script", "feature_created.parquet"),
-    path.join(runDir, "feature_created.parquet"),
-    path.join(projectDir, "feature_validation.parquet"),
-    path.join(projectDir, "python_scripts", "feature_validation.parquet"),
-    path.join(projectDir, "python_script", "feature_validation.parquet"),
-  ];
-
-  let datasetPath: string | null = null;
-  for (const cand of candidateDatasetPaths) {
-    if (fsSync.existsSync(cand)) {
-      datasetPath = cand;
-      break;
-    }
-  }
-
-  if (!datasetPath && fsSync.existsSync(projectDir)) {
-    try {
-      const subEntries = fsSync.readdirSync(projectDir, { withFileTypes: true });
-      const tsDirs = subEntries
-        .filter((d) => d.isDirectory())
-        .map((d) => d.name)
-        .sort((a, b) => b.localeCompare(a));
-      for (const ts of tsDirs) {
-        const p1 = path.join(projectDir, ts, "python_scripts", "dataset.parquet");
-        const p2 = path.join(projectDir, ts, "python_script", "dataset.parquet");
-        const p3 = path.join(projectDir, ts, "dataset.parquet");
-        if (fsSync.existsSync(p1)) { datasetPath = p1; break; }
-        if (fsSync.existsSync(p2)) { datasetPath = p2; break; }
-        if (fsSync.existsSync(p3)) { datasetPath = p3; break; }
-      }
-    } catch {}
-  }
+  const primaryDatasetPath = path.join(runDir, "dataset", "dataset.parquet");
+  let datasetPath: string | null = fsSync.existsSync(primaryDatasetPath) ? primaryDatasetPath : null;
 
   let actualTimeColumn: string | null = null;
   let minDateStr: string | null = null;

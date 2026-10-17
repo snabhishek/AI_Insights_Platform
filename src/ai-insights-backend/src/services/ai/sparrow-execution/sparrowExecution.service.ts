@@ -47,20 +47,28 @@ export function inspectScriptArtifacts(root: string, runTimestamp: string): Scri
   const visit = (dir: string, depth: number) => {
     if (depth > 6) return;
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.isSymbolicLink() || ["docker_logs", "sparrow", "node_modules", "__pycache__", ".git"].includes(entry.name)) continue;
+      if (entry.isSymbolicLink() || ["docker_logs", "sparrow", "chat_execution", "node_modules", "__pycache__", ".git"].includes(entry.name)) continue;
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) visit(full, depth + 1);
       else if (/\.(py|json|ya?ml|txt|parquet|joblib|pkl|csv)$/i.test(entry.name)) {
-        artifacts.push({ path: path.relative(root, full).replace(/\\/g, "/"), bytes: fs.statSync(full).size });
+        artifacts.push({ path: path.posix.join("project", path.relative(runDir, full).replace(/\\/g, "/")), bytes: fs.statSync(full).size });
         if (artifacts.length > 1000) throw new Error("Project artifact inventory exceeds 1000 entries; narrow the training run.");
       }
     }
   };
   visit(runDir, 0);
+  const datasourceDir = path.join(root, "datasource");
+  if (fs.existsSync(datasourceDir)) {
+    for (const entry of fs.readdirSync(datasourceDir, { withFileTypes: true })) {
+      if (entry.isFile() && /\.(duckdb|db|parquet|csv|arrow|tsv|xlsx?)$/i.test(entry.name)) {
+        artifacts.push({ path: path.posix.join("datasource", entry.name), bytes: fs.statSync(path.join(datasourceDir, entry.name)).size });
+      }
+    }
+  }
   // The project database is shared by stages and may sit beside timestamped runs.
   for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
     if (entry.isFile() && /\.(duckdb|db|parquet|csv|arrow)$/i.test(entry.name)) {
-      artifacts.push({ path: entry.name, bytes: fs.statSync(path.join(root, entry.name)).size });
+      artifacts.push({ path: path.posix.join("datasource", entry.name), bytes: fs.statSync(path.join(root, entry.name)).size });
     }
   }
   return artifacts;
@@ -146,12 +154,22 @@ export class SparrowExecutionService implements ISparrowExecutionService {
     };
     fs.writeFileSync(requestFile, JSON.stringify(request, null, 2));
     const context: ScriptTaskContext = { request, projectName, runTimestamp, artifacts,
-      requestFile: `/workspace/${relativeDir}/request.json`, outputFile: `/workspace/${relativeDir}/result.json`, outputDirectory: `/workspace/${relativeDir}` };
+      requestFile: `/workspace/chat_execution/${executionId}/request.json`,
+      outputFile: `/workspace/chat_execution/${executionId}/result.json`,
+      outputDirectory: `/workspace/chat_execution/${executionId}` };
     const listed = new Set(artifacts.map(artifact => artifact.path));
     let readBytes = 0;
     const read = (relative: string) => {
       if (!listed.has(relative) || !/\.(py|json|ya?ml|txt)$/i.test(relative)) throw new Error("Choose a listed text artifact from the active project run.");
-      const full = insideProject(root, relative);
+      let full: string;
+      if (relative.startsWith("project/")) {
+        full = path.join(runRoot, relative.slice("project/".length));
+      } else if (relative.startsWith("datasource/")) {
+        const inDs = path.join(root, "datasource", relative.slice("datasource/".length));
+        full = fs.existsSync(inDs) ? inDs : path.join(root, relative.slice("datasource/".length));
+      } else {
+        full = insideProject(root, relative);
+      }
       const bytes = fs.statSync(full).size;
       if (bytes > 200000 || (readBytes += bytes) > 800000) throw new Error("Artifact read exceeds the worker's context budget.");
       return fs.readFileSync(full, "utf8");
@@ -172,7 +190,7 @@ export class SparrowExecutionService implements ISparrowExecutionService {
           report("Executing the Sparrow runner in Docker; project inputs are read-only and outputs stay in this execution folder.");
           const result = await (this.deps.execute || executePythonScript)(scriptFile, generated.script, request.projectId, runTimestamp,
             { projectService: this.projectService } as IngestionServices, undefined, generated.requirements, [], undefined,
-            { projectRootDir: root, effectiveTimestamp: runTimestamp, sessionId: executionId, isolated: true, onLog: report, signal: sparrowRunContext.getStore()?.signal });
+            { projectRootDir: root, effectiveTimestamp: runTimestamp, sessionId: executionId, isolated: true, mountMode: "chat_execution", onLog: report, signal: sparrowRunContext.getStore()?.signal });
           throwIfSparrowStopped();
           logFilePath = result.logFilePath || "";
           if (!result.success) throw new Error((result.stderr || result.stdout || "Docker execution failed.").slice(-16000));

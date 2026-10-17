@@ -246,7 +246,10 @@ export async function programRectificationNode(
       runTimestampVal,
       services,
       state.connectorId,
-      stagePackages
+      stagePackages,
+      [],
+      undefined,
+      { mountMode: "feature_engineering" }
     );
 
     lastStdout = res.stdout;
