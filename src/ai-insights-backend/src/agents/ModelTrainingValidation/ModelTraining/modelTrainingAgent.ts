@@ -66,7 +66,7 @@ export class ModelTrainingAgent {
 
     const projectDir = getProjectDirectory({ projectId, workspaceName, projectName, runTimestamp });
     const runDir = path.join(projectDir, runTimestamp);
-    const pythonProjectName = `${projectName}_model_training`;
+    const pythonProjectName = `${sanitizeFolderName(projectName)}_model_training`;
     const modelTrainingDir = path.join(runDir, pythonProjectName);
 
     let persistedAgentState: any = {};
@@ -539,7 +539,7 @@ export class ModelTrainingAgent {
           await logMilestoneThinking(
             services,
             "Model Training",
-            `Executing container test run for generated code without mounting project folder (mounting python_script only for dataset)...`
+            `Executing container test run for generated code in model training container (mounting dataset directory)...`
           );
 
           const execResult = await executePythonScript(
@@ -552,7 +552,7 @@ export class ModelTrainingAgent {
             accumulatedPackages,
             extraArgs,
             resourceLimits,
-            { mountMode: "python_script_only" }
+            { mountMode: "model_training", serviceName: "model-training" }
           );
 
           lastExecResult = execResult;
@@ -960,7 +960,7 @@ export class ModelTrainingAgent {
           accumulatedPackages,
           extraArgs,
           resourceLimits,
-          { mountMode: "project", serviceName: "model-training" }
+          { mountMode: "model_training", serviceName: "model-training" }
         );
 
         lastExecResult = execResult;

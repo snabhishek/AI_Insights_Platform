@@ -69,7 +69,8 @@ function loadFeatureValidationReportIfPresent(
   pythonScriptDir: string,
   currentOutput: Record<string, unknown>
 ): Record<string, unknown> {
-  const reportPath = path.join(pythonScriptDir, ARTIFACT_FEATURE_VALIDATION_REPORT);
+  const datasetDir = path.join(path.dirname(pythonScriptDir), "dataset");
+  const reportPath = path.join(datasetDir, ARTIFACT_FEATURE_VALIDATION_REPORT);
   const fileExists = fs.existsSync(reportPath);
   if (!fileExists) {
     return currentOutput;

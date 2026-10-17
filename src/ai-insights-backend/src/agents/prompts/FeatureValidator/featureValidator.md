@@ -94,17 +94,17 @@ if __name__ == '__main__':
     import sys
 
     parser = argparse.ArgumentParser(description='Feature engineering pipeline runner')
-    parser.add_argument('--db-path', type=str, required=True, help='Path to directory with CSV/data files')
+    parser.add_argument('--db-path', type=str, default='/workspace/datasource', help='Path to directory with CSV/data files')
     parser.add_argument('--split', type=str, default='train', choices=['train', 'val', 'test'])
-    parser.add_argument('--out-dir', type=str, default=None, help='Directory to save/load transformers and outputs')
+    parser.add_argument('--out-dir', type=str, default='/workspace/dataset', help='Directory to save/load transformers and outputs')
     parser.add_argument('--output-path', type=str, default=None, help='Output path for final dataset (Parquet)')
     parser.add_argument('--metadata-path', type=str, default=None, help='Path to save metadata YAML')
     parser.add_argument('--features-path', type=str, default=None, help='Path to features parquet/CSV')
     parser.add_argument('--report-path', type=str, default=None, help='Path to validation report JSON')
     args, _ = parser.parse_known_args()
-    db_path = args.db_path
+    db_path = args.db_path if args.db_path is not None else '/workspace/datasource'
     split = args.split
-    out_dir = args.out_dir if args.out_dir is not None else '.'
+    out_dir = args.out_dir if args.out_dir is not None else '/workspace/dataset'
 
     feature_created_path = os.path.join(out_dir, 'feature_created.parquet')
     feature_transformation_path = os.path.join(out_dir, 'feature_transformation.parquet')
