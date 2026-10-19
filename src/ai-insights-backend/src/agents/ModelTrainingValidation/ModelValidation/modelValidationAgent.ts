@@ -273,56 +273,12 @@ export class ModelValidationAgent {
       throw new Error(`[ModelValidationAgent] Finalized dataset artifact was not found at ${datasetPath}. 'dataset.parquet' is required.`);
     }
 
-    let trainingConfig: any = {};
-    const configCandidates = [
-      path.join(modelTrainingDir, "configs", "training_config.yaml"),
-      path.join(modelTrainingDir, "training_config.yaml"),
-      (state.trainingConfiguration as any)?.contractPath,
-    ];
-
-    const schemasDir = path.join(runDir, "schemas");
-    if (fs.existsSync(schemasDir)) {
-      try {
-        const yamlFiles = fs.readdirSync(schemasDir).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
-        const contractYaml = yamlFiles.find((f) => f.toLowerCase().includes("training_job_contract") || f.toLowerCase().includes("contract")) || yamlFiles[0];
-        if (contractYaml) {
-          configCandidates.push(path.join(schemasDir, contractYaml));
-        }
-      } catch {}
+    const foundConfig = path.join(modelTrainingDir, "configs", "training_config.yaml");
+    const parsedConfig = yaml.load(fs.readFileSync(foundConfig, "utf-8"));
+    if (!parsedConfig || typeof parsedConfig !== "object" || Array.isArray(parsedConfig)) {
+      throw new Error(`[ModelValidationAgent] Training configuration must be a YAML object at ${foundConfig}.`);
     }
-
-    const foundConfig = configCandidates.find((c) => c && fs.existsSync(c));
-    if (!foundConfig && !(state.trainingConfiguration as any)?.configuration) {
-      throw new Error(`[ModelValidationAgent] Training configuration contract not found at ${path.join(modelTrainingDir, "configs", "training_config.yaml")}. Training configuration is required.`);
-    }
-
-    if (foundConfig) {
-      try {
-        trainingConfig = yaml.load(fs.readFileSync(foundConfig, "utf-8")) || {};
-      } catch (e: any) {
-        throw new Error(`[ModelValidationAgent] Failed to read training configuration contract at ${foundConfig}: ${e?.message || e}`);
-      }
-    } else {
-      trainingConfig = (state.trainingConfiguration as any)?.configuration || {};
-    }
-
-    if (!trainingConfig?.upstream_artifacts?.validated_features && !trainingConfig?.validated_features) {
-      if (fs.existsSync(schemasDir)) {
-        try {
-          const yamlFiles = fs.readdirSync(schemasDir).filter((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
-          const contractYaml = yamlFiles.find((f) => f.toLowerCase().includes("training_job_contract") || f.toLowerCase().includes("contract"));
-          if (contractYaml) {
-            const schemaContract = yaml.load(fs.readFileSync(path.join(schemasDir, contractYaml), "utf-8")) as any;
-            if (schemaContract?.upstream_artifacts) {
-              trainingConfig.upstream_artifacts = {
-                ...(schemaContract.upstream_artifacts || {}),
-                ...(trainingConfig.upstream_artifacts || {}),
-              };
-            }
-          }
-        } catch {}
-      }
-    }
+    const trainingConfig = parsedConfig as Record<string, any>;
 
     const validatedFeatures = this.extractValidatedFeatures(trainingConfig, state, runDir);
     if (!validatedFeatures || validatedFeatures.length === 0) {
@@ -332,19 +288,19 @@ export class ModelValidationAgent {
     }
 
     let trainingReport: any = {};
-    const reportCandidates = [
-      path.join(modelTrainingDir, "reports", "model_training_report.json"),
-      path.join(modelTrainingDir, "model_training_report.json"),
-      path.join(runDir, "model_training_report.json"),
-    ];
-    const reportPathFound = reportCandidates.find((rp) => fs.existsSync(rp));
-    if (!reportPathFound) {
+    const reportPathFound = path.join(modelTrainingDir, "model_training_report.json");
+    if (!fs.existsSync(reportPathFound)) {
       throw new Error(`[ModelValidationAgent] Model training report not found. Model training must complete successfully before validation.`);
     }
     try {
       trainingReport = JSON.parse(fs.readFileSync(reportPathFound, "utf-8")) || {};
     } catch (e: any) {
       throw new Error(`[ModelValidationAgent] Failed to parse model training report at ${reportPathFound}: ${e?.message || e}`);
+    }
+    if (!Array.isArray(trainingReport.models_evaluated) || trainingReport.models_evaluated.some(
+      (model: any) => typeof model?.model_id !== "string" || typeof model?.artifact_path !== "string" || !Array.isArray(model?.exports)
+    )) {
+      throw new Error("[ModelValidationAgent] Training report is missing per-model export metadata. Regenerate Model Training before validation.");
     }
 
     if (!fs.existsSync(modelsDir)) {
@@ -610,7 +566,7 @@ export class ModelValidationAgent {
       `2. Extract strictly the ${validatedFeatures.length} validated features: ${validatedFeatures.join(", ")}.`,
       `3. Construct the model input matrix X using strictly these validated feature columns (along with target '${targetCol}' and time '${timeCol}' where applicable).`,
       `4. DO NOT include arbitrary, unvalidated, or target-leakage columns in X that were not present in the training partition.`,
-      `5. Align features strictly with 'preprocessor.joblib' or candidate estimator expectations (estimator.n_features_in_) so that feature dimensions match identically to Model Training.`,
+      `5. Load the primary export and required preprocessing assets from each model's exports and inference manifest in model_training_report.json. Align input schema, feature order and dtypes with that runtime. Never infer file extensions or refit preprocessing.`,
       `--- Prediction Objective ---`,
       `Objective Start Date: ${predictionStartDate}`,
       `Forecast Horizon: ${horizon} periods`,
@@ -621,7 +577,7 @@ export class ModelValidationAgent {
         : [`Validate all candidate model artifacts in artifacts/models/`]),
       `--- Output Requirements ---`,
       `1. Write the executable validation script to '${runTimestamp}/${safeProjectName}_model_validation/validation_runner.py'.`,
-      `2. The script must execute inference across all candidate model joblib artifacts, apply preprocessor transformation, and compute metrics.`,
+      `2. Execute inference once per candidate using its configured primary export, the declared inference runtime and its required assets. Do not glob Joblib files, treat alternate formats as separate models, or apply preprocessing twice when it is embedded in the artifact. Compute metrics from the actual runtime outputs.`,
       `3. In Future Prediction Mode (${mode === "future_prediction"}), generate forward periods without fake past actuals, benchmark using training test scores, and set actualTotal/difference to null.`,
       `In future_prediction mode, forecast every period from ${predictionStartDate} for all ${horizon} periods, including gaps before today's date. Calendar-past periods without observations are still forecasts. Advance sequentially and recursively update lag/rolling features from prior predictions when required by the trained model; do not jump directly to a late requested period with stale lags. Never fabricate actuals or unavailable future covariates; report unsupported inference explicitly.`,
       `4. In Backtesting Mode (${mode === "backtesting"}), slice evaluation records starting from ${predictionStartDate}, compare against ground-truth actuals, and compute deterministic metrics (F1/Accuracy or WAPE/MAE/RMSE).`,
@@ -833,7 +789,7 @@ export class ModelValidationAgent {
         extraArgs.join(" "),
         `--- Validated Features ---`,
         `Validated Features (${validatedFeatures.length}): ${validatedFeatures.join(", ")}`,
-        `Diagnose the root cause (e.g. missing package dependencies, feature count/preprocessing mismatch such as preprocessor.joblib vs validation features, or model inference exceptions) and advise on exact code modifications to '${runTimestamp}/${safeProjectName}_model_validation/validation_runner.py'. If packages are missing, list them in requiredPackages.`,
+        `Diagnose the root cause (e.g. missing runtime dependencies, a mismatch with the declared preprocessing assets or input schema, or model inference exceptions) and advise on exact code modifications to '${runTimestamp}/${safeProjectName}_model_validation/validation_runner.py'. If packages are missing, list them in requiredPackages.`,
       ].filter(Boolean).join("\n\n");
 
       const rectifierFallback: ValidationRectifierResult = {
@@ -893,7 +849,7 @@ export class ModelValidationAgent {
             const regenResult = await invokeAgentJson<ValidationCodingAgentResult>(
               "modelValidationCode",
               model,
-              `PREVIOUS EXECUTION FAILED:\n${validationHealth.reason || ""}\n${failedModelDetails}\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nValidated Features (${validatedFeatures.length}): ${validatedFeatures.join(", ")}\n\nFix the issues, ensure feature dimensions align with preprocessor.joblib and estimators, and regenerate the validation_runner.py.`,
+              `PREVIOUS EXECUTION FAILED:\n${validationHealth.reason || ""}\n${failedModelDetails}\n${execResult.stderr || execResult.stdout || "Report was not generated."}\n\nValidated Features (${validatedFeatures.length}): ${validatedFeatures.join(", ")}\n\nFix the issues, align inference with the declared primary exports, preprocessing assets and input schema, and regenerate the validation_runner.py.`,
               codingFallback,
               services,
               {
@@ -1104,6 +1060,10 @@ export class ModelValidationAgent {
       return isNaN(parsed) ? null : parsed;
     };
 
+    const trainedModelArtifacts = new Map<string, string>();
+    for (const model of trainingReport.models_evaluated) {
+      trainedModelArtifacts.set(model.model_id, model.artifact_path);
+    }
     const normalizedCandidates: CandidateModelValidationRun[] = rawCandidatesList.map((candSummary: any) => {
       const modelId = candSummary.model_id || candSummary.modelId;
       if (!modelId) {
@@ -1188,7 +1148,7 @@ export class ModelValidationAgent {
         },
         evaluationRecordCount: typeof m.evaluationRecordCount === "number" ? m.evaluationRecordCount : (rawReport?.total_records || 0),
         actualDataCoverage: typeof m.actualDataCoverage === "number" ? m.actualDataCoverage : null,
-        modelArtifactPath: m.modelArtifactPath || `artifacts/models/${modelId}.joblib`,
+        modelArtifactPath: trainedModelArtifacts.get(modelId),
         error: m.error || m.status_message,
       };
     });

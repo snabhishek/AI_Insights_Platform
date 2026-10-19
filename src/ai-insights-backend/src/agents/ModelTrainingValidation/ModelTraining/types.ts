@@ -1,3 +1,5 @@
+import { ModelExportArtifact, ModelExportCapabilities } from "../TrainingConfiguration/modelExportContract";
+
 export interface CandidateModelRun {
   model_id: string;
   displayName?: string;
@@ -9,6 +11,10 @@ export interface CandidateModelRun {
   score?: number;
   error?: string;
   artifact?: string;
+  export_capabilities?: ModelExportCapabilities;
+  default_format?: string;
+  exports?: ModelExportArtifact[];
+  inference_manifest_path?: string;
   plots?: Record<string, string>;
 }
 
@@ -46,4 +52,5 @@ export interface ModelTrainingAgentOutput {
   hasDateColumn?: boolean;
   dateColumnName?: string;
   splitEndDate?: string;
+  sourceContractHash?: string;
 }

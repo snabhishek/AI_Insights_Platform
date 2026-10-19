@@ -2,6 +2,7 @@ import * as fs from 'fs/promises';
 import * as fsSync from 'fs';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { TrainingConfigValidator } from '../../ModelTrainingValidation/TrainingConfiguration/trainingConfigValidator';
 import {
   getProjectDir,
   getProjectSchemasDir,
@@ -1111,7 +1112,6 @@ export async function saveModularTrainingJobContract(
       explainability: false,
       training_config: true,
     },
-    serialization_format: "onnx",
     explainability_method: "none",
   };
 
@@ -1199,7 +1199,26 @@ export async function saveModularTrainingJobContract(
   return { trainingJobContractPath: contractPath, contractPath };
 }
 
-export const saveModularTrainingConfigContract = saveModularTrainingJobContract;
+export async function saveModularTrainingConfigContract(
+  workspaceName: string,
+  projectName: string,
+  configuration: Record<string, any>,
+  runTimestamp?: string
+): Promise<{ contractPath: string; configuration: Record<string, any> }> {
+  if (!workspaceName?.trim() || !projectName?.trim() || !runTimestamp?.trim()) {
+    throw new Error("Saving Training Configuration requires workspace, project, and active run timestamp.");
+  }
+  const validation = TrainingConfigValidator.validate(configuration);
+  if (!validation.isValid) throw new Error(`Invalid Training Configuration:\n${validation.errors.join("\n")}`);
+
+  const useCaseSlug = sanitizeName(projectName).toLowerCase().replace(/[\s-]+/g, "_");
+  const targetDir = getProjectSchemasDir(workspaceName, projectName, runTimestamp);
+  const contractPath = path.resolve(targetDir, `${useCaseSlug}_training_job_contract_${runTimestamp}.yaml`);
+  const content = yaml.dump(configuration, { indent: 2, lineWidth: -1, noRefs: true });
+  await fs.mkdir(targetDir, { recursive: true });
+  await fs.writeFile(contractPath, content, "utf-8");
+  return { contractPath, configuration: yaml.load(content) as Record<string, any> };
+}
 
 export async function syncTrainingConfigSplitDate(
   workspaceName: string,
@@ -1232,28 +1251,19 @@ export async function syncTrainingConfigSplitDate(
   targetState.splitDate = splitVal;
   targetState.splitEndDate = splitVal;
 
+  if (!contractData.split) throw new Error("The active training contract is missing its split configuration.");
+  contractData.split.split_date = splitVal;
+  if (contractData.split.temporal) contractData.split.temporal.train_end = splitVal;
+  contractData.splitDate = splitVal;
+  contractData.splitEndDate = splitVal;
+  await fs.writeFile(savedContractPath, yaml.dump(contractData, { noRefs: true }), "utf-8");
+
   const updatedTC = {
     ...existingTC,
     splitDate: splitVal,
     splitEndDate: splitVal,
     updatedAt: new Date().toISOString(),
-    configuration: {
-      ...(existingTC.configuration || {}),
-      splitDate: splitVal,
-      splitEndDate: splitVal,
-      split: {
-        ...(existingTC.configuration?.split || {}),
-        split_date: splitVal,
-        ...(existingTC.configuration?.split?.temporal
-          ? {
-              temporal: {
-                ...existingTC.configuration.split.temporal,
-                train_end: splitVal,
-              },
-            }
-          : {}),
-      },
-    },
+    configuration: contractData,
   };
   targetState.trainingConfiguration = updatedTC;
 
@@ -1261,14 +1271,6 @@ export async function syncTrainingConfigSplitDate(
     targetState.stageOutputs = {};
   }
   targetState.stageOutputs.trainingConfigurationNode = updatedTC;
-  if (!contractData.split) contractData.split = {};
-  contractData.split.split_date = splitVal;
-  if (contractData.split.temporal) {
-    contractData.split.temporal.train_end = splitVal;
-  }
-  contractData.splitDate = splitVal;
-  contractData.splitEndDate = splitVal;
-  await fs.writeFile(savedContractPath, yaml.dump(contractData, { noRefs: true }), "utf-8");
 
   targetState.trainingConfiguration.contractPath = savedContractPath;
   targetState.trainingConfiguration.contractFileName = path.basename(savedContractPath);
@@ -1284,17 +1286,8 @@ export async function syncTrainingConfigSplitDate(
         if (entry.isDirectory() && entry.name.includes("_model_training")) {
           const pyConfigPath = path.join(runDir, entry.name, "configs", "training_config.yaml");
           if (fsSync.existsSync(pyConfigPath)) {
-            const pyContent = await fs.readFile(pyConfigPath, "utf-8");
-            const pyParsed = (yaml.load(pyContent) as Record<string, any>) || {};
-            if (pyParsed && typeof pyParsed === "object") {
-              if (!pyParsed.split) pyParsed.split = {};
-              pyParsed.split.split_date = splitVal;
-              if (pyParsed.split.temporal) {
-                pyParsed.split.temporal.train_end = splitVal;
-              }
-              await fs.writeFile(pyConfigPath, yaml.dump(pyParsed, { noRefs: true }), "utf-8");
-              console.info(`[syncTrainingConfigSplitDate] Synchronized split_date in python config: ${pyConfigPath}`);
-            }
+            await fs.writeFile(pyConfigPath, yaml.dump(contractData, { noRefs: true }), "utf-8");
+            console.info(`[syncTrainingConfigSplitDate] Synchronized training contract in python config: ${pyConfigPath}`);
           }
         }
       }
