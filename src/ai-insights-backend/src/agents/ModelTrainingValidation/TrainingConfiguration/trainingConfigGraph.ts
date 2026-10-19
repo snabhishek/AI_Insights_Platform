@@ -358,12 +358,12 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
     throw new Error("Training configuration persistence requires a project service, project ID, and active run timestamp.");
   }
   const pWs = await services.projectService.getProjectWithWorkspace(projectId);
-  if (!pWs?.project?.name || !pWs.workspaceName) {
+  if (!pWs?.project?.projectName || !pWs.workspaceName) {
     throw new Error(`Project and workspace metadata is unavailable for training configuration project "${projectId}".`);
   }
   const { contractPath, configuration } = await ContractPersistence.saveModularTrainingConfigContract(
     pWs.workspaceName,
-    pWs.project.name,
+    pWs.project.projectName,
     finalConfig,
     runTimestamp
   );

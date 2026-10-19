@@ -149,7 +149,7 @@ function extractFormSchemaFromState(state: any, project: any): FormSchema | null
       return {
         sourceId: primarySourceId,
         projectId: project.id,
-        projectName: project.name,
+        projectName: project.projectName,
         filterGroups: groups,
         forms: groups,
       };
@@ -401,7 +401,7 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
                   const fetchedSchema: FormSchema = {
                     sourceId: json.schema.sourceId || currentProject!.dataSources?.[0] || "default_source",
                     projectId: projectId,
-                    projectName: currentProject!.name,
+                    projectName: currentProject!.projectName,
                     filterGroups: json.schema.filterGroups || json.schema.forms || [],
                     forms: json.schema.forms || json.schema.filterGroups || [],
                   };

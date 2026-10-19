@@ -72,7 +72,7 @@ test("contract retrieval and split-date API synchronization use the same persist
   const { state, contractPath } = await fixture(t);
   let persisted: unknown;
   const projectService = {
-    getProjectWithWorkspace: async () => ({ workspaceName, project: { name: projectName, agentState: state } }),
+    getProjectWithWorkspace: async () => ({ workspaceName, project: { name: projectName, projectName, agentState: state } }),
     updateAgentState: async (_id: string, value: unknown) => { persisted = value; },
   } as unknown as ProjectService;
   const service = new TrainingConfigService(projectService);

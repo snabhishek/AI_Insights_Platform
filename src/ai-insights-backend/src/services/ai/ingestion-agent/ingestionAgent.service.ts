@@ -526,9 +526,9 @@ export class IngestionAgentService implements IIngestionAgentService {
       if (effectiveProjectId) {
         try {
           pWs = await this.projectService.getProjectWithWorkspace(effectiveProjectId);
-          if (pWs?.project?.name) {
+          if (pWs?.project?.projectName) {
             registerProjectMetadata(effectiveProjectId, {
-              projectName: pWs.project.name,
+              projectName: pWs.project.projectName,
               workspaceName: pWs.workspaceName,
               folderPath: pWs.project.folderPath,
             });
@@ -633,8 +633,8 @@ export class IngestionAgentService implements IIngestionAgentService {
       if (isContinuing) {
         if (savedAgentState?.runTimestamp && String(savedAgentState.runTimestamp).trim().length > 0) {
           activeRunTimestamp = String(savedAgentState.runTimestamp).trim();
-        } else if (pWs?.project?.name && pWs?.workspaceName) {
-          const latestOnDisk = getLatestProjectRunTimestamp(pWs.workspaceName, pWs.project.name);
+        } else if (pWs?.project?.projectName && pWs?.workspaceName) {
+          const latestOnDisk = getLatestProjectRunTimestamp(pWs.workspaceName, pWs.project.projectName);
           if (latestOnDisk) {
             activeRunTimestamp = latestOnDisk;
           }
@@ -649,12 +649,12 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       if (options?.action === "retry") {
         const retryTarget = mapRetryStepToInterruptNode(options.step);
-        if (pWs?.project?.name && pWs?.workspaceName) {
+        if (pWs?.project?.projectName && pWs?.workspaceName) {
           try {
             await deleteStepAndSuccessorFiles({
               projectId: effectiveProjectId,
               workspaceName: pWs.workspaceName,
-              projectName: pWs.project.name,
+              projectName: pWs.project.projectName,
               folderPath: pWs.project.folderPath,
               runTimestamp: activeRunTimestamp,
               targetStep: options.step || retryTarget || "",
@@ -668,11 +668,11 @@ export class IngestionAgentService implements IIngestionAgentService {
 
       if (pWs && pWs.project && pWs.workspaceName) {
         try {
-          await ensureProjectRunFolder(pWs.workspaceName, pWs.project.name, activeRunTimestamp);
+          await ensureProjectRunFolder(pWs.workspaceName, pWs.project.projectName, activeRunTimestamp);
           await createProjectSchemaFile(
             pWs.workspaceName,
             {
-              name: pWs.project.name,
+              name: pWs.project.projectName,
               domain: pWs.project.domain,
               subDomain: pWs.project.subDomain,
               useCase: pWs.project.useCase,
@@ -691,6 +691,8 @@ export class IngestionAgentService implements IIngestionAgentService {
         ...latestGraphStateValues,
         connectorId,
         projectId: options?.projectId,
+        ...(pWs?.project?.projectName ? { projectName: pWs.project.projectName } : {}),
+        ...(pWs?.workspaceName ? { workspaceName: pWs.workspaceName } : {}),
         userPrompt: userPrompt || latestGraphStateValues.userPrompt || savedAgentState?.userPrompt || meta?.userPrompt || "",
         status: "In-Progress",
         summary: options?.action === "resume"
@@ -734,7 +736,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         traceHelper: this.traceHelper,
         agentThinkingService: this.agentThinkingService,
         projectId: options?.projectId,
-        projectName: pWs?.project?.name,
+        projectName: pWs?.project?.projectName,
         workspaceName: pWs?.workspaceName,
         folderPath: pWs?.project?.folderPath,
         pipeline: getPipelineForSubstep(options?.action === "resume" ? (resumeTargetStep || options?.step) : options?.step) || "Data Ingestion",
@@ -1125,7 +1127,7 @@ export class IngestionAgentService implements IIngestionAgentService {
           }
           await syncTrainingConfigSplitDate(
             pWs.workspaceName || "DefaultWorkspace",
-            pWs.project.name,
+            pWs.project.projectName!,
             resolvedSplit,
             approvedAgentState,
             activeRunTimestamp

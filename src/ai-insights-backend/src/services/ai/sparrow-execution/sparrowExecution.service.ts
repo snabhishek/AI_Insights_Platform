@@ -133,7 +133,7 @@ export class SparrowExecutionService implements ISparrowExecutionService {
     if (!project) throw new Error("Execution project does not exist.");
     const workspace = await this.projectService.getProjectWithWorkspace(request.projectId);
     if (!workspace?.workspaceName) throw new Error("Resolve the project's workspace before script execution.");
-    const projectName = project.projectName || project.name;
+    const projectName = project.projectName!;
     const root = this.deps.resolveRoot?.(project, workspace.workspaceName) || getProjectDir(workspace.workspaceName, projectName);
     const runTimestamp = project.agentState?.runTimestamp || getLatestProjectTimestamp(workspace.workspaceName, projectName);
     if (!runTimestamp) throw new Error("The project has no training/data run available for script execution.");

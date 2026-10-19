@@ -475,7 +475,7 @@ export async function executePythonScript(
       const pWs = await services.projectService.getProjectWithWorkspace(projectId);
       if (pWs) {
         workspaceName = pWs.workspaceName || workspaceName;
-        projectName = pWs.project.name || projectName;
+        projectName = pWs.project.projectName!;
       }
     } catch (err: any) {
       console.log(err);

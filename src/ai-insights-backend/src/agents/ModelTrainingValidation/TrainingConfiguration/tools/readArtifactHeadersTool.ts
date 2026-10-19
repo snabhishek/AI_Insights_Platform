@@ -35,9 +35,9 @@ export function createReadArtifactHeadersTool(services: IngestionServices, runTi
         try {
           const pWs = await services.projectService.getProjectWithWorkspace(services.projectId);
           if (pWs?.project) {
-            const schemasDir = getProjectSchemasDir(pWs.workspaceName || "DefaultWorkspace", pWs.project.name, runTimestamp);
+            const schemasDir = getProjectSchemasDir(pWs.workspaceName || "DefaultWorkspace", pWs.project.projectName!, runTimestamp);
             candidatePaths.push(path.join(schemasDir, safeBasename));
-            const globalSchemasDir = getProjectSchemasDir(pWs.workspaceName || "DefaultWorkspace", pWs.project.name);
+            const globalSchemasDir = getProjectSchemasDir(pWs.workspaceName || "DefaultWorkspace", pWs.project.projectName!);
             candidatePaths.push(path.join(globalSchemasDir, safeBasename));
           }
         } catch {}

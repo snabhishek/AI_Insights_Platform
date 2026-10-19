@@ -32,8 +32,8 @@ function fixture(t: any) {
   fs.mkdirSync(path.join(root, "run", "model_validation"), { recursive: true });
   const source = path.join(root, "run", "model_validation", "predict.py");
   fs.writeFileSync(source, "# existing saved-model inference contract\n");
-  const projectService = { getById: async () => ({ name: "Fixture", agentState: { runTimestamp: "run" } }),
-    getProjectWithWorkspace: async () => ({ workspaceName: "Fixture", project: { name: "Fixture" } }),
+  const projectService = { getById: async () => ({ name: "Fixture", projectName: "Fixture", agentState: { runTimestamp: "run" } }),
+    getProjectWithWorkspace: async () => ({ workspaceName: "Fixture", project: { name: "Fixture", projectName: "Fixture" } }),
     update: () => { throw new Error("Prediction must not update training/validation state."); } } as any;
   return { root, source, projectService };
 }

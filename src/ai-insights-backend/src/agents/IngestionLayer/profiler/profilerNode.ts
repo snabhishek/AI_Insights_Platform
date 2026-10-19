@@ -234,7 +234,7 @@ export async function profilerNode(state: typeof AgentState.State, config?: Runn
       const pWs = await services.projectService.getProjectWithWorkspace(services.projectId);
       if (pWs?.project) {
         const workspaceName = pWs.workspaceName || "DefaultWorkspace";
-        const projectName = pWs.project.name;
+        const projectName = pWs.project.projectName!;
         const timestamp = state.runTimestamp || new Date().toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "").replace("T", "-");
         const schemasDir = getProjectSchemasDir(workspaceName, projectName, timestamp);
         await fs.promises.mkdir(schemasDir, { recursive: true });

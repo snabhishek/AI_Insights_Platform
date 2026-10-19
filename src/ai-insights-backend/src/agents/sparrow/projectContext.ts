@@ -11,7 +11,7 @@ export function compactProjectContext(context: Record<string, any>): Record<stri
 export function projectBusinessContext(project: any): Record<string, any> {
   const state = project.agentState ?? {};
   const feature = state.featureArchitect ?? state.stageOutputs?.featureArchitect ?? {};
-  return compactProjectContext({ projectId: project.id, projectName: project.projectName || project.name,
+  return compactProjectContext({ projectId: project.id, projectName: project.projectName,
     domain: project.domain, subDomain: project.subDomain, useCase: project.useCase, pipelineStatus: project.status,
     targetColumn: feature.targetColumn || feature.orchestrationDecision?.targetColumn || state.targetColumn || state.prediction_target_column,
     problemType: feature.problemType || feature.orchestrationDecision?.problemType || state.problemType });

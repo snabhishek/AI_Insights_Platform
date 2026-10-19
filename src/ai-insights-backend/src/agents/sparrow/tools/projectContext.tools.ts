@@ -70,7 +70,7 @@ export const createGetProjectDataSchemaTool = (
         }
 
         const pWs = await services.projectService.getProjectWithWorkspace(projectId);
-        const projectName = project.projectName || project.name;
+        const projectName = project.projectName!;
         const workspaceName = pWs?.workspaceName || "Default_Workspace";
 
         const dbPath = services.duckDBService.getProjectDuckDbPath(projectName, workspaceName);
