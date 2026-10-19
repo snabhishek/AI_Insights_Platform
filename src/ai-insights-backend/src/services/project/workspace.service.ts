@@ -110,9 +110,9 @@ export class WorkspaceService {
     try {
       const projects = await this.projectRepository.getByWorkspaceId(id);
       for (const p of projects) {
-        await deleteProjectSchemaFolder(ws.name, p.name);
+        await deleteProjectSchemaFolder(ws.name, p.projectName!);
         if (this.duckDBService) {
-          await this.duckDBService.deleteProjectFolder(p.name, ws.name, p.folderPath);
+          await this.duckDBService.deleteProjectFolder(p.projectName!, ws.name, p.folderPath);
         }
       }
       const wsDir = getWorkspaceDir(ws.name);
@@ -214,7 +214,7 @@ export class WorkspaceService {
             }
           }
           if (projectSourceInputs.length > 0) {
-            await this.duckDBService.ingestProjectSources(newProject.projectName || newProject.name, projectSourceInputs, ws.name);
+            await this.duckDBService.ingestProjectSources(newProject.projectName!, projectSourceInputs, ws.name);
           }
         } catch (ingestErr: any) {
           console.warn(`[workspaceService] Warning during project DuckDB source ingestion:`, ingestErr?.message || ingestErr);
@@ -306,15 +306,15 @@ export class WorkspaceService {
       try {
         await deleteProjectSchemaFolder(
           projectWithWs.workspaceName,
-          projectWithWs.project.name
+          projectWithWs.project.projectName!
         );
       } catch (folderErr: any) {
         console.warn(`[workspaceService] Failed to delete project schema folder for ${pid}:`, folderErr?.message || folderErr);
       }
 
-      if (this.duckDBService && projectWithWs.project.name) {
+      if (this.duckDBService && projectWithWs.project.projectName) {
         try {
-          await this.duckDBService.deleteProjectFolder(projectWithWs.project.name, projectWithWs.workspaceName);
+          await this.duckDBService.deleteProjectFolder(projectWithWs.project.projectName!, projectWithWs.workspaceName);
         } catch (duckDbCleanErr: any) {
           console.warn(`[workspaceService] Failed to delete project DuckDB folder for ${pid}:`, duckDbCleanErr?.message || duckDbCleanErr);
         }
@@ -371,7 +371,7 @@ export class WorkspaceService {
             data: {
               sourceId,
               projectId: project.id,
-              projectName: project.name,
+              projectName: project.projectName!,
               filterGroups: groups,
               forms: groups,
               summary: c.summary,
@@ -386,7 +386,7 @@ export class WorkspaceService {
       const projectWithWs = await this.projectRepository.getProjectWithWorkspace(projectId);
       const wsName = projectWithWs?.workspaceName;
       if (wsName) {
-        const projectDir = getProjectDir(wsName, project.name);
+        const projectDir = getProjectDir(wsName, project.projectName!);
         if (fs.existsSync(projectDir)) {
           const findFormYaml = (dir: string): string | null => {
             if (!fs.existsSync(dir)) return null;
@@ -423,7 +423,7 @@ export class WorkspaceService {
                 data: {
                   sourceId,
                   projectId: project.id,
-                  projectName: project.name,
+                  projectName: project.projectName!,
                   filterGroups: groups,
                   forms: groups,
                   summary: parsed?.summary,

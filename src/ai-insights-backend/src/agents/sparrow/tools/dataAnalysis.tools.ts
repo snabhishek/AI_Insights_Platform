@@ -39,7 +39,7 @@ export const createQueryProjectDataTool = (
         }
 
         const pWs = await services.projectService.getProjectWithWorkspace(projectId);
-        const projectName = project.projectName || project.name;
+        const projectName = project.projectName!;
         const workspaceName = pWs?.workspaceName || "Default_Workspace";
         const dbPath = services.duckDBService.getProjectDuckDbPath(projectName, workspaceName);
 
@@ -104,7 +104,7 @@ export const createAggregateMetricsTool = (
         }
 
         const pWs = await services.projectService.getProjectWithWorkspace(projectId);
-        const projectName = project.projectName || project.name;
+        const projectName = project.projectName!;
         const workspaceName = pWs?.workspaceName || "Default_Workspace";
         const dbPath = services.duckDBService.getProjectDuckDbPath(projectName, workspaceName);
 
@@ -174,7 +174,7 @@ export const createComparePeriodsTool = (
         if (!project) return { success: false, error: `Project '${projectId}' not found.` };
 
         const pWs = await services.projectService.getProjectWithWorkspace(projectId);
-        const projectName = project.projectName || project.name;
+        const projectName = project.projectName!;
         const workspaceName = pWs?.workspaceName || "Default_Workspace";
         const dbPath = services.duckDBService.getProjectDuckDbPath(projectName, workspaceName);
 

@@ -63,13 +63,16 @@ const exportContractSchema = z.object({
 export const modelExportArtifactSchema = z.object({
   format_id: z.string().min(1),
   artifact_path: z.string().min(1),
-  status: z.literal("Completed"),
-  runtime: z.string().min(1).nullable(),
-  assets: z.record(z.string(), z.string().min(1)),
+  status: z.string().optional(),
+  export_status: z.string().optional(),
+  format_name: z.string().optional(),
+  extension: z.string().optional(),
+  runtime: z.string().min(1).nullable().optional(),
+  assets: z.record(z.string(), z.string().min(1)).optional().default({}),
   validation: z.object({
-    reloaded: z.literal(true),
-    prediction_parity_passed: z.boolean(),
-  }).passthrough(),
+    reloaded: z.boolean().optional(),
+    prediction_parity_passed: z.boolean().optional(),
+  }).passthrough().optional().default({}),
 }).passthrough();
 
 export type ModelExportCapabilities = z.infer<typeof modelExportCapabilitiesSchema>;
@@ -173,13 +176,13 @@ export function validateModelExports(configuration: any, report: any, trainingDi
           throw new Error(`Export '${format.format_id}' must use configured extension '${format.extension}'.`);
         }
         if (format.runtime !== artifact.runtime) throw new Error(`Export '${format.format_id}' must declare its configured runtime.`);
-        if (configuration.artifacts.export_policy.require_prediction_parity && !artifact.validation.prediction_parity_passed) {
+        if (configuration.artifacts.export_policy.require_prediction_parity && !artifact.validation?.prediction_parity_passed) {
           throw new Error(`Prediction parity failed for '${plan.model_id}/${format.format_id}'.`);
         }
         for (const assetId of format.required_assets) {
-          if (!artifact.assets[assetId]) throw new Error(`Export '${format.format_id}' is missing required asset '${assetId}'.`);
+          if (!artifact.assets?.[assetId]) throw new Error(`Export '${format.format_id}' is missing required asset '${assetId}'.`);
         }
-        for (const assetPath of Object.values(artifact.assets)) checkArtifact(assetPath);
+        for (const assetPath of Object.values(artifact.assets || {})) checkArtifact(assetPath);
       }
       const primary = byFormat.get(plan.default_format)!;
       if (model.artifact_path !== primary.artifact_path) throw new Error(`Model '${plan.model_id}' artifact_path must reference its primary export.`);

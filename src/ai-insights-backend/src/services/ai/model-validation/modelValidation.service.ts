@@ -78,7 +78,7 @@ export class ModelValidationService implements IModelValidationService {
     const state = {
       ...((project.agentState as any) || {}),
       projectId: project.id,
-      projectName: project.name,
+      projectName: project.projectName,
       workspaceName: resolvedWorkspaceName,
       selectedModels: input.selectedModels,
       predictionHorizon: input.predictionHorizon,
@@ -90,7 +90,7 @@ export class ModelValidationService implements IModelValidationService {
       projectService: this.projectService,
       agentThinkingService: this.agentThinkingService,
       projectId: project.id,
-      projectName: project.name,
+      projectName: project.projectName,
       workspaceName: resolvedWorkspaceName,
       runTimestamp: state.runTimestamp || (project.agentState as any)?.runTimestamp || "",
       pipeline: VALIDATION_PIPELINE_CONSTANTS.PIPELINE_NAME,
@@ -225,7 +225,7 @@ export class ModelValidationService implements IModelValidationService {
         const workspaceName = workspace?.name || "Default_Workspace";
         const projectDir = getProjectDirectory({
           projectId: project.id,
-          projectName: project.name,
+          projectName: project.projectName,
           workspaceName,
         });
 

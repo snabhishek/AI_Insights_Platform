@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Download } from "lucide-react";
+import ModelExportButton from "./ModelExportButton";
 import { BACKEND_URL } from "../../providers/AppContext";
 import { VALIDATION_UI_STRINGS } from "../validationConstants";
 
@@ -106,6 +106,8 @@ export default function ModelTrainingStepOutput({
   modelTraining,
   trainingConfiguration,
   modelSelection,
+  projectId,
+  activeRunTimestamp,
   onApproveTraining,
   onNavigateToValidation,
   nextStepInProgress = false,
@@ -548,14 +550,12 @@ export default function ModelTrainingStepOutput({
                         </span>
                       </td>
                       <td className="py-3 px-4 text-right">
-                        <button
-                          type="button"
-                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-border bg-surface hover:bg-surface-muted text-foreground transition-all shadow-2xs cursor-pointer hover:border-primary/40 active:scale-95"
-                          title={`Export ${m.displayName || m.model_id}`}
-                        >
-                          <Download size={13} className="text-muted-foreground" />
-                          <span>Export</span>
-                        </button>
+                        <ModelExportButton
+                          projectId={projectId}
+                          runTimestamp={activeRunTimestamp}
+                          modelId={m.model_id}
+                          displayName={m.displayName || m.model_id}
+                        />
                       </td>
                     </tr>
                   );

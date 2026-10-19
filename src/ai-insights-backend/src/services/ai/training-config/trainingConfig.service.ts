@@ -37,7 +37,7 @@ export class TrainingConfigService implements ITrainingConfigService {
     }
 
     const workspaceName = pWs.workspaceName || "DefaultWorkspace";
-    const projectName = pWs.project.name;
+    const projectName = pWs.project.projectName!;
     const existingAgentState = (pWs.project.agentState as any) || {};
     this.requireCompletedTrainingConfiguration(existingAgentState, timestamp);
     const effectiveTs = resolveProjectRunTimestamp(
@@ -155,12 +155,12 @@ export class TrainingConfigService implements ITrainingConfigService {
     this.requireCompletedTrainingConfiguration(agentState, timestamp);
     const effectiveTs = resolveProjectRunTimestamp(
       pWs.workspaceName || "DefaultWorkspace",
-      pWs.project.name,
+      pWs.project.projectName!,
       timestamp || agentState.runTimestamp
     );
     const result = await syncTrainingConfigSplitDate(
       pWs.workspaceName || "DefaultWorkspace",
-      pWs.project.name,
+      pWs.project.projectName!,
       splitDate,
       agentState,
       effectiveTs
@@ -186,7 +186,7 @@ export class TrainingConfigService implements ITrainingConfigService {
     }
 
     const workspaceName = pWs.workspaceName || "DefaultWorkspace";
-    const projectName = pWs.project.name;
+    const projectName = pWs.project.projectName!;
     const existingAgentState = (pWs.project.agentState as any) || {};
     this.requireCompletedTrainingConfiguration(existingAgentState, timestamp);
 

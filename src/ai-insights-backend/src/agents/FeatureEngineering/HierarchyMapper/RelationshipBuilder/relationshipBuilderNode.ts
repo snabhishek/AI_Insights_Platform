@@ -355,10 +355,10 @@ export async function relationshipBuilderNode(state: typeof AgentState.State, co
     try {
       const proj = await services.projectService.getProjectWithWorkspace(services.projectId);
       if (proj && proj.project) {
-        await saveModularRelationshipSchema(proj.workspaceName || "DefaultWorkspace", proj.project.name, finalResult, effectiveRunTimestamp);
+        await saveModularRelationshipSchema(proj.workspaceName || "DefaultWorkspace", proj.project.projectName!, finalResult, effectiveRunTimestamp);
 
         const workspaceName = proj.workspaceName || "DefaultWorkspace";
-        const projectName = proj.project.name;
+        const projectName = proj.project.projectName!;
         const schemasDir = getProjectSchemasDir(workspaceName, projectName, effectiveRunTimestamp);
         await fs.promises.mkdir(schemasDir, { recursive: true });
 

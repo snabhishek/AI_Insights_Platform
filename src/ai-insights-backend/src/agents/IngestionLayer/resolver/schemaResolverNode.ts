@@ -91,7 +91,7 @@ export async function resolveSchema(
       projectWithWs = await services.projectService.getProjectWithWorkspace(projectId);
       if (projectWithWs) {
         workspaceName = projectWithWs.workspaceName;
-        projectName = projectWithWs.project.name;
+        projectName = projectWithWs.project.projectName;
       }
     } catch (lookupErr: any) {
       console.warn(`[resolveSchema] Failed upfront project lookup for ${projectId}:`, lookupErr?.message || lookupErr);
@@ -203,7 +203,7 @@ export async function resolveSchema(
     try {
       const saved = await saveModularResolvedSchemas(
         projectWithWs.workspaceName,
-        projectWithWs.project.name,
+        projectWithWs.project.projectName,
         modularPayload,
         activeRunTimestamp
       );
@@ -218,7 +218,7 @@ export async function resolveSchema(
       if (pWs) {
         const saved = await saveModularResolvedSchemas(
           pWs.workspaceName,
-          pWs.project.name,
+          pWs.project.projectName!,
           modularPayload,
           activeRunTimestamp
         );

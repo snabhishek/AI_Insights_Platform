@@ -321,7 +321,7 @@ export class ModelSelectionService implements IModelSelectionService {
           const effectiveTimestamp = existingState.runTimestamp || record.datasetVersion;
           await saveModularTrainingJobContract(
             pWs.workspaceName || "DefaultWorkspace",
-            pWs.project.name,
+            pWs.project.projectName!,
             updatedDecision,
             effectiveTimestamp
           );
@@ -445,7 +445,7 @@ export class ModelSelectionService implements IModelSelectionService {
       const effectiveTimestamp = existingState.runTimestamp || (project as any).datasetVersion;
       await saveModularTrainingJobContract(
         pWs.workspaceName || "DefaultWorkspace",
-        pWs.project.name,
+        pWs.project.projectName!,
         updatedDecision,
         effectiveTimestamp
       );

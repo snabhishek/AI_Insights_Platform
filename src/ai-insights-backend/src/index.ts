@@ -60,6 +60,9 @@ import createTrainingConfigRouter from "./routes/trainingConfig";
 import { ModelValidationService } from "./services/ai/model-validation/modelValidation.service";
 import { ModelValidationController } from "./controllers/modelValidation.controller";
 import createModelValidationRouter from "./routes/modelValidation";
+import { ModelExportService } from "./services/project/modelExport.service";
+import { ModelExportController } from "./controllers/modelExport.controller";
+import createModelExportRouter from "./routes/modelExports";
 import { SparrowChatService } from "./services/chat/sparrowChat.service";
 import { SparrowChatController } from "./controllers/sparrowChat.controller";
 import createSparrowChatRouter from "./routes/sparrowChat";
@@ -168,6 +171,7 @@ async function bootstrap() {
   app.use("/api/model-selection", createModelSelectionRouter(modelSelectionController));
   app.use("/api/training-config", createTrainingConfigRouter(trainingConfigController));
   app.use("/api/model-validation", createModelValidationRouter(modelValidationController));
+  app.use("/api/model-exports", createModelExportRouter(new ModelExportController(new ModelExportService(projectService))));
   app.use("/api/chat-suggestions", createChatSuggestionRouter(chatSuggestionController));
   app.use("/api/chat", createSparrowChatRouter(sparrowChatController));
 
