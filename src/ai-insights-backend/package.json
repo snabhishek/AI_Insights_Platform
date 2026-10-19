@@ -7,7 +7,8 @@
     "build": "npx tsc && node scripts/copy-migrations.cjs",
     "start": "node --max-old-space-size=8192 dist/index.js",
     "db:generate": "npx drizzle-kit generate",
-    "db:validate": "node scripts/validate-migrations.cjs"
+    "db:validate": "node scripts/validate-migrations.cjs",
+    "db:clean-chats": "node scripts/clean-chats.cjs"
   },
   "dependencies": {
     "@langchain/anthropic": "1.4.1",
