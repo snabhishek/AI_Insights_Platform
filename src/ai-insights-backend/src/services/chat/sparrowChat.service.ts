@@ -168,14 +168,19 @@ export class SparrowChatService implements ISparrowChatService {
     return this.repository.list(allowed);
   }
   public async updateSession(projectId: string, conversationId: string, metadata: Record<string, unknown>) {
-    await this.turn({ projectId, conversationId, userQuery: "metadata" });
-    await this.repository.metadata(projectId, conversationId, metadataSchema.parse(metadata));
+    const validProjectId = z.string().trim().min(1).max(50).parse(projectId);
+    const validConversationId = identifier.parse(conversationId);
+    if (!await this.projectService.getById(validProjectId)) {
+      throw new Error("Project does not exist or access is restricted.");
+    }
+    await this.repository.metadata(validProjectId, validConversationId, metadataSchema.parse(metadata));
   }
   public async deleteSession(projectId: string, conversationId: string) {
-    await this.turn({ projectId, conversationId, userQuery: "delete" });
-    const running = this.active.get(`${projectId}:${conversationId}`);
+    const validProjectId = z.string().trim().min(1).max(50).parse(projectId);
+    const validConversationId = identifier.parse(conversationId);
+    const running = this.active.get(`${validProjectId}:${validConversationId}`);
     if (running) { running.controller.abort(new Error("Agent was stopped")); await running.finished; }
-    await this.repository.remove(projectId, conversationId);
+    await this.repository.remove(validProjectId, validConversationId);
   }
   public async importSessions(sessions: any[]) {
     for (const session of z.array(z.object({ id: identifier, projectId: z.string().min(1).max(50), title: z.string().max(255),

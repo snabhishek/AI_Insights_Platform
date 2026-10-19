@@ -102,9 +102,25 @@ export default function AIAgentChatPage() {
     }
   }, [activeSessionKey]);
 
-  const activeSession = sessions.find((s) => chatSessionKey(s) === activeSessionKey) || sessions[0];
+  const activeProjectIds = useMemo(() => new Set(projects.map((p) => p.id)), [projects]);
+  const visibleSessions = useMemo(() => {
+    const scoped = sessions.filter((s) => !s.projectId || activeProjectIds.has(s.projectId));
+    return scoped.length > 0 ? scoped : INITIAL_CHAT_SESSIONS;
+  }, [sessions, activeProjectIds]);
+
+  const activeSession = visibleSessions.find((s) => chatSessionKey(s) === activeSessionKey) || visibleSessions[0];
   const activePersona = AGENT_PERSONAS[selectedPersonaId] || AGENT_PERSONAS.orchestrator;
   const currentScopedProject = projects.find((p) => p.id === selectedProjectId) || null;
+
+  useEffect(() => {
+    if (projects.length > 0) {
+      if (!selectedProjectId || !activeProjectIds.has(selectedProjectId)) {
+        setSelectedProjectId(projects[0].id);
+      }
+    } else {
+      setSelectedProjectId("");
+    }
+  }, [projects, activeProjectIds, selectedProjectId]);
 
   useEffect(() => {
     const session = sessions.find(item => chatSessionKey(item) === activeSessionKey);
@@ -209,8 +225,11 @@ export default function AIAgentChatPage() {
       onConfirm: async () => {
         const deleting = sessions.find(session => chatSessionKey(session) === key);
         if (deleting) {
-          try { await deleteDatabaseChatSession(deleting); }
-          catch (error: any) { setHistoryError(error.message); return; }
+          try {
+            await deleteDatabaseChatSession(deleting);
+          } catch (error: any) {
+            console.warn("[AIAgentChatPage] Remote chat deletion note:", error?.message || error);
+          }
         }
         setSessions((prev) => {
           const next = prev.filter((s) => chatSessionKey(s) !== key);
@@ -220,7 +239,7 @@ export default function AIAgentChatPage() {
           return next;
         });
         if (activeSessionKey === key) {
-          const remaining = sessions.filter((s) => chatSessionKey(s) !== key);
+          const remaining = visibleSessions.filter((s) => chatSessionKey(s) !== key);
           const next = remaining[0] ?? INITIAL_CHAT_SESSIONS[0];
           setActiveSessionKey(chatSessionKey(next));
           setSelectedProjectId(next.projectId || "");
@@ -558,7 +577,7 @@ export default function AIAgentChatPage() {
     <div className="w-full flex flex-col lg:flex-row h-[calc(100vh-57px)] bg-surface overflow-hidden animate-fade-in">
 
       <ChatSidebar
-        sessions={sessions}
+        sessions={visibleSessions}
         activeSessionKey={activeSessionKey}
         onSelectSession={handleSelectSession}
         onNewSession={handleNewSession}

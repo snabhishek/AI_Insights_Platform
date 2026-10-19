@@ -412,6 +412,21 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       showAlert({ title: data.message || "Could not delete workspace", type: "error" });
       return;
     }
+    if (typeof window !== "undefined") {
+      try {
+        const deletedProjectIds = new Set(projects.filter((p) => p.workspaceId === id).map((p) => p.id));
+        const raw = localStorage.getItem("ai_insights_chat_sessions_v1");
+        if (raw) {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            const remaining = parsed.filter((s: any) => !s.projectId || !deletedProjectIds.has(s.projectId));
+            localStorage.setItem("ai_insights_chat_sessions_v1", JSON.stringify(remaining));
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to clean up chat cache on workspace deletion:", err);
+      }
+    }
     setWorkspaces((prev) => {
       const remaining = prev.filter((w) => w.id !== id);
       if (activeWorkspaceId === id && remaining.length > 0) {
@@ -485,6 +500,20 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const res = await fetch(`${BACKEND_URL}/workspaces/${wsId}/projects/${id}`, { method: "DELETE" });
       if (res.ok) {
         setProjects((prev) => prev.filter((p) => p.id !== id));
+        if (typeof window !== "undefined") {
+          try {
+            const raw = localStorage.getItem("ai_insights_chat_sessions_v1");
+            if (raw) {
+              const parsed = JSON.parse(raw);
+              if (Array.isArray(parsed)) {
+                const remaining = parsed.filter((s: any) => s.projectId !== id);
+                localStorage.setItem("ai_insights_chat_sessions_v1", JSON.stringify(remaining));
+              }
+            }
+          } catch (err) {
+            console.warn("Failed to clean up chat cache on project deletion:", err);
+          }
+        }
         showAlert({ title: "Project Deleted", type: "success" });
       } else {
         const err = await res.json();
