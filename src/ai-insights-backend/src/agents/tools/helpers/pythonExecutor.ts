@@ -8,7 +8,10 @@ import {
   ensureDirectoryExists,
   getFileServerBasePath,
   getLatestProjectTimestamp,
+  getProjectDatasetDir,
+  getProjectDatasourceDir,
   getProjectPythonScriptDir,
+  getProjectRunDir,
   resolveProjectEffectiveTimestamp,
   sanitizeFolderName,
 } from "../../../config/fileServer.config";
@@ -21,7 +24,7 @@ export interface ExecutionResult {
 }
 
 export interface PythonExecutionOptions {
-  mountMode?: "project" | "python_script_only";
+  mountMode?: "project" | "feature_engineering" | "model_training" | "model_validation" | "dataset_only" | "python_script_only" | "chat_execution";
   serviceName?: string;
   projectRootDir?: string;
   effectiveTimestamp?: string;
@@ -183,7 +186,7 @@ export function executeProcess(
             );
           }
           terminate();
-        } catch {}
+        } catch { }
       }, options.timeoutMs);
     }
 
@@ -228,7 +231,7 @@ export function executeProcess(
       if (options.logFilePath) {
         try {
           fs.appendFileSync(options.logFilePath, `\n[Process Error] ${err.message}\n`, "utf-8");
-        } catch {}
+        } catch { }
       }
       resolve({
         exitCode: 1,
@@ -313,7 +316,7 @@ export function ensureDockerfile(targetDir: string): string {
       } else if (!existing.includes("COPY . /workspace") && !existing.includes("COPY . .")) {
         fs.appendFileSync(dockerfilePath, "\nCOPY . /workspace\n", "utf-8");
       }
-    } catch {}
+    } catch { }
   }
   return dockerfilePath;
 }
@@ -330,52 +333,61 @@ export function ensureDockerCompose(
     (options && "writableRelativePath" in options && typeof options.writableRelativePath === "string"
       ? { writableRelativePath: options.writableRelativePath }
       : undefined);
-  const isPythonScriptOnly = (options as PythonExecutionOptions)?.mountMode === "python_script_only";
-  const composeYml = isPythonScriptOnly
-    ? path.join(targetDir, "docker-compose.test.yml")
-    : path.join(targetDir, "docker-compose.yml");
-  const composeYaml = path.join(targetDir, "docker-compose.yaml");
-
-  if (!isPythonScriptOnly) {
-    if (fs.existsSync(composeYml)) {
-      try {
-        const existingContent = fs.readFileSync(composeYml, "utf-8");
-        let updatedContent = existingContent.replace(/^version:\s*['"][^'"]+['"]\s*\r?\n/m, "");
-        if (!updatedContent.includes(".:/workspace") && !updatedContent.includes(". : /workspace")) {
-          updatedContent = updatedContent.replace(
-            /(volumes:\s*\r?\n)/,
-            `$1      - ".:/workspace"\n`
-          );
-        }
-        if (updatedContent !== existingContent) {
-          fs.writeFileSync(composeYml, updatedContent, "utf-8");
-        }
-      } catch {}
-      return composeYml;
-    }
-    if (fs.existsSync(composeYaml)) return composeYaml;
-  }
+  const composeYml = path.join(targetDir, "docker-compose.yml");
 
   const cpus = resourceLimits?.cpus || "2.0";
   const memory = resourceLimits?.memory || "4G";
   const gpuConfig = resourceLimits?.hasGpu
     ? [
-        "        reservations:",
-        "          devices:",
-        "            - driver: cdi",
-        "              count: all",
-        "              capabilities: [gpu]",
-      ].join("\n")
+      "        reservations:",
+      "          devices:",
+      "            - driver: cdi",
+      "              count: all",
+      "              capabilities: [gpu]",
+    ].join("\n")
     : "";
 
-  const volumeMounts = isPythonScriptOnly
-    ? [
-        "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/python_script:ro\"",
-        "      - \"${HOST_PYTHON_SCRIPT_DIR}:/workspace/${RUN_TIMESTAMP}/python_script:ro\"",
-      ]
-    : [
-        "      - \".:/workspace\""
-      ];
+  const baseName = path.basename(targetDir).toLowerCase();
+  const mountMode = (options as PythonExecutionOptions)?.mountMode;
+  const isChatExecution =
+    mountMode === "chat_execution" ||
+    Boolean(effectiveIsolation) ||
+    Boolean((options as PythonExecutionOptions)?.isolated) ||
+    baseName.includes("sparrow") ||
+    baseName.includes("chat_execution");
+  const isModelTraining = !isChatExecution && (mountMode === "model_training" || mountMode === "dataset_only" || baseName.endsWith("_model_training"));
+  const isModelValidation = !isChatExecution && (mountMode === "model_validation" || baseName.endsWith("_model_validation"));
+
+  let volumeMounts: string[];
+  if (isChatExecution) {
+    const rawPath = effectiveIsolation?.writableRelativePath || (options as PythonExecutionOptions)?.writableRelativePath || "";
+    const execId =
+      (options as PythonExecutionOptions)?.sessionId ||
+      (rawPath ? path.basename(rawPath) : baseName !== "app" && baseName !== "docker" ? baseName : "${EXECUTION_ID}");
+    volumeMounts = [
+      "      - \"${HOST_RUN_DIR:-${HOST_PROJECT_ROOT}/${RUN_TIMESTAMP}}:/workspace/project:ro\"",
+      "      - \"${HOST_DATASOURCE_DIR}:/workspace/datasource:ro\"",
+      `      - \"\${HOST_EXECUTION_DIR}:/workspace/chat_execution/${execId}:rw\"`,
+    ];
+  } else if (isModelTraining) {
+    volumeMounts = [
+      "      - \"${HOST_MODEL_TRAINING_DIR}:/workspace/${PROJECT_NAME}_model_training\"",
+      "      - \"${HOST_DATASET_DIR}:/workspace/dataset:ro\"",
+    ];
+  } else if (isModelValidation) {
+    volumeMounts = [
+      "      - \"${HOST_MODEL_VALIDATION_DIR}:/workspace/${PROJECT_NAME}_model_validation\"",
+      "      - \"${HOST_DATASET_DIR}:/workspace/dataset:ro\"",
+      "      - \"${HOST_MODEL_TRAINING_DIR}:/workspace/${PROJECT_NAME}_model_training:ro\"",
+    ];
+  } else {
+    // Feature Engineering
+    volumeMounts = [
+      "      - \"${HOST_FEATURE_ENGINEERING_DIR}:/workspace/${PROJECT_NAME}_feature_engineering\"",
+      "      - \"${HOST_DATASOURCE_DIR}:/workspace/datasource:ro\"",
+      "      - \"${HOST_DATASET_DIR}:/workspace/dataset:rw\"",
+    ];
+  }
 
   const content = [
     "services:",
@@ -384,8 +396,8 @@ export function ensureDockerCompose(
     "      context: .",
     "      dockerfile: Dockerfile",
     "      network: host",
-    effectiveIsolation ? "    network_mode: none" : "    network_mode: host",
-    ...(effectiveIsolation ? ["    read_only: true", "    cap_drop: [ALL]", "    security_opt: [no-new-privileges:true]", "    tmpfs: [/tmp]"] : []),
+    isChatExecution ? "    network_mode: none" : "    network_mode: host",
+    ...(isChatExecution ? ["    read_only: true", "    cap_drop: [ALL]", "    security_opt: [no-new-privileges:true]", "    tmpfs: [/tmp]"] : []),
     "    volumes:",
     ...volumeMounts,
     "    working_dir: /workspace",
@@ -410,15 +422,20 @@ export function ensureDockerCompose(
 function resolveExecutionDirectory(
   scriptPath: string,
   projectRootDir: string,
-  effectiveTimestamp: string
+  effectiveTimestamp: string,
+  options?: PythonExecutionOptions
 ): string {
   const scriptDir = path.dirname(scriptPath);
   const baseName = path.basename(scriptDir).toLowerCase();
 
   if (
+    options?.isolated ||
+    options?.mountMode === "chat_execution" ||
+    scriptDir.includes("sparrow") ||
+    scriptDir.includes("chat_execution") ||
+    baseName.endsWith("_feature_engineering") ||
     baseName.endsWith("_model_training") ||
     baseName.endsWith("_model_validation") ||
-    baseName === "python_script" ||
     fs.existsSync(path.join(scriptDir, "docker-compose.yml")) ||
     fs.existsSync(path.join(scriptDir, "docker-compose.yaml")) ||
     fs.existsSync(path.join(scriptDir, "Dockerfile"))
@@ -527,7 +544,61 @@ export async function executePythonScript(
   const scriptDirRel = path.relative(projectRootDir, path.dirname(scriptPath)).replace(/\\/g, "/");
   const containerOutDir = scriptDirRel && scriptDirRel !== "." ? `/workspace/${scriptDirRel}`.replace(/\/+/g, "/") : "/workspace";
 
-  const args: string[] = [`--out-dir "${containerOutDir}"`];
+  const safeProjectName = sanitizeFolderName(projectName);
+  const datasourceDir = getProjectDatasourceDir(workspaceName, projectName);
+  ensureDirectoryExists(datasourceDir);
+  const normDatasourceDir = path.resolve(datasourceDir).replace(/\\/g, "/");
+
+  const datasetDir = getProjectDatasetDir(workspaceName, projectName, effectiveTimestamp);
+  ensureDirectoryExists(datasetDir);
+  const normDatasetDir = path.resolve(datasetDir).replace(/\\/g, "/");
+
+  const runDir = getProjectRunDir(workspaceName, projectName, effectiveTimestamp);
+  const featureEngineeringDir = getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
+  ensureDirectoryExists(featureEngineeringDir);
+  const normFeatureEngineeringDir = path.resolve(featureEngineeringDir).replace(/\\/g, "/");
+
+  const execDir = resolveExecutionDirectory(scriptPath, projectRootDir, effectiveTimestamp, options);
+  ensureDirectoryExists(execDir);
+
+  const baseExecName = path.basename(execDir).toLowerCase();
+  const mountMode = options?.mountMode;
+  const isChatExecution =
+    mountMode === "chat_execution" ||
+    Boolean(options?.isolated) ||
+    baseExecName.includes("sparrow") ||
+    baseExecName.includes("chat_execution");
+  const isModelTraining = !isChatExecution && (mountMode === "model_training" || mountMode === "dataset_only" || baseExecName.endsWith("_model_training"));
+  const isModelValidation = !isChatExecution && (mountMode === "model_validation" || baseExecName.endsWith("_model_validation"));
+  const isFeatureEngineering = !isChatExecution && (mountMode === "feature_engineering" || baseExecName.endsWith("_feature_engineering") || (!isModelTraining && !isModelValidation));
+
+  const modelTrainingDir = path.join(runDir, `${safeProjectName}_model_training`);
+  const normModelTrainingDir = path.resolve((isModelTraining && execDir) ? execDir : modelTrainingDir).replace(/\\/g, "/");
+
+  const modelValidationDir = path.join(runDir, `${safeProjectName}_model_validation`);
+  const normModelValidationDir = path.resolve((isModelValidation && execDir) ? execDir : modelValidationDir).replace(/\\/g, "/");
+
+  const args: string[] = [];
+  const hasOutDir = extraArgs.some((a) => a.startsWith("--out-dir"));
+  if (!hasOutDir) {
+    if (isChatExecution) {
+      const execId = options?.sessionId || path.basename(path.dirname(scriptPath));
+      args.push(`--out-dir "/workspace/chat_execution/${execId}"`);
+    } else if (isFeatureEngineering) {
+      args.push('--out-dir "/workspace/dataset"');
+    } else if (isModelTraining) {
+      args.push(`--out-dir "/workspace/${safeProjectName}_model_training"`);
+    } else if (isModelValidation) {
+      args.push(`--out-dir "/workspace/${safeProjectName}_model_validation"`);
+    } else {
+      args.push(`--out-dir "${containerOutDir}"`);
+    }
+  }
+
+  if (isFeatureEngineering && !extraArgs.some((a) => a.startsWith("--db-path"))) {
+    args.push('--db-path "/workspace/datasource"');
+  }
+
   if (extraArgs && extraArgs.length > 0) {
     args.push(...extraArgs);
   }
@@ -539,9 +610,10 @@ export async function executePythonScript(
       const type = connector.type;
       const config = connector.connectionConfig;
 
-      if (["excel", "csv", "tsv"].includes(type) && config.fileName) {
-        const containerDbPath = `/workspace`;
-        args.push(`--db-path "${containerDbPath}"`);
+      if (isFeatureEngineering && ["excel", "csv", "tsv", "parquet"].includes(type) && config.fileName) {
+        if (!args.some((a) => a.startsWith("--db-path"))) {
+          args.push(`--db-path "/workspace/datasource"`);
+        }
       } else if (type === "postgres") {
         if (config.host) args.push(`--host "${config.host}"`);
         if (config.port) args.push(`--port "${config.port}"`);
@@ -570,13 +642,6 @@ export async function executePythonScript(
     };
   }
 
-  const execDir = resolveExecutionDirectory(scriptPath, projectRootDir, effectiveTimestamp);
-  ensureDirectoryExists(execDir);
-
-  const isPythonScriptOnly = options?.mountMode === "python_script_only";
-  const pythonScriptDir = getProjectPythonScriptDir(workspaceName, projectName, effectiveTimestamp);
-  const normPythonScriptDir = path.resolve(pythonScriptDir).replace(/\\/g, "/");
-
   ensureRequirementsTxt(execDir, requiredPackages);
   ensureDockerfile(execDir);
   const composeFile = ensureDockerCompose(
@@ -594,15 +659,24 @@ export async function executePythonScript(
     : "docker compose";
   activeComposeSessions.set(sessionKey, { composeDir: execDir, composeFile, composePrefix });
 
+  const normRunDir = path.resolve(runDir).replace(/\\/g, "/");
   const env: NodeJS.ProcessEnv = {
     HOST_PROJECT_ROOT: normProjectDir,
-    HOST_PYTHON_SCRIPT_DIR: normPythonScriptDir,
+    HOST_RUN_DIR: normRunDir,
+    HOST_DATASOURCE_DIR: normDatasourceDir,
+    HOST_DATASET_DIR: normDatasetDir,
+    HOST_FEATURE_ENGINEERING_DIR: normFeatureEngineeringDir,
+    HOST_MODEL_TRAINING_DIR: normModelTrainingDir,
+    HOST_MODEL_VALIDATION_DIR: normModelValidationDir,
+    HOST_PYTHON_SCRIPT_DIR: normFeatureEngineeringDir,
+    PROJECT_NAME: safeProjectName,
     RUN_TIMESTAMP: effectiveTimestamp,
+    EXECUTION_ID: options?.sessionId || path.basename(execDir),
     PYTHONPATH: "/workspace",
     HOST_EXECUTION_DIR: path.resolve(execDir).replace(/\\/g, "/"),
   };
 
-  console.info(`[DockerExecutor] Building and running via Docker Compose in [${execDir}] for script [${relFromProjectRoot}] (mountMode: ${options?.mountMode || "project"})`);
+  console.info(`[DockerExecutor] Building and running via Docker Compose in [${execDir}] for script [${relFromProjectRoot}] (mountMode: ${options?.mountMode || (isChatExecution ? "chat_execution" : isFeatureEngineering ? "feature_engineering" : "project")})`);
 
   const dockerLogsDir = path.join(execDir, "docker_logs");
   ensureDirectoryExists(dockerLogsDir);
@@ -617,10 +691,19 @@ export async function executePythonScript(
     duplicateIndex++;
   }
 
-  const relScript = path.relative(execDir, scriptPath).replace(/\\/g, "/");
-  const scriptInContainer = relScript && !relScript.startsWith("..") ? relScript : "main.py";
+  let scriptInContainer: string;
+  if (isChatExecution) {
+    const execId = options?.sessionId || path.basename(path.dirname(scriptPath));
+    scriptInContainer = `chat_execution/${execId}/${path.basename(scriptPath)}`;
+  } else if (isModelTraining) {
+    scriptInContainer = `${path.basename(normModelTrainingDir)}/${path.basename(scriptPath)}`;
+  } else if (isModelValidation) {
+    scriptInContainer = `${path.basename(normModelValidationDir)}/${path.basename(scriptPath)}`;
+  } else {
+    scriptInContainer = `${path.basename(normFeatureEngineeringDir)}/${path.basename(scriptPath)}`;
+  }
 
-  const effectiveArgs = args.map((arg) => (arg.startsWith("--out-dir") ? '--out-dir "/workspace"' : arg));
+  const effectiveArgs = args;
 
   const initLogHeader = [
     "=".repeat(80),
@@ -629,9 +712,11 @@ export async function executePythonScript(
     `Execution Directory: ${execDir}`,
     `Script Relative Path: ${relFromProjectRoot}`,
     `Script In Container: ${scriptInContainer}`,
-    `Mount Mode: ${options?.mountMode || "project"}`,
+    `Mount Mode: ${options?.mountMode || (isFeatureEngineering ? "feature_engineering" : "project")}`,
     `Host Project Root: ${normProjectDir}`,
-    `Host Python Script Dir: ${normPythonScriptDir}`,
+    `Host Datasource Dir: ${normDatasourceDir}`,
+    `Host Dataset Dir: ${normDatasetDir}`,
+    `Host Feature Engineering Dir: ${normFeatureEngineeringDir}`,
     `Arguments: ${effectiveArgs.join(" ")}`,
     "=".repeat(80),
     "",
@@ -659,7 +744,6 @@ export async function executePythonScript(
     onLog: options?.onLog,
     cwd: execDir,
     env,
-    timeoutMs: 300000,
     silentConsole: true,
     logFilePath,
   });
@@ -706,7 +790,7 @@ export async function executePythonScript(
     if (serviceMatch && serviceMatch[1]) {
       serviceName = serviceMatch[1];
     }
-  } catch {}
+  } catch { }
 
   const runCmd = `${composePrefix} -f "${composeFileName}" run --rm ${serviceName} python -u "${scriptInContainer}" ${effectiveArgs.join(" ")}`;
   fs.appendFileSync(
@@ -727,7 +811,6 @@ export async function executePythonScript(
     onLog: options?.onLog,
     cwd: execDir,
     env,
-    timeoutMs: 600000,
     silentConsole: true,
     logFilePath,
   });
@@ -787,7 +870,7 @@ export async function cleanupRunContainer(projectId: string, runTimestamp?: stri
           { cwd: sess.composeDir, silentConsole: true }
         );
         activeComposeSessions.delete(key);
-      } catch {}
+      } catch { }
     }
   }
 }
@@ -801,7 +884,7 @@ export async function cleanupAllRunContainers(): Promise<void> {
           { cwd: sess.composeDir, silentConsole: true }
         );
       }
-    } catch {}
+    } catch { }
   }
   activeComposeSessions.clear();
 }

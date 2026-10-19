@@ -16,7 +16,7 @@ Each task writes to `<run>/sparrow/<execution-id>/`: request.json, runner.py, ru
 
 ## Docker and logging
 
-The worker reuses `executePythonScript`, including dependency setup, Docker builds, resource limits, stdout/stderr capture and log files. For Sparrow tasks, the original project is mounted read-only; only the task's output folder and /tmp are writable. The container has no runtime network access. Each execution uses its own Compose project, and cleanup targets that session rather than other training or validation runs.
+The worker reuses `executePythonScript`, including dependency setup, Docker builds, resource limits, stdout/stderr capture and log files. For Sparrow tasks, `<project_name>/<latest_runtimestamp>` is mounted to `/workspace/project:ro`, `<project_name>/datasource` is mounted to `/workspace/datasource:ro`, and the execution folder is mounted to `/workspace/chat_execution/<execution_id>:rw`; working directory is `/workspace`. Only the task's output folder and /tmp are writable. The container has no runtime network access. Each execution uses its own Compose project, and cleanup targets that session rather than other training or validation runs.
 
 Python runs unbuffered. The shared subprocess logger buffers complete lines, timestamps stdout/stderr individually, flushes partial final lines, and forwards output while the process is running. MCP filesystem diagnostics previously inherited stderr and bypassed the application's console timestamp wrapper. A dedicated launch wrapper now timestamps diagnostic stderr while preserving MCP protocol stdin/stdout unchanged.
 

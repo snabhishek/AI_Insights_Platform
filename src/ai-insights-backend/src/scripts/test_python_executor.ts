@@ -5,7 +5,7 @@ async function runTest() {
   const projectId = "test-project";
   const runTimestamp = `${Date.now()}`;
 
-  const pythonCode = `import argparse\nimport yaml\n\nparser = argparse.ArgumentParser()\nparser.add_argument('--db-path', required=True)\nargs = parser.parse_args()\nprint('DB_PATH=' + args.db_path)\nprint('YAML_OK' if hasattr(yaml, 'safe_load') else 'YAML_FAIL')\n`;
+  const pythonCode = `import argparse\nimport yaml\n\nparser = argparse.ArgumentParser()\nparser.add_argument('--db-path', default='/workspace/datasource')\nparser.add_argument('--out-dir', default='/workspace/dataset')\nargs, _ = parser.parse_known_args()\nprint('DB_PATH=' + args.db_path)\nprint('YAML_OK' if hasattr(yaml, 'safe_load') else 'YAML_FAIL')\n`;
 
   const services = ({
     connectorService: {

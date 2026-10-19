@@ -7,6 +7,7 @@ import {
   getProjectSchemasDir,
   getProjectRunDir,
   getProjectPythonScriptDir,
+  getProjectDatasetDir,
   getLatestProjectTimestamp,
   getWorkspacesBasePath,
 } from '../../../config/fileServer.config';
@@ -751,23 +752,10 @@ export async function readValidatedFeaturesFromReport(
 ): Promise<string[]> {
   try {
     const timestamp = resolveProjectRunTimestamp(workspaceName, projectName, runTimestamp);
-    const pythonScriptDir = getProjectPythonScriptDir(workspaceName, projectName, timestamp);
+    const datasetDir = getProjectDatasetDir(workspaceName, projectName, timestamp);
+    const reportPath = path.join(datasetDir, "feature_validation_report.json");
 
-    const candidatePaths = [
-      path.join(pythonScriptDir, "feature_validation_report.json"),
-      path.join(getProjectDir(workspaceName, projectName), timestamp, "python_script", "feature_validation_report.json"),
-      path.join(getProjectDir(workspaceName, projectName), "python_script", "feature_validation_report.json"),
-    ];
-
-    const latestTs = getLatestProjectTimestamp(workspaceName, projectName);
-    if (latestTs && latestTs !== timestamp) {
-      candidatePaths.push(
-        path.join(getProjectDir(workspaceName, projectName), latestTs, "python_script", "feature_validation_report.json")
-      );
-    }
-
-    for (const reportPath of candidatePaths) {
-      if (fsSync.existsSync(reportPath)) {
+    if (fsSync.existsSync(reportPath)) {
         try {
           const raw = await fs.readFile(reportPath, "utf-8");
           const parsed = JSON.parse(raw);
@@ -789,7 +777,6 @@ export async function readValidatedFeaturesFromReport(
           console.warn(`[readValidatedFeaturesFromReport] Error parsing report at ${reportPath}:`, readErr);
         }
       }
-    }
   } catch (err) {
     console.warn(`[readValidatedFeaturesFromReport] Error reading feature validation report for ${projectName}:`, err);
   }
@@ -1116,7 +1103,7 @@ export async function saveModularTrainingJobContract(
   const validationGatesData = rawData.validation_gates || existingObj.validation_gates || {}
 
   const artifactsData = rawData.artifacts || existingObj.artifacts || {
-    output_path: `/workspace/${timestamp}/python_script`,
+    output_path: `/workspace/${timestamp}/dataset`,
     save: {
       model: true,
       metrics: true,

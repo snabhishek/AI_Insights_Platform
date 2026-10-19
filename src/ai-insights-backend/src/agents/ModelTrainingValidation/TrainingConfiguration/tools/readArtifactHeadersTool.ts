@@ -20,12 +20,15 @@ export interface ArtifactHeaderInfo {
 export function createReadArtifactHeadersTool(services: IngestionServices, runTimestamp?: string) {
   return tool(
     async ({ artifactName }: { artifactName: string }) => {
-      const runDir = getPythonScriptDirectory(services, runTimestamp);
+      const featureEngDir = getPythonScriptDirectory(services, runTimestamp);
+      const timestampDir = path.dirname(featureEngDir);
+      const datasetDir = path.join(timestampDir, "dataset");
       const safeBasename = path.basename(artifactName.trim());
 
       const candidatePaths = [
-        path.join(runDir, safeBasename),
-        path.join(runDir, "schemas", safeBasename),
+        path.join(datasetDir, safeBasename),
+        path.join(featureEngDir, safeBasename),
+        path.join(timestampDir, "schemas", safeBasename),
       ];
 
       if (services.projectService && services.projectId) {

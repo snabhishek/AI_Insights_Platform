@@ -209,7 +209,7 @@ export class ModelValidationAgent {
     }
 
     if (runDir) {
-      const reportPath = path.join(runDir, "python_script", "feature_validation_report.json");
+      const reportPath = path.join(runDir, "dataset", "feature_validation_report.json");
       if (fs.existsSync(reportPath)) {
         try {
           const raw = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
@@ -244,7 +244,7 @@ export class ModelValidationAgent {
     );
 
     let runDir = runTimestamp ? path.join(projectRootDir, runTimestamp) : projectRootDir;
-    let datasetPath = path.join(runDir, "python_script", "dataset.parquet");
+    let datasetPath = path.join(runDir, "dataset", "dataset.parquet");
 
     if (!fs.existsSync(datasetPath) && fs.existsSync(workspacesBase)) {
       try {
@@ -252,7 +252,7 @@ export class ModelValidationAgent {
         for (const ws of wsEntries) {
           const candProjectDir = path.join(workspacesBase, ws.name, "projects", sanitizeFolderName(projectName));
           const candRunDir = runTimestamp ? path.join(candProjectDir, runTimestamp) : candProjectDir;
-          const candDataset = path.join(candRunDir, "python_script", "dataset.parquet");
+          const candDataset = path.join(candRunDir, "dataset", "dataset.parquet");
           if (fs.existsSync(candDataset)) {
             workspaceName = ws.name;
             projectRootDir = candProjectDir;
@@ -264,8 +264,9 @@ export class ModelValidationAgent {
       } catch {}
     }
 
-    const modelTrainingDir = path.join(runDir, `${projectName}_model_training`);
-    const modelValidationDir = path.join(runDir, `${projectName}_model_validation`);
+    const safeProjectName = sanitizeFolderName(projectName);
+    const modelTrainingDir = path.join(runDir, `${safeProjectName}_model_training`);
+    const modelValidationDir = path.join(runDir, `${safeProjectName}_model_validation`);
     const modelsDir = path.join(modelTrainingDir, "artifacts", "models");
 
     if (!fs.existsSync(datasetPath)) {
@@ -354,6 +355,7 @@ export class ModelValidationAgent {
       projectId,
       workspaceName,
       projectName,
+      safeProjectName,
       runTimestamp,
       projectRootDir,
       runDir,
@@ -385,6 +387,7 @@ export class ModelValidationAgent {
       projectId,
       workspaceName,
       projectName,
+      safeProjectName,
       runTimestamp,
       projectRootDir,
       runDir,
@@ -424,7 +427,7 @@ export class ModelValidationAgent {
     const mode = this.determineValidationMode(predictionStartDate, undefined, options?.executionMode);
 
     let featureMetadata: any = {};
-    const metadataYamlPath = path.join(runDir, "python_script", "metadata.yaml");
+    const metadataYamlPath = path.join(runDir, "dataset", "metadata.yaml");
     if (fs.existsSync(metadataYamlPath)) {
       try {
         featureMetadata = yaml.load(fs.readFileSync(metadataYamlPath, "utf-8")) || {};
@@ -587,13 +590,13 @@ export class ModelValidationAgent {
     const relOutputDir = path.relative(projectRootDir, modelValidationDir).replace(/\\/g, "/");
 
     const userPrompt = [
-      `Generate the complete Python model validation and prediction runner for project '${projectName}' in '${runTimestamp}/${projectName}_model_validation'.`,
+      `Generate the complete Python model validation and prediction runner for project '${projectName}' in '${runTimestamp}/${safeProjectName}_model_validation'.`,
       `--- Active Run & Artifact Context ---`,
       `Project Name: ${projectName}`,
       `Run Timestamp: ${runTimestamp}`,
-      `Validation Directory: ${runTimestamp}/${projectName}_model_validation`,
-      `Training Directory: ${runTimestamp}/${projectName}_model_training`,
-      `Trained Models Directory: ${runTimestamp}/${projectName}_model_training/artifacts/models`,
+      `Validation Directory: ${runTimestamp}/${safeProjectName}_model_validation`,
+      `Training Directory: ${runTimestamp}/${safeProjectName}_model_training`,
+      `Trained Models Directory: ${runTimestamp}/${safeProjectName}_model_training/artifacts/models`,
       `Finalized Dataset: ${datasetPath}`,
       `Dataset Time Column: ${timeCol}`,
       `Target Column: ${targetCol}`,
@@ -603,7 +606,7 @@ export class ModelValidationAgent {
       `Validated Features Count: ${validatedFeatures.length}`,
       `Validated Features Array: ${JSON.stringify(validatedFeatures)}`,
       `CRITICAL FEATURE EXTRACTION MANDATES:`,
-      `1. The validation runner MUST load 'dataset.parquet' from '${datasetPath}' (container path: /workspace/${relDatasetPath}).`,
+      `1. The validation runner MUST load 'dataset.parquet' from '${datasetPath}' (container path: /workspace/dataset/dataset.parquet).`,
       `2. Extract strictly the ${validatedFeatures.length} validated features: ${validatedFeatures.join(", ")}.`,
       `3. Construct the model input matrix X using strictly these validated feature columns (along with target '${targetCol}' and time '${timeCol}' where applicable).`,
       `4. DO NOT include arbitrary, unvalidated, or target-leakage columns in X that were not present in the training partition.`,
@@ -617,12 +620,12 @@ export class ModelValidationAgent {
         ? [`Selected Candidate Models to Validate: ${effectiveSelectedModels.join(", ")}`]
         : [`Validate all candidate model artifacts in artifacts/models/`]),
       `--- Output Requirements ---`,
-      `1. Write the executable validation script to '${runTimestamp}/${projectName}_model_validation/validation_runner.py'.`,
+      `1. Write the executable validation script to '${runTimestamp}/${safeProjectName}_model_validation/validation_runner.py'.`,
       `2. The script must execute inference across all candidate model joblib artifacts, apply preprocessor transformation, and compute metrics.`,
       `3. In Future Prediction Mode (${mode === "future_prediction"}), generate forward periods without fake past actuals, benchmark using training test scores, and set actualTotal/difference to null.`,
       `In future_prediction mode, forecast every period from ${predictionStartDate} for all ${horizon} periods, including gaps before today's date. Calendar-past periods without observations are still forecasts. Advance sequentially and recursively update lag/rolling features from prior predictions when required by the trained model; do not jump directly to a late requested period with stale lags. Never fabricate actuals or unavailable future covariates; report unsupported inference explicitly.`,
       `4. In Backtesting Mode (${mode === "backtesting"}), slice evaluation records starting from ${predictionStartDate}, compare against ground-truth actuals, and compute deterministic metrics (F1/Accuracy or WAPE/MAE/RMSE).`,
-      `5. Save outputs to '${runTimestamp}/${projectName}_model_validation/reports/model_validation_report.json' and 'artifacts/predictions/validation_predictions.parquet'.`,
+      `5. Save outputs to '${runTimestamp}/${safeProjectName}_model_validation/reports/model_validation_report.json' and 'artifacts/predictions/validation_predictions.parquet'.`,
       `6. MANDATORY JSON REPORT SCHEMA: 'model_validation_report.json' MUST structure candidate model results under the exact key 'model_results' (i.e. { "model_results": { "<model_id>": { "model_id": ..., "displayName": ..., "framework": ..., "status": "Completed", "score": ..., "metrics": { ... }, "totals": { ... }, "chartData": { ... }, ... } } }), matching the exact convention used in 'model_training_report.json'. DO NOT use 'models', 'candidate_models', or any alternative key names. Do NOT modify the key-value names mentioned in the standard schema.`,
       `Return a JSON summary of your implementation when the runner is created.`,
     ].join("\n\n");
@@ -630,7 +633,7 @@ export class ModelValidationAgent {
     const codingFallback: ValidationCodingAgentResult = {
       status: "Completed",
       summary: "Python model validation program scaffolded.",
-      projectDirectory: `${runTimestamp}/${projectName}_model_validation`,
+      projectDirectory: `${runTimestamp}/${safeProjectName}_model_validation`,
       files: ["validation_runner.py", "configs/validation_config.yaml"],
     };
 
@@ -702,7 +705,7 @@ export class ModelValidationAgent {
         codingResult = await invokeAgentJson<ValidationCodingAgentResult>(
           "modelValidationCode",
           model,
-          `The previous attempt did not produce validation_runner.py. You MUST write the file to '${runTimestamp}/${projectName}_model_validation/validation_runner.py' using the write_text_file tool.`,
+          `The previous attempt did not produce validation_runner.py. You MUST write the file to '${runTimestamp}/${safeProjectName}_model_validation/validation_runner.py' using the write_text_file tool.`,
           codingFallback,
           services,
           {
@@ -737,8 +740,8 @@ export class ModelValidationAgent {
         status: "Failed",
         summary: `Model Validation failed: the coding agent did not produce validation_runner.py after ${maxCodeGenRetries + 1} attempts.`,
         phase: "Model Validation",
-        projectDirectory: `${runTimestamp}/${projectName}_model_training`,
-        validationDirectory: `${runTimestamp}/${projectName}_model_validation`,
+        projectDirectory: `${runTimestamp}/${safeProjectName}_model_training`,
+        validationDirectory: `${runTimestamp}/${safeProjectName}_model_validation`,
         mode,
         predictionObjectiveStartDate: predictionStartDate,
         predictionObjectiveHorizon: horizon,
@@ -756,9 +759,9 @@ export class ModelValidationAgent {
     }
 
     const extraArgs = [
-      `--dataset-path "/workspace/${relDatasetPath}"`,
-      `--models-dir "/workspace/${relModelsDir}"`,
-      `--output-dir "/workspace/${relOutputDir}"`,
+      `--dataset-path "/workspace/dataset/dataset.parquet"`,
+      `--models-dir "/workspace/${safeProjectName}_model_training/artifacts/models"`,
+      `--output-dir "/workspace/${safeProjectName}_model_validation"`,
       `--start-date "${predictionStartDate}"`,
       `--horizon ${horizon}`,
       `--frequency "${frequency}"`,
@@ -788,7 +791,9 @@ export class ModelValidationAgent {
       services,
       undefined,
       accumulatedPackages,
-      extraArgs
+      extraArgs,
+      undefined,
+      { mountMode: "model_validation", serviceName: "model-validation" }
     );
 
     const maxRetries = options?.maxRetries ?? 20;
@@ -828,7 +833,7 @@ export class ModelValidationAgent {
         extraArgs.join(" "),
         `--- Validated Features ---`,
         `Validated Features (${validatedFeatures.length}): ${validatedFeatures.join(", ")}`,
-        `Diagnose the root cause (e.g. missing package dependencies, feature count/preprocessing mismatch such as preprocessor.joblib vs validation features, or model inference exceptions) and advise on exact code modifications to '${runTimestamp}/${projectName}_model_validation/validation_runner.py'. If packages are missing, list them in requiredPackages.`,
+        `Diagnose the root cause (e.g. missing package dependencies, feature count/preprocessing mismatch such as preprocessor.joblib vs validation features, or model inference exceptions) and advise on exact code modifications to '${runTimestamp}/${safeProjectName}_model_validation/validation_runner.py'. If packages are missing, list them in requiredPackages.`,
       ].filter(Boolean).join("\n\n");
 
       const rectifierFallback: ValidationRectifierResult = {
@@ -977,7 +982,9 @@ export class ModelValidationAgent {
         services,
         undefined,
         accumulatedPackages,
-        extraArgs
+        extraArgs,
+        undefined,
+        { mountMode: "model_validation", serviceName: "model-validation" }
       );
 
       validationHealth = ModelValidationAgent.validateReport(reportPath);
@@ -1262,8 +1269,8 @@ export class ModelValidationAgent {
       status: finalStatus,
       summary,
       phase: "Model Validation",
-      projectDirectory: `${runTimestamp}/${projectName}_model_training`,
-      validationDirectory: `${runTimestamp}/${projectName}_model_validation`,
+      projectDirectory: `${runTimestamp}/${safeProjectName}_model_training`,
+      validationDirectory: `${runTimestamp}/${safeProjectName}_model_validation`,
       mode,
       predictionObjectiveStartDate: predictionStartDate,
       predictionObjectiveHorizon: horizon,
@@ -1271,8 +1278,8 @@ export class ModelValidationAgent {
       report,
       candidates: rankedCandidates,
       championModel,
-      predictionsArtifact: `${projectName}_model_validation/artifacts/predictions/validation_predictions.parquet`,
-      reportArtifact: `${projectName}_model_validation/reports/model_validation_report.json`,
+      predictionsArtifact: `${safeProjectName}_model_validation/artifacts/predictions/validation_predictions.parquet`,
+      reportArtifact: `${safeProjectName}_model_validation/reports/model_validation_report.json`,
       warnings: report?.warnings || [],
       error: executionSuccess ? undefined : (execResult.stderr || summary),
     };

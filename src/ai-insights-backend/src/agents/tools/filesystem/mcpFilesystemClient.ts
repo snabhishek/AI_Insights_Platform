@@ -24,7 +24,7 @@ export interface McpFilesystemOptions {
 
 function toBaseProjectDir(dirPath: string): string {
   const norm = dirPath.replace(/\\/g, "/").replace(/\/+$/, "");
-  if (norm.endsWith("/python_script") || norm.endsWith("/python script")) {
+  if (norm.endsWith("_feature_engineering") || norm.endsWith("/python_script") || norm.endsWith("/python script")) {
     const parent = norm.substring(0, norm.lastIndexOf("/"));
     return ensureDirectoryExists(path.resolve(parent));
   }
@@ -171,11 +171,14 @@ export function getPythonScriptDirectory(
     } catch {}
   }
 
+  const safeProj = sanitizeFolderName(projectName || path.basename(projectDir));
+  const feFolder = `${safeProj}_feature_engineering`;
+
   if (effectiveTs && effectiveTs !== "default") {
-    return ensureDirectoryExists(path.join(projectDir, effectiveTs, "python_script"));
+    return ensureDirectoryExists(path.join(projectDir, effectiveTs, feFolder));
   }
 
-  return ensureDirectoryExists(path.join(projectDir, "python_script"));
+  return ensureDirectoryExists(path.join(projectDir, feFolder));
 }
 
 export function getSandboxDirectory(
