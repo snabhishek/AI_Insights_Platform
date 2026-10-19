@@ -1,3 +1,5 @@
+import { validateExportConfiguration } from "./modelExportContract";
+
 export interface DatasetCharacteristics {
   datasetName: string;
   datasetPath?: string;
@@ -149,6 +151,8 @@ export class TrainingConfigValidator {
     if (!conf.search_space || typeof conf.search_space !== "object" || Object.keys(conf.search_space).length === 0) {
       errors.push("Missing required 'search_space' hyperparameter distributions");
     }
+
+    errors.push(...validateExportConfiguration(conf));
 
     return {
       isValid: errors.length === 0,

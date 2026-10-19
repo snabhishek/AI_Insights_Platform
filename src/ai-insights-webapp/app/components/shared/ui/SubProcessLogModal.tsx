@@ -173,37 +173,10 @@ function SubProcessLogModalContent({
 
         <div className="flex items-center justify-between px-4 py-3 bg-[#0d1322] border-b border-slate-800 shrink-0">
 
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={onClose}
-              className="w-3.5 h-3.5 rounded-full bg-[#ff5f56] hover:brightness-110 transition-all flex items-center justify-center group cursor-pointer shadow-sm"
-              title="Close window (Esc)"
-            >
-              <span className="opacity-0 group-hover:opacity-100 text-[9px] font-bold text-black leading-none select-none">
-                ✕
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsMaximized((prev) => !prev)}
-              className="w-3.5 h-3.5 rounded-full bg-[#ffbd2e] hover:brightness-110 transition-all flex items-center justify-center group cursor-pointer shadow-sm"
-              title="Minimize / Restore size"
-            >
-              <span className="opacity-0 group-hover:opacity-100 text-[8px] font-bold text-black leading-none select-none">
-                –
-              </span>
-            </button>
-            <button
-              type="button"
-              onClick={() => setIsMaximized((prev) => !prev)}
-              className="w-3.5 h-3.5 rounded-full bg-[#27c93f] hover:brightness-110 transition-all flex items-center justify-center group cursor-pointer shadow-sm"
-              title="Maximize window"
-            >
-              <span className="opacity-0 group-hover:opacity-100 text-[8px] font-bold text-black leading-none select-none">
-                +
-              </span>
-            </button>
+          <div className="flex items-center gap-2" aria-hidden="true">
+            <span className="w-3.5 h-3.5 rounded-full bg-[#ff5f56] shadow-sm inline-block" />
+            <span className="w-3.5 h-3.5 rounded-full bg-[#ffbd2e] shadow-sm inline-block" />
+            <span className="w-3.5 h-3.5 rounded-full bg-[#27c93f] shadow-sm inline-block" />
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3">

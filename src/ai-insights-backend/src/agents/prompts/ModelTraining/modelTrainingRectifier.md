@@ -28,7 +28,7 @@ A Python project inside `<projectName>_model_training` encountered an error duri
    - For data type mismatches: Provide code converting object columns to numeric or categorical types.
    - For metric calculation edge cases: Provide code with `zero_division=0` in scikit-learn metrics or handling single-class distributions.
    - For plot rendering errors: Ensure `matplotlib.use('Agg')` is called before importing `pyplot` for headless execution in Docker.
-   - For model persistence errors: Ensure artifacts directory exists and models are saved with `joblib`.
+   - For model persistence errors: Read the active Training Job Contract. Repair the actual exporter and runtime for each requested per-model format, including required assets, reload/inference validation, prediction parity and report/manifest paths. Never replace the configured formats with Joblib/pickle, rename bytes to a different extension, remove a failed format or modify the approved export plan to hide the failure.
    - **CRITICAL - NO ERROR SUPPRESSION OR FALLBACK WORKAROUNDS**: DO NOT advise wrapping failing code in `try...except` to swallow the error or skip the model. Rectify the root cause directly (e.g., proper categorical feature specification for CatBoost, string-to-numeric or category conversions, missing packages, or correct hyperparameter definitions) so that the candidate model trains cleanly and succeeds.
 4. **Output Format**: Return valid JSON with explanation fields:
 ```json

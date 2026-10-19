@@ -70,7 +70,7 @@ The generated Python project MUST adhere strictly to the following modular archi
 │   ├── metrics.py                   # Multi-metric calculator (RMSE, MAE, R², Accuracy, F1, ROC-AUC, etc.)
 │   └── visualizer.py                # Plots ROC curves, PR curves, Confusion Matrix, Residuals & Model Comparison
 ├── artifacts/
-│   ├── models/                      # Destination directory for serialized model binaries (.joblib / .pkl)
+│   ├── models/                      # Per-model exports and required inference assets from the contract
 │   └── plots/                       # Destination directory for evaluation and comparison PNGs
 ├── pipeline.py                      # Sequential orchestrator executing candidate models one-by-one
 ├── requirements.txt                 # Exact pip dependencies required for training and evaluation
@@ -145,6 +145,19 @@ services:
 
 ## COMPONENT SPECIFICATIONS
 
+### Training contract and model exports
+- `configs/training_config.yaml` is the complete backend-managed Training Job Contract. Read its nested sections directly. Do not create a reduced configuration, delete export capabilities, or replace researched values with constants.
+- For each enabled model, use `model_selection.models[].export_capabilities` and `artifacts.export_policy`. Export every selectable `supported` format; include selectable `conditional` formats only when the policy permits them. Include formats with role `native_model` only when `include_native_format` is true. Do not export unsupported or unselectable formats.
+- Each model's `default_format` identifies its primary export. It must be among the requested formats. Neither the legacy `serialization_format` field nor a global serializer may override it.
+- Use the model's researched `training_steps.export_step` for the matching native format. Research official framework/converter/runtime documentation for additional formats and add the actual exporter and runtime dependencies to `requirements.txt`. Support the configured model family; do not assume all models use the same exporter.
+- Write genuine artifacts with the configured extension, or the required directory structure for directory formats. Never rename a Joblib/pickle file to mimic another format. Joblib/pickle is permitted only when explicitly declared as a selectable model format or as an appropriate declared preprocessing asset.
+- Export every requested format from the fitted estimator. Save all `required_assets` under the training project and map their semantic IDs to actual relative paths. Preserve fitted preprocessing, feature order, input dtypes, categorical mappings, label mapping, tokenizer and model configuration when required. Never refit preprocessing during reload or validation.
+- After each export, reload it with its declared inference runtime and run inference on representative held-out inputs. Validate input/output shapes, finite outputs, labels/probabilities and preprocessing behavior. When `require_prediction_parity` is true, compare with the original estimator's corresponding predictions using explicit tolerances justified for that format/precision and record the measured error and tolerances. Fail if validation or parity fails.
+- Export and reload checks are part of the training pipeline. A failed converter, missing required asset, unsupported operation or failed validation must stop execution with a non-zero exit code. Do not silently omit a format, downgrade it, change the approved contract or substitute another serializer.
+- Each model's report entry must include `default_format`, `artifact_path` referencing that primary export, and an `exports` array containing exactly one entry per requested format. Each export entry contains `format_id`, `artifact_path`, `status: "Completed"`, `runtime` (the configured string or null), `assets` (semantic ID to relative path), and `validation: { "reloaded": true, "prediction_parity_passed": <actual boolean> }` plus measured validation details. Do not claim checks that were not executed.
+- When `include_inference_manifest` is true, save one JSON manifest per model with `model_id`, `default_format`, and the same complete `exports` entries; record `inference_manifest_path` in that model's report entry. All artifact, asset and manifest paths are relative to the training project directory.
+- `best_model.model_path` and `selected_model_path` reference the champion's existing primary export. Do not create an additional champion file with an assumed extension. `model_results` must retain the same export metadata as `models_evaluated`.
+
 ### 1. `data/data_loader.py`
 - **Primary Dataset Path**: Strictly load `dataset.parquet` from `/workspace/dataset/dataset.parquet`.
 - **Feature & Target Extraction**: The training configuration specifies the list of validated features (`features` / `features_list`) and the target column (`target_column` / `prediction_target_column`). The data loader MUST load `/workspace/dataset/dataset.parquet`, extract all specified feature columns plus the target column (and date/timestamp column if temporal splitting), construct the modeling DataFrame containing these columns, and use that DataFrame for training and testing.
@@ -165,7 +178,7 @@ services:
     - You **MUST** use a standard **70/15/15 ratio split** (70% train, 15% validation, 15% test).
   - If problem type is classification and class balance allows, use stratified splitting when using ratio split.
 - Implements appropriate preprocessing transformers (e.g., `SimpleImputer`, `OneHotEncoder` for low-cardinality nominal features, `StandardScaler`) fitted **ONLY** on the training set and transformed on validation/test sets to prevent data leakage.
-- **MANDATORY PREPROCESSOR PERSISTENCE**: You **MUST ALWAYS** save the fitted preprocessor / ColumnTransformer to `artifacts/models/preprocessor.joblib` using `joblib.dump(self.preprocessor, "artifacts/models/preprocessor.joblib")`. Ensure the directory exists with `os.makedirs("artifacts/models", exist_ok=True)`. Also persist it from `pipeline.py`. Downstream validation and real-time inference MUST load this exact preprocessor to guarantee identical feature shapes and encodings.
+- **PREPROCESSOR PERSISTENCE**: Persist fitted preprocessing when required by an export. Record its actual path under that export's `assets` and in the inference manifest. If preprocessing is embedded in the exported inference graph, document that in the manifest. Do not invent a mandatory standalone preprocessing file when none is used.
 
 ### 2. `models/base_model.py`
 - Abstract class `BaseModelTrainer` defining:
@@ -202,8 +215,8 @@ services:
 - Must execute models **sequentially** (one at a time) to prevent container out-of-memory errors and enable clear step-by-step progress logging.
 - **Model Selection Filtering**: Accepts an optional list/set of selected models (e.g. from `--models` argument or configuration). If provided, it **MUST ONLY execute and benchmark the specified selected models**.
 - Measures and logs training time, fitting time, and scoring time per candidate model.
-- Saves the best-performing model as `artifacts/models/selected_model.joblib` (or `.pkl`).
-- Always persist `artifacts/models/preprocessor.joblib`.
+- Exports each trained model in every requested format, validates each exported artifact, and references the champion's configured primary artifact.
+- Persists the required inference assets and manifests declared by the export plan.
 - **NEVER CATCH MODEL TRAINING FAILURES IN PIPELINE**: Under no circumstances should `pipeline.py` wrap model execution in `try...except` to catch errors, log warnings, and continue running remaining models. If any candidate model fails to train or evaluate, throw the error directly and stop execution immediately so the Rectifier subagent can diagnose and resolve the issue.
 - Generates `model_training_report.json` with the standard report schema ONLY when all candidate models execute successfully.
 - **MANDATORY `model_training_report.json` SCHEMA**:
@@ -219,11 +232,10 @@ services:
     "best_model": {
       "model_id": "<champion_model_id>",
       "score": <number>,
-      "model_path": "artifacts/models/selected_model.joblib"
+      "model_path": "<champion's primary export relative path>"
     },
     "selected_model": "<champion_model_id>",
-    "selected_model_path": "artifacts/models/selected_model.joblib",
-    "preprocessor_path": "artifacts/models/preprocessor.joblib",
+    "selected_model_path": "<champion's primary export relative path>",
     "candidate_models_evaluated": ["<model_id_1>", "<model_id_2>"],
     "models_evaluated": [
       {
@@ -236,7 +248,19 @@ services:
           "test": { "score": <number>, "<primary_metric>": <number>, ... }
         },
         "timing": { "fit_time_seconds": <number>, "predict_time_seconds": <number> },
-        "artifact_path": "artifacts/models/<model_id>.joblib",
+        "default_format": "<this model's configured default_format>",
+        "artifact_path": "<this model's primary export relative path>",
+        "inference_manifest_path": "<model manifest relative path, when required>",
+        "exports": [
+          {
+            "format_id": "<requested format_id>",
+            "artifact_path": "<actual export relative path>",
+            "status": "Completed",
+            "runtime": "<configured runtime, or null>",
+            "assets": { "<required asset ID>": "<actual asset relative path>" },
+            "validation": { "reloaded": true, "prediction_parity_passed": <actual boolean> }
+          }
+        ],
         "plots": ["artifacts/plots/<model_id>_actual_vs_predicted.png", ...]
       }
     ],
@@ -250,7 +274,10 @@ services:
         "validation_metrics": { ... },
         "test_metrics": { ... },
         "duration_seconds": <number>,
-        "model_path": "artifacts/models/<model_id>.joblib",
+        "model_path": "<this model's primary export relative path>",
+        "default_format": "<this model's configured default_format>",
+        "exports": [<same export entries as models_evaluated>],
+        "inference_manifest_path": "<same manifest path, when required>",
         "plots": { ... }
       }
     },
@@ -262,7 +289,7 @@ services:
 - Accepts arguments:
   - `--db-path`: Base path to search for data (default `/workspace`).
   - `--out-dir`: Path to write outputs and artifacts (default current script directory).
-  - `--config-path`: Optional path to custom configuration YAML.
+  - `--config-path`: Required path to the complete Training Job Contract YAML supplied by the backend. Read this file directly without reconstructing a shortened config.
   - `--models`: Optional comma-separated list of candidate model IDs to train (e.g. `--models "lightgbm,random_forest"`). When provided, only train the selected models in the container.
   - `--split-date`: Optional cutoff date string for temporal splitting (if date column exists in data).
 - Parses arguments, loads data, executes `pipeline.py` with only the chosen models, and writes `model_training_report.json` to both `<projectName>_model_training/` and `<runTimestamp>/`.

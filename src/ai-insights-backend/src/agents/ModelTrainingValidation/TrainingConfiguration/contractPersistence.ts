@@ -9,7 +9,7 @@ export class ContractPersistence {
     projectName: string,
     synthesizedConfig: Record<string, any>,
     runTimestamp?: string
-  ): Promise<{ contractPath: string }> {
+  ): Promise<{ contractPath: string; configuration: Record<string, any> }> {
     return saveModularTrainingConfigContract(
       workspaceName,
       projectName,

@@ -1,6 +1,7 @@
 import * as fs from "fs";
 import * as path from "path";
 import * as yaml from "js-yaml";
+import { createHash } from "crypto";
 import { BaseMessage } from "@langchain/core/messages";
 import { GraphAgentStateType, IngestionServices } from "../../state";
 import {
@@ -27,6 +28,7 @@ import { validateWithRetry } from "../../validator/validatorNode";
 import { sanitizeFolderName } from "../../../config/fileServer.config";
 import { ModelTrainingAgentOutput, ModelTrainingReport, CandidateModelRun } from "./types";
 import { normalizeFlatStageStatuses } from "../../pipelineNames";
+import { getModelExportPlans, validateModelExports } from "../TrainingConfiguration/modelExportContract";
 
 interface CodingAgentResult extends Record<string, unknown> {
   status: string;
@@ -69,70 +71,19 @@ export class ModelTrainingAgent {
     const pythonProjectName = `${sanitizeFolderName(projectName)}_model_training`;
     const modelTrainingDir = path.join(runDir, pythonProjectName);
 
-    let persistedAgentState: any = {};
-    const stateTrainingConfiguration = state.stageOutputs.trainingConfigurationNode as any;
-    const stateConfigurationOutput =
-      (state.stageOutputs as any)?.trainingConfigurationNode ||
-      (state as any).trainingConfigurationNode ||
-      {};
-    const stateContractPath =
-      stateTrainingConfiguration?.contractPath || stateConfigurationOutput?.contractPath;
-    const stateContractData =
-      stateTrainingConfiguration?.configuration &&
-      Object.keys(stateTrainingConfiguration.configuration).length > 0
-        ? stateTrainingConfiguration.configuration
-        : stateConfigurationOutput?.configuration;
-
-    if (!stateContractPath || !stateContractData || Object.keys(stateContractData).length === 0) {
-      const projectWithWorkspace = await services.projectService.getProjectWithWorkspace(projectId);
-      const candidateAgentState = (projectWithWorkspace?.project?.agentState as any) || {};
-      if (candidateAgentState.runTimestamp === runTimestamp) {
-        persistedAgentState = candidateAgentState;
-      }
-    }
-
-    const persistedTrainingConfiguration = persistedAgentState.stageOutputs?.trainingConfigurationNode|| {};
-    const persistedConfigurationOutput =
-      persistedAgentState.stageOutputs?.trainingConfigurationNode ||
-      persistedAgentState.trainingConfigurationNode ||
-      {};
-    const trainingConfigurationState = {
-      ...persistedTrainingConfiguration,
-      ...stateTrainingConfiguration,
-    };
-    const configurationOutput = {
-      ...persistedConfigurationOutput,
-      ...stateConfigurationOutput,
-    };
-    const contractPath =
-      stateContractPath ||
-      persistedTrainingConfiguration.contractPath ||
-      persistedConfigurationOutput.contractPath;
-    const isNonEmptyObject = (value: unknown): value is Record<string, any> =>
-      value !== null &&
-      typeof value === "object" &&
-      !Array.isArray(value) &&
-      Object.keys(value).length > 0;
-    let contractData = [
-      stateContractData,
-      trainingConfigurationState.configuration,
-      configurationOutput.configuration,
-    ].find(isNonEmptyObject);
-
-    if (
-      !contractData &&
-      contractPath &&
-      fs.existsSync(contractPath)
-    ) {
-      const parsedContract = yaml.load(fs.readFileSync(contractPath, "utf-8"));
-      if (parsedContract && typeof parsedContract === "object" && !Array.isArray(parsedContract)) {
-        contractData = parsedContract;
-      }
-    }
-
-    if (!fs.existsSync(contractPath)) {
+    const trainingConfiguration = state.stageOutputs?.trainingConfigurationNode as any;
+    const contractPath = trainingConfiguration?.contractPath;
+    if (typeof contractPath !== "string" || !contractPath.trim() || !fs.existsSync(contractPath)) {
       throw new Error(`[ModelTrainingAgent] Completed training configuration contract is missing: ${contractPath}`);
     }
+    const contractContent = fs.readFileSync(contractPath, "utf-8");
+    const parsedContract = yaml.load(contractContent);
+    if (!parsedContract || typeof parsedContract !== "object" || Array.isArray(parsedContract)) {
+      throw new Error(`[ModelTrainingAgent] Training configuration must be a YAML object: ${contractPath}`);
+    }
+    const contractData = parsedContract as Record<string, any>;
+    getModelExportPlans(contractData);
+    const sourceContractHash = createHash("sha256").update(JSON.stringify(contractData)).digest("hex");
 
     return {
       projectId,
@@ -145,78 +96,28 @@ export class ModelTrainingAgent {
       modelTrainingDir,
       contractPath,
       contractData,
+      sourceContractHash,
       trainingConfiguration: {
-        ...configurationOutput,
-        ...trainingConfigurationState,
+        ...trainingConfiguration,
         contractPath,
         configuration: contractData,
       },
     };
   }
 
-  private static getCandidateModels(
-    contractData: any,
-    state?: GraphAgentStateType
-  ): CandidateModelItem[] {
-    const modelSelection =
-      state?.modelSelection ||
-      (state?.stageOutputs as any)?.modelSelectionNode ||
-      (state as any)?.modelSelectionNode;
-    const trainingConfigurations = [
-      state?.trainingConfiguration,
-      (state?.stageOutputs as any)?.trainingConfigurationNode,
-      (state as any)?.trainingConfigurationNode,
-    ].filter((configuration) => configuration && typeof configuration === "object");
-    const configuredCandidates = trainingConfigurations.flatMap((configuration: any) => [
-      configuration.models,
-      configuration.configuration?.model_selection?.models,
-      configuration.configuration?.models,
-    ]).find((models) => Array.isArray(models) && models.length > 0);
-    const fallbackCandidates = [
-      contractData?.model_selection?.models,
-      contractData?.model_selection?.candidates,
-      contractData?.models,
-      contractData?.candidate_models,
-      modelSelection?.candidates,
-      modelSelection?.models,
-    ].find((models) => Array.isArray(models) && models.length > 0);
-    const rawCandidates = configuredCandidates || fallbackCandidates;
-
-    if (!Array.isArray(rawCandidates) || rawCandidates.length === 0) {
-      throw new Error(
-        "[ModelTrainingAgent] No candidate models were found in the training contract or model-selection output."
-      );
-    }
-
-    const modelMetadata = new Map<string, any>();
-    for (const candidate of [...(fallbackCandidates || []), ...rawCandidates]) {
-      const id = typeof candidate === "string" ? candidate : candidate?.model_id || candidate?.id;
-      if (id) {
-        const key = String(id).toLowerCase();
-        modelMetadata.set(key, {
-          ...(modelMetadata.get(key) || {}),
-          ...(typeof candidate === "string" ? {} : candidate),
-          model_id: id,
-        });
-      }
-    }
-    const enabledCandidates = rawCandidates
-      .filter((model: any) => model && model.enabled !== false)
-      .map((model: any) => {
-        if (typeof model !== "string") return model;
-        return modelMetadata.get(model.toLowerCase()) || model;
-      });
+  private static getCandidateModels(contractData: any): CandidateModelItem[] {
+    const enabledCandidates = contractData.model_selection.models.filter((model: any) => model.enabled === true);
     if (enabledCandidates.length === 0) {
       throw new Error("[ModelTrainingAgent] The training configuration contains no enabled models.");
     }
 
     return enabledCandidates.map((m: any, idx: number) => {
-      const modelId = typeof m === "string" ? m : (m.model_id || m.id);
+      const modelId = m.model_id;
       if (!modelId) {
         throw new Error(`[ModelTrainingAgent] Candidate model at index ${idx} is missing 'model_id'.`);
       }
-      const displayName = typeof m === "string" ? m : (m.displayName || m.algorithm || modelId);
-      const framework = typeof m === "string" ? undefined : m.framework;
+      const displayName = m.displayName || m.algorithm || modelId;
+      const framework = m.framework;
       if (!framework) {
         throw new Error(`[ModelTrainingAgent] Candidate model '${modelId}' is missing required 'framework'.`);
       }
@@ -225,10 +126,35 @@ export class ModelTrainingAgent {
         model_id: modelId,
         displayName,
         framework,
+        export_capabilities: m.export_capabilities,
         status: "Completed" as const,
         score,
       };
     });
+  }
+
+  private static writeTrainingConfiguration(modelTrainingDir: string, configuration: Record<string, any>): void {
+    const configDir = path.join(modelTrainingDir, "configs");
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.writeFileSync(path.join(configDir, "training_config.yaml"), yaml.dump(configuration, { noRefs: true, lineWidth: -1 }), "utf-8");
+  }
+
+  private static exportInstructions(contractData: Record<string, any>): string {
+    return [
+      "Use the complete backend-managed configs/training_config.yaml as the execution contract. Do not flatten, replace, or remove its sections.",
+      "Implement these exact per-model export plans using verified library exporters. Do not substitute Joblib, pickle, or a different format when export fails.",
+      JSON.stringify({ export_policy: contractData.artifacts.export_policy, models: getModelExportPlans(contractData) }),
+      "For every requested format, export the trained estimator, save its required assets, reload using the declared runtime, and validate inference and prediction parity. Record exports and inference_manifest_path in models_evaluated and model_results as specified by the system prompt.",
+    ].join("\n");
+  }
+
+  private static exportValidationErrors(contractData: Record<string, any>, modelTrainingDir: string, selectedModels: string[]): string[] {
+    try {
+      const report = JSON.parse(fs.readFileSync(path.join(modelTrainingDir, "model_training_report.json"), "utf-8"));
+      return validateModelExports(contractData, report, modelTrainingDir, selectedModels);
+    } catch (error) {
+      return [error instanceof Error ? error.message : String(error)];
+    }
   }
 
   public static normalizeModelToken(name: string): string {
@@ -297,6 +223,7 @@ export class ModelTrainingAgent {
       modelTrainingDir,
       contractPath,
       contractData,
+      sourceContractHash,
       trainingConfiguration,
     } = ctx;
 
@@ -312,7 +239,7 @@ export class ModelTrainingAgent {
     }
 
     const preFlight = state.preFlight || (state.stageOutputs as any)?.preFlightNode || (state.stageOutputs as any)?.preFlight || {};
-    const configuredCandidateModels = this.getCandidateModels(contractData, state);
+    const configuredCandidateModels = this.getCandidateModels(contractData);
 
     // Extract PreFlight host hardware diagnostics
     const preFlightReport = (state.preFlight || (state.stageOutputs as any)?.preFlightNode || (state.stageOutputs as any)?.preFlight || {}) as any;
@@ -333,6 +260,7 @@ export class ModelTrainingAgent {
     fs.mkdirSync(path.join(modelTrainingDir, "evaluation"), { recursive: true });
     fs.mkdirSync(path.join(modelTrainingDir, "artifacts", "models"), { recursive: true });
     fs.mkdirSync(path.join(modelTrainingDir, "artifacts", "plots"), { recursive: true });
+    this.writeTrainingConfiguration(modelTrainingDir, contractData);
 
     const fsTools = await getMcpFilesystemTools({ projectId, workspaceName, projectName, runTimestamp });
     const contractTool = createReadTrainingContractTool(trainingConfiguration, projectId, runTimestamp, services);
@@ -350,7 +278,7 @@ export class ModelTrainingAgent {
 
     const model = getModel();
     const systemPrompt = await getPromptFromFile(
-      "ModelTrainingValidation/modelTraining.md",
+      "ModelTraining/modelTraining.md",
       "You are an expert AI Machine Learning Software Engineering and Coding Agent."
     );
 
@@ -436,6 +364,7 @@ export class ModelTrainingAgent {
       `In docker-compose.yml, configure deploy.resources.limits with cpus: '${containerCpuStr}' and memory: ${containerRamStr}. Set network: host in build and network_mode: host.`,
       ...splitDateInstructions,
       `--- Candidate Models to Implement ---`,
+      this.exportInstructions(contractData),
       `Implement modular estimators and pipelines for all candidate models in the contract (${configuredCandidateModels.map((c) => c.model_id).join(", ")}). Allow CLI argument '--models' in main.py to dynamically filter which models to fit.`,
       `--- Strict Isolation Constraints ---`,
       `1. DO NOT read or reference any other timestamp folder. Only operate inside '${runTimestamp}/'.`,
@@ -470,7 +399,7 @@ export class ModelTrainingAgent {
       );
     });
 
-    const extraArgs: string[] = [];
+    const extraArgs: string[] = [`--config-path "/workspace/configs/training_config.yaml"`];
     if (effectiveSelectedModels.length > 0) {
       extraArgs.push(`--models "${effectiveSelectedModels.join(",")}"`);
     }
@@ -542,6 +471,7 @@ export class ModelTrainingAgent {
             `Executing container test run for generated code in model training container (mounting dataset directory)...`
           );
 
+          this.writeTrainingConfiguration(modelTrainingDir, contractData);
           const execResult = await executePythonScript(
             relativeEntrypoint,
             "",
@@ -579,7 +509,7 @@ export class ModelTrainingAgent {
           );
 
           const rectifierPrompt = await getPromptFromFile(
-            "ModelTrainingValidation/modelTrainingRectifier.md",
+            "ModelTraining/modelTrainingRectifier.md",
             "You are an expert AI Python Debugger and Code Rectifier Advisor."
           );
 
@@ -589,6 +519,7 @@ export class ModelTrainingAgent {
             execResult.stdout || "[No stdout]",
             `--- Execution Stderr / Traceback ---`,
             execResult.stderr || "[No stderr]",
+            this.exportInstructions(contractData),
             `Target Directory: ${modelTrainingDir}`,
             `Inspect the failing files using your read-only filesystem tools. Diagnose the root cause and provide precise rectification instructions and code snippets for ModelTrainingAgent to apply.`,
           ].join("\n\n");
@@ -682,6 +613,7 @@ export class ModelTrainingAgent {
       candidates: configuredCandidateModels,
       rankedCandidates: configuredCandidateModels,
       filesCreated: codingResult.files || [],
+      sourceContractHash,
       splitEndDate: effectiveSplitEndDate,
       executionLogs: `--- STDOUT ---\n${lastExecResult.stdout}\n\n--- STDERR ---\n${lastExecResult.stderr}`,
     };
@@ -704,10 +636,11 @@ export class ModelTrainingAgent {
       modelTrainingDir,
       contractPath,
       contractData,
+      sourceContractHash,
       trainingConfiguration,
     } = ctx;
 
-    const configuredCandidateModels = this.getCandidateModels(contractData, state);
+    const configuredCandidateModels = this.getCandidateModels(contractData);
 
     const effectiveSelectedModels = Array.isArray(state.selectedModels)
       ? Array.from(new Set(state.selectedModels.map((modelId) => modelId.trim()).filter(Boolean)))
@@ -718,9 +651,9 @@ export class ModelTrainingAgent {
         "[ModelTrainingAgent] No candidate models selected for training. Selected models are required to execute container training."
       );
     }
-    const enabledModelIds = new Set(configuredCandidateModels.map((model) => model.model_id.toLowerCase()));
+    const enabledModelIds = new Set(configuredCandidateModels.map((model) => model.model_id));
     const unconfiguredModels = effectiveSelectedModels.filter(
-      (modelId) => !enabledModelIds.has(modelId.toLowerCase())
+      (modelId) => !enabledModelIds.has(modelId)
     );
     if (unconfiguredModels.length > 0) {
       throw new Error(
@@ -766,7 +699,7 @@ export class ModelTrainingAgent {
       `Executing container model training for selected models: ${effectiveSelectedModels.join(", ")}...`
     );
 
-    const extraArgs: string[] = [];
+    const extraArgs: string[] = [`--config-path "/workspace/configs/training_config.yaml"`];
     if (effectiveSelectedModels.length > 0) {
       extraArgs.push(`--models "${effectiveSelectedModels.join(",")}"`);
     }
@@ -806,14 +739,16 @@ export class ModelTrainingAgent {
     ];
 
     const systemPrompt = await getPromptFromFile(
-      "ModelTrainingValidation/modelTraining.md",
+      "ModelTraining/modelTraining.md",
       "You are an expert AI Machine Learning Software Engineering and Coding Agent."
     );
 
     const newlyAddedModels = effectiveSelectedModels.filter(
       (modelId) => !ModelTrainingAgent.isModelImplementedInProject(modelId, modelTrainingDir)
     );
-    const needsCodeUpdate = newlyAddedModels.length > 0;
+    const generatedContractHash = (state.stageOutputs as any)?.modelTrainingCodeNode?.sourceContractHash;
+    const needsCodeUpdate = newlyAddedModels.length > 0 || generatedContractHash !== sourceContractHash;
+    this.writeTrainingConfiguration(modelTrainingDir, contractData);
 
     let codingResult: CodingAgentResult;
     try {
@@ -833,11 +768,13 @@ export class ModelTrainingAgent {
           await logMilestoneThinking(
             services,
             "Model Training",
-            `Updating Python code in '${pythonProjectName}' to add trainer support for newly added model(s): ${newlyAddedModels.join(", ")} (preserving project directory)...`
+            `Updating Python code in '${pythonProjectName}' to match the active training and export contract...`
           );
 
           const updatePrompt = [
-            `Update the modular Python model training project in '${runTimestamp}/${pythonProjectName}' to add support for training the newly added model(s): ${newlyAddedModels.join(", ")}.`,
+            `Update the existing modular Python model training project in '${runTimestamp}/${pythonProjectName}' to match the active training contract, including every requested export format.`,
+            ...(newlyAddedModels.length > 0 ? [`Add trainers for: ${newlyAddedModels.join(", ")}.`] : []),
+            this.exportInstructions(contractData),
             `--- Active Run Context ---`,
             `Project Name: ${projectName}`,
             `Run Timestamp: ${runTimestamp}`,
@@ -856,10 +793,10 @@ export class ModelTrainingAgent {
             `4. STRICT FAIL FAST - NO FALLBACKS OR ERROR SUPPRESSION: DO NOT write try-except blocks or fallback handling that catches errors during model training or evaluation (e.g. CatBoost, LightGBM, XGBoost). If any model throws an error, allow the exception to propagate directly and terminate execution immediately with a non-zero exit code so the rectifier can diagnose and resolve the issue.`,
             `--- STRICT INCREMENTAL CODE UPDATE RULES (DO NOT DELETE FOLDER) ---`,
             `1. CRITICAL MANDATE: DO NOT delete, wipe, recreate, or re-scaffold the project directory '${runTimestamp}/${pythonProjectName}'. All existing files MUST be preserved.`,
-            `2. Keep all existing working files: 'data/data_loader.py', 'configs/training_config.yaml', 'evaluation/', and existing trainers in 'models/'.`,
-            `3. Implement concrete trainer class(es) for the newly added model(s) (${newlyAddedModels.join(", ")}) in 'models/', implementing BaseModelTrainer from 'models/base_model.py'.`,
-            `4. Update 'pipeline.py' (and 'main.py' if needed) to import and register the new trainer(s) so that the '--models' CLI argument executes them alongside existing trainers.`,
-            `5. Update 'requirements.txt' if any new package is required for the new model(s).`,
+            `2. Update existing working modules in place. Keep the complete backend-managed 'configs/training_config.yaml' intact.`,
+            `3. Implement missing trainers and update existing exporters to honor each configured export plan.`,
+            `4. Update 'pipeline.py' and 'main.py' to execute selected trainers and export every requested format, including reload and inference validation.`,
+            `5. Update 'requirements.txt' for the actual trainers, converters, and inference runtimes.`,
             `6. All models to train in this execution: ${effectiveSelectedModels.join(", ")}.`,
             `7. Always generate model evaluation metrics, comparison visualization plots in artifacts/plots/, and model_training_report.json at completion.`,
             `8. Post-training reasoning: Reason on generated metrics and plots. If model performance is not good on the problem type, check code and apply code-level improvements. If good, stop execution cleanly.`,
@@ -941,15 +878,7 @@ export class ModelTrainingAgent {
           `Executing model training project inside Docker container for selected models: ${effectiveSelectedModels.join(", ")}...`
         );
 
-        const extraArgs: string[] = [];
-        if (effectiveSelectedModels.length > 0) {
-          extraArgs.push(`--models "${effectiveSelectedModels.join(",")}"`);
-        }
-        if (effectiveSplitEndDate) {
-          extraArgs.push(`--split-date "${effectiveSplitEndDate}"`);
-          extraArgs.push(`--split-end-date "${effectiveSplitEndDate}"`);
-        }
-
+        this.writeTrainingConfiguration(modelTrainingDir, contractData);
         const execResult = await executePythonScript(
           relativeEntrypoint,
           "",
@@ -965,88 +894,14 @@ export class ModelTrainingAgent {
 
         lastExecResult = execResult;
 
-        const reportPathInProject = path.join(modelTrainingDir, "model_training_report.json");
-        const reportPathInRun = path.join(runDir, "model_training_report.json");
-        const resolvedReportPath = fs.existsSync(reportPathInProject)
-          ? reportPathInProject
-          : fs.existsSync(reportPathInRun)
-          ? reportPathInRun
-          : null;
-        const reportExists = Boolean(resolvedReportPath);
-
-        const preprocessorExists =
-          fs.existsSync(path.join(modelTrainingDir, "artifacts", "models", "preprocessor.joblib")) ||
-          fs.existsSync(path.join(modelTrainingDir, "models", "preprocessor.joblib")) ||
-          fs.existsSync(path.join(runDir, "artifacts", "models", "preprocessor.joblib"));
-
-        let reportAllModelsValid = true;
-        const missingOrFailedModels: string[] = [];
-
-        if (resolvedReportPath) {
-          try {
-            const reportRaw = fs.readFileSync(resolvedReportPath, "utf-8");
-            const reportData = JSON.parse(reportRaw);
-
-            if (reportData.status && String(reportData.status).toLowerCase().includes("fail")) {
-              reportAllModelsValid = false;
-              missingOrFailedModels.push(`Report status is '${reportData.status}'.`);
-            }
-
-            if (effectiveSelectedModels.length > 0) {
-              const modelsEvaluated: any[] = Array.isArray(reportData.models_evaluated)
-                ? reportData.models_evaluated
-                : [];
-              const modelResults: Record<string, any> =
-                reportData.model_results && typeof reportData.model_results === "object"
-                  ? reportData.model_results
-                  : {};
-              const candidateModelsEvaluated: string[] = Array.isArray(reportData.candidate_models_evaluated)
-                ? reportData.candidate_models_evaluated.map(String)
-                : [];
-
-              for (const reqModelId of effectiveSelectedModels) {
-                const normReq = reqModelId.toLowerCase().trim();
-                const evaluatedEntry = modelsEvaluated.find(
-                  (m) =>
-                    String(m?.model_id || "").toLowerCase().trim() === normReq ||
-                    String(m?.displayName || "").toLowerCase().trim() === normReq
-                );
-                const resultsEntry = Object.entries(modelResults).find(
-                  ([k, v]: [string, any]) =>
-                    k.toLowerCase().trim() === normReq ||
-                    String(v?.model_id || "").toLowerCase().trim() === normReq
-                );
-                const inCandidatesList = candidateModelsEvaluated.some(
-                  (c) => c.toLowerCase().trim() === normReq
-                );
-
-                const modelEntry = evaluatedEntry || (resultsEntry ? resultsEntry[1] : null);
-
-                if (!modelEntry && !inCandidatesList) {
-                  reportAllModelsValid = false;
-                  missingOrFailedModels.push(`Selected model '${reqModelId}' was not trained or present in model_training_report.json.`);
-                } else if (modelEntry) {
-                  const entryStatus = String(modelEntry.status || "").toLowerCase();
-                  if (entryStatus.includes("fail") || entryStatus.includes("error") || modelEntry.error) {
-                    reportAllModelsValid = false;
-                    missingOrFailedModels.push(`Model '${reqModelId}' failed with error: ${modelEntry.error || entryStatus}`);
-                  }
-                }
-              }
-            }
-          } catch (pErr: any) {
-            reportAllModelsValid = false;
-            missingOrFailedModels.push(`Failed to parse model_training_report.json: ${pErr.message}`);
-          }
-        }
-
         const combinedLogs = ((execResult.stderr || "") + "\n" + (execResult.stdout || "")).toLowerCase();
         const hasSuppressedErrorInLogs =
           combinedLogs.includes("traceback (most recent call last)") ||
           combinedLogs.includes("catboosterror") ||
           combinedLogs.includes("failed to train");
 
-        if (execResult.success && reportExists && preprocessorExists && reportAllModelsValid && !hasSuppressedErrorInLogs) {
+        const exportErrors = this.exportValidationErrors(contractData, modelTrainingDir, effectiveSelectedModels);
+        if (execResult.success && exportErrors.length === 0 && !hasSuppressedErrorInLogs) {
           await logMilestoneThinking(
             services,
             "Model Training",
@@ -1057,9 +912,7 @@ export class ModelTrainingAgent {
 
         const missingDetails: string[] = [];
         if (!execResult.success) missingDetails.push("Container execution returned failure exit code.");
-        if (!reportExists) missingDetails.push("model_training_report.json was not generated.");
-        if (!preprocessorExists) missingDetails.push("artifacts/models/preprocessor.joblib was not persisted.");
-        if (!reportAllModelsValid) missingDetails.push(...missingOrFailedModels);
+        missingDetails.push(...exportErrors);
         if (hasSuppressedErrorInLogs) missingDetails.push("Container logs contain unhandled exception or suppressed error traceback.");
 
         await logMilestoneThinking(
@@ -1069,13 +922,14 @@ export class ModelTrainingAgent {
         );
 
         const rectifierPrompt = await getPromptFromFile(
-          "ModelTrainingValidation/modelTrainingRectifier.md",
+          "ModelTraining/modelTrainingRectifier.md",
           "You are an expert AI Python Debugger and Code Rectifier Advisor."
         );
 
         const rectifierUserMsg = [
           `The Python model training project at '${runTimestamp}/${pythonProjectName}' failed or encountered model errors during container execution.`,
           `Selected models expected to train: ${effectiveSelectedModels.join(", ")}`,
+          this.exportInstructions(contractData),
           `Validation Issues:\n${missingDetails.join("\n")}`,
           `--- Execution Stdout ---`,
           execResult.stdout || "[No stdout]",
@@ -1156,51 +1010,13 @@ export class ModelTrainingAgent {
 
     await cleanupRunContainer(projectId, runTimestamp);
 
-    const candidateReportPaths = [
-      path.join(modelTrainingDir, "model_training_report.json"),
-      path.join(runDir, "model_training_report.json"),
-      path.join(modelTrainingDir, "artifacts", "model_training_report.json"),
-      path.join(runDir, "artifacts", "model_training_report.json"),
-      path.join(modelTrainingDir, "reports", "model_training_report.json"),
-      path.join(runDir, "reports", "model_training_report.json"),
-    ];
-
-    let report: any | undefined;
-    for (const p of candidateReportPaths) {
-      if (fs.existsSync(p)) {
-        try {
-          report = JSON.parse(fs.readFileSync(p, "utf-8"));
-          if (report) break;
-        } catch {}
-      }
-    }
-
-    if (!report && fs.existsSync(runDir)) {
-      try {
-        const findReportRecursive = (dir: string): string | null => {
-          const files = fs.readdirSync(dir, { withFileTypes: true });
-          for (const f of files) {
-            const fullPath = path.join(dir, f.name);
-            if (f.isFile() && f.name === "model_training_report.json") return fullPath;
-            if (f.isDirectory() && !f.name.startsWith(".")) {
-              const res = findReportRecursive(fullPath);
-              if (res) return res;
-            }
-          }
-          return null;
-        };
-        const discovered = findReportRecursive(runDir);
-        if (discovered) {
-          report = JSON.parse(fs.readFileSync(discovered, "utf-8"));
-        }
-      } catch {}
-    }
-
-    if (!report) {
+    const reportPath = path.join(modelTrainingDir, "model_training_report.json");
+    if (!fs.existsSync(reportPath)) {
       throw new Error(
-        `[ModelTrainingAgent] Training execution failed: 'model_training_report.json' was not generated in ${modelTrainingDir}/reports/ or runDir. Container stderr: ${lastExecResult.stderr || "N/A"}`
+        `[ModelTrainingAgent] Training execution failed: '${reportPath}' was not generated. Container stderr: ${lastExecResult.stderr}`
       );
     }
+    const report = JSON.parse(fs.readFileSync(reportPath, "utf-8"));
 
     const executionSuccess = lastExecResult.success && !!report;
 
@@ -1399,6 +1215,9 @@ export class ModelTrainingAgent {
         validationMetrics,
         testMetrics,
         artifact,
+        default_format: r.default_format,
+        exports: r.exports,
+        inference_manifest_path: r.inference_manifest_path,
         plots,
         error: r.error,
       };
@@ -1510,6 +1329,7 @@ export class ModelTrainingAgent {
       phase: "Model Training",
       projectDirectory: `${runTimestamp}/${pythonProjectName}`,
       report: { ...report, model_results: runs },
+      sourceContractHash,
       executionCompleted: finalStatus === "Completed",
       direction: report.metric_direction || report.direction || reportDirection,
       candidates: runs,

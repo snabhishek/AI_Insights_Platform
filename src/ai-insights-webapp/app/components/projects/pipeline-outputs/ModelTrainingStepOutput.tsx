@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import { Download } from "lucide-react";
 import { BACKEND_URL } from "../../providers/AppContext";
 import { VALIDATION_UI_STRINGS } from "../validationConstants";
 
@@ -80,14 +81,6 @@ function BoxIcon({ className = "w-4 h-4" }: { className?: string }) {
   );
 }
 
-function CopyIcon({ className = "w-4 h-4" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-    </svg>
-  );
-}
 
 function MaximizeIcon({ className = "w-4 h-4" }: { className?: string }) {
   return (
@@ -118,7 +111,6 @@ export default function ModelTrainingStepOutput({
   nextStepInProgress = false,
   isApproving = false,
 }: ModelTrainingStepOutputProps) {
-  const [copiedArtifact, setCopiedArtifact] = useState<string | null>(null);
   const [activePlotModal, setActivePlotModal] = useState<{ title: string; url: string } | null>(null);
 
   let reportCandidates: any[] = [];
@@ -297,12 +289,6 @@ export default function ModelTrainingStepOutput({
       ))
     : [];
 
-  const handleCopyPath = (text: string) => {
-    navigator.clipboard.writeText(text);
-    setCopiedArtifact(text);
-    setTimeout(() => setCopiedArtifact(null), 2000);
-  };
-
   const hasExecutionReport = Boolean(modelTraining?.report || modelTraining?.selectedModel || (modelTraining?.status === "Completed" && modelTraining?.validationMetrics));
   const hasCodeGenerated = Boolean(
     modelTraining?.projectDirectory ||
@@ -319,17 +305,6 @@ export default function ModelTrainingStepOutput({
     modelTraining?.selectedModel ||
     report?.selectedModel ||
     report?.champion_model;
-
-  const championArtifact =
-    modelTraining?.selectedModelArtifact ||
-    report?.selectedModelArtifact ||
-    report?.champion_artifact ||
-    report?.artifacts?.selected_model ||
-    candidateModels.find((c) => c.model_id === championModelId)?.artifact;
-
-  const championCandidate = championModelId
-    ? candidateModels.find((candidate) => candidate.model_id === championModelId)
-    : undefined;
 
   const direction = String(
     report?.direction ||
@@ -475,82 +450,6 @@ export default function ModelTrainingStepOutput({
         </div>
       )}
 
-      {hasExecutionReport && championCandidate && (
-        <div className="relative overflow-hidden rounded-2xl border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-500/10 via-surface to-surface p-6 shadow-sm">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1.5">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-emerald-500 text-white shadow-xs">
-                  <TrophyIcon className="w-3.5 h-3.5" />
-                  Champion Model
-                </span>
-                {championCandidate.framework && (
-                  <span className="text-xs font-mono text-muted-foreground">
-                    Framework: {championCandidate.framework}
-                  </span>
-                )}
-              </div>
-
-              <h4 className="text-xl font-bold text-foreground">
-                {championCandidate.displayName || championCandidate.model_id}
-              </h4>
-              <p className="text-xs text-muted-foreground">
-                Selected as best-performing estimator based on held-out validation metrics and inference efficiency.
-              </p>
-            </div>
-
-            {typeof championCandidate.score === "number" && (
-              <div className="p-4 rounded-xl bg-surface border border-emerald-500/30 text-center shrink-0 min-w-[140px]">
-                <span className="text-[10px] uppercase font-bold text-muted-foreground block tracking-wider">
-                  {primaryMetricKey ? `${primaryMetricKey} Score` : "Benchmark Score"}
-                </span>
-                <span className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                  {championCandidate.score % 1 !== 0 ? championCandidate.score.toFixed(4) : championCandidate.score}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {(championCandidate.validationMetrics || championCandidate.testMetrics) && (
-            <div className="mt-5 pt-4 border-t border-border grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {Object.entries(championCandidate.testMetrics && Object.keys(championCandidate.testMetrics).length > 0 ? championCandidate.testMetrics : championCandidate.validationMetrics || {}).map(
-                ([metricName, val]) => (
-                  <div key={metricName} className="p-2.5 rounded-xl bg-surface/80 border border-border text-center">
-                    <span className="text-[10px] uppercase font-bold text-muted-foreground block truncate">
-                      {metricName}
-                    </span>
-                    <span className="text-sm font-extrabold text-foreground">
-                      {typeof val === "number" ? (val % 1 !== 0 ? val.toFixed(4) : val) : String(val)}
-                    </span>
-                  </div>
-                )
-              )}
-            </div>
-          )}
-
-          {championArtifact && (
-            <div className="mt-4 pt-3 border-t border-border/80 flex items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2 truncate text-muted-foreground">
-                <BoxIcon className="w-4 h-4 text-emerald-500 shrink-0" />
-                <span className="font-semibold text-foreground shrink-0">Model Artifact:</span>
-                <span className="font-mono text-xs truncate bg-surface-muted px-2 py-0.5 rounded border border-border">
-                  {championArtifact}
-                </span>
-              </div>
-
-              <button
-                type="button"
-                disabled={nextStepInProgress}
-                onClick={() => handleCopyPath(championArtifact)}
-                className="shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border bg-surface hover:bg-surface-muted text-foreground transition-all cursor-pointer font-medium"
-              >
-                <CopyIcon className="w-3.5 h-3.5" />
-                <span>{copiedArtifact === championArtifact ? "Copied!" : "Copy Path"}</span>
-              </button>
-            </div>
-          )}
-        </div>
-      )}
 
       {hasExecutionReport && candidateModels.length > 0 && (
         <div className="rounded-2xl border border-border bg-surface overflow-hidden shadow-xs">
@@ -573,7 +472,8 @@ export default function ModelTrainingStepOutput({
                   <th className="py-3 px-4">{primaryMetricKey ? `${primaryMetricKey} Score` : "Score"}</th>
                   <th className="py-3 px-4">Validation Metrics</th>
                   <th className="py-3 px-4">Duration</th>
-                  <th className="py-3 px-4 text-right">Status</th>
+                  <th className="py-3 px-4">Status</th>
+                  <th className="py-3 px-4 text-right">Export</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-border">
@@ -641,11 +541,21 @@ export default function ModelTrainingStepOutput({
                       <td className="py-3 px-4 text-muted-foreground font-mono">
                         {m.durationSeconds != null ? `${Number(m.durationSeconds).toFixed(1)}s` : "—"}
                       </td>
-                      <td className="py-3 px-4 text-right">
+                      <td className="py-3 px-4">
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
                           <CheckCircleIcon className="w-3 h-3" />
                           {m.status || "Status unavailable"}
                         </span>
+                      </td>
+                      <td className="py-3 px-4 text-right">
+                        <button
+                          type="button"
+                          className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[11px] font-semibold border border-border bg-surface hover:bg-surface-muted text-foreground transition-all shadow-2xs cursor-pointer hover:border-primary/40 active:scale-95"
+                          title={`Export ${m.displayName || m.model_id}`}
+                        >
+                          <Download size={13} className="text-muted-foreground" />
+                          <span>Export</span>
+                        </button>
                       </td>
                     </tr>
                   );
