@@ -899,6 +899,19 @@ export default function TrainingConfigurationStepOutput({
                               <span className="font-medium text-foreground">{model.training_speed}</span>
                             </div>
                           )}
+                          {Array.isArray(model.export_capabilities?.formats) && (
+                            <div className="space-y-1">
+                              <span>Export Formats:</span>
+                              <div className="flex flex-wrap gap-1">
+                                {model.export_capabilities.formats.map((format: any) => (
+                                  <span key={format.format_id} className="rounded bg-surface-muted px-1.5 py-0.5 text-foreground" title={format.limitations?.join("; ")}>
+                                    {format.format_name} · {format.status}
+                                    {format.format_id === model.export_capabilities.default_format && " · Primary"}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1029,12 +1042,6 @@ export default function TrainingConfigurationStepOutput({
                   <span className="text-muted-foreground">Max Latency Constraint:</span>
                   <span className="font-mono font-bold text-foreground">
                     {validationGates.maximum_latency || "50ms"}
-                  </span>
-                </div>
-                <div className="p-2.5 rounded-lg bg-surface-muted border border-border flex items-center justify-between">
-                  <span className="text-muted-foreground">Export Format:</span>
-                  <span className="font-mono font-bold text-primary uppercase">
-                    {artifacts.serialization_format || "onnx"}
                   </span>
                 </div>
               </div>

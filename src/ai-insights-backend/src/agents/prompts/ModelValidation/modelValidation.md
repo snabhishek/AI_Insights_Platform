@@ -36,31 +36,19 @@ Preserve the existing runtime isolation and artifact access restrictions. Do not
 
 The Model Training phase has prepared and verified the following artifacts in \`\<runTimestamp>\`:
 
-1\. **\*\*Trained Model Binaries\*\***
+1. **Trained model exports**
 
-   Located in:
+Read `<runTimestamp>/<projectName>_model_training/model_training_report.json`. For each model in `models_evaluated`, resolve `default_format` against its `exports` entries. Load that exact `artifact_path` with its declared `runtime`, required `assets` and inference manifest. Paths are relative to the training project directory. Use the complete `configs/training_config.yaml` export capabilities to understand the trained format and model family.
 
-   \`\<runTimestamp>/\<projectName>\_model_training/artifacts/models/\*.joblib\`
+Do not glob file extensions, assume a universal serializer, or treat alternate exports as additional candidate models. Research the correct inference API for the actual format and include its runtime dependencies. Only load Joblib when the selected artifact is explicitly declared in that format. A missing model, runtime or required asset is an error; do not substitute another format.
 
-   Models may be saved as joblib dictionaries:
+2. **Fitted preprocessing and input schema**
 
-   \`{"model": \<estimator>, "feature_names": [...], "config": {...}, "display_name": "..."}\`
-
-   or raw scikit-learn/LightGBM/XGBoost estimators.
-
-   The available model formats and existing artifact structure must be preserved. Do not assume that all models share identical inference behavior.
-
-2\. **\*\*Fitted Preprocessor\*\***
-
-   Located in:
-
-   \`\<runTimestamp>/\<projectName>\_model_training/artifacts/models/preprocessor.joblib\`
-
-   A scikit-learn \`ColumnTransformer\` or Pipeline fitted strictly on the training partition.
+Use the preprocessing assets declared for the selected export. Reuse the fitted training transformer when external preprocessing is required. If preprocessing is embedded in the exported model, supply the declared raw inputs without transforming them again.
 
    **\*\*MANDATORY PREPROCESSOR REUSE & FEATURE ALIGNMENT\*\***:
 
-   - Load \`preprocessor.joblib\` directly from \`\<runTimestamp>/\<projectName>\_model_training/artifacts/models/preprocessor.joblib\`.
+   - Load the fitted preprocessing asset from the selected export's manifest using its declared loader.
 
    - Align input feature columns strictly to \`preprocessor.feature_names_in\_\` or \`estimator.feature_names_in\_\`.
 
@@ -164,7 +152,7 @@ The validation report must support different prediction tasks without incorrectl
 
 **###** **1. Estimator Unwrapping & Loading**
 
-Inspect loaded joblib objects with robust unwrapping:
+Only when the report explicitly declares a Joblib artifact, inspect its recorded wrapper structure before loading the estimator. Do not use this Joblib example for native model files, portable inference graphs or checkpoint directories:
 
 \`\`\`python
 
@@ -217,7 +205,7 @@ Preserve support for:
 
 \- Existing model metadata.
 
-Exclude internal alias copies, such as \`selected_model.joblib\`, from candidate comparison tabs when original candidate models exist (\`explored_timesfm\`, \`lightgbm_sota\`, \`timegpt_forecaster\`, etc.).
+Use the model IDs from the training report for candidate comparison. Alternate export formats and champion pointers reference the same trained model and must not create duplicate candidates.
 
 Do not assume that the presence of a particular model class automatically determines the complete prediction task or evaluation strategy. Use training metadata and the model's supported inference behavior.
 
@@ -253,9 +241,7 @@ Replicate calendar temporal features required by the preprocessor before calling
 
   \`order_dayofyear\`
 
-Load \`preprocessor.joblib\`.
-
-If missing, dynamically import \`DataLoader\` from the project's \`data/data_loader.py\` to fit and persist it only when this behavior is compatible with the existing training and inference contract.
+Load the declared preprocessing asset when required by the selected export. If a required asset is missing, fail explicitly. Never fit or reconstruct a replacement during validation.
 
 The finalized dataset and saved preprocessing artifacts must be reused where applicable. Do not blindly apply forecasting-specific temporal feature engineering to classification, regression, predictive maintenance, or other tasks that do not require it.
 

@@ -601,37 +601,20 @@ model_selection:
         "<Specify the model parameters that should remain fixed during training rather than being searched automatically.>"
 
       export_capabilities:
-        default_format: "onnx"
-        selection_rationale: "Portable inference format supported by the selected model, subject to conversion validation."
+        default_format: null
+        selection_rationale: "<Explain the researched primary format and alternatives for this exact model.>"
         post_training_validation_required: true
 
         formats:
-          - format_id: "onnx"
-            extension: ".onnx"
-            format_name: "ONNX"
-            status: "conditional"
-            selectable: true
-            role: "portable_inference"
-            runtime: "ONNX Runtime"
-            requires_preprocessing: true
-            required_assets:
-              - "input_schema"
-              - "preprocessing_pipeline"
-            validation_required: true
-            limitations:
-              - "Verify converter support for the selected algorithm and model configuration."
-
-          - format_id: "framework_native"
+          - format_id: "<Verified format identifier for this model.>"
             extension: null
-            format_name: "Framework Native"
-            status: "supported"
+            format_name: "<Verified format name.>"
+            status: "<supported|conditional|unsupported>"
             selectable: true
-            role: "native_model"
+            role: "<portable_inference|native_model|transformer_checkpoint|quantized_llm|accelerator_optimized>"
             runtime: null
             requires_preprocessing: true
-            required_assets:
-              - "input_schema"
-              - "preprocessing_pipeline"
+            required_assets: []
             validation_required: true
             limitations: []
 
@@ -685,7 +668,6 @@ artifacts:
 
   export_policy:
     mode: "multiple_formats"
-    default_format: "framework_native"
     include_native_format: true
     include_conditional_formats: true
     validate_after_export: true

@@ -9,13 +9,12 @@ import {
   DateRangeResult,
 } from "./trainingConfig.service.interface";
 import { ProjectService } from "../../project/project.service";
-import { getProjectSchemasDir } from "../../../config/fileServer.config";
 import {
-  sanitizeName,
   resolveProjectRunTimestamp,
   syncTrainingConfigSplitDate,
 } from "../../../agents/tools/helpers/schemaHelper";
 import { normalizeFlatStageStatuses } from "../../../agents/pipelineNames";
+import { TrainingConfigValidator } from "../../../agents/ModelTrainingValidation/TrainingConfiguration/trainingConfigValidator";
 
 export class TrainingConfigService implements ITrainingConfigService {
   constructor(private projectService: ProjectService) {}
@@ -82,36 +81,27 @@ export class TrainingConfigService implements ITrainingConfigService {
     let parsed: Record<string, any>;
     try {
       parsed = yaml.load(yamlContent) as Record<string, any>;
-      if (!parsed || typeof parsed !== "object") {
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
         throw new Error("YAML content must evaluate to a valid object");
       }
     } catch (err: any) {
       throw new Error(`YAML syntax error: ${err?.message || err}`);
     }
+    const validation = TrainingConfigValidator.validate(parsed);
+    if (!validation.isValid) throw new Error(`Invalid Training Configuration:\n${validation.errors.join("\n")}`);
 
     const pWs = await this.projectService.getProjectWithWorkspace(projectId);
     if (!pWs || !pWs.project) {
       throw new Error(`Project "${projectId}" not found`);
     }
 
-    const workspaceName = pWs.workspaceName || "DefaultWorkspace";
-    const projectName = pWs.project.name;
-    const cleanProjectTitle = sanitizeName(projectName);
-    const useCaseSlug = cleanProjectTitle.toLowerCase().replace(/[\s-]+/g, "_");
-
     const existingAgentState = (pWs.project.agentState as any) || {};
     this.requireCompletedTrainingConfiguration(existingAgentState, timestamp);
-    const effectiveTs = resolveProjectRunTimestamp(
-      workspaceName,
-      projectName,
-      timestamp || existingAgentState.runTimestamp
-    );
-
-    const targetDir = getProjectSchemasDir(workspaceName, projectName, effectiveTs);
-    await fs.mkdir(targetDir, { recursive: true });
-
-    const filename = `${useCaseSlug}_training_job_contract_${effectiveTs}.yaml`;
-    const filePath = path.resolve(targetDir, filename);
+    const filePath = existingAgentState.stageOutputs.trainingConfigurationNode.contractPath;
+    if (typeof filePath !== "string" || !filePath.trim() || !fsSync.existsSync(filePath)) {
+      throw new Error("The active Training Configuration contract file is unavailable.");
+    }
+    const filename = path.basename(filePath);
 
     await fs.writeFile(filePath, yamlContent, "utf-8");
     console.info(`[TrainingConfigService] Successfully saved YAML contract to file server at: ${filePath}`);

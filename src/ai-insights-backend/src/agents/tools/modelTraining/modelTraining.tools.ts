@@ -15,48 +15,23 @@ export const createReadTrainingContractTool = (
     async () => {
       try {
 
-        let contractPath = trainingConfigState?.contractPath;
-
-        if (!contractPath || !fs.existsSync(contractPath)) {
-          const projectDir = getProjectDirectory({ projectId, runTimestamp });
-          const schemasDir = path.join(projectDir, runTimestamp, "schemas");
-          if (fs.existsSync(schemasDir)) {
-            const files = fs.readdirSync(schemasDir);
-            const yamlFile = files.find((f) => f.endsWith(".yaml") || f.endsWith(".yml"));
-            if (yamlFile) {
-              contractPath = path.join(schemasDir, yamlFile);
-            }
-          }
+        const contractPath = trainingConfigState?.contractPath;
+        if (typeof contractPath !== "string" || !contractPath.trim()) {
+          throw new Error(`The active training contract path is missing for run ${runTimestamp}.`);
         }
-
-        if (contractPath && fs.existsSync(contractPath)) {
-          const raw = fs.readFileSync(contractPath, "utf-8");
-          const parsed = yaml.load(raw) as Record<string, any>;
-          return {
-            success: true,
-            contractPath,
-            configuration: parsed || trainingConfigState?.configuration || trainingConfigState,
-          };
+        const parsed = yaml.load(fs.readFileSync(contractPath, "utf-8"));
+        if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+          throw new Error(`Training contract must be a YAML object: ${contractPath}`);
         }
-
-        if (trainingConfigState?.configuration && Object.keys(trainingConfigState.configuration).length > 0) {
-          return {
-            success: true,
-            contractPath: "in_memory_state",
-            configuration: trainingConfigState.configuration,
-          };
-        }
-
         return {
-          success: false,
-          error: `Training job contract YAML not found for run ${runTimestamp}`,
-          configuration: trainingConfigState || {},
+          success: true,
+          contractPath,
+          configuration: parsed,
         };
       } catch (err: any) {
         return {
           success: false,
           error: err?.message || String(err),
-          configuration: trainingConfigState || {},
         };
       }
     },

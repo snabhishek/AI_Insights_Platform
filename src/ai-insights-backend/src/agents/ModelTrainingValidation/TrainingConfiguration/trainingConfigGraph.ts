@@ -361,7 +361,7 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
   if (!pWs?.project?.name || !pWs.workspaceName) {
     throw new Error(`Project and workspace metadata is unavailable for training configuration project "${projectId}".`);
   }
-  const { contractPath } = await ContractPersistence.saveModularTrainingConfigContract(
+  const { contractPath, configuration } = await ContractPersistence.saveModularTrainingConfigContract(
     pWs.workspaceName,
     pWs.project.name,
     finalConfig,
@@ -385,7 +385,7 @@ async function trainingConfigAgentNode(state: TrainingConfigGraphStateType) {
   return {
     messages: [completionMessage],
     decision: "synthesize_contract" as const,
-    configuration: finalConfig,
+    configuration,
     contractPath,
     summary,
     isComplete: true,

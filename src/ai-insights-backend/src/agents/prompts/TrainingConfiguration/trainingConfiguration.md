@@ -312,6 +312,15 @@ Before returning `CONFIG_SYNTHESIZED`:
 
 The downstream export service must independently re-check compatibility, execute the requested export, reload the artifact using the target runtime, validate inference behavior, and record the actual export result. A planned capability must never be treated as proof of successful conversion.
 
+### O.7. Execution Policy (`artifacts.export_policy`)
+
+Return an explicit export policy with `mode: "multiple_formats"`, `include_native_format`, `include_conditional_formats`, `validate_after_export`, `require_prediction_parity`, `include_preprocessing_assets`, and `include_inference_manifest`.
+- Training exports every selectable supported format, and selectable conditional formats when `include_conditional_formats` is true. Native-model formats are included when `include_native_format` is true.
+- Set policy flags deliberately for the researched export plan. `validate_after_export` must be true. Include required preprocessing assets and an inference manifest so downstream inference can load the actual artifacts.
+- `default_format` belongs to each model's capabilities. Do not add a global policy default or use `artifacts.serialization_format` to override per-model decisions.
+- Each model's primary format must be included by the policy. If no safe export can be identified, preserve null and explain the blocker; training requires an explicit usable primary format.
+- Capabilities on `model_selection.candidates[]` alone are insufficient. Every entry in `model_selection.models[]` must contain its own complete `export_capabilities`, including after user selection is enforced.
+
 ---
 
 ## 4. Strict Output Schema
@@ -597,6 +606,26 @@ Return this when you have sufficient information and have researched the trainin
         "framework": "<Identify the software framework that should be used to train the selected model.>",
         "algorithm": "<Identify the specific machine learning algorithm represented by the selected model.>",
         "enabled": "<Determine whether this model should be included in the training process.>",
+        "export_capabilities": {
+          "default_format": null,
+          "selection_rationale": "<Explain the researched primary format and alternatives for this model.>",
+          "post_training_validation_required": true,
+          "formats": [
+            {
+              "format_id": "<Verified format identifier>",
+              "extension": null,
+              "format_name": "<Verified format name>",
+              "status": "<supported|conditional|unsupported>",
+              "selectable": true,
+              "role": "<portable_inference|native_model|transformer_checkpoint|quantized_llm|accelerator_optimized>",
+              "runtime": null,
+              "requires_preprocessing": true,
+              "required_assets": [],
+              "validation_required": true,
+              "limitations": []
+            }
+          ]
+        },
         "parameters": {
           "<parameter_name>": "<Specify the model parameters that should remain fixed during training rather than being searched automatically.>"
         },
@@ -625,7 +654,16 @@ Return this when you have sufficient information and have researched the trainin
       "explainability": false,
       "training_config": true
     },
-    "serialization_format": "A backward-compatible legacy field representing the recommended default format for the primary recommended model, when a reliable default is available. This field must not override or replace the per-model `model_selection.models[].export_capabilities.formats` array. Do not hardcode `"onnx"`. Set the value to the selected default format identifier, or `null` when no reliable default exists.",
+    "serialization_format": null,
+    "export_policy": {
+      "mode": "multiple_formats",
+      "include_native_format": true,
+      "include_conditional_formats": true,
+      "validate_after_export": true,
+      "require_prediction_parity": true,
+      "include_preprocessing_assets": true,
+      "include_inference_manifest": true
+    },
     "explainability_method": "<Identify the approach that should be used to explain the trained model when explainability is required.>"
   },
   "summary": "<Write a concise human-readable summary of the synthesized training configuration and execution recipe.>"
