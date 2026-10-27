@@ -1,7 +1,7 @@
 import { SparrowChatResponse, SparrowThinkingStep, SparrowInteraction } from "./types";
 import { ProjectService } from "../../services/project/project.service";
 import { IDuckDBService } from "../../services/duckdb/duckdb.service.interface";
-import { IModelValidationService } from "../../services/ai/model-validation/modelValidation.service.interface";
+import { ModelLifecycleCandidatesService } from "../../services/ai/model-lifecycle/modelLifecycleCandidates.service";
 import {
   createGetProjectContextTool,
   createGetProjectDataSchemaTool,
@@ -52,7 +52,7 @@ function savedInteraction(snapshot: any): SparrowInteraction {
 export interface SparrowOrchestratorDependencies {
   projectService: ProjectService;
   duckDBService: IDuckDBService;
-  modelValidationService: IModelValidationService;
+  modelLifecycleCandidatesService: ModelLifecycleCandidatesService;
   executionService?: ISparrowExecutionService;
   checkpointer: BaseCheckpointSaver;
   intentRepository: ISparrowIntentRepository;
@@ -256,7 +256,7 @@ export class SparrowOrchestrator {
 
     const discModelsTool = createDiscoverAvailableModelsTool(projectId, {
       projectService: this.deps.projectService,
-      modelValidationService: this.deps.modelValidationService,
+      modelLifecycleCandidatesService: this.deps.modelLifecycleCandidatesService,
     });
     map.set("discoverAvailableModels", discModelsTool);
 
@@ -265,7 +265,7 @@ export class SparrowOrchestrator {
 
     const runInferenceTool = createRunModelInferenceTool(projectId, {
       projectService: this.deps.projectService,
-      modelValidationService: this.deps.modelValidationService,
+      modelLifecycleCandidatesService: this.deps.modelLifecycleCandidatesService,
       executionService,
     });
     map.set("runModelInference", runInferenceTool);

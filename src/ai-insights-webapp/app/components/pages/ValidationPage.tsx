@@ -5,6 +5,7 @@ import FilterForm from "../shared/FilterForm/FilterForm";
 import { FormSchema } from "../../hooks/useFilterForm";
 import { useApp, BACKEND_URL, Project } from "../providers/AppContext";
 import ModelValidationStepOutput from "../projects/pipeline-outputs/ModelValidationStepOutput";
+import ModelLifecycleValidationOutput from "../projects/pipeline-outputs/ModelLifecycleValidationOutput";
 import {
   VALIDATION_FREQUENCY_OPTIONS,
   VALIDATION_UI_STRINGS,
@@ -171,11 +172,7 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
 
   const lastFetchedSchemaProjectRef = useRef<string | null>(null);
   const lastFetchedValidationProjectRef = useRef<string | null>(null);
-  const lastFetchedCandidatesProjectIdRef = useRef<string | null>(null);
   const activeSchemaSignatureRef = useRef<string>("");
-
-  const [fallbackCandidates, setFallbackCandidates] = useState<any[]>([]);
-  const [fallbackChampionId, setFallbackChampionId] = useState<string | null>(null);
 
   const [filterValues, setFilterValues] = useState<Record<string, any>>({});
 
@@ -238,8 +235,7 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
       (Array.isArray(state?.stageOutputs?.modelSelectionNode?.candidates) && state.stageOutputs.modelSelectionNode.candidates.length > 0 ? state.stageOutputs.modelSelectionNode.candidates : null) ||
       (Array.isArray(state?.modelSelectionNode?.candidates) && state.modelSelectionNode.candidates.length > 0 ? state.modelSelectionNode.candidates : null) ||
       (Array.isArray(state?.stageOutputs?.modelSelection?.candidates) && state.stageOutputs.modelSelection.candidates.length > 0 ? state.stageOutputs.modelSelection.candidates : null) ||
-      (Array.isArray(state?.modelSelection?.candidates) && state.modelSelection.candidates.length > 0 ? state.modelSelection.candidates : null) ||
-      (fallbackCandidates.length > 0 ? fallbackCandidates : []);
+      (Array.isArray(state?.modelSelection?.candidates) && state.modelSelection.candidates.length > 0 ? state.modelSelection.candidates : null);
 
     const normalizeCandidate = (c: any, defaultKey?: string) => {
       if (typeof c === "string") {
@@ -254,19 +250,20 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
       const displayName = String(c?.displayName || c?.display_name || c?.algorithm || c?.name || model_id);
       const framework = String(c?.framework || VALIDATION_UI_STRINGS.DEFAULT_UNKNOWN_FRAMEWORK);
       const score = typeof c?.score === "number" ? c.score : c?.metrics?.score ?? c?.metrics?.test?.score ?? c?.metrics?.validation?.score;
-      return { model_id, displayName, framework, score };
+      return { model_id, displayName, framework, score, status: c?.status };
     };
 
     if (Array.isArray(rawCandidates)) {
-      return rawCandidates.map((c: any) => normalizeCandidate(c)).filter((c) => Boolean(c.model_id));
+      return rawCandidates.map((c: any) => normalizeCandidate(c))
+        .filter((c) => Boolean(c.model_id) && (!c.status || c.status === "Completed"));
     }
     if (rawCandidates && typeof rawCandidates === "object") {
       return Object.entries(rawCandidates).map(([k, v]: [string, any]) =>
         normalizeCandidate(v && typeof v === "object" ? v : { model_id: k }, k)
-      ).filter((c) => Boolean(c.model_id));
+      ).filter((c) => Boolean(c.model_id) && (!c.status || c.status === "Completed"));
     }
     return [];
-  }, [currentProject?.agentState, fallbackCandidates]);
+  }, [currentProject?.agentState]);
 
   const championModelId = useMemo(() => {
     const state = currentProject?.agentState as any;
@@ -284,10 +281,9 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
       (typeof report?.best_model === "string" ? report.best_model : report?.best_model?.model_id) ||
       (typeof report?.champion_model === "string" ? report.champion_model : report?.champion_model?.model_id) ||
       (typeof report?.selected_model === "string" ? report.selected_model : report?.selected_model?.model_id) ||
-      fallbackChampionId ||
       (candidateModels[0]?.model_id ?? null)
     );
-  }, [currentProject?.agentState, fallbackChampionId, candidateModels]);
+  }, [currentProject?.agentState, candidateModels]);
 
   useEffect(() => {
     if (candidateModels.length > 0 && selectedModels.length === 0) {
@@ -386,7 +382,7 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
     } else {
       const hasSchemaForProject = activeSchema && activeSchema.projectId === projectId;
       if (isNewProject && !hasSchemaForProject) {
-        let isMounted = true;
+        const isMounted = true;
         setIsLoadingSchema(true);
 
         async function fetchFormSchema() {
@@ -430,57 +426,29 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
       }
     }
 
-    if (isNewProject) {
-      lastFetchedCandidatesProjectIdRef.current = null;
-      setFallbackCandidates([]);
-      setFallbackChampionId(null);
-    }
-
-    if (candidateModels.length === 0 && lastFetchedCandidatesProjectIdRef.current !== projectId) {
-      lastFetchedCandidatesProjectIdRef.current = projectId;
-      let isMountedCand = true;
-      async function fetchCandidates() {
-        try {
-          const res = await fetch(`${BACKEND_URL}${VALIDATION_API_ENDPOINTS.CANDIDATES}/${projectId}/candidates`);
-          const contentType = res.headers.get("content-type") || "";
-          if (res.ok && contentType.includes("application/json")) {
-            const json = await res.json();
-            if (json.success && json.data && isMountedCand) {
-              if (Array.isArray(json.data.candidates) && json.data.candidates.length > 0) {
-                setFallbackCandidates(json.data.candidates);
-              }
-              if (json.data.championModelId) {
-                setFallbackChampionId(json.data.championModelId);
-              }
-            }
-          }
-        } catch (err) {
-          console.warn("[ValidationPage] Failed to fetch validation candidates fallback:", err);
-        }
-      }
-
-      fetchCandidates();
-    }
-
+    const lifecycleValidation = (currentProject.agentState as any)?.modelLifecycle?.validation;
     const inStateValidation =
+      lifecycleValidation ||
       (currentProject.agentState as any)?.modelValidation ||
       (currentProject.agentState as any)?.stageOutputs?.modelValidation ||
       (currentProject.agentState as any)?.stageOutputs?.modelTrainingCodeNode?.modelValidation ||
       (currentProject.agentState as any)?.modelTrainingCodeNode?.modelValidation;
 
     if (inStateValidation) {
-      setValidationResults(inStateValidation);
+      setValidationResults(
+        lifecycleValidation ? { ...lifecycleValidation, lifecycleVersion: true } : inStateValidation
+      );
     } else if (lastFetchedValidationProjectRef.current !== projectId) {
       lastFetchedValidationProjectRef.current = projectId;
-      let isMountedVal = true;
+      const isMountedVal = true;
       async function fetchValidation() {
         try {
-          const res = await fetch(`${BACKEND_URL}${VALIDATION_API_ENDPOINTS.RESULTS}/${projectId}`);
+          const res = await fetch(`${BACKEND_URL}${VALIDATION_API_ENDPOINTS.LIFECYCLE}/${projectId}/validation`);
           const contentType = res.headers.get("content-type") || "";
           if (res.ok && contentType.includes("application/json")) {
             const json = await res.json();
             if (json.success && json.data && isMountedVal) {
-              setValidationResults(json.data);
+              setValidationResults({ ...json.data, lifecycleVersion: true });
             }
           }
         } catch (err) {
@@ -511,7 +479,7 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
     setValidationError(null);
 
     try {
-      const res = await fetch(`${BACKEND_URL}${VALIDATION_API_ENDPOINTS.VALIDATE}`, {
+      const res = await fetch(`${BACKEND_URL}${VALIDATION_API_ENDPOINTS.LIFECYCLE}/validation`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -539,17 +507,24 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
         throw new Error(json.message || VALIDATION_UI_STRINGS.VALIDATION_FAILED_ERROR);
       }
 
-      setValidationResults(json.data);
+      const lifecycleResult = { ...json.data, lifecycleVersion: true };
+      setValidationResults(lifecycleResult);
 
       if (updateProject && currentProject.id) {
         const existingAgentState = (currentProject.agentState as any) || {};
         await updateProject(currentProject.id, {
           agentState: {
             ...existingAgentState,
-            modelValidation: json.data,
+            modelLifecycle: {
+              ...(existingAgentState.modelLifecycle || {}),
+              validation: json.data,
+            },
             stageOutputs: {
               ...(existingAgentState.stageOutputs || {}),
-              modelValidation: json.data,
+              modelTrainingCodeNode: {
+                ...(existingAgentState.stageOutputs?.modelTrainingCodeNode || {}),
+                modelValidation: lifecycleResult,
+              },
             },
           },
         });
@@ -814,14 +789,18 @@ export default function ValidationPage({ project: propProject }: ValidationPageP
               <h3 className="text-base font-bold text-foreground mb-4">
                 {VALIDATION_UI_STRINGS.VALIDATION_COMPLETE_TITLE}
               </h3>
-              <ModelValidationStepOutput
-                modelValidation={validationResults}
-                modelTraining={currentProject?.agentState?.modelTraining}
-                trainingConfiguration={currentProject?.agentState?.trainingConfiguration}
-                modelSelection={currentProject?.agentState?.modelSelection}
-                projectId={currentProject?.id}
-                activeRunTimestamp={(currentProject?.agentState as any)?.runTimestamp}
-              />
+              {validationResults.lifecycleVersion ? (
+                <ModelLifecycleValidationOutput result={validationResults} />
+              ) : (
+                <ModelValidationStepOutput
+                  modelValidation={validationResults}
+                  modelTraining={currentProject?.agentState?.modelTraining}
+                  trainingConfiguration={currentProject?.agentState?.trainingConfiguration}
+                  modelSelection={currentProject?.agentState?.modelSelection}
+                  projectId={currentProject?.id}
+                  activeRunTimestamp={(currentProject?.agentState as any)?.runTimestamp}
+                />
+              )}
             </div>
           )}
         </div>

@@ -1,0 +1,11 @@
+search_tools:
+  - search_tool_name: duckduckgo
+    litellm_params:
+      search_provider: duckduckgo
+    search_tool_info:
+      description: "DuckDuckGo web search tool"
+  - search_tool_name: you_com
+    litellm_params:
+      search_provider: you_com
+    search_tool_info:
+      description: "You.com web search tool"

@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "npx nodemon --config nodemon.json",
-    "build": "npx tsc && node scripts/copy-migrations.cjs",
+    "build": "npx tsc && node scripts/copy-migrations.cjs && node scripts/copy-prompts.cjs",
     "start": "node --max-old-space-size=8192 dist/index.js",
     "db:generate": "npx drizzle-kit generate",
     "db:validate": "node scripts/validate-migrations.cjs",

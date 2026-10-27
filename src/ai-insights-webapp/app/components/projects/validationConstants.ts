@@ -42,7 +42,5 @@ export const VALIDATION_UI_STRINGS = {
 } as const;
 
 export const VALIDATION_API_ENDPOINTS = {
-  VALIDATE: "/model-validation/validate",
-  RESULTS: "/model-validation",
-  CANDIDATES: "/model-validation",
+  LIFECYCLE: "/model-lifecycle",
 } as const;

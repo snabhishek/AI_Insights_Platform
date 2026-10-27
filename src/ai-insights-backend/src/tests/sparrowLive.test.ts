@@ -42,7 +42,7 @@ test("live Sparrow answers analysis, follow-ups and late clarification replies f
     const orchestrator = new SparrowOrchestrator({
       projectService: { getById: async () => project, getProjectWithWorkspace: async () => ({ project, workspaceName: "Sparrow Test Workspace" }) } as any,
       duckDBService: { getProjectDuckDbPath: () => dbPath, runQuery } as any,
-      modelValidationService: {} as any,
+      modelLifecycleCandidatesService: {} as any,
       checkpointer, intentRepository: new PostgresSparrowIntentRepository(scoped), now: () => now,
     });
     const response = await orchestrator.run({

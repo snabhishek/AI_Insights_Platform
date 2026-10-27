@@ -9,6 +9,7 @@ An end-to-end autonomous data intelligence and AI pipeline platform. The platfor
 ```
 AI-Insights-Platform/
 └── src/
+    ├── ai-insights-desktop/    # Tauri v2 native desktop application, supervisor & installer builder
     ├── ai-insights-backend/    # Express + TypeScript core backend, Drizzle ORM, LangGraph agents, DuckDB
     ├── ai-insights-webapp/     # Next.js 16 (React 19) dashboard, visual pipeline & live agent stream
     ├── ai-insights-service/    # Python (FastAPI) microservice for high-performance AI/data compute
@@ -41,6 +42,12 @@ AI-Insights-Platform/
 ### 3. Python Service (`ai-insights-service`)
 - **FastAPI Microservice**: Lightweight, high-throughput Python 3.12+ ASGI service for dedicated data processing and ML workloads.
 - **OpenAPI / Swagger**: Auto-generated interactive API docs (`/docs`) and built-in health diagnostics (`/health`).
+
+### 4. Desktop Application & Installer (`ai-insights-desktop`)
+- **Tauri v2 Native Shell**: Converts the Next.js webapp into a high-performance, lightweight Windows desktop app with native capabilities.
+- **Internal Local Services Supervisor**: Embedded Rust process supervisor that starts the Node.js backend (Port 5000) and Python service (Port 8000), checks health, and gracefully shuts down child processes on window exit.
+- **Self-Contained Installer**: Produces standalone `.exe` installer (NSIS) in `dist-desktop/` bundling frontend, backend, python service, and migrations.
+- **Automated Dependency Detection & Setup**: Auto-detects Docker, PostgreSQL, LiteLLM, Python, and Node.js; provisions or starts missing containers and services automatically.
 
 ---
 
@@ -110,3 +117,27 @@ AI-Insights-Platform/
    - **Service Endpoint**: `http://localhost:8000`
    - **Swagger Docs**: `http://localhost:8000/docs`
    - **Health Check**: `http://localhost:8000/health`
+
+---
+
+### 4. Desktop Application (`ai-insights-desktop`)
+
+1. **One-Click Build**:
+   ```powershell
+   # From root workspace:
+   npm run desktop:build
+   # Or run:
+   .\desktop-builder.bat
+   ```
+   - **Generated Installer**: `dist-desktop/AI Insights Platform_1.0.0_x64-setup.exe`
+
+2. **Run Desktop in Dev Mode**:
+   ```bash
+   npm run desktop:dev
+   ```
+
+3. **Check & Auto-Setup Dependencies**:
+   ```bash
+   npm run desktop:deps   # Diagnostic check for Docker, Postgres, LiteLLM
+   npm run desktop:setup  # Automated setup / repair
+   ```

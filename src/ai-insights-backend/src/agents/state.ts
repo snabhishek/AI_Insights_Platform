@@ -174,6 +174,7 @@ export const AgentState = Annotation.Root({
   modelTraining: Annotation<ModelTrainingExecutionOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
   modelEvaluation: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
   modelValidation: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
+  modelLifecycle: Annotation<Record<string, any>>({ reducer: mergeOutputOrReset, default: () => ({}) }),
   modelSelection: Annotation<AgentOutput>({ reducer: mergeOutputOrReset, default: () => ({}) }),
   batchedTables: Annotation<BatchedTableState[]>({
     reducer: (left = [], right = []) => {

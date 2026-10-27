@@ -1,0 +1,19 @@
+{
+  "name": "ai-insights-desktop",
+  "version": "1.0.0",
+  "description": "Tauri Desktop Application and Builder for AI Insights Platform",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tauri dev",
+    "build": "node scripts/build.mjs",
+    "bundle:services": "node scripts/bundle-services.mjs",
+    "build:python-service": "node scripts/build-python-service.mjs",
+    "deps:check": "powershell -ExecutionPolicy Bypass -File scripts/setup-deps.ps1 -CheckOnly",
+    "deps:setup": "powershell -ExecutionPolicy Bypass -File scripts/setup-deps.ps1"
+  },
+  "devDependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/cli": "^2.12.3"
+  }
+}

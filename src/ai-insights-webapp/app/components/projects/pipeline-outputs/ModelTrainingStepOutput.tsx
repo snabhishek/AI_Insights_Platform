@@ -10,7 +10,7 @@ export interface CandidateModelItem {
   displayName?: string;
   framework?: string;
   algorithm?: string;
-  status?: "Completed" | "Failed";
+  status?: "Completed" | "Failed" | "Skipped";
   score?: number;
   durationSeconds?: number;
   validationMetrics?: Record<string, number>;
@@ -18,6 +18,9 @@ export interface CandidateModelItem {
   error?: string;
   artifact?: string;
   plots?: Record<string, string>;
+  failureCount?: number;
+  qualityAssessment?: string;
+  qualityRecommendations?: string[];
 }
 
 export interface ModelTrainingStepOutputProps {
@@ -172,7 +175,9 @@ export default function ModelTrainingStepOutput({
     const framework = String(
       (typeof c === "object" ? c.framework : null) || ""
     );
-    const status = c.status === "SUCCESS" || c.status === "Completed"
+    const status = c.status === "Skipped"
+      ? "Skipped"
+      : c.status === "SUCCESS" || c.status === "Completed"
       ? "Completed"
       : c.status === "FAILED" || c.status === "Failed" || c.error
         ? "Failed"
@@ -257,6 +262,9 @@ export default function ModelTrainingStepOutput({
       artifact,
       plots,
       error: c.error,
+      failureCount: c.failureCount,
+      qualityAssessment: c.qualityAssessment,
+      qualityRecommendations: c.qualityRecommendations,
     }];
   });
 
@@ -544,10 +552,25 @@ export default function ModelTrainingStepOutput({
                         {m.durationSeconds != null ? `${Number(m.durationSeconds).toFixed(1)}s` : "—"}
                       </td>
                       <td className="py-3 px-4">
-                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                        <span
+                          title={m.error}
+                          className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold border ${
+                            m.status === "Skipped"
+                              ? "bg-amber-500/10 text-amber-700 dark:text-amber-400 border-amber-500/20"
+                              : m.status === "Failed"
+                                ? "bg-rose-500/10 text-rose-700 dark:text-rose-400 border-rose-500/20"
+                                : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20"
+                          }`}
+                        >
                           <CheckCircleIcon className="w-3 h-3" />
                           {m.status || "Status unavailable"}
+                          {typeof m.failureCount === "number" ? ` · ${m.failureCount} failures` : ""}
                         </span>
+                        {m.error && (
+                          <p className="mt-1 max-w-xs text-[10px] text-muted-foreground" title={m.error}>
+                            {m.error}
+                          </p>
+                        )}
                       </td>
                       <td className="py-3 px-4 text-right">
                         <ModelExportButton

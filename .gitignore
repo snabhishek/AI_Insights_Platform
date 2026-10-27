@@ -32,6 +32,8 @@ coverage/
 *.sqlite3
 *.sqlite-wal
 *.sqlite-shm
+data/
+**/data/
 
 # Runtime & personalized project files
 src/ai-insights-backend/Projects/
@@ -57,12 +59,17 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 AGENTS.md
+dist-desktop/
+src/ai-insights-desktop/src-tauri/resources/
 
 # Python
 __pycache__/
 *.py[cod]
 *$py.class
 .venv/
+.build-venv/
 venv/
 env/
 .pytest_cache/
+src/ai-insights-desktop/src-tauri/resources/services/python-service/ai-insights-service
+src/ai-insights-desktop/src-tauri/resources/services/python-service/ai-insights-service.exe

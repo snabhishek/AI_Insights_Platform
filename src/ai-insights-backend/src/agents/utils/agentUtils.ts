@@ -7,7 +7,8 @@ import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatOllama } from "@langchain/ollama";
 import { BaseChatModel } from "@langchain/core/language_models/chat_models";
 import { ModelRuntimeParameters, parseModelParameters, requiredModelSetting, requiredModelTokenLimit, validateRuntimeTarget } from "./modelRuntime";
-import { BaseMessage, HumanMessage } from "@langchain/core/messages";
+import { BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
+import type { z } from "zod";
 import { createAgent, summarizationMiddleware, todoListMiddleware, toolRetryMiddleware, contextEditingMiddleware, ClearToolUsesEdit } from "langchain";
 import { BatchedTableState, IngestionServices } from "../state";
 import { getPipelineForSubstep } from "../pipelineFlowConfig";
@@ -207,134 +208,69 @@ export class AgentTraceHelper {
 }
 
 export function createLiteLLMModel(runtime?: ModelRuntimeParameters) {
-  if (!process.env.LITELLM_PROXY_URL) {
-    throw new Error("No LiteLLM")
+  const proxyUrl = process.env.LITELLM_PROXY_URL || "http://localhost:22002";
+  const apiKey = process.env.LITELLM_VIRTUAL_KEY || process.env.LITELLM_API_KEY || process.env.LITELLM_MASTER_KEY || "sk-dummy";
+  const liteLLMModel = process.env.LITELLM_MODEL || process.env.LITELLM_MODEL_NAME || "";
+
+  if (!liteLLMModel && (!runtime || !runtime.model)) {
+    throw new Error("No active model is configured in LiteLLM. Please configure your AI provider and active model in the Configuration settings.");
   }
 
-  const liteLLMModel = process.env.LITELLM_MODEL || process.env.LITELLM_MODEL_NAME || "gemini/gemini-3.1-pro-preview";
-  validateRuntimeTarget(runtime, "litellm", liteLLMModel);
+  const effectiveRuntime = runtime
+    ? {
+        ...runtime,
+        provider: "litellm" as const,
+        model: runtime.provider === "litellm" ? runtime.model : liteLLMModel,
+      }
+    : undefined;
+
+  validateRuntimeTarget(effectiveRuntime, "litellm", effectiveRuntime?.model || liteLLMModel);
 
   return new ChatOpenAI({
     model: liteLLMModel,
     maxTokens: 32000,
-    ...(runtime ? parseModelParameters("litellm", runtime.parameters) : { temperature: 0.4 }),
+    ...(effectiveRuntime ? parseModelParameters("litellm", effectiveRuntime.parameters) : { temperature: 0.4 }),
     configuration: {
-      apiKey: process.env.LITELLM_VIRTUAL_KEY,
-      baseURL: process.env.LITELLM_PROXY_URL
-    }
+      apiKey: apiKey,
+      baseURL: proxyUrl.replace(/\/+$/, ""),
+    },
   });
 }
 
 export function createGeminiModel(runtime?: ModelRuntimeParameters) {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
-  if (!apiKey) {
-    return null;
-  }
-
-  const model = process.env.GEMINI_MODEL || "gemini-3.1-pro-preview";
-  validateRuntimeTarget(runtime, "gemini", model);
-  return new ChatGoogleGenerativeAI({
-    apiKey,
-    model,
-    temperature: 0,
-    maxOutputTokens: 32000,
-    ...(runtime ? parseModelParameters("gemini", runtime.parameters) : {}),
-  });
+  console.warn("[ModelRuntime] Direct Gemini invocation bypassed: Routing through LiteLLM proxy as required.");
+  return createLiteLLMModel(runtime);
 }
 
 export function createAzureOpenAIModel(runtime?: ModelRuntimeParameters) {
-  const apiKey = process.env.AZURE_OPENAI_API_KEY;
-  const endpoint = process.env.AZURE_OPENAI_ENDPOINT || process.env.AZURE_OPENAI_BASE_PATH || process.env.AZURE_OPENAI_INSTANCE_ENDPOINT;
-  const deploymentName = process.env.AZURE_OPENAI_DEPLOYMENT_NAME || process.env.AZURE_OPENAI_DEPLOYMENT;
-  const instanceName = process.env.AZURE_OPENAI_INSTANCE_NAME;
-  const apiVersion = process.env.AZURE_OPENAI_API_VERSION || "2024-02-01";
-
-  if (!apiKey || !deploymentName || (!endpoint && !instanceName)) {
-    return null;
-  }
-
-  const model = process.env.AZURE_OPENAI_MODEL || process.env.OPENAI_MODEL || "gpt-4o-mini";
-  validateRuntimeTarget(runtime, "azure", deploymentName);
-  return new AzureChatOpenAI({
-    azureOpenAIApiKey: apiKey,
-    azureOpenAIApiVersion: apiVersion,
-    azureOpenAIApiDeploymentName: deploymentName,
-    azureOpenAIEndpoint: endpoint,
-    model,
-    maxTokens: 32000,
-    ...(runtime ? parseModelParameters("azure", runtime.parameters) : { temperature: 0 }),
-  });
+  console.warn("[ModelRuntime] Direct Azure OpenAI invocation bypassed: Routing through LiteLLM proxy as required.");
+  return createLiteLLMModel(runtime);
 }
 
 export function createOpenAIModel(runtime?: ModelRuntimeParameters) {
-  const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return null;
-  }
-
-  const model = process.env.OPENAI_MODEL || "gpt-5.4-mini-2026-03-17";
-  validateRuntimeTarget(runtime, "openai", model);
-  return new ChatOpenAI({
-    apiKey,
-    model,
-    maxTokens: 32000,
-    ...(runtime ? parseModelParameters("openai", runtime.parameters) : { temperature: 0 }),
-  });
+  console.warn("[ModelRuntime] Direct OpenAI invocation bypassed: Routing through LiteLLM proxy as required.");
+  return createLiteLLMModel(runtime);
 }
 
 export function createAnthropicModel(runtime?: ModelRuntimeParameters) {
-  const model = requiredModelSetting("ANTHROPIC_MODEL");
-  validateRuntimeTarget(runtime, "anthropic", model);
-  return new ChatAnthropic({
-    model, apiKey: requiredModelSetting("ANTHROPIC_API_KEY"),
-    maxTokens: requiredModelTokenLimit("ANTHROPIC_MAX_TOKENS"),
-    ...(runtime ? parseModelParameters("anthropic", runtime.parameters) : {}),
-  });
+  console.warn("[ModelRuntime] Direct Anthropic invocation bypassed: Routing through LiteLLM proxy as required.");
+  return createLiteLLMModel(runtime);
 }
 
 export function createOllamaModel(runtime?: ModelRuntimeParameters) {
-  const model = requiredModelSetting("OLLAMA_MODEL");
-  validateRuntimeTarget(runtime, "ollama", model);
-  return new ChatOllama({
-    model, baseUrl: requiredModelSetting("OLLAMA_BASE_URL"),
-    ...(runtime ? parseModelParameters("ollama", runtime.parameters) : {}),
-  });
+  console.warn("[ModelRuntime] Direct Ollama invocation bypassed: Routing through LiteLLM proxy as required.");
+  return createLiteLLMModel(runtime);
 }
 
 export function createOpenAICompatibleModel(runtime?: ModelRuntimeParameters) {
-  const model = requiredModelSetting("OPENAI_COMPATIBLE_MODEL");
-  validateRuntimeTarget(runtime, "openai-compatible", model);
-  return new ChatOpenAI({
-    model, apiKey: requiredModelSetting("OPENAI_COMPATIBLE_API_KEY"),
-    configuration: { baseURL: requiredModelSetting("OPENAI_COMPATIBLE_BASE_URL") },
-    ...(runtime ? parseModelParameters("openai-compatible", runtime.parameters) : {}),
-  });
+  console.warn("[ModelRuntime] Direct OpenAI-compatible invocation bypassed: Routing through LiteLLM proxy as required.");
+  return createLiteLLMModel(runtime);
 }
 
 export function getModel(runtime?: ModelRuntimeParameters): SupportedChatModel | null {
-  const provider = (process.env.AI_PROVIDER || "").toLowerCase().trim();
-  if (provider === "gemini" || provider === "google") {
-    const gemini = createGeminiModel(runtime);
-    if (gemini) return gemini;
-  } else if (provider === "azure" || provider === "azure_openai") {
-    const azure = createAzureOpenAIModel(runtime);
-    if (azure) return azure;
-  } else if (provider === "openai") {
-    const openai = createOpenAIModel(runtime);
-    if (openai) return openai;
-  } else if (provider === "litellm") {
-    const litellm = createLiteLLMModel(runtime);
-    if (litellm) return litellm;
-  } else if (provider === "anthropic" || provider === "claude") {
-    return createAnthropicModel(runtime);
-  } else if (provider === "ollama") {
-    return createOllamaModel(runtime);
-  } else if (provider === "openai-compatible") {
-    return createOpenAICompatibleModel(runtime);
-  }
-
-  if (runtime) throw new Error("Configure the model provider explicitly before applying Sparrow native mode capabilities.");
-  return createGeminiModel() || createAzureOpenAIModel() || createOpenAIModel();
+  // Strict architectural rule: All platform AI requests MUST route through the LiteLLM proxy.
+  // Direct model invocation without LiteLLM is strictly disabled.
+  return createLiteLLMModel(runtime);
 }
 
 export function extractModelText(response: unknown): string {
@@ -425,6 +361,13 @@ export function parseJsonObject<T extends Record<string, unknown>>(rawText: stri
   }
 
   return fallback;
+}
+
+export function parseJson<T extends Record<string, unknown> = Record<string, unknown>>(
+  rawText: string,
+  fallback: T = {} as T
+): T {
+  return parseJsonObject<T>(rawText, fallback);
 }
 
 export function getLatestAgentMessage(agentResult: unknown): unknown {
@@ -598,8 +541,12 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     modelTrainingCodeNode: "Model Training",
     modelTraining: "Model Training",
     modelTrainingNode: "Model Training",
+    modelTrainingRectifier: "Model Training",
+    executionDiagnostics: "Model Training",
     modelValidation: "Model Validation",
     modelValidationNode: "Model Validation",
+    modelValidationRectifier: "Model Validation",
+    modelValidationCode: "Model Validation",
   };
   const substep = substepMap[stepName] || "Data Inspection";
 
@@ -680,6 +627,64 @@ export async function invokeAgentJson<T extends Record<string, unknown>>(
     console.warn(`Agent ${stepName} execution failed, returning fallback`, error);
     return fallback;
   }
+}
+
+export interface StructuredInvocationOptions {
+  systemPrompt?: string;
+  traceLabel?: string;
+  /** Total attempts including the first call. Invalid output is retried with the validation error. */
+  maxAttempts?: number;
+}
+
+function structuredOutputMethod(model: SupportedChatModel): "functionCalling" | "jsonSchema" {
+  return model instanceof ChatGoogleGenerativeAI || model instanceof ChatOllama ? "jsonSchema" : "functionCalling";
+}
+
+/**
+ * Invokes a chat model with a Zod schema as the output contract. The provider's
+ * structured-output interface enforces the shape and the schema validates the
+ * result once at this boundary. Invalid output is retried with the validation
+ * error; after the final attempt the error is thrown so callers can take their
+ * typed fallback path.
+ */
+export async function invokeStructuredOutput<T extends Record<string, unknown>>(
+  stepName: string,
+  model: SupportedChatModel,
+  schema: z.ZodType<T>,
+  userMessage: string,
+  services?: IngestionServices,
+  options?: StructuredInvocationOptions
+): Promise<T> {
+  const runnable = model.withStructuredOutput(schema, { name: stepName, method: structuredOutputMethod(model) });
+  const maxAttempts = Math.max(1, options?.maxAttempts ?? 2);
+  let lastError: unknown;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (services?.isCancelled?.() || services?.abortSignal?.aborted) {
+      throw new Error(`[Workflow] Structured agent "${stepName}" was stopped.`);
+    }
+
+    const prompt = attempt === 1
+      ? userMessage
+      : `${userMessage}\n\nYour previous response did not satisfy the required output schema: ${lastError instanceof Error ? lastError.message : String(lastError)}\nRespond again using the schema exactly.`;
+    const messages = [
+      ...(options?.systemPrompt ? [new SystemMessage(options.systemPrompt)] : []),
+      new HumanMessage(prompt),
+    ];
+    const execute = async (): Promise<T> => schema.parse(await runnable.invoke(messages, { signal: services?.abortSignal }));
+
+    try {
+      return services?.traceHelper?.invokeWithTrace
+        ? await services.traceHelper.invokeWithTrace(options?.traceLabel ?? `agent:${stepName}`, { systemPrompt: options?.systemPrompt, userMessage: prompt }, execute)
+        : await execute();
+    } catch (error) {
+      if (services?.isCancelled?.() || services?.abortSignal?.aborted) throw error;
+      lastError = error;
+      console.warn(`[Workflow] Structured agent "${stepName}" attempt ${attempt}/${maxAttempts} failed:`, error instanceof Error ? error.message : error);
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 export async function invokeAgentText(
@@ -784,10 +789,15 @@ export async function invokeAgentText(
 export function resolvePromptFilePath(filename: string): string {
   const baseDirs = [
     path.resolve(process.cwd(), "prompts"),
+    path.resolve(process.cwd(), "dist/prompts"),
+    path.resolve(process.cwd(), "dist/agents/prompts"),
     path.resolve(process.cwd(), "src/agents/prompts"),
     path.resolve(__dirname, "../prompts"),
+    path.resolve(__dirname, "../../prompts"),
     path.resolve(__dirname, "../../../prompts"),
     path.resolve(__dirname, "../../../../prompts"),
+    path.resolve(__dirname, "../../../dist/prompts"),
+    path.resolve(__dirname, "../../../dist/agents/prompts"),
     path.resolve(__dirname, "../../../src/agents/prompts"),
   ];
 
@@ -799,19 +809,28 @@ export function resolvePromptFilePath(filename: string): string {
   }
 
   const basename = path.basename(filename);
+  function findRecursive(dir: string, targetName: string): string | null {
+    try {
+      const entries = fsSync.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.resolve(dir, entry.name);
+        if (entry.isDirectory()) {
+          const found = findRecursive(fullPath, targetName);
+          if (found) return found;
+        } else if (entry.name === targetName) {
+          return fullPath;
+        }
+      }
+    } catch { }
+    return null;
+  }
+
   for (const baseDir of baseDirs) {
     if (fsSync.existsSync(baseDir)) {
-      try {
-        const subdirs = fsSync.readdirSync(baseDir, { withFileTypes: true });
-        for (const dirent of subdirs) {
-          if (dirent.isDirectory()) {
-            const subCandidate = path.resolve(baseDir, dirent.name, basename);
-            if (fsSync.existsSync(subCandidate)) {
-              return subCandidate;
-            }
-          }
-        }
-      } catch { }
+      const found = findRecursive(baseDir, basename);
+      if (found) {
+        return found;
+      }
     }
   }
 
@@ -1201,6 +1220,14 @@ export function mapRetryStepToInterruptNode(step?: string): string | undefined {
   }
 
   if ([
+    "modeltrainingexecution",
+    "modeltrainingexecutionnode",
+    "model training execution",
+  ].includes(s)) {
+    return "modelTrainingExecutionNode";
+  }
+
+  if ([
     "modeltraining",
     "modeltrainingnode",
     "modeltrainingcode",
@@ -1323,18 +1350,36 @@ export async function logAgentMessagesAsThinking(
         }
         if (!options?.skipTools && msg?.tool_calls && msg.tool_calls.length > 0) {
           for (const tc of msg.tool_calls) {
+            let argsStr = "";
+            try {
+              if (tc.args && typeof tc.args === "object") {
+                const clonedArgs: Record<string, unknown> = { ...tc.args };
+                if (typeof clonedArgs.content === "string" && clonedArgs.content.length > 150) {
+                  clonedArgs.content = `${clonedArgs.content.slice(0, 150)}... (${clonedArgs.content.length} chars)`;
+                }
+                argsStr = JSON.stringify(clonedArgs);
+              } else {
+                argsStr = JSON.stringify(tc.args);
+              }
+            } catch {
+              argsStr = String(tc.args);
+            }
+            if (argsStr.length > 250) {
+              argsStr = `${argsStr.slice(0, 250)}...`;
+            }
             thinkingLogs.push({
               time: timeStr,
-              text: `Invoking tool '${tc.name}' with arguments: ${JSON.stringify(tc.args)}`,
+              text: `Invoking tool '${tc.name}' with arguments: ${argsStr}`,
               done: true,
             });
           }
         }
       } else if (!options?.skipTools && type === "tool") {
         const content = extractModelText(msg);
+        const toolName = (msg as any)?.name ? ` (${(msg as any).name})` : "";
         thinkingLogs.push({
           time: timeStr,
-          text: `Tool output: ${content.length > 200 ? content.slice(0, 200) + "..." : content}`,
+          text: `Tool output${toolName}: ${content.length > 200 ? content.slice(0, 200) + "..." : content}`,
           done: true,
         });
       }

@@ -178,6 +178,29 @@ export const WORKFLOW_STAGE_RULES: readonly StageRuleConfig[] = [
     ),
     downstreamOutputsToClearOnRetry: [
       "modelTrainingCodeNode",
+      "modelTrainingExecutionNode",
+    ],
+  },
+  {
+    id: "modelTrainingExecutionNode",
+    displayName: "Model Training Execution",
+    pipeline: "Model Training & Validation",
+    predecessorNode: "modelTrainingCodeNode",
+    interruptBefore: true,
+    requiresApproval: true,
+    statusWhileWaiting: "User Input",
+    approvalPrompt: "Model training code is ready. Select candidate models in the UI and click Approve & Train Models.",
+    nextStepOnApproval: "modelTrainingExecutionNode",
+    requiredInputsOnApproval: ["selectedModels"],
+    prerequisites: (state) => Boolean(
+      (nodeOutput(state, "modelTrainingCodeNode") as any)?.authoring ||
+      (nodeOutput(state, "modelTrainingCodeNode") as any)?.filesCreated ||
+      (nodeOutput(state, "modelTrainingCodeNode") as any)?.status === "Completed" ||
+      nodeStatus(state, "modelTrainingCodeNode") === "Completed" ||
+      nodeStatus(state, "modelTrainingCodeNode") === "User Input"
+    ),
+    downstreamOutputsToClearOnRetry: [
+      "modelTrainingExecutionNode",
     ],
   },
 ] as const;
@@ -241,15 +264,17 @@ const SUBSTEP_TO_NODE_RULE_KEY: Record<string, GraphNodeKey> = {
   preFlight: "preFlightNode",
   "Pre Flight": "preFlightNode",
   modelTrainingCodeNode: "modelTrainingCodeNode",
-  modelTrainingExecutionNode: "modelTrainingCodeNode",
   modelTrainingCode: "modelTrainingCodeNode",
   "Model Training Code Generation": "modelTrainingCodeNode",
+  modelTrainingExecutionNode: "modelTrainingExecutionNode",
+  modelTrainingExecution: "modelTrainingExecutionNode",
+  "Model Training Execution": "modelTrainingExecutionNode",
   modelTraining: "modelTrainingCodeNode",
   modelTrainingNode: "modelTrainingCodeNode",
   "Model Training": "modelTrainingCodeNode",
-  modelValidation: "modelTrainingCodeNode",
-  modelValidationNode: "modelTrainingCodeNode",
-  "Model Validation": "modelTrainingCodeNode",
+  modelValidation: "modelTrainingExecutionNode",
+  modelValidationNode: "modelTrainingExecutionNode",
+  "Model Validation": "modelTrainingExecutionNode",
 };
 
 export function getStageRuleByNode(nodeId?: string | null): StageRuleConfig | undefined {

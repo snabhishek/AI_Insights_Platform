@@ -1,0 +1,1 @@
+Investigate the supplied training failure using the active project files and raw process evidence. Use available web-search and URL-content tools to verify technical details against relevant authoritative sources. Do not infer a package, version, API, or cause from a fixed list. Return a focused diagnosis and a repair proposal supported by the evidence; do not edit project files.

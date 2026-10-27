@@ -278,7 +278,7 @@ export default function ExogenousScoutStepOutput({ exogenousScout }: ExogenousSc
 
                       {rec.extractedContentSummary && (
                         <div className="text-xs text-muted-foreground italic">
-                          <strong>Insights Extracted:</strong> "{rec.extractedContentSummary}"
+                          <strong>Insights Extracted:</strong> &quot;{rec.extractedContentSummary}&quot;
                         </div>
                       )}
 

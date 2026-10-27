@@ -7,7 +7,7 @@ export async function initializeSparrowPersistence(databasePool: Pool) {
   const checkpointer = new PostgresSaver(databasePool);
   await checkpointer.setup();
   // Conversation locks remain held while graph nodes need DB connections.
-  const lockPool = new Pool({ ...databasePool.options, password: process.env.DB_PASS!, connectionTimeoutMillis: 5000 });
+  const lockPool = new Pool({ ...databasePool.options, password: process.env.DB_PASS || "123456", connectionTimeoutMillis: 5000 });
   return {
     checkpointer,
     intentRepository: new PostgresSparrowIntentRepository(databasePool),

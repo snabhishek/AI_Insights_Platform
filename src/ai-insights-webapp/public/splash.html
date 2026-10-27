@@ -1,0 +1,796 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compass - Starting Platform Services</title>
+  <style>
+    :root {
+      --ms-bg: #0c0f17;
+      --ms-card-bg: rgba(22, 27, 43, 0.65);
+      --ms-card-border: rgba(255, 255, 255, 0.08);
+      --ms-card-active-bg: rgba(0, 120, 212, 0.08);
+      --ms-card-active-border: rgba(0, 120, 212, 0.45);
+      --ms-card-ready-bg: rgba(16, 185, 129, 0.06);
+      --ms-card-ready-border: rgba(16, 185, 129, 0.35);
+
+      --ms-blue: #0078d4;
+      --ms-blue-light: #2b88d8;
+      --ms-cyan: #00b7c3;
+      --ms-emerald: #107c41;
+      --ms-green: #10b981;
+      --ms-amber: #f59e0b;
+      --ms-purple: #8764b8;
+
+      --text-primary: #ffffff;
+      --text-secondary: #cbd5e1;
+      --text-muted: #64748b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+
+    body {
+      font-family: "Segoe UI Variable Display", "Segoe UI", -apple-system, BlinkMacSystemFont, Roboto, "Helvetica Neue", sans-serif;
+      background: radial-gradient(130% 120% at 50% 0%, #181d30 0%, #0d101a 50%, #07090e 100%);
+      color: var(--text-primary);
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 14px;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.9), 0 0 50px rgba(0, 120, 212, 0.15);
+      position: relative;
+    }
+
+    /* Fluent ambient backdrop bloom */
+    .fluent-bloom {
+      position: absolute;
+      top: -80px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 440px;
+      height: 200px;
+      background: radial-gradient(circle, rgba(0, 120, 212, 0.3) 0%, rgba(99, 102, 241, 0.18) 45%, transparent 70%);
+      filter: blur(55px);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* Window Drag Header */
+    .header {
+      padding: 20px 24px 10px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      z-index: 1;
+      cursor: grab;
+    }
+
+    .brand-group {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .logo-container {
+      width: 46px;
+      height: 46px;
+      border-radius: 12px;
+      background: linear-gradient(135deg, rgba(0, 120, 212, 0.35), rgba(99, 102, 241, 0.25));
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 4px 18px rgba(0, 120, 212, 0.35);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .logo-container::after {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0; height: 50%;
+      background: linear-gradient(to bottom, rgba(255, 255, 255, 0.2), transparent);
+      pointer-events: none;
+    }
+
+    .logo-container img {
+      width: 30px;
+      height: 30px;
+      object-fit: contain;
+      filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.5));
+    }
+
+    .title-group h1 {
+      font-size: 19px;
+      font-weight: 700;
+      letter-spacing: -0.4px;
+      line-height: 1.2;
+      background: linear-gradient(to right, #ffffff, #c7d9f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    .title-group p {
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-top: 1px;
+      font-weight: 400;
+    }
+
+    .badge-platform {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      padding: 4px 10px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.09);
+      border-radius: 999px;
+      font-size: 11px;
+      color: #94a3b8;
+      font-weight: 500;
+      letter-spacing: 0.2px;
+    }
+
+    .badge-platform-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--ms-cyan);
+      box-shadow: 0 0 6px var(--ms-cyan);
+    }
+
+    /* Services List */
+    .services-container {
+      padding: 2px 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      z-index: 1;
+    }
+
+    .service-card {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 7px 14px;
+      background: var(--ms-card-bg);
+      border: 1px solid var(--ms-card-border);
+      border-radius: 9px;
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .service-card::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      width: 3px;
+      background: transparent;
+      transition: background 0.3s ease;
+    }
+
+    .service-card.running {
+      background: var(--ms-card-active-bg);
+      border-color: var(--ms-card-active-border);
+      box-shadow: 0 4px 16px rgba(0, 120, 212, 0.12);
+    }
+
+    .service-card.running::before {
+      background: var(--ms-blue-light);
+    }
+
+    .service-card.completed {
+      background: var(--ms-card-ready-bg);
+      border-color: var(--ms-card-ready-border);
+    }
+
+    .service-card.completed::before {
+      background: var(--ms-green);
+    }
+
+    .service-main {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .service-icon-box {
+      width: 28px;
+      height: 28px;
+      border-radius: 7px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 14px;
+      background: rgba(255, 255, 255, 0.05);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      transition: all 0.3s ease;
+    }
+
+    .service-card.running .service-icon-box {
+      background: rgba(0, 120, 212, 0.2);
+      border-color: rgba(0, 120, 212, 0.4);
+      transform: scale(1.05);
+    }
+
+    .service-card.completed .service-icon-box {
+      background: rgba(16, 185, 129, 0.18);
+      border-color: rgba(16, 185, 129, 0.35);
+    }
+
+    .service-meta {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .service-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: #f1f5f9;
+      letter-spacing: -0.2px;
+    }
+
+    .service-sub {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 1px;
+      font-weight: 400;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .service-port-tag {
+      font-family: Consolas, "Courier New", monospace;
+      font-size: 10px;
+      color: #94a3b8;
+      background: rgba(255, 255, 255, 0.04);
+      padding: 1px 5px;
+      border-radius: 4px;
+    }
+
+    /* Right Badge State */
+    .service-status-pill {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 3px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 500;
+      background: rgba(255, 255, 255, 0.03);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      color: var(--text-muted);
+      transition: all 0.25s ease;
+    }
+
+    /* Fluent Circular Spinner */
+    .fluent-spinner {
+      width: 12px;
+      height: 12px;
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      border-top-color: var(--ms-blue-light);
+      border-radius: 50%;
+      animation: fluentSpin 0.75s linear infinite;
+      display: none;
+    }
+
+    .service-card.running .fluent-spinner {
+      display: inline-block;
+    }
+
+    .service-card.running .service-status-pill {
+      background: rgba(0, 120, 212, 0.15);
+      border-color: rgba(0, 120, 212, 0.35);
+      color: #93c5fd;
+    }
+
+    .status-check-icon {
+      width: 13px;
+      height: 13px;
+      fill: none;
+      stroke: var(--ms-green);
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      display: none;
+    }
+
+    .service-card.completed .status-check-icon {
+      display: inline-block;
+      animation: checkPop 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+
+    .service-card.completed .service-status-pill {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: rgba(16, 185, 129, 0.28);
+      color: #6ee7b7;
+      font-weight: 600;
+    }
+
+    .status-dot-pending {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: #475569;
+    }
+
+    .service-card.running .status-dot-pending,
+    .service-card.completed .status-dot-pending {
+      display: none;
+    }
+
+    @keyframes fluentSpin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    @keyframes checkPop {
+      0% { transform: scale(0.4); opacity: 0; }
+      100% { transform: scale(1); opacity: 1; }
+    }
+
+    /* Master Progress Footer */
+    .footer {
+      padding: 10px 24px 18px 24px;
+      z-index: 1;
+    }
+
+    .status-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 7px;
+      font-size: 12px;
+    }
+
+    .status-label {
+      color: var(--text-secondary);
+      font-weight: 400;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .status-percent {
+      font-weight: 600;
+      color: #93c5fd;
+      font-variant-numeric: tabular-nums;
+      font-size: 12px;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 999px;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 12%;
+      background: linear-gradient(90deg, #0078d4, #00b7c3, #6366f1);
+      border-radius: 999px;
+      transition: width 0.35s cubic-bezier(0.16, 1, 0.3, 1);
+      box-shadow: 0 0 12px rgba(0, 120, 212, 0.6);
+      position: relative;
+    }
+
+    .progress-shimmer {
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+      animation: fluentShimmer 1.8s infinite;
+      border-radius: 999px;
+    }
+
+    @keyframes fluentShimmer {
+      0% { transform: translateX(-100%); }
+      100% { transform: translateX(100%); }
+    }
+
+    .footer-meta {
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10px;
+      color: #475569;
+    }
+  </style>
+</head>
+<body data-tauri-drag-region>
+  <div class="fluent-bloom"></div>
+
+  <!-- Microsoft Fluent Window Header -->
+  <div class="header" data-tauri-drag-region>
+    <div class="brand-group" data-tauri-drag-region>
+      <div class="logo-container">
+        <img src="Compass_logo.png" alt="Compass" onerror="this.src='images/compass-logo.png'">
+      </div>
+      <div class="title-group" data-tauri-drag-region>
+        <h1>Compass</h1>
+        <p>AI Insights Platform</p>
+      </div>
+    </div>
+    <div class="badge-platform">
+      <div class="badge-platform-dot"></div>
+      <span>Enterprise Core</span>
+    </div>
+  </div>
+
+  <!-- Real-Time Service Status Cards -->
+  <div class="services-container">
+    <!-- 1. Docker Engine -->
+    <div class="service-card" id="card-docker">
+      <div class="service-main">
+        <div class="service-icon-box">🐳</div>
+        <div class="service-meta">
+          <span class="service-name">Docker Engine</span>
+          <span class="service-sub">Container Virtualization Daemon</span>
+        </div>
+      </div>
+      <div class="service-status-pill">
+        <div class="status-dot-pending"></div>
+        <div class="fluent-spinner"></div>
+        <svg class="status-check-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span class="status-text">Checking</span>
+      </div>
+    </div>
+
+    <!-- 2. PostgreSQL Server -->
+    <div class="service-card" id="card-postgres">
+      <div class="service-main">
+        <div class="service-icon-box">🗄️</div>
+        <div class="service-meta">
+          <span class="service-name">PostgreSQL Database</span>
+          <span class="service-sub">
+            docspyre_app
+            <span class="service-port-tag" id="port-pg">:22003</span>
+          </span>
+        </div>
+      </div>
+      <div class="service-status-pill">
+        <div class="status-dot-pending"></div>
+        <div class="fluent-spinner"></div>
+        <svg class="status-check-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span class="status-text">Pending</span>
+      </div>
+    </div>
+
+    <!-- 3. LiteLLM Gateway -->
+    <div class="service-card" id="card-litellm">
+      <div class="service-main">
+        <div class="service-icon-box">🤖</div>
+        <div class="service-meta">
+          <span class="service-name">LiteLLM AI Gateway</span>
+          <span class="service-sub">
+            Multi-Model AI Proxy
+            <span class="service-port-tag" id="port-llm">:22002</span>
+          </span>
+        </div>
+      </div>
+      <div class="service-status-pill">
+        <div class="status-dot-pending"></div>
+        <div class="fluent-spinner"></div>
+        <svg class="status-check-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span class="status-text">Pending</span>
+      </div>
+    </div>
+
+    <!-- 4. Python Intelligence Service -->
+    <div class="service-card" id="card-python">
+      <div class="service-main">
+        <div class="service-icon-box">🐍</div>
+        <div class="service-meta">
+          <span class="service-name">Python Intelligence Service</span>
+          <span class="service-sub">
+            Agent Pipelines & ML Analytics
+            <span class="service-port-tag">:22004</span>
+          </span>
+        </div>
+      </div>
+      <div class="service-status-pill">
+        <div class="status-dot-pending"></div>
+        <div class="fluent-spinner"></div>
+        <svg class="status-check-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span class="status-text">Pending</span>
+      </div>
+    </div>
+
+    <!-- 5. Platform Core Backend -->
+    <div class="service-card" id="card-backend">
+      <div class="service-main">
+        <div class="service-icon-box">⚙️</div>
+        <div class="service-meta">
+          <span class="service-name">Platform Orchestrator</span>
+          <span class="service-sub">
+            Core Backend Engine
+            <span class="service-port-tag">:22000</span>
+          </span>
+        </div>
+      </div>
+      <div class="service-status-pill">
+        <div class="status-dot-pending"></div>
+        <div class="fluent-spinner"></div>
+        <svg class="status-check-icon" viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+        <span class="status-text">Waiting</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Microsoft Master Progress Bar -->
+  <div class="footer">
+    <div class="status-label-row">
+      <span class="status-label" id="current-action">Initializing platform services...</span>
+      <span class="status-percent" id="current-percent">0%</span>
+    </div>
+    <div class="progress-track">
+      <div class="progress-fill" id="progress-bar" style="width: 0%;">
+        <div class="progress-shimmer"></div>
+      </div>
+    </div>
+    <div class="footer-meta">
+      <span>Microsoft Fluent Platform Host</span>
+      <span>Local AI Environment</span>
+    </div>
+  </div>
+
+  <div id="startup-error" role="alert" aria-live="assertive" style="display:none; position:absolute; inset:auto 24px 24px 24px; padding:16px; border:1px solid #ef4444; border-radius:12px; background:#1b1720; color:#fca5a5; z-index:10;">
+    <div id="startup-error-message"></div>
+    <button id="startup-retry" type="button" style="margin-top:12px; padding:8px 14px; border:0; border-radius:8px; background:#2563eb; color:#fff; cursor:pointer;">Retry startup</button>
+  </div>
+
+  <script>
+    const progressBar = document.getElementById('progress-bar');
+    const percentLabel = document.getElementById('current-percent');
+    const actionLabel = document.getElementById('current-action');
+
+    const serviceStates = {
+      docker: { ready: false, text: 'Checking' },
+      postgres: { ready: false, text: 'Pending' },
+      litellm: { ready: false, text: 'Pending' },
+      python: { ready: false, text: 'Pending' },
+      backend: { ready: false, text: 'Pending' }
+    };
+
+    function updateServiceCard(id, state, labelText) {
+      const card = document.getElementById(`card-${id}`);
+      if (!card) return;
+
+      const textEl = card.querySelector('.status-text');
+      card.classList.remove('running', 'completed');
+
+      if (state === 'running') {
+        card.classList.add('running');
+        if (textEl) textEl.textContent = labelText || 'Starting...';
+        serviceStates[id].ready = false;
+      } else if (state === 'completed' || state === 'ready') {
+        card.classList.add('completed');
+        if (textEl) textEl.textContent = labelText || 'Online ✓';
+        serviceStates[id].ready = true;
+      } else if (state === 'error' || state === 'warning') {
+        if (textEl) textEl.textContent = labelText || 'Failed';
+        serviceStates[id].ready = false;
+      } else {
+        if (textEl) textEl.textContent = labelText || 'Pending';
+        serviceStates[id].ready = false;
+      }
+
+      computeOverallProgress();
+    }
+
+    function computeOverallProgress() {
+      const keys = ['docker', 'postgres', 'litellm', 'python', 'backend'];
+      const readyCount = keys.filter(k => serviceStates[k].ready).length;
+      const calculatedPercent = Math.round((readyCount / keys.length) * 100);
+
+      if (progressBar) progressBar.style.width = calculatedPercent + '%';
+      if (percentLabel) percentLabel.textContent = calculatedPercent + '%';
+    }
+
+    function setMasterStatus(message, percentOverride) {
+      if (actionLabel && message) actionLabel.textContent = message;
+      if (percentOverride !== undefined) {
+        if (progressBar) progressBar.style.width = percentOverride + '%';
+        if (percentLabel) percentLabel.textContent = percentOverride + '%';
+      }
+    }
+
+    function showStartupError(payload) {
+      const step = payload.step || 'service';
+      const message = payload.message || 'An unexpected startup error occurred.';
+      const errorBox = document.getElementById('startup-error');
+      const errorMessage = document.getElementById('startup-error-message');
+      if (errorMessage) errorMessage.textContent = `${step}: ${message}`;
+      if (errorBox) errorBox.style.display = 'block';
+      if (serviceStates[step]) updateServiceCard(step, 'error', 'Failed');
+      setMasterStatus(`Startup failed at ${step}`);
+      stopHealthPolling();
+    }
+
+    // Direct event listener for Rust supervisor
+    function registerTauriEvents() {
+      const tauri = window.__TAURI__;
+      if (!tauri) return false;
+
+      const eventApi = tauri.event || (tauri.core && tauri.core.event);
+      if (eventApi && typeof eventApi.listen === 'function') {
+        eventApi.listen('startup_step', (event) => {
+          const payload = event.payload;
+          if (!payload) return;
+
+          const step = payload.step;
+          const status = payload.status;
+          const message = payload.message || '';
+
+          if (status === 'error') {
+            showStartupError(payload);
+            return;
+          }
+
+          if (step === 'docker') {
+            updateServiceCard('docker', status, status === 'completed' ? 'Online ✓' : 'Checking...');
+            if (message) setMasterStatus(message);
+          } else if (step === 'postgres') {
+            if (message.includes('22003')) {
+              const el = document.getElementById('port-pg');
+              if (el) el.textContent = ':22003';
+            }
+            updateServiceCard('postgres', status, status === 'completed' ? 'Ready ✓' : 'Starting...');
+            if (message) setMasterStatus(message);
+          } else if (step === 'litellm') {
+            if (message.includes('22002')) {
+              const el = document.getElementById('port-llm');
+              if (el) el.textContent = ':22002';
+            }
+            updateServiceCard('litellm', status, status === 'completed' ? 'Ready ✓' : 'Connecting...');
+            if (message) setMasterStatus(message);
+          } else if (step === 'python') {
+            updateServiceCard('python', status, status === 'completed' ? 'Online ✓' : status === 'error' ? message : 'Starting...');
+            if (message) setMasterStatus(message);
+          } else if (step === 'backend') {
+            updateServiceCard('backend', status, status === 'completed' ? 'Online ✓' : 'Booting...');
+            if (message) setMasterStatus(message);
+          } else if (step === 'all') {
+            ['docker', 'postgres', 'litellm', 'python', 'backend'].forEach(k => {
+              updateServiceCard(k, 'ready', 'Online ✓');
+            });
+            isAllServicesReady = true;
+            stopHealthPolling();
+            setMasterStatus('All services online • Opening workspace...', 100);
+          }
+        });
+        return true;
+      }
+      return false;
+    }
+
+    let healthPollInterval = null;
+    let isHealthChecking = false;
+    let isAllServicesReady = false;
+
+    function stopHealthPolling() {
+      if (healthPollInterval) {
+        clearInterval(healthPollInterval);
+        healthPollInterval = null;
+      }
+    }
+
+    // Live continuous health check polling real service status
+    async function checkHealth() {
+      if (isHealthChecking || isAllServicesReady) return;
+      isHealthChecking = true;
+
+      try {
+        const tauri = window.__TAURI__;
+        if (tauri && tauri.core && typeof tauri.core.invoke === 'function') {
+          try {
+            const startup = await tauri.core.invoke('get_startup_status');
+            if (startup && startup.status === 'error') {
+              showStartupError(startup);
+              return;
+            }
+            const health = await tauri.core.invoke('check_services_health');
+            if (health) {
+              if (health.docker_running) {
+                updateServiceCard('docker', 'ready', 'Online ✓');
+              } else {
+                updateServiceCard('docker', 'running', 'Verifying...');
+              }
+
+              if (health.postgres_running) {
+                const el = document.getElementById('port-pg');
+                if (el && health.postgres_port) el.textContent = `:${health.postgres_port}`;
+                updateServiceCard('postgres', 'ready', 'Ready ✓');
+              } else {
+                updateServiceCard('postgres', 'running', 'Starting...');
+              }
+
+              if (health.litellm_running) {
+                const el = document.getElementById('port-llm');
+                if (el && health.litellm_port) el.textContent = `:${health.litellm_port}`;
+                updateServiceCard('litellm', 'ready', 'Ready ✓');
+              } else {
+                updateServiceCard('litellm', 'running', 'Connecting...');
+              }
+
+              if (health.python_running) {
+                updateServiceCard('python', 'ready', 'Online ✓');
+              } else {
+                updateServiceCard('python', 'running', 'Starting...');
+              }
+
+              if (health.backend_running) {
+                updateServiceCard('backend', 'ready', 'Online ✓');
+              } else {
+                updateServiceCard('backend', 'running', 'Starting...');
+              }
+
+              // Main application readiness requires ALL 5 services to be verified running
+              if (health.docker_running && health.postgres_running && health.litellm_running && health.python_running && health.backend_running) {
+                isAllServicesReady = true;
+                stopHealthPolling();
+                setMasterStatus('All platform services online • Opening workspace...', 100);
+              }
+            }
+          } catch (error) {
+            const message = error && error.message ? error.message : String(error);
+            setMasterStatus(`Unable to check service startup: ${message}`);
+          }
+        }
+      } finally {
+        isHealthChecking = false;
+      }
+    }
+
+    // Initialize listeners and real-time periodic poll
+    window.addEventListener('DOMContentLoaded', () => {
+      registerTauriEvents();
+      const retryButton = document.getElementById('startup-retry');
+      if (retryButton) {
+        retryButton.addEventListener('click', async () => {
+          const tauri = window.__TAURI__;
+          if (!tauri || !tauri.core || typeof tauri.core.invoke !== 'function') return;
+          const errorBox = document.getElementById('startup-error');
+          if (errorBox) errorBox.style.display = 'none';
+          isAllServicesReady = false;
+          setMasterStatus('Retrying platform service startup...');
+          healthPollInterval = setInterval(checkHealth, 1000);
+          try {
+            await tauri.core.invoke('restart_local_services');
+          } catch (error) {
+            showStartupError({
+              step: 'restart',
+              message: error && error.message ? error.message : String(error)
+            });
+          }
+        });
+      }
+      checkHealth();
+      healthPollInterval = setInterval(checkHealth, 1000);
+    });
+
+    window.addEventListener('beforeunload', () => {
+      stopHealthPolling();
+    });
+  </script>
+</body>
+</html>

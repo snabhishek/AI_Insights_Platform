@@ -33,7 +33,6 @@ import createAIRouter from "./routes/ai";
 import { checkAndCreateDatabase, runMigrations, initializeApplicationData, pool } from "./db";
 import * as schema from "./db/schema";
 import { PostgresAgentThinkingRepository } from "./repositories/agentThinking.repository";
-import { PostgresModelValidationRepository } from "./repositories/modelValidation.repository";
 import { PostgresChatSuggestionRepository } from "./repositories/chatSuggestion.repository";
 import { ChatSuggestionService } from "./services/chat/chatSuggestion.service";
 import { ChatSuggestionController } from "./controllers/chatSuggestion.controller";
@@ -57,9 +56,10 @@ import createModelSelectionRouter from "./routes/modelSelection";
 import { TrainingConfigService } from "./services/ai/training-config/trainingConfig.service";
 import { TrainingConfigController } from "./controllers/trainingConfig.controller";
 import createTrainingConfigRouter from "./routes/trainingConfig";
-import { ModelValidationService } from "./services/ai/model-validation/modelValidation.service";
-import { ModelValidationController } from "./controllers/modelValidation.controller";
-import createModelValidationRouter from "./routes/modelValidation";
+import { ModelLifecycleService } from "./services/ai/model-lifecycle/modelLifecycle.service";
+import { ModelLifecycleCandidateService } from "./services/ai/model-lifecycle/modelLifecycleCandidates.service";
+import { ModelLifecycleController } from "./controllers/modelLifecycle.controller";
+import createModelLifecycleRouter from "./routes/modelLifecycle";
 import { ModelExportService } from "./services/project/modelExport.service";
 import { ModelExportController } from "./controllers/modelExport.controller";
 import createModelExportRouter from "./routes/modelExports";
@@ -67,12 +67,15 @@ import { SparrowChatService } from "./services/chat/sparrowChat.service";
 import { SparrowChatController } from "./controllers/sparrowChat.controller";
 import createSparrowChatRouter from "./routes/sparrowChat";
 import { initializeSparrowPersistence } from "./services/chat/sparrowPersistence";
+import { ConfigService } from "./services/config/config.service";
+import { ConfigController } from "./controllers/config.controller";
+import createConfigRouter from "./routes/config";
 
 dotenv.config();
 
 const app = express();
-const PORT = Number(process.env.PORT!);
-const HOST = process.env.HOST!;
+const PORT = Number(process.env.PORT || 22000);
+const HOST = process.env.HOST || "127.0.0.1";
 
 app.use(cors(corsOptions));
 
@@ -144,14 +147,9 @@ async function bootstrap() {
   const modelSelectionController = new ModelSelectionController(modelSelectionService);
   const trainingConfigService = new TrainingConfigService(projectService);
   const trainingConfigController = new TrainingConfigController(trainingConfigService);
-  const modelValidationRepository = new PostgresModelValidationRepository(db);
-  const modelValidationService = new ModelValidationService(
-    projectService,
-    workspaceService,
-    modelValidationRepository,
-    agentThinkingService
-  );
-  const modelValidationController = new ModelValidationController(modelValidationService);
+  const modelLifecycleService = new ModelLifecycleService(projectService, sparrowPersistence.checkpointer);
+  const modelLifecycleController = new ModelLifecycleController(modelLifecycleService);
+  const modelLifecycleCandidateService = new ModelLifecycleCandidateService(projectService);
 
   const chatSuggestionRepository = new PostgresChatSuggestionRepository(db);
   const chatSuggestionService = new ChatSuggestionService(chatSuggestionRepository);
@@ -160,17 +158,21 @@ async function bootstrap() {
   const sparrowChatService = new SparrowChatService(
     projectService,
     duckDBService,
-    modelValidationService,
+    modelLifecycleCandidateService,
     sparrowPersistence
   );
   const sparrowChatController = new SparrowChatController(sparrowChatService);
 
+  const configService = new ConfigService();
+  const configController = new ConfigController(configService);
+
   app.get("/api/filter-options", connectorController.getFilterOptions);
+  app.use("/api/config", createConfigRouter(configController));
   app.use("/api/connectors", createConnectorRouter(connectorController));
   app.use("/api/domains", createDomainRouter(domainController));
   app.use("/api/model-selection", createModelSelectionRouter(modelSelectionController));
   app.use("/api/training-config", createTrainingConfigRouter(trainingConfigController));
-  app.use("/api/model-validation", createModelValidationRouter(modelValidationController));
+  app.use("/api/model-lifecycle", createModelLifecycleRouter(modelLifecycleController));
   app.use("/api/model-exports", createModelExportRouter(new ModelExportController(new ModelExportService(projectService))));
   app.use("/api/chat-suggestions", createChatSuggestionRouter(chatSuggestionController));
   app.use("/api/chat", createSparrowChatRouter(sparrowChatController));

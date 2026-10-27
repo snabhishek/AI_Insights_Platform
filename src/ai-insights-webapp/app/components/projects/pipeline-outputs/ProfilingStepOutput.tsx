@@ -23,15 +23,6 @@ export default function ProfilingStepOutput({ profileData }: ProfilingStepOutput
       ? [{ connectorName: "Profile Result", tables: profileData.profile.tables }]
       : [];
 
-  if (sources.length === 0) {
-    return (
-      <div className="p-6 text-center border border-dashed border-border bg-surface-muted/20 select-none">
-        <BarChart3 className="w-6 h-6 mx-auto mb-1.5 text-muted-foreground/60" />
-        <p className="text-xs text-muted-foreground">No profiling results found in payload.</p>
-      </div>
-    );
-  }
-
   const selectedSource = sources[selectedSourceIndex] || sources[0] || null;
   const tables = Array.isArray(selectedSource?.tables) ? selectedSource.tables : [];
 
@@ -52,6 +43,15 @@ export default function ProfilingStepOutput({ profileData }: ProfilingStepOutput
   useEffect(() => {
     setIsSchemaOpen(false);
   }, [selectedTableKey]);
+
+  if (sources.length === 0) {
+    return (
+      <div className="p-6 text-center border border-dashed border-border bg-surface-muted/20 select-none">
+        <BarChart3 className="w-6 h-6 mx-auto mb-1.5 text-muted-foreground/60" />
+        <p className="text-xs text-muted-foreground">No profiling results found in payload.</p>
+      </div>
+    );
+  }
 
   const getActiveTab = (tableKey: string): TabType => {
     return activeTabs[tableKey] || "quality";

@@ -29,9 +29,8 @@ test("live Sparrow derives revenue and profit, asks for missing inputs, and hono
     const projectService = { getById: async () => project, getProjectWithWorkspace: async () => ({ workspaceName: "Fixture" }) } as any;
     const duckDBService = { getProjectDuckDbPath: () => dbPath, runQuery } as any;
     const executions: any[] = [];
-    const modelValidationService = {
+    const modelLifecycleCandidatesService = {
       getValidationCandidates: async () => ({ candidates: [{ model_id: "m1", displayName: "Fixture unit model" }], championModelId: "m1" }),
-      validateModels: async () => { throw new Error("Sparrow must never run model validation."); },
     } as any;
     const executionService = {
       execute: async (request: any) => {
@@ -45,8 +44,8 @@ test("live Sparrow derives revenue and profit, asks for missing inputs, and hono
       ["getProjectContext", createGetProjectContextTool("p1", { projectService, duckDBService })],
       ["getProjectDataSchema", createGetProjectDataSchemaTool("p1", { projectService, duckDBService })],
       ["queryProjectData", createQueryProjectDataTool("p1", { projectService, duckDBService })],
-      ["discoverAvailableModels", createDiscoverAvailableModelsTool("p1", { projectService, modelValidationService })],
-      ["runModelInference", createRunModelInferenceTool("p1", { projectService, modelValidationService, executionService })],
+      ["discoverAvailableModels", createDiscoverAvailableModelsTool("p1", { projectService, modelLifecycleCandidatesService })],
+      ["runModelInference", createRunModelInferenceTool("p1", { projectService, modelLifecycleCandidatesService, executionService })],
       ["calculateMetric", createCalculateMetricTool()],
     ]);
     const graph = createSparrowGraph({ tools, checkpointer: new MemorySaver(), now: () => Date.parse("2026-10-09T12:00:00Z"),

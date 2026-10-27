@@ -158,6 +158,10 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
       `Feature Architect & Validator workflow completed successfully. Target column: "${logTargetName}".`
     );
 
+    const projectId = services.projectId ?? "";
+    const runTimestamp = state.runTimestamp ?? "";
+    await cleanupRunContainer(projectId, runTimestamp);
+
     return {
       featureArchitect: finalOutput,
       featureValidator: featureValidatorOutput,
@@ -181,10 +185,8 @@ export async function featureArchitectNode(state: typeof AgentState.State, confi
         featureValidatorNode: STATUS_COMPLETED,
       },
     };
-  } finally {
-
-    const projectId = services.projectId ?? "";
-    const runTimestamp = state.runTimestamp ?? "";
-    await cleanupRunContainer(projectId, runTimestamp);
+  } catch (error) {
+    console.error("[FeatureArchitectNode] Execution error encountered; preserving Docker container for inspection:", error);
+    throw error;
   }
 }

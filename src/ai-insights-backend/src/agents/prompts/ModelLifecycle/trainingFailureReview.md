@@ -1,0 +1,3 @@
+Review the training run using the supplied project context, source files, process outcome, raw stdout, raw stderr, and generated outputs. Decide whether the stderr and other evidence indicate a problem that should be diagnosed, whether the candidate should be assessed, or whether the run must end as a failure.
+
+Do not assume every stderr line is an error. Do not rely on a predetermined list of package names, versions, or error strings. Use the available web-search and URL-content tools when current technical evidence is needed. Return one structured decision with a concise rationale, relevant evidence, and any affected candidate identifier. Do not edit files in this review step.

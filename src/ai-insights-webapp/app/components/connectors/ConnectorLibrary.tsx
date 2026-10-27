@@ -3,11 +3,6 @@
 import React from "react";
 import {
   PostgresqlIcon,
-  MysqlIcon,
-  SqlServerIcon,
-  SnowflakeIcon,
-  MongodbIcon,
-  RestApiIcon,
 } from "./Icons";
 import Image from "next/image";
 import { DataSource } from "../providers/AppContext";
@@ -27,46 +22,16 @@ const CONNECTORS: Connector[] = [
     icon: <PostgresqlIcon size={48} />,
   },
   {
-    id: "mysql",
-    name: "MySQL",
-    description: "Connect to MySQL databases",
-    icon: <MysqlIcon size={48} />,
-  },
-  {
-    id: "sqlserver",
-    name: "SQL Server",
-    description: "Connect to Microsoft SQL Server",
-    icon: <SqlServerIcon size={48} />,
-  },
-  {
-    id: "snowflake",
-    name: "Snowflake",
-    description: "Connect to Snowflake Warehouse",
-    icon: <SnowflakeIcon size={48} />,
-  },
-  {
-    id: "mongodb",
-    name: "MongoDB",
-    description: "Connect to MongoDB databases",
-    icon: <MongodbIcon size={48} />,
-  },
-  {
-    id: "excel",
-    name: "Excel",
-    description: "Connect to Excel spreadsheets",
-    icon: <Image src="/images/microsoft-excel.jpg" alt="Excel" width={48} height={48} className="object-contain" />,
-  },
-  {
     id: "csv",
     name: "CSV",
     description: "Upload and connect CSV files",
     icon: <Image src="/images/csv.png" alt="CSV" width={48} height={48} className="object-contain" />,
   },
   {
-    id: "restapi",
-    name: "REST API",
-    description: "Connect to REST APIs",
-    icon: <RestApiIcon size={48} />,
+    id: "excel",
+    name: "Excel",
+    description: "Connect to Excel spreadsheets",
+    icon: <Image src="/images/microsoft-excel.jpg" alt="Excel" width={48} height={48} className="object-contain" />,
   },
 ];
 

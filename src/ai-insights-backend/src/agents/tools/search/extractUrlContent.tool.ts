@@ -23,6 +23,7 @@ export const createExtractUrlContentTool = () => {
       let browser: Browser | null = null;
       try {
         browser = await chromium.launch({
+          channel: "chrome",
           headless: true,
           args: ["--no-sandbox", "--disable-setuid-sandbox", "--disable-dev-shm-usage"],
         });

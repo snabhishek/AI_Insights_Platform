@@ -1,6 +1,6 @@
 import { tool } from "@langchain/core/tools";
 import { z } from "zod";
-import { IModelValidationService } from "../../../services/ai/model-validation/modelValidation.service.interface";
+import { ModelLifecycleCandidatesService } from "../../../services/ai/model-lifecycle/modelLifecycleCandidates.service";
 import { ISparrowExecutionService } from "../../../services/ai/sparrow-execution/sparrowExecution.service";
 import { SparrowState } from "../sparrowState";
 import { ProjectService } from "../../../services/project/project.service";
@@ -9,7 +9,7 @@ import { forecastWindow, selectForecastPeriods } from "../forecastWindow";
 
 export interface ModelInferenceToolServices {
   projectService: ProjectService;
-  modelValidationService: Pick<IModelValidationService, "getValidationCandidates">;
+  modelLifecycleCandidatesService: ModelLifecycleCandidatesService;
   executionService?: ISparrowExecutionService;
   onProgress?: (text: string) => void;
 }
@@ -25,7 +25,7 @@ export const createDiscoverAvailableModelsTool = (
           return { success: false, error: "No projectId provided for model discovery." };
         }
 
-        const candidateInfo = await services.modelValidationService.getValidationCandidates(projectId);
+        const candidateInfo = await services.modelLifecycleCandidatesService.getValidationCandidates(projectId);
         const rawCandidates = candidateInfo?.candidates || [];
         const candidates = Array.isArray(rawCandidates)
           ? rawCandidates
@@ -90,7 +90,7 @@ export const createRunModelInferenceTool = (
         }
 
         const modelsToRun = selectedModels;
-        const candidateInfo = await services.modelValidationService.getValidationCandidates(projectId);
+        const candidateInfo = await services.modelLifecycleCandidatesService.getValidationCandidates(projectId);
         const rawCandidates = candidateInfo?.candidates ?? [];
         const candidates = Array.isArray(rawCandidates)
           ? rawCandidates

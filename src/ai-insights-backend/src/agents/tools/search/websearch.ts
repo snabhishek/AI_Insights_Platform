@@ -44,7 +44,7 @@ async function queryLiteLLMSearch(
   searchToolName: Exclude<SearchProvider, "fallback">
 ): Promise<WebSearchResultItem[]> {
   const litellmUrl = process.env.LITELLM_PROXY_URL;
-  const litellmKey = process.env.LITELLM_VIRTUAL_KEY
+  const litellmKey = process.env.LITELLM_VIRTUAL_KEY || process.env.LITELLM_MASTER_KEY;
 
   const response = await fetch(`${litellmUrl}/v1/search`, {
     method: "POST",
@@ -118,14 +118,6 @@ async function executeSearchWithFallback(query: string): Promise<WebSearchExecut
   }
 }
 
-export const webSearchTool = {
-  invoke: async (input: any) => {
-    const searchQuery = typeof input === "string" ? input : input?.query || "";
-    const searchData = await executeSearchWithFallback(searchQuery);
-    return JSON.stringify(searchData);
-  },
-} as any;
-
 let searchQueueChain = Promise.resolve<any>(undefined);
 let lastSearchTime = 0;
 const SEARCH_COOLDOWN_MS = 1500;
@@ -150,8 +142,8 @@ export const createWebSearchTool = () => {
           }
 
           lastSearchTime = Date.now();
-          const res = await webSearchTool.invoke({ query: searchQuery }, { recursionLimit: 1 });
-          return typeof res === "string" ? res : JSON.stringify(res);
+          const searchData = await executeSearchWithFallback(searchQuery);
+          return JSON.stringify(searchData);
         })();
 
         searchQueueChain = currentSearch;
@@ -165,11 +157,13 @@ export const createWebSearchTool = () => {
     {
       name: "web_search",
       description:
-        "Search the web for external datasets, public APIs, macroeconomic indicators, weather data, or domain benchmarks relevant to tables and feature engineering.",
+        "Search the web for python machine learning documentation, model training APIs, library deprecation notices, error solutions, external datasets, or domain benchmarks.",
       schema: z.object({
-        query: z.string().describe("Query to search the web for external data sources or benchmarks"),
+        query: z.string().describe("Query to search the web for external data sources, documentation, API updates, or error fixes"),
         tableList: z.any().optional().describe("Optional list of table names or context related to the search"),
       }),
     }
   );
 };
+
+export const webSearchTool = createWebSearchTool();

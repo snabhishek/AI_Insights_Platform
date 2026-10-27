@@ -31,7 +31,7 @@ export interface CandidateModelValidationRun {
   model_id: string;
   displayName: string;
   framework: string;
-  status: "Completed" | "Failed";
+  status: "Completed" | "Failed" | "Skipped";
   score?: number;
   primaryMetricName?: string;
   metrics: Record<string, MetricDetail>;
@@ -510,6 +510,17 @@ export default function ModelValidationStepOutput({
 
   return (
     <div className="space-y-6 animate-in fade-in duration-300">
+
+      {Array.isArray(modelValidation?.qualityRecommendations) && modelValidation.qualityRecommendations.length > 0 && (
+        <div className="rounded-xl border border-blue-500/20 bg-blue-500/5 p-4">
+          <h3 className="text-sm font-semibold text-foreground">Quality improvement recommendations</h3>
+          <ul className="mt-2 list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+            {modelValidation.qualityRecommendations.map((recommendation: string, index: number) => (
+              <li key={`${index}-${recommendation}`}>{recommendation}</li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       {Boolean(onApproveValidation) && (
       <div className="p-5 rounded-2xl bg-surface-raised border border-border shadow-sm">
@@ -1161,9 +1172,14 @@ export default function ModelValidationStepOutput({
                             </>
                           )}
                           <td className="py-2.5">
-                            <Badge variant={cand.status === "Completed" ? "success" : "error"}>
+                            <Badge variant={cand.status === "Completed" ? "success" : cand.status === "Skipped" ? "warning" : "error"}>
                               {cand.status}
                             </Badge>
+                            {cand.error && (
+                              <p className="mt-1 max-w-xs text-[10px] text-muted-foreground" title={cand.error}>
+                                {cand.error}
+                              </p>
+                            )}
                           </td>
                           <td className="py-2.5 text-right">
                             <button

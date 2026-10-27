@@ -40,8 +40,6 @@ const NODE_ORDER = [
   "modelSelectionNode",
   "trainingConfigurationNode",
   "preFlightNode",
-  "modelTrainingNode",
-  "modelValidationNode",
 ] as const;
 
 function normalizeGraphNode(node: string): string {
@@ -62,10 +60,6 @@ function normalizeGraphNode(node: string): string {
     preflight: "preFlightNode",
     preFlight: "preFlightNode",
     preFlightNode: "preFlightNode",
-    modelTraining: "modelTrainingNode",
-    modelTrainingNode: "modelTrainingNode",
-    modelValidation: "modelValidationNode",
-    modelValidationNode: "modelValidationNode",
   };
   return map[node] || node;
 }
@@ -151,7 +145,7 @@ async function runFromLastState() {
   // Reset status to "In-Progress" so nodes do not skip execution on previous paused/failed status
   savedState.status = "In-Progress";
 
-  let targetNode: string = "modelTrainingNode";
+  let targetNode: string = "preFlightNode";
   if (process.argv[2] && !process.argv[2].endsWith(".json")) {
     targetNode = process.argv[2];
   } else if (process.argv[3] && !process.argv[3].endsWith(".json")) {
@@ -288,26 +282,6 @@ async function runFromLastState() {
       }
       if (nodeOutput?.steps) {
         console.log(`   Steps added:`, JSON.stringify(nodeOutput.steps, null, 2));
-      }
-    }
-
-    const midGraphState = await workflow.getState(config);
-    if (midGraphState.next && midGraphState.next.includes("modelTrainingNode")) {
-      console.log(`\n=================================================`);
-      console.log(` Pre-Flight Complete. Proceeding to Model Training `);
-      console.log(`=================================================\n`);
-
-      const mtStream = await workflow.stream(null, config);
-      for await (const event of mtStream) {
-        const nodeName = Object.keys(event)[0];
-        console.log(`✨ Completed Node: "${nodeName}"`);
-        const nodeOutput = (event as Record<string, any>)[nodeName];
-        if (nodeOutput?.summary) {
-          console.log(`   Summary: ${nodeOutput.summary}`);
-        }
-        if (nodeOutput?.steps) {
-          console.log(`   Steps added:`, JSON.stringify(nodeOutput.steps, null, 2));
-        }
       }
     }
 

@@ -22,6 +22,7 @@ const RETRY_NODE_ORDER: TrackedAgentKey[] = [
   "trainingConfigurationNode",
   "preFlightNode",
   "modelTrainingCodeNode",
+  "modelTrainingExecutionNode",
 ];
 
 export interface RetryCleanupOptions {
@@ -31,7 +32,6 @@ export interface RetryCleanupOptions {
   folderPath?: string;
   runTimestamp?: string;
   targetStep: string;
-  duckDBService?: any;
 }
 
 async function safeDelete(targetPath: string, deletedItems: string[]): Promise<void> {
@@ -171,15 +171,7 @@ export async function deleteStepAndSuccessorFiles(
   }
 
   if (affectedNodes.has("inspect")) {
-    console.info(`[RetryCleanup] Retrying from "inspect" — performing complete reset of project artifacts.`);
-
-    if (options.duckDBService && typeof options.duckDBService.deleteProjectFolder === "function") {
-      try {
-        await options.duckDBService.deleteProjectFolder(projectName, workspaceName, options.folderPath);
-      } catch (dbErr: any) {
-        console.warn(`[RetryCleanup] Error deleting DuckDB project folder:`, dbErr?.message || dbErr);
-      }
-    }
+    console.info(`[RetryCleanup] Retrying from "inspect" — resetting generated project artifacts while preserving datasource files.`);
 
     for (const rDir of runDirs) {
       await safeDelete(rDir, deletedItems);
@@ -190,14 +182,6 @@ export async function deleteStepAndSuccessorFiles(
     for (const pyDir of pythonScriptDirs) {
       await safeDelete(pyDir, deletedItems);
     }
-    for (const pDir of projectDirs) {
-      await scanAndDeleteFiles(
-        pDir,
-        (file) => file.endsWith(".duckdb") || file.endsWith(".duckdb.wal") || file.endsWith(".duckdb.tmp"),
-        deletedItems
-      );
-    }
-
     return { deletedItems };
   }
 
@@ -210,7 +194,9 @@ export async function deleteStepAndSuccessorFiles(
   const shouldCleanModelSelection = affectedNodes.has("modelSelectionNode");
   const shouldCleanTrainingConfig = affectedNodes.has("trainingConfigurationNode");
   const shouldCleanPreFlight = affectedNodes.has("preFlightNode");
-  const shouldCleanModelTraining = affectedNodes.has("modelTrainingCodeNode");
+  const shouldCleanModelTraining =
+    affectedNodes.has("modelTrainingCodeNode") ||
+    affectedNodes.has("modelTrainingExecutionNode");
 
   for (const sDir of schemasDirs) {
     await scanAndDeleteFiles(

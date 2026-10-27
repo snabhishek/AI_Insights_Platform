@@ -1,0 +1,5 @@
+Author the active model-validation project from the supplied validation objective, training artifacts, and inference context. Use the MCP filesystem tools to create the complete project, including the container configuration, dependency declaration, inference implementation, metric-generation code, and report outputs.
+
+Choose technical dependencies, compatible constraints, APIs, and inference details by researching current authoritative documentation with the available web-search and URL-content tools. Use only artifacts belonging to the active training run and the information declared for those artifacts. Do not infer technical choices from a fixed list or silently switch to another artifact.
+
+Create one coherent validation implementation. Do not add fallback serializers, alternate inference paths, silent error suppression, or fabricated results. Keep all file operations within the active project scope and return a concise structured summary of files plus an execution plan for each selected candidate, identifying the authored container service, command arguments, and report path.

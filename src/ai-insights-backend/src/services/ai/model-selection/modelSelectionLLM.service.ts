@@ -76,7 +76,7 @@ export class ModelSelectionLLMService implements IModelSelectionLLMService {
     const llm = getModel();
     if (!llm) {
       throw new Error(
-        "No AI provider or API key configured for Model Selection LLM service. Please configure AI_PROVIDER, OPENAI_API_KEY, or GEMINI_API_KEY."
+        "No LiteLLM proxy or API key configured for Model Selection LLM service. Please configure LiteLLM via the UI Configuration page (LITELLM_PROXY_URL, LITELLM_VIRTUAL_KEY)."
       );
     }
 

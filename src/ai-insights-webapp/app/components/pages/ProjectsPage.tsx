@@ -24,6 +24,7 @@ import { resolveNextWorkflowPhase, STEP_TO_NODE_MAP, PIPELINE_PHASES, SUBSTEP_TO
 import ProjectsListPage from "../projects/ProjectsListPage";
 import ProjectWorkspace, { ProjectTabType } from "../projects/ProjectWorkspace";
 import { executeWorkflowApi, attachWorkflowStreamApi, pauseWorkflowApi, stopWorkflowApi, fetchActiveWorkflowApi, WorkflowRequestPayload } from "../../services/aiWorkflowService";
+import { approvePendingModelLifecycle, LifecycleRunResult } from "../../services/modelLifecycleService";
 
 interface WorkflowResponse {
   success: boolean;
@@ -92,6 +93,50 @@ function getStageOutputError(stageOutputs: unknown): string | null {
     }
   }
   return null;
+}
+
+function toLifecycleStageOutput(result: LifecycleRunResult): Record<string, unknown> {
+  const candidates = result.candidates.map((candidate) => {
+    const numericMetrics = Object.fromEntries(
+      Object.entries(candidate.metrics || {}).flatMap(([name, value]) => {
+        const numeric = typeof value === "number" ? value : Number(value);
+        return Number.isFinite(numeric) ? [[name, numeric]] : [];
+      })
+    );
+    return {
+      model_id: candidate.modelId,
+      displayName: candidate.modelId,
+      status: candidate.status,
+      score: typeof numericMetrics.score === "number" ? numericMetrics.score : undefined,
+      metrics: numericMetrics,
+      validationMetrics: numericMetrics,
+      testMetrics: numericMetrics,
+      error: candidate.status === "Completed" ? undefined : candidate.summary,
+      failureCount: candidate.failureCount,
+      qualityAssessment: candidate.qualityAssessment,
+      qualityRecommendations: candidate.qualityRecommendations,
+      totals: { actualTotal: null, forecastTotal: 0, difference: null, differencePercentage: null },
+      chartData: { dates: [], actualSeries: [], predictedSeries: [] },
+      evaluationRecordCount: 0,
+      actualDataCoverage: null,
+    };
+  });
+  return {
+    ...result,
+    lifecycleVersion: true,
+    report: {
+      candidate_models: candidates,
+      ranked_models: candidates,
+      best_model_id: result.championCandidateId,
+      champion_model_id: result.championCandidateId,
+      candidate_rankings: result.candidateRankings,
+    },
+    executedModels: candidates,
+    candidates,
+    ranked_models: candidates,
+    champion_model_id: result.championCandidateId,
+    executionCompleted: true,
+  };
 }
 
 export default function ProjectsPage() {
@@ -1017,7 +1062,7 @@ export default function ProjectsPage() {
     const controller = new AbortController();
     abortControllerRef.current = controller;
 
-    let lastData: any = null;
+    const lastData: any = null;
     try {
       const approvalTargetNode = step ? STEP_TO_NODE_MAP[step] || step : "";
       const canSendSplitDate = action === "approve" && [
@@ -1148,6 +1193,7 @@ export default function ProjectsPage() {
       overrideTargetPhase,
     });
 
+
     void runWorkflow(
       "approve",
       targetPhase,
@@ -1158,6 +1204,97 @@ export default function ProjectsPage() {
       predictionFrequency,
       predictionObjectiveStartDate
     );
+  };
+
+  const runLifecycle = async (
+    stage: "training" | "validation"
+  ) => {
+    const projectId = selectedProject?.id;
+    if (!projectId) {
+      setIsApproving(false);
+      showAlert({ title: "Select a project before running model lifecycle.", type: "error" });
+      return;
+    }
+
+    setIsApproving(true);
+    setWorkflowError(null);
+    const startingStep = stage === "training" ? "authorTrainingProjectAgent" : "authorValidationProjectAgent";
+    const startingDetail = stage === "training"
+      ? "Starting model training lifecycle."
+      : "Starting model validation lifecycle.";
+    setWorkflowMessage(startingDetail);
+    setStageOutputs((current) => stage === "training"
+      ? {
+          ...current,
+          modelTrainingCodeNode: {
+            ...(current.modelTrainingCodeNode || {}),
+            lifecycleVersion: true,
+            status: "In-Progress",
+            summary: startingDetail,
+            currentStep: startingStep,
+            executionCompleted: false,
+          },
+        }
+      : {
+          ...current,
+          modelTrainingCodeNode: {
+            ...(current.modelTrainingCodeNode || {}),
+            modelValidation: {
+              ...((current.modelTrainingCodeNode || {}).modelValidation || {}),
+              lifecycleVersion: true,
+              status: "In-Progress",
+              summary: startingDetail,
+              currentStep: startingStep,
+            },
+          },
+        });
+    if (stage === "training") {
+      setPipelineStatuses((current) => ({
+        ...current,
+        modelTrainingValidation: {
+          ...current.modelTrainingValidation,
+          modelTrainingCodeNode: "In-Progress",
+        },
+      }));
+    }
+    try {
+      const approval = await approvePendingModelLifecycle(projectId, true);
+      if (!approval.approved || !approval.result) {
+        setWorkflowMessage(approval.summary || "Model lifecycle approval was declined.");
+        return;
+      }
+      const result = approval.result;
+      const output = toLifecycleStageOutput(result);
+      setStageOutputs((current) => stage === "training"
+        ? { ...current, modelTrainingCodeNode: output }
+        : {
+            ...current,
+            modelTrainingCodeNode: {
+              ...(current.modelTrainingCodeNode || {}),
+              modelValidation: output,
+            },
+          });
+      setPipelineStatuses((current) => ({
+        ...current,
+        modelTrainingValidation: {
+          ...current.modelTrainingValidation,
+          modelTrainingCodeNode: result.status === "Failed" ? "Failed" : "Completed",
+        },
+      }));
+      setWorkflowMessage(result.summary);
+      await refreshProjects();
+      showAlert({
+        title: stage === "training" ? "Model training finished" : "Model validation finished",
+        message: result.summary,
+        type: result.status === "Failed" ? "error" : "success",
+      });
+    } catch (error) {
+      const message = getWorkflowErrorMessage(error, `Model ${stage} lifecycle failed.`);
+      setWorkflowError(message);
+      showAlert({ title: message, type: "error" });
+    } finally {
+      setIsApproving(false);
+    }
   };
 
   const handleRetry = (step?: string) => {
@@ -1191,7 +1328,11 @@ export default function ProjectsPage() {
 
     try {
       const response = await pauseWorkflowApi(currentSession || undefined, currentProjectId);
-      if (response.data?.status) {
+      const isPausedSuccess =
+        response.data?.status === "Paused" ||
+        (response as any).status === "Paused" ||
+        response.success;
+      if (isPausedSuccess) {
         setRunStatus("Paused");
         setIsPaused(true);
         setApprovalNextStep(null);

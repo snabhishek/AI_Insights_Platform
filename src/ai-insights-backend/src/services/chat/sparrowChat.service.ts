@@ -3,7 +3,7 @@ import { SparrowChatResponse } from "../../agents/sparrow/types";
 import { SparrowOrchestrator } from "../../agents/sparrow/sparrowOrchestrator";
 import { ProjectService } from "../project/project.service";
 import { IDuckDBService } from "../duckdb/duckdb.service.interface";
-import { IModelValidationService } from "../ai/model-validation/modelValidation.service.interface";
+import { ModelLifecycleCandidatesService } from "../ai/model-lifecycle/modelLifecycleCandidates.service";
 import { BaseCheckpointSaver } from "@langchain/langgraph";
 import { Pool } from "pg";
 import { ISparrowIntentRepository } from "../../repositories/sparrowIntent.repository";
@@ -26,7 +26,7 @@ export class SparrowChatService implements ISparrowChatService {
   constructor(
     private readonly projectService: ProjectService,
     private readonly duckDBService: IDuckDBService,
-    private readonly modelValidationService: IModelValidationService,
+    private readonly modelLifecycleCandidatesService: ModelLifecycleCandidatesService,
     persistence: { checkpointer: BaseCheckpointSaver; intentRepository: ISparrowIntentRepository; lockPool: Pool;
       chatRepository?: ISparrowChatRepository; orchestrator?: Pick<SparrowOrchestrator, "run" | "getInteraction"> }
   ) {
@@ -35,7 +35,7 @@ export class SparrowChatService implements ISparrowChatService {
     this.orchestrator = new SparrowOrchestrator({
       projectService: this.projectService,
       duckDBService: this.duckDBService,
-      modelValidationService: this.modelValidationService,
+      modelLifecycleCandidatesService: this.modelLifecycleCandidatesService,
       checkpointer: persistence.checkpointer,
       intentRepository: persistence.intentRepository,
       withConversationLock: async (threadId, work) => {

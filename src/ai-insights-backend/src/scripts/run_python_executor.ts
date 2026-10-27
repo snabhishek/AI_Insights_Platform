@@ -2089,9 +2089,13 @@ async function main(): Promise<void> {
 
         if (!result.success) {
             process.exitCode = 1;
+            console.warn("[run_python_executor] Execution failed; preserving Docker container for inspection.");
+        } else {
+            await cleanupRunContainer(projectId, runTimestamp);
         }
-    } finally {
-        await cleanupRunContainer(projectId, runTimestamp);
+    } catch (err) {
+        console.error("[run_python_executor] Error encountered (preserving Docker container for inspection):", err);
+        process.exitCode = 1;
     }
 }
 
