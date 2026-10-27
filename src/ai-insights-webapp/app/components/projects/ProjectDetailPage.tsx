@@ -275,7 +275,7 @@ export default function ProjectDetailPage({
   };
 
   const getWorkflowStageStatus = (stage: string): PipelineStatus => {
-    let status = displayPipelineStatuses[stage] ?? "None";
+    const status = displayPipelineStatuses[stage] ?? "None";
 
     if (isAwaitingApprovalWorkflow) {
       const nextStep = (effectiveApprovalNextStep || "").trim();

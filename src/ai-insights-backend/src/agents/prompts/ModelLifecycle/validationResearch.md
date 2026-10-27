@@ -1,0 +1,1 @@
+Investigate the supplied validation failure using the active validation project, declared training artifacts, and raw process evidence. Use available web-search and URL-content tools to verify current technical details against relevant authoritative sources. Return a focused diagnosis and evidence-supported repair proposal without editing files.

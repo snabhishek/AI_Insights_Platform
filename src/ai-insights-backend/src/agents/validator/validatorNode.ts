@@ -93,7 +93,7 @@ Do not return any other text.`;
       if (typeof customValidator === "function") {
         const check = await Promise.resolve(customValidator(result));
         if (check.isValid) {
-          return result;
+          return result
         }
 
         const errorsJoined = Array.isArray(check.errors) && check.errors.length > 0

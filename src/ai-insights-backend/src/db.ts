@@ -4,13 +4,14 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import path from "node:path";
 import dotenv from "dotenv";
 
+dotenv.config({ path: path.resolve(__dirname, "../.env") });
 dotenv.config();
 
-const dbHost = process.env.DB_HOST!;
-const dbPort = parseInt(process.env.DB_PORT!, 10);
-const dbUser = process.env.DB_USER!;
-const dbPass = process.env.DB_PASS!;
-const dbName = process.env.DB_NAME!;
+const dbHost = process.env.DB_HOST || "127.0.0.1";
+const dbPort = parseInt(process.env.DB_PORT || "22003", 10);
+const dbUser = process.env.DB_USER || "postgres";
+const dbPass = process.env.DB_PASS || "123456";
+const dbName = process.env.DB_NAME || "docspyre_app";
 
 export const pool = new Pool({
   host: dbHost,

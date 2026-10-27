@@ -30,14 +30,25 @@ export const GRAPH_NODE_KEYS = [
   "trainingConfigurationNode",
   "preFlightNode",
   "modelTrainingCodeNode",
+  "modelTrainingExecutionNode",
 ] as const;
 
 export type GraphNodeKey = (typeof GRAPH_NODE_KEYS)[number];
 export type TrackedAgentKey = GraphNodeKey | "featureValidatorNode";
 
 export const TRACKED_AGENT_KEYS = [
-  ...GRAPH_NODE_KEYS,
+  "inspect",
+  "profileData",
+  "resolveSchema",
+  "hierarchyMapperNode",
+  "featureArchitectNode",
   "featureValidatorNode",
+  "exogenous",
+  "modelSelectionNode",
+  "trainingConfigurationNode",
+  "preFlightNode",
+  "modelTrainingCodeNode",
+  "modelTrainingExecutionNode",
 ] as const satisfies readonly TrackedAgentKey[];
 
 export const INITIAL_STAGE_STATUSES: Record<TrackedAgentKey, PipelineStepStatus> =
@@ -82,6 +93,7 @@ export const NODE_CONFIG = {
   trainingConfigurationNode: { id: "trainingConfigurationNode", stage: "modelTrainingValidation", displayName: "Training Configuration", metric: "Configure" },
   preFlightNode: { id: "preFlightNode", stage: "modelTrainingValidation", displayName: "Pre Flight", metric: "Validate" },
   modelTrainingCodeNode: { id: "modelTrainingCodeNode", stage: "modelTrainingValidation", displayName: "Model Training Code Generation", metric: "Generate Code" },
+  modelTrainingExecutionNode: { id: "modelTrainingExecutionNode", stage: "modelTrainingValidation", displayName: "Model Training Execution", metric: "Train Models" },
 } as const satisfies Record<TrackedAgentKey, {
   id: TrackedAgentKey;
   stage: StageKey;
@@ -181,6 +193,7 @@ export type StageOutputs = Partial<{
   trainingConfigurationNode: TrainingConfigurationOutput;
   preFlightNode: AgentOutput;
   modelTrainingCodeNode: ModelTrainingExecutionOutput | AgentOutput;
+  modelTrainingExecutionNode: ModelTrainingExecutionOutput | AgentOutput;
 }>;
 export type StageOutputsUpdate = StageOutputs & { __replaceStageOutputs?: true };
 
@@ -218,6 +231,7 @@ export interface WorkflowAgentState {
   trainingConfigurationNode?: TrainingConfigurationOutput;
   preFlightNode?: AgentOutput;
   modelTrainingCodeNode?: ModelTrainingExecutionOutput | AgentOutput;
+  modelTrainingExecutionNode?: ModelTrainingExecutionOutput | AgentOutput;
   modelSelection?: AgentOutput;
   trainingConfiguration?: TrainingConfigurationOutput;
   preFlight?: AgentOutput;
@@ -281,10 +295,20 @@ export function applyPauseToStageStatuses(
     resolvedStepKey = LEGACY_AGENT_KEY_ALIASES[pausedStep];
   }
 
-  // If no paused step given, find the first in-progress or active step
+  // If no paused step given, find the first in-progress or active step among graph nodes
   if (!resolvedStepKey) {
-    for (const key of TRACKED_AGENT_KEYS) {
+    for (const key of GRAPH_NODE_KEYS) {
       if (flat[key] === "In-Progress") {
+        resolvedStepKey = key;
+        break;
+      }
+    }
+  }
+
+  // Check if a step was awaiting user input
+  if (!resolvedStepKey) {
+    for (const key of GRAPH_NODE_KEYS) {
+      if (flat[key] === "User Input" || flat[key] === "Awaiting Approval") {
         resolvedStepKey = key;
         break;
       }
@@ -293,7 +317,7 @@ export function applyPauseToStageStatuses(
 
   // Check if a step was already paused
   if (!resolvedStepKey) {
-    for (const key of TRACKED_AGENT_KEYS) {
+    for (const key of GRAPH_NODE_KEYS) {
       if (flat[key] === "Paused") {
         resolvedStepKey = key;
         break;
@@ -301,9 +325,9 @@ export function applyPauseToStageStatuses(
     }
   }
 
-  // Find the first non-completed step
+  // Find the first non-completed step among graph nodes
   if (!resolvedStepKey) {
-    for (const key of TRACKED_AGENT_KEYS) {
+    for (const key of GRAPH_NODE_KEYS) {
       if (flat[key] !== "Completed") {
         resolvedStepKey = key;
         break;
@@ -317,6 +341,9 @@ export function applyPauseToStageStatuses(
   }
 
   flat[resolvedStepKey] = "Paused";
+  if (resolvedStepKey === "modelTrainingExecutionNode") {
+    flat["modelTrainingCodeNode"] = "Paused";
+  }
   const parentStage = NODE_CONFIG[resolvedStepKey]?.stage;
   const stageOverrides: Partial<Record<StageKey, PipelineStepStatus>> = {};
   if (parentStage) {
@@ -331,12 +358,12 @@ export function findPausedStep(
   fallbackNode?: string
 ): TrackedAgentKey | undefined {
   const flat = normalizeFlatStageStatuses(currentStatuses);
-  for (const key of TRACKED_AGENT_KEYS) {
+  for (const key of GRAPH_NODE_KEYS) {
     if (flat[key] === "Paused") {
       return key;
     }
   }
-  for (const key of TRACKED_AGENT_KEYS) {
+  for (const key of GRAPH_NODE_KEYS) {
     if (flat[key] === "In-Progress") {
       return key;
     }
@@ -347,7 +374,12 @@ export function findPausedStep(
   if (fallbackNode && fallbackNode in LEGACY_AGENT_KEY_ALIASES) {
     return LEGACY_AGENT_KEY_ALIASES[fallbackNode];
   }
-  for (const key of TRACKED_AGENT_KEYS) {
+  for (const key of GRAPH_NODE_KEYS) {
+    if (flat[key] === "User Input" || flat[key] === "Awaiting Approval") {
+      return key;
+    }
+  }
+  for (const key of GRAPH_NODE_KEYS) {
     if (flat[key] !== "Completed") {
       return key;
     }
@@ -373,7 +405,7 @@ export function applyResumeToStageStatuses(
   }
 
   if (!resolvedStepKey) {
-    for (const key of TRACKED_AGENT_KEYS) {
+    for (const key of GRAPH_NODE_KEYS) {
       if (flat[key] !== "Completed") {
         resolvedStepKey = key;
         break;
@@ -392,6 +424,9 @@ export function applyResumeToStageStatuses(
     }
   }
   flat[resolvedStepKey] = "In-Progress";
+  if (resolvedStepKey === "modelTrainingExecutionNode") {
+    flat["modelTrainingCodeNode"] = "In-Progress";
+  }
 
   const parentStage = NODE_CONFIG[resolvedStepKey]?.stage;
   const stageOverrides: Partial<Record<StageKey, PipelineStepStatus>> = {};
@@ -420,6 +455,9 @@ export const LEGACY_AGENT_KEY_ALIASES: Readonly<Record<string, TrackedAgentKey>>
   modelTrainingCode: "modelTrainingCodeNode",
   modelTraining: "modelTrainingCodeNode",
   modelTrainingNode: "modelTrainingCodeNode",
+  modelTrainingExecution: "modelTrainingExecutionNode",
+  modelTrainingExecutionNode: "modelTrainingExecutionNode",
+  "Model Training Execution": "modelTrainingExecutionNode",
 };
 
 export function normalizePipelineStepStatus(value: unknown): PipelineStepStatus | undefined {

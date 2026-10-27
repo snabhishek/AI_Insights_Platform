@@ -382,7 +382,7 @@ export default function ProjectCreatePage({
     setIsSubmitting(true);
 
     try {
-      let finalDomain = selectedDomain === "Other" ? customDomain.trim() : selectedDomain;
+      const finalDomain = selectedDomain === "Other" ? customDomain.trim() : selectedDomain;
       let finalSubDomain = selectedSubDomain;
       if (
         selectedDomain === "Other" ||
@@ -428,7 +428,7 @@ export default function ProjectCreatePage({
     setIsSubmitting(true);
 
     try {
-      let finalDomain = selectedDomain === "Other" ? customDomain.trim() : selectedDomain;
+      const finalDomain = selectedDomain === "Other" ? customDomain.trim() : selectedDomain;
       let finalSubDomain = selectedSubDomain;
       if (
         selectedDomain === "Other" ||

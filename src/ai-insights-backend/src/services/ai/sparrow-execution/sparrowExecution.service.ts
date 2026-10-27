@@ -180,6 +180,7 @@ export class SparrowExecutionService implements ISparrowExecutionService {
     };
     let failure: string | undefined;
     let logFilePath = "";
+    let executionCompletedSuccessfully = false;
     try {
       for (let attempt = 1; attempt <= 2; attempt++) {
         try {
@@ -212,6 +213,7 @@ export class SparrowExecutionService implements ISparrowExecutionService {
             }
           }
           report("Sparrow script completed; verified the execution result.");
+          executionCompletedSuccessfully = true;
           return { success: true, output, artifacts: { directory: relativeDir, script: `${relativeDir}/runner.py`, request: `${relativeDir}/request.json`,
             result: `${relativeDir}/result.json`, events: `${relativeDir}/events.jsonl`, dockerLog: logFilePath ? path.relative(root, logFilePath).replace(/\\/g, "/") : "" } };
         } catch (error) {
@@ -221,6 +223,12 @@ export class SparrowExecutionService implements ISparrowExecutionService {
         }
       }
       return { success: false, error: failure || "Sparrow script execution failed.", artifacts: { directory: relativeDir, dockerLog: logFilePath } };
-    } finally { await cleanupRunContainer(request.projectId, executionId); }
+    } finally {
+      if (executionCompletedSuccessfully) {
+        await cleanupRunContainer(request.projectId, executionId);
+      } else {
+        console.warn(`[SparrowExecution] Execution finished with failure; preserving Docker container for debugging.`);
+      }
+    }
   }
 }

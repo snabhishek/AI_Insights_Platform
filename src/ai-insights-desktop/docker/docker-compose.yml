@@ -1,0 +1,45 @@
+name: "compass"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: ai-insights-postgres
+    ports:
+      - "127.0.0.1:22003:5432"
+    environment:
+      POSTGRES_USER: "postgres"
+      POSTGRES_PASSWORD: "${COMPASS_DB_PASSWORD:?Set COMPASS_DB_PASSWORD in the Compass environment file}"
+      POSTGRES_DB: "docspyre_app"
+    volumes:
+      - "${POSTGRES_DATA_DIR:-./data/postgres}:/var/lib/postgresql/data"
+      - "./init-scripts:/docker-entrypoint-initdb.d:ro"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 3s
+      timeout: 5s
+      retries: 30
+      start_period: 60s
+
+  litellm:
+    image: docker.litellm.ai/berriai/litellm-database:latest
+    container_name: ai-insights-litellm
+    ports:
+      - "127.0.0.1:22002:22002"
+    environment:
+      LITELLM_MASTER_KEY: "${LITELLM_MASTER_KEY:?Set LITELLM_MASTER_KEY in the Compass environment file}"
+      LITELLM_SALT_KEY: "${LITELLM_SALT_KEY:?Set LITELLM_SALT_KEY in the Compass environment file}"
+      DATABASE_URL: "postgresql://postgres:${COMPASS_DB_PASSWORD}@postgres:5432/litellm"
+      STORE_MODEL_IN_DB: "True"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - "./config.yaml:/app/config.yaml:ro"
+    command:
+      - "--port"
+      - "22002"
+      - "--config"
+      - "/app/config.yaml"
+      - "--detailed_debug"
+    restart: unless-stopped

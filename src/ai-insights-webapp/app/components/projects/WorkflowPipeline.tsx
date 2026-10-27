@@ -306,7 +306,7 @@ const MODEL_TRAINING_VALIDATION_STEPS = new Set([
 ]);
 
   const getWorkflowStageStatus = (stage: string): PipelineStatus => {
-    let status = pipelineStatuses[stage] ?? "None";
+    const status = pipelineStatuses[stage] ?? "None";
 
     if (isAwaitingApprovalWorkflow) {
       const nextStep = (effectiveApprovalNextStep || "").trim();

@@ -6,6 +6,7 @@ import TrainingConfigurationStepOutput from "./TrainingConfigurationStepOutput";
 import PreFlightStepOutput from "./PreFlightStepOutput";
 import ModelTrainingStepOutput from "./ModelTrainingStepOutput";
 import ModelValidationStepOutput from "./ModelValidationStepOutput";
+import ModelLifecycleValidationOutput from "./ModelLifecycleValidationOutput";
 
 interface ModelTrainingValidationOutputProps {
   modelSelection?: any;
@@ -154,6 +155,25 @@ export default function ModelTrainingValidationStepOutput({
     activeSubstep === "Model Validation" ||
     (!activeSubstep && Boolean(modelValidation))
   ) {
+    if (modelValidation?.lifecycleVersion === true) {
+      return (
+        <ModelLifecycleValidationOutput
+          result={modelValidation}
+          modelTraining={modelTraining}
+          trainingConfiguration={trainingConfiguration}
+          modelSelection={modelSelection}
+          projectId={projectId}
+          activeRunTimestamp={activeRunTimestamp}
+          onApproveValidation={(horizon, frequency, startDate) =>
+            onApproveValidation?.(horizon, frequency, startDate, modelValidation.candidates?.map(
+              (candidate: { modelId?: string; model_id?: string }) => candidate.modelId || candidate.model_id
+            ).filter((modelId: string | undefined): modelId is string => Boolean(modelId)))
+          }
+          nextStepInProgress={nextStepInProgress}
+          isApproving={isApproving}
+        />
+      );
+    }
     return (
       <ModelValidationStepOutput
         modelValidation={modelValidation}

@@ -1,0 +1,3 @@
+Assess the generated training metrics and model quality using the supplied task contract, authored training/evaluation source, reports, execution evidence, and relevant researched documentation.
+
+Decide whether the metrics are valid for this task, whether the model quality is good, how candidates should be ranked, and which candidate should be recommended. If quality should be improved, identify the concrete issue in the code or evidence and provide an actionable improvement recommendation tied to that cause. Do not invent metric values, use unstated fixed thresholds, or rely on a predetermined implementation. Use web research when needed. Return a structured assessment with rationale, evidence, candidate ordering, champion, and recommendations.

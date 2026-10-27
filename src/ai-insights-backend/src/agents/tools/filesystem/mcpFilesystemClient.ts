@@ -189,17 +189,6 @@ export function getSandboxDirectory(
 }
 
 export function resolveMcpServerFilesystemPath(): string {
-  const possiblePaths = [
-    path.resolve(process.cwd(), "node_modules", "@modelcontextprotocol", "server-filesystem", "dist", "index.js"),
-    path.resolve(__dirname, "..", "..", "..", "..", "node_modules", "@modelcontextprotocol", "server-filesystem", "dist", "index.js"),
-  ];
-
-  for (const candidate of possiblePaths) {
-    if (fs.existsSync(candidate)) {
-      return candidate;
-    }
-  }
-
   try {
     return require.resolve("@modelcontextprotocol/server-filesystem/dist/index.js");
   } catch {
@@ -207,6 +196,14 @@ export function resolveMcpServerFilesystemPath(): string {
       "Could not resolve @modelcontextprotocol/server-filesystem entrypoint. Ensure the package is installed in node_modules."
     );
   }
+}
+
+export function resolveMcpRunnerPath(): string {
+  const runnerPath = path.resolve(__dirname, "../../../../scripts/mcp-filesystem-runner.cjs");
+  if (!fs.existsSync(runnerPath)) {
+    throw new Error(`MCP filesystem runner script not found at ${runnerPath}`);
+  }
+  return runnerPath;
 }
 
 const clientCache = new Map<string, MultiServerMCPClient>();
@@ -232,13 +229,14 @@ export function getMcpFilesystemClient(options: McpFilesystemOptions = {}): Mult
   }
 
   const serverScript = resolveMcpServerFilesystemPath();
+  const runnerScript = resolveMcpRunnerPath();
 
   const client = new MultiServerMCPClient({
     mcpServers: {
       filesystem: {
         transport: "stdio",
         command: process.execPath,
-        args: [path.resolve(__dirname, "../../../../scripts/mcp-filesystem-runner.cjs"), serverScript, ...normalizedDirs],
+        args: [runnerScript, serverScript, ...normalizedDirs],
       },
     },
   });

@@ -1,0 +1,1 @@
+Apply the supplied evidence-grounded quality recommendation to the validation project. Base changes on the diagnosed issue in authored code or observed output and verify needed technical details through research. Use only scoped MCP filesystem tools. Do not modify trained artifacts or add an alternate inference implementation. Return the rationale and files changed.

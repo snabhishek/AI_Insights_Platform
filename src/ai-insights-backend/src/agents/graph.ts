@@ -44,6 +44,6 @@ export function createAgentGraph(checkpointer: any) {
 
   return workflow.compile({
     checkpointer,
-    interruptBefore: [...getInterruptBeforeNodes(), "modelTrainingExecutionNode"] as any,
+    interruptBefore: Array.from(new Set([...getInterruptBeforeNodes(), "modelTrainingExecutionNode"])) as any,
   });
 }

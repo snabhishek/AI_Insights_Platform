@@ -101,6 +101,9 @@ export const STEP_TO_NODE_MAP: Record<string, string> = {
   "Model Training": "modelTrainingCodeNode",
   "modelTraining": "modelTrainingCodeNode",
   "modelTrainingNode": "modelTrainingCodeNode",
+  "Model Training Execution": "modelTrainingExecutionNode",
+  "modelTrainingExecution": "modelTrainingExecutionNode",
+  "modelTrainingExecutionNode": "modelTrainingExecutionNode",
   "Model Validation": "modelValidationNode",
   "modelValidation": "modelValidationNode",
   "modelValidationNode": "modelValidationNode",
@@ -144,7 +147,10 @@ export function resolveNextWorkflowPhase(params: ResolveNextPhaseParams): string
       nextStepLower === "modeltrainingcodenode" ||
       nextStepLower === "model training" ||
       nextStepLower === "modeltraining" ||
-      nextStepLower === "modeltrainingnode"
+      nextStepLower === "modeltrainingnode" ||
+      nextStepLower === "model training execution" ||
+      nextStepLower === "modeltrainingexecution" ||
+      nextStepLower === "modeltrainingexecutionnode"
     ) {
       targetPhase = "Model Training Code Generation";
     } else if (

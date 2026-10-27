@@ -41,7 +41,7 @@ export default function Header() {
   const metaString = `${userProfile.role} • ${userProfile.daysRemaining} days • ${userProfile.tasksCount} tasks • ${userProfile.tokensLeft} tokens left`;
 
   return (
-    <header className="flex w-full items-center justify-between border-b border-border bg-surface px-4">
+    <header className="flex w-full items-center justify-between border-b border-border bg-surface px-4 py-2">
       <div className="flex items-center gap-4">
         <div className="flex items-center gap-2.5">
           <Image
@@ -69,14 +69,16 @@ export default function Header() {
       </div>
 
       <div className="flex items-center gap-5">
-        <UserProfile
+        {/* Profile section commented out */}
+        {/* <UserProfile
           name={userProfile.name}
           meta={metaString}
-        />
+        /> */}
         <ThemeToggle />
-        <Button icon={<LogOut className="w-4 h-4" />} onClick={handleLogout}>
+        {/* Logout button commented out */}
+        {/* <Button icon={<LogOut className="w-4 h-4" />} onClick={handleLogout}>
           Logout
-        </Button>
+        </Button> */}
       </div>
     </header>
   );

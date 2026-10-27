@@ -21,6 +21,21 @@ export interface ExecutionResult {
   stdout: string;
   stderr: string;
   logFilePath?: string;
+  errors?: PythonExecutionErrorDiagnostic[];
+  warnings?: PythonWarningDiagnostic[];
+}
+
+export interface PythonExecutionErrorDiagnostic {
+  category: string;
+  message: string;
+  exitCode: number;
+}
+
+export interface PythonWarningDiagnostic {
+  category: string;
+  message: string;
+  filename: string;
+  lineno: number;
 }
 
 export interface PythonExecutionOptions {
@@ -33,6 +48,7 @@ export interface PythonExecutionOptions {
   writableRelativePath?: string;
   onLog?: (line: string) => void;
   signal?: AbortSignal;
+  captureWarnings?: boolean;
 }
 
 export function generateLogTimestamp(): string {
@@ -106,6 +122,30 @@ async function ensureDockerDaemon(docker: Docker): Promise<boolean> {
   }
 
   if (process.platform === "win32") {
+    // Configure Docker Desktop to start anonymously (no UI popup)
+    try {
+      const appData = process.env.APPDATA;
+      if (appData) {
+        const settingsStorePath = path.join(appData, "Docker", "settings-store.json");
+        if (fs.existsSync(settingsStorePath)) {
+          const content = JSON.parse(fs.readFileSync(settingsStorePath, "utf8"));
+          if (!content.openUIOnStartupDisabled) {
+            content.openUIOnStartupDisabled = true;
+            fs.writeFileSync(settingsStorePath, JSON.stringify(content, null, 2), "utf8");
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+
+    // Try starting via official Docker Desktop CLI in detached mode first
+    try {
+      exec("docker desktop start -d");
+    } catch {
+      // ignore
+    }
+
     const possiblePaths = [
       "C:\\Program Files\\Docker\\Docker\\Docker Desktop.exe",
       "C:\\Program Files (x86)\\Docker\\Docker\\Docker Desktop.exe",
@@ -114,9 +154,9 @@ async function ensureDockerDaemon(docker: Docker): Promise<boolean> {
 
     const exePath = possiblePaths.find((p) => fs.existsSync(p));
     if (exePath) {
-      console.info(`[DockerExecutor] Docker daemon not responding. Launching Docker Desktop from: ${exePath}`);
+      console.info(`[DockerExecutor] Docker daemon not responding. Launching Docker Desktop anonymously from: ${exePath}`);
       try {
-        exec(`start "" "${exePath}"`);
+        exec(`powershell -NoProfile -Command "Start-Process -FilePath '${exePath}' -WindowStyle Hidden"`);
       } catch (e: any) {
         console.warn(`[DockerExecutor] Failed to launch Docker Desktop:`, e.message);
       }
@@ -333,7 +373,25 @@ export function ensureDockerCompose(
     (options && "writableRelativePath" in options && typeof options.writableRelativePath === "string"
       ? { writableRelativePath: options.writableRelativePath }
       : undefined);
-  const composeYml = path.join(targetDir, "docker-compose.yml");
+  const composeYml = fs.existsSync(path.join(targetDir, "docker-compose.yaml"))
+    ? path.join(targetDir, "docker-compose.yaml")
+    : path.join(targetDir, "docker-compose.yml");
+
+  if (fs.existsSync(composeYml)) {
+    try {
+      let existingContent = fs.readFileSync(composeYml, "utf-8");
+      if (!existingContent.includes("tail -f /dev/null") && !existingContent.includes("command:")) {
+        const lines = existingContent.split("\n");
+        const serviceIdx = lines.findIndex((l) => l.trim().startsWith(`${serviceName}:`) || l.trim().startsWith("app:") || l.trim().startsWith("model-training:"));
+        if (serviceIdx !== -1) {
+          lines.splice(serviceIdx + 1, 0, "    command: tail -f /dev/null");
+          existingContent = lines.join("\n");
+          fs.writeFileSync(composeYml, existingContent, "utf-8");
+        }
+      }
+      return composeYml;
+    } catch { }
+  }
 
   const cpus = resourceLimits?.cpus || "2.0";
   const memory = resourceLimits?.memory || "4G";
@@ -405,6 +463,7 @@ export function ensureDockerCompose(
     "      - PYTHONPATH=/workspace",
     "      - PYTHONDONTWRITEBYTECODE=1",
     "      - PYTHONUNBUFFERED=1",
+    "    command: tail -f /dev/null",
     "    deploy:",
     "      resources:",
     "        limits:",
@@ -725,64 +784,6 @@ export async function executePythonScript(
 
   console.info(`[DockerExecutor] Docker container logs writing to: ${logFilePath}`);
 
-  const buildCmd = `${composePrefix} -f "${composeFileName}" build`;
-  fs.appendFileSync(
-    logFilePath,
-    [
-      "-".repeat(80),
-      `STEP 1: DOCKER COMPOSE BUILD`,
-      `Command: ${buildCmd}`,
-      `Time: ${new Date().toISOString()}`,
-      "-".repeat(80),
-      "",
-    ].join("\n"),
-    "utf-8"
-  );
-
-  const buildResult = await executeProcess(buildCmd, {
-    signal: options?.signal,
-    onLog: options?.onLog,
-    cwd: execDir,
-    env,
-    silentConsole: true,
-    logFilePath,
-  });
-
-  if (buildResult.exitCode !== 0) {
-    fs.appendFileSync(
-      logFilePath,
-      [
-        "",
-        "-".repeat(80),
-        `BUILD FAILED (exit code: ${buildResult.exitCode})`,
-        `Time: ${new Date().toISOString()}`,
-        "-".repeat(80),
-        "",
-      ].join("\n"),
-      "utf-8"
-    );
-    console.error(`[DockerExecutor] Docker Compose build failed (exit code ${buildResult.exitCode}). Check logs: ${logFilePath}`);
-    return {
-      success: false,
-      stdout: buildResult.stdout,
-      stderr: `Docker Compose build error:\n${buildResult.stderr || buildResult.stdout}\n(Docker build logs saved to: ${logFilePath})`,
-      logFilePath,
-    };
-  }
-
-  fs.appendFileSync(
-    logFilePath,
-    [
-      "",
-      "-".repeat(80),
-      `BUILD COMPLETED SUCCESSFULLY (exit code: 0)`,
-      `Time: ${new Date().toISOString()}`,
-      "-".repeat(80),
-      "",
-    ].join("\n"),
-    "utf-8"
-  );
-
   let serviceName = options?.serviceName || "app";
   try {
     const composeContent = fs.readFileSync(composeFile, "utf-8");
@@ -792,13 +793,153 @@ export async function executePythonScript(
     }
   } catch { }
 
-  const runCmd = `${composePrefix} -f "${composeFileName}" run --rm ${serviceName} python -u "${scriptInContainer}" ${effectiveArgs.join(" ")}`;
+  // Check if container is already running for persistent reuse
+  const checkRunningCmd = `${composePrefix} -f "${composeFileName}" ps --status running -q ${serviceName}`;
+  const psResult = await executeProcess(checkRunningCmd, {
+    signal: options?.signal,
+    cwd: execDir,
+    env,
+    silentConsole: true,
+  });
+  const runningContainerId = psResult.stdout ? psResult.stdout.trim() : "";
+  const isContainerRunning = Boolean(psResult.exitCode === 0 && runningContainerId.length > 0);
+
+  if (!isContainerRunning) {
+    const upCmd = `${composePrefix} -f "${composeFileName}" up -d --build ${serviceName}`;
+    fs.appendFileSync(
+      logFilePath,
+      [
+        "-".repeat(80),
+        `STEP 1: START PERSISTENT CONTAINER (docker compose up -d --build)`,
+        `Command: ${upCmd}`,
+        `Time: ${new Date().toISOString()}`,
+        "-".repeat(80),
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+
+    const upResult = await executeProcess(upCmd, {
+      signal: options?.signal,
+      onLog: options?.onLog,
+      cwd: execDir,
+      env,
+      silentConsole: true,
+      logFilePath,
+    });
+
+    if (upResult.exitCode !== 0) {
+      fs.appendFileSync(
+        logFilePath,
+        [
+          "",
+          "-".repeat(80),
+          `CONTAINER START FAILED (exit code: ${upResult.exitCode})`,
+          `Time: ${new Date().toISOString()}`,
+          "-".repeat(80),
+          "",
+        ].join("\n"),
+        "utf-8"
+      );
+      console.error(`[DockerExecutor] Docker Compose up failed (exit code ${upResult.exitCode}). Check logs: ${logFilePath}`);
+      return {
+        success: false,
+        stdout: upResult.stdout,
+        stderr: `Docker Compose startup error:\n${upResult.stderr || upResult.stdout}\n(Docker logs saved to: ${logFilePath})`,
+        logFilePath,
+      };
+    }
+
+    fs.appendFileSync(
+      logFilePath,
+      [
+        "",
+        "-".repeat(80),
+        `PERSISTENT CONTAINER STARTED SUCCESSFULLY (exit code: 0)`,
+        `Time: ${new Date().toISOString()}`,
+        "-".repeat(80),
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+  } else {
+    fs.appendFileSync(
+      logFilePath,
+      [
+        "-".repeat(80),
+        `STEP 1: REUSING EXISTING PERSISTENT CONTAINER`,
+        `Container ID: ${runningContainerId}`,
+        `Time: ${new Date().toISOString()}`,
+        "-".repeat(80),
+        "",
+      ].join("\n"),
+      "utf-8"
+    );
+    console.info(`[DockerExecutor] Reusing existing persistent container [${runningContainerId}] for service [${serviceName}]`);
+
+    // If new packages were requested across iterations, dynamically install them into the running container
+    if (requiredPackages && requiredPackages.length > 0 && !isChatExecution) {
+      const installCmd = `${composePrefix} -f "${composeFileName}" exec -T ${serviceName} pip install --no-cache-dir ${requiredPackages.join(" ")}`;
+      fs.appendFileSync(
+        logFilePath,
+        [
+          "-".repeat(80),
+          `DYNAMIC PACKAGE INSTALLATION IN RUNNING CONTAINER`,
+          `Command: ${installCmd}`,
+          `Packages: ${requiredPackages.join(", ")}`,
+          `Time: ${new Date().toISOString()}`,
+          "-".repeat(80),
+          "",
+        ].join("\n"),
+        "utf-8"
+      );
+      await executeProcess(installCmd, {
+        signal: options?.signal,
+        onLog: options?.onLog,
+        cwd: execDir,
+        env,
+        silentConsole: true,
+        logFilePath,
+      });
+    }
+  }
+
+  const warningsPath = path.join(execDir, ".codex_python_warnings.json");
+  let commandScript = scriptInContainer;
+  let commandArgs = effectiveArgs;
+  if (options?.captureWarnings) {
+    // Run the generated entrypoint through Python's warning API so warning
+    // records are separated from stderr and never mistaken for exceptions.
+    const runnerName = ".codex_python_diagnostic_runner.py";
+    const runnerPath = path.join(execDir, runnerName);
+    const runnerSource = [
+      "import json, runpy, sys, warnings",
+      "from pathlib import Path",
+      "target = sys.argv[1]",
+      "diagnostics_path = Path(__file__).with_name('.codex_python_warnings.json')",
+      "sys.argv = [target, *sys.argv[2:]]",
+      "records = []",
+      "try:",
+      "    with warnings.catch_warnings(record=True) as records:",
+      "        warnings.simplefilter('always')",
+      "        runpy.run_path(target, run_name='__main__')",
+      "finally:",
+      "    captured = [{'category': w.category.__name__, 'message': str(w.message), 'filename': w.filename, 'lineno': w.lineno} for w in records]",
+      "    diagnostics_path.write_text(json.dumps({'warnings': captured}, ensure_ascii=False), encoding='utf-8')",
+    ].join("\n");
+    fs.writeFileSync(runnerPath, runnerSource, "utf-8");
+    if (fs.existsSync(warningsPath)) fs.unlinkSync(warningsPath);
+    commandScript = `${path.posix.dirname(scriptInContainer)}/${runnerName}`;
+    commandArgs = [scriptInContainer, ...effectiveArgs];
+  }
+
+  const execCmd = `${composePrefix} -f "${composeFileName}" exec -T ${serviceName} python -u "${commandScript}" ${commandArgs.join(" ")}`;
   fs.appendFileSync(
     logFilePath,
     [
       "-".repeat(80),
-      `STEP 2: DOCKER COMPOSE RUN`,
-      `Command: ${runCmd}`,
+      `STEP 2: EXECUTE PYTHON SCRIPT INSIDE CONTAINER`,
+      `Command: ${execCmd}`,
       `Time: ${new Date().toISOString()}`,
       "-".repeat(80),
       "",
@@ -806,7 +947,7 @@ export async function executePythonScript(
     "utf-8"
   );
 
-  const execResult = await executeProcess(runCmd, {
+  const execResult = await executeProcess(execCmd, {
     signal: options?.signal,
     onLog: options?.onLog,
     cwd: execDir,
@@ -820,10 +961,11 @@ export async function executePythonScript(
     [
       "",
       "=".repeat(80),
-      `CONTAINER RUN FINISHED`,
+      `CONTAINER EXECUTION FINISHED`,
       `Finished At: ${new Date().toISOString()}`,
       `Exit Code: ${execResult.exitCode}`,
       `Status: ${execResult.exitCode === 0 ? "SUCCESS" : "FAILED"}`,
+      `Note: Container is persisted throughout process and retained on error.`,
       "=".repeat(80),
       "",
     ].join("\n"),
@@ -833,7 +975,17 @@ export async function executePythonScript(
   if (execResult.exitCode === 0) {
     console.info(`[DockerExecutor] Container execution completed successfully. Logs: ${logFilePath}`);
   } else {
-    console.warn(`[DockerExecutor] Container execution exited with code ${execResult.exitCode}. Logs: ${logFilePath}`);
+    console.warn(`[DockerExecutor] Container execution exited with code ${execResult.exitCode}. Container preserved for inspection. Logs: ${logFilePath}`);
+  }
+
+  let warnings: PythonWarningDiagnostic[] = [];
+  if (options?.captureWarnings && fs.existsSync(warningsPath)) {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(warningsPath, "utf-8"));
+      if (Array.isArray(parsed?.warnings)) warnings = parsed.warnings;
+    } catch (error) {
+      console.warn("[DockerExecutor] Could not parse captured Python warnings:", error);
+    }
   }
 
   return {
@@ -841,6 +993,14 @@ export async function executePythonScript(
     stdout: execResult.stdout,
     stderr: execResult.stderr,
     logFilePath,
+    errors: execResult.exitCode === 0
+      ? []
+      : [{
+          category: "PythonProcessError",
+          message: execResult.stderr || execResult.stdout || `Python process exited with code ${execResult.exitCode}.`,
+          exitCode: execResult.exitCode ?? -1,
+        }],
+    warnings,
   };
 }
 

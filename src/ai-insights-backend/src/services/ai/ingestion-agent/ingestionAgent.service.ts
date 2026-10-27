@@ -50,6 +50,7 @@ const RETRY_NODE_ORDER: TrackedAgentKey[] = [
   "trainingConfigurationNode",
   "preFlightNode",
   "modelTrainingCodeNode",
+  "modelTrainingExecutionNode",
 ];
 
 const RETRY_STATE_OUTPUT_FIELDS: Record<TrackedAgentKey, string> = {
@@ -64,6 +65,7 @@ const RETRY_STATE_OUTPUT_FIELDS: Record<TrackedAgentKey, string> = {
   trainingConfigurationNode: "trainingConfiguration",
   preFlightNode: "preFlight",
   modelTrainingCodeNode: "modelTraining",
+  modelTrainingExecutionNode: "modelTraining",
 };
 
 function getRetryOutputKeys(targetNode?: string): TrackedAgentKey[] {
@@ -535,8 +537,22 @@ export class IngestionAgentService implements IIngestionAgentService {
           }
           savedAgentState = (pWs?.project?.agentState as any) || null;
           if (options?.action === "resume") {
-            resumeTargetStep = findPausedStep(savedAgentState?.stageStatuses, savedAgentState?.currentNode) || options.step;
-            resumePredecessorNode = getStageRuleByNode(resumeTargetStep)?.predecessorNode;
+            const detected = findPausedStep(savedAgentState?.stageStatuses, savedAgentState?.currentNode);
+            resumeTargetStep = detected || options.step;
+            const hasGeneratedCode = Boolean(
+              (savedAgentState?.stageOutputs as any)?.modelTrainingCodeNode?.authoring ||
+              (savedAgentState?.stageOutputs as any)?.modelTrainingCodeNode?.filesCreated ||
+              (savedAgentState?.stageOutputs as any)?.modelTrainingCodeNode?.status === "Completed"
+            );
+            if (
+              hasGeneratedCode &&
+              (resumeTargetStep === "modelTrainingCodeNode" || savedAgentState?.currentNode === "modelTrainingExecutionNode")
+            ) {
+              resumeTargetStep = "modelTrainingExecutionNode";
+            }
+            resumePredecessorNode = getStageRuleByNode(resumeTargetStep)?.predecessorNode || (
+              resumeTargetStep === "modelTrainingExecutionNode" ? "modelTrainingCodeNode" : undefined
+            );
           }
           if (savedAgentState && (options?.action === "resume" || options?.action === "retry" || options?.action === "approve")) {
             latestGraphStateValues = {
@@ -567,6 +583,9 @@ export class IngestionAgentService implements IIngestionAgentService {
             if (!retryTarget || !RETRY_NODE_ORDER.includes(retryTarget as TrackedAgentKey)) {
               throw new Error(`Cannot retry unknown workflow step "${options.step}".`);
             }
+            const isModelTrainingOrSuccessor =
+              getRetryStateOutputKeys(retryTarget).includes("modelTrainingCodeNode") ||
+              getRetryStateOutputKeys(retryTarget).includes("modelTrainingExecutionNode");
             latestGraphStateValues = {
               ...latestGraphStateValues,
               stageStatuses: buildRetryStageStatuses(savedAgentState?.stageStatuses, retryTarget as TrackedAgentKey),
@@ -574,26 +593,7 @@ export class IngestionAgentService implements IIngestionAgentService {
               ...Object.fromEntries(
                 getRetryStateOutputKeys(retryTarget).map((key) => [RETRY_STATE_OUTPUT_FIELDS[key], {}])
               ),
-              ...(getRetryStateOutputKeys(retryTarget).includes("modelTrainingCodeNode") ? { modelValidation: {} } : {}),
-              currentNode: retryTarget,
-              currentStage: retryTarget,
-              nextStep: undefined,
-            };
-          }
-
-          if (options?.action === "retry") {
-            const retryTarget = mapRetryStepToInterruptNode(options.step);
-            if (!retryTarget || !RETRY_NODE_ORDER.includes(retryTarget as TrackedAgentKey)) {
-              throw new Error(`Cannot retry unknown workflow step "${options.step}".`);
-            }
-            latestGraphStateValues = {
-              ...latestGraphStateValues,
-              stageStatuses: buildRetryStageStatuses(savedAgentState?.stageStatuses, retryTarget as TrackedAgentKey),
-              stageOutputs: clearRetryStageOutputs(savedAgentState?.stageOutputs, retryTarget, true),
-              ...Object.fromEntries(
-                getRetryStateOutputKeys(retryTarget).map((key) => [RETRY_STATE_OUTPUT_FIELDS[key], {}])
-              ),
-              ...(getRetryStateOutputKeys(retryTarget).includes("modelTrainingCodeNode") ? { modelValidation: {} } : {}),
+              ...(isModelTrainingOrSuccessor ? { modelValidation: {}, modelLifecycle: { __resetOutput: true } } : {}),
               currentNode: retryTarget,
               currentStage: retryTarget,
               nextStep: undefined,
@@ -658,7 +658,6 @@ export class IngestionAgentService implements IIngestionAgentService {
               folderPath: pWs.project.folderPath,
               runTimestamp: activeRunTimestamp,
               targetStep: options.step || retryTarget || "",
-              duckDBService: this.duckDBService,
             });
           } catch (cleanErr) {
             console.warn("[Workflow] Error during retry cleanup of step and successor files:", cleanErr);
@@ -880,7 +879,7 @@ export class IngestionAgentService implements IIngestionAgentService {
           checkpoint_ns: "",
           services,
         },
-        recursionLimit: 100,
+        recursionLimit: 200,
         signal: sessionAbortController.signal,
       };
 
@@ -900,6 +899,9 @@ export class IngestionAgentService implements IIngestionAgentService {
         options.step === "Model Training" ||
         options.step === "modelTraining" ||
         options.step === "modelTrainingNode" ||
+        options.step === "modelTrainingExecution" ||
+        options.step === "modelTrainingExecutionNode" ||
+        options.step === "Model Training Execution" ||
         (Boolean(options.step?.toLowerCase().includes("training")) &&
           !options.step?.toLowerCase().includes("configuration") &&
           Boolean(options?.splitEndDate || options?.splitDate))
@@ -1548,7 +1550,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                   checkpoint_ns: "",
                   services,
                 },
-                recursionLimit: 100,
+                recursionLimit: 200,
               };
               if (options?.projectId) {
                 await this.agentThinkingService.clearProjectPipelineThinking(options.projectId, pipeline);
@@ -1631,7 +1633,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                     checkpoint_id: retryCheckpointId,
                     services,
                   },
-                  recursionLimit: 100,
+                  recursionLimit: 200,
                   signal: sessionAbortController.signal,
                 };
 
@@ -1696,7 +1698,9 @@ export class IngestionAgentService implements IIngestionAgentService {
                   "Model Training Code Generation": "preFlightNode",
                   modelTraining: "preFlightNode",
                   modelTrainingNode: "preFlightNode",
-                  "Model Training": "preFlightNode",
+                  modelTrainingExecution: "modelTrainingCodeNode",
+                  modelTrainingExecutionNode: "modelTrainingCodeNode",
+                  "Model Training Execution": "modelTrainingCodeNode",
                   modelValidation: "modelTrainingCodeNode",
                   modelValidationNode: "modelTrainingCodeNode",
                 };
@@ -2125,8 +2129,21 @@ export class IngestionAgentService implements IIngestionAgentService {
             }
           } else if (options?.action === "resume") {
             const detectedPausedStep = findPausedStep(savedAgentState?.stageStatuses, savedAgentState?.currentNode);
-            const targetStep = resumeTargetStep || detectedPausedStep;
-            const predecessorNode = resumePredecessorNode || getStageRuleByNode(targetStep)?.predecessorNode;
+            let targetStep = resumeTargetStep || detectedPausedStep;
+            const hasGeneratedCode = Boolean(
+              (savedAgentState?.stageOutputs as any)?.modelTrainingCodeNode?.authoring ||
+              (savedAgentState?.stageOutputs as any)?.modelTrainingCodeNode?.filesCreated ||
+              (savedAgentState?.stageOutputs as any)?.modelTrainingCodeNode?.status === "Completed"
+            );
+            if (
+              hasGeneratedCode &&
+              (targetStep === "modelTrainingCodeNode" || savedAgentState?.currentNode === "modelTrainingExecutionNode")
+            ) {
+              targetStep = "modelTrainingExecutionNode";
+            }
+            const predecessorNode = resumePredecessorNode || getStageRuleByNode(targetStep)?.predecessorNode || (
+              targetStep === "modelTrainingExecutionNode" ? "modelTrainingCodeNode" : undefined
+            );
             if (!targetStep || !predecessorNode) {
               throw new Error("Cannot resume workflow without a recognized paused step.");
             }
@@ -2264,16 +2281,30 @@ export class IngestionAgentService implements IIngestionAgentService {
                 ? "Model Training & Validation"
                 : (nextNode === "trainingConfigurationNode" || nextNode === "trainingConfiguration")
                   ? "Training Configuration"
+                  : nextNode === "preFlightNode"
+                    ? "Pre Flight"
+                  : nextNode === "modelTrainingCodeNode"
+                    ? "Model Training Code Generation"
                   : nextNode === "modelTrainingExecutionNode"
-                    ? "Model Training"
+                    ? "Model Training Execution"
                   : undefined;
+
+            const hasExplicitSelectedModels =
+              (Array.isArray(options?.selectedModels) && options.selectedModels.length > 0) ||
+              (Array.isArray(savedAgentState?.selectedModels) && savedAgentState.selectedModels.length > 0) ||
+              (Array.isArray(graphState?.values?.selectedModels) && graphState.values.selectedModels.length > 0);
 
             const isAwaitingApprovalGate = Boolean(
               approvalTarget &&
               hasState &&
-              savedAgentState?.status !== "Paused" &&
-              (savedAgentState?.status === "Awaiting Approval" ||
-                Object.values(savedAgentState?.stageStatuses || {}).some((s: any) => s?.status === "Awaiting Approval"))
+              (
+                (nextNode === "modelTrainingExecutionNode" && !hasExplicitSelectedModels) ||
+                (savedAgentState?.status === "Awaiting Approval" ||
+                  savedAgentState?.status === "User Input" ||
+                  Object.values(savedAgentState?.stageStatuses || {}).some(
+                    (s: any) => s === "Awaiting Approval" || s === "User Input" || s?.status === "Awaiting Approval" || s?.status === "User Input"
+                  ))
+              )
             );
 
             if (isAwaitingApprovalGate) {
@@ -2282,7 +2313,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 ? "Data Ingestion"
                 : approvalTarget === "Training Configuration"
                   ? "Model Selection"
-                  : approvalTarget === "Model Training"
+                  : approvalTarget === "Model Training Execution"
                     ? "Model Training Code Generation"
                   : "Feature Engineering";
               const pausedStatuses = { ...(latestGraphStateValues.stageStatuses || savedAgentState?.stageStatuses || {}) };
@@ -2319,17 +2350,22 @@ export class IngestionAgentService implements IIngestionAgentService {
                 pausedStatuses.modelSelectionNode = "Completed";
                 pausedStatuses.trainingConfigurationNode = "Pending";
               } else if (nextNode === "modelTrainingExecutionNode") {
-                stageOverrides.modelTrainingValidation = "Awaiting Approval";
+                stageOverrides.modelTrainingValidation = "User Input";
                 pausedStatuses.modelTrainingCodeNode = "User Input";
+                pausedStatuses.modelTrainingExecutionNode = "User Input";
               }
 
               const groupedPausedStatuses = buildGroupedStageStatuses(normalizeFlatStageStatuses(pausedStatuses), stageOverrides);
 
               const approvalSummary = nextNode === "modelTrainingExecutionNode"
-                ? "Model training code generation is complete. Select models and execute training."
+                ? "Model training code generation is complete. Select models in the UI and execute training."
                 : approvalTarget === "Training Configuration"
                   ? "Model Selection completed successfully. Please select candidate models and confirm for Training Configuration."
                 : `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`;
+
+              const gateStatus = nextNode === "modelTrainingExecutionNode" || approvalTarget === "Training Configuration"
+                ? "User Input"
+                : "Awaiting Approval";
 
               const pausedValues = {
                 ...(savedAgentState || {}),
@@ -2337,14 +2373,14 @@ export class IngestionAgentService implements IIngestionAgentService {
                 ...latestGraphStateValues,
                 runTimestamp: latestGraphStateValues.runTimestamp || activeRunTimestamp,
                 stageStatuses: groupedPausedStatuses,
-                status: "Awaiting Approval",
+                status: gateStatus,
                 nextStep: approvalTarget,
                 summary: approvalSummary,
                 message: approvalSummary,
               };
               latestGraphStateValues = pausedValues;
               const pausedResult = buildResultFromGraphState({ values: pausedValues, next: graphState?.next }, threadId, connectorId);
-              pausedResult.status = "Awaiting Approval";
+              pausedResult.status = gateStatus;
               pausedResult.nextStep = approvalTarget;
               pausedResult.stageStatuses = groupedPausedStatuses;
               if (options?.projectId) {
@@ -3307,7 +3343,7 @@ export class IngestionAgentService implements IIngestionAgentService {
         });
         console.info(`[Workflow] Project ${targetProjectId} agent state updated to paused at step ${pausedStepKey}.`);
       }
-      return { success: true, message: "Workflow paused" };
+      return { success: true, message: "Workflow paused", status: "Paused" };
     } catch (err: any) {
       console.error(`[Workflow] Failed to update paused state for session ${resolvedSessionId || "unknown"}:`, err?.message || err);
       throw err;

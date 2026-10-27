@@ -5,6 +5,7 @@ import { createTabContext } from "./components/providers/TabProvider";
 import ProjectsPage from "./components/pages/ProjectsPage";
 import ConnectorsPage from "./components/pages/ConnectorsPage";
 import AIAgentChatPage from "./components/pages/AIAgentChatPage";
+import ConfigurationPage from "./components/pages/ConfigurationPage";
 import { PageType } from "./components/shared/constants";
 import Header from "./components/shared/header/Header";
 import Navbar from "./components/shared/navbar/Navbar";
@@ -31,6 +32,8 @@ function TabContent({ useTab }: { useTab: <T>(tab: T) => any }) {
       return <ConnectorsPage />;
     case "ai-agent-chat":
       return <AIAgentChatPage />;
+    case "configuration":
+      return <ConfigurationPage />;
     case "switcher":
       return null;
     case "projects":

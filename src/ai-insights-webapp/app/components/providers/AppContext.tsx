@@ -149,7 +149,7 @@ interface AppContextType {
 
 const AppContext = createContext<AppContextType | undefined>(undefined);
 
-export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL!;
+export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://127.0.0.1:22000/api";
 
 async function fetchWithRetry(url: string, options?: RequestInit, retries = 5, delay = 1000): Promise<Response> {
   try {
@@ -291,47 +291,6 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     tasksCount: 100,
   });
 
-  useEffect(() => {
-    async function fetchWorkspaces() {
-      try {
-        const res = await fetchWithRetry(`${BACKEND_URL}/workspaces`);
-        if (res.ok) {
-          const data: Workspace[] = await res.json();
-          setWorkspaces(data);
-
-          if (data.length > 0) {
-            const savedWsId = typeof window !== "undefined" ? localStorage.getItem("activeWorkspaceId") : null;
-            const hasSaved = savedWsId && data.some((w) => w.id === savedWsId);
-
-            if (hasSaved) {
-
-              setActiveWorkspaceIdState(savedWsId!);
-            } else {
-
-              const defaultWs = data.find((w) => w.isDefault || w.id === "default");
-              const nonDefaultWorkspaces = data.filter((w) => !w.isDefault && w.id !== "default");
-
-              let targetId: string;
-              if (nonDefaultWorkspaces.length === 0) {
-                targetId = defaultWs ? defaultWs.id : data[0].id;
-              } else {
-                targetId = data[0].id;
-              }
-
-              setActiveWorkspaceIdState(targetId);
-              if (typeof window !== "undefined") {
-                localStorage.setItem("activeWorkspaceId", targetId);
-              }
-            }
-          }
-        }
-      } catch (err) {
-        console.error("Failed to load workspaces:", err);
-      }
-    }
-    fetchWorkspaces();
-  }, []);
-
   const fetchWorkspaceData = useCallback(async (wsId: string) => {
     try {
       const [projRes, srcRes] = await Promise.all([
@@ -344,6 +303,73 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       console.error("Failed to load workspace data:", err);
     }
   }, []);
+
+  const fetchWorkspaces = useCallback(async () => {
+    try {
+      const res = await fetchWithRetry(`${BACKEND_URL}/workspaces`, undefined, 20, 1000);
+      if (res.ok) {
+        const data: Workspace[] = await res.json();
+        setWorkspaces(data);
+
+        if (data.length > 0) {
+          const savedWsId = typeof window !== "undefined" ? localStorage.getItem("activeWorkspaceId") : null;
+          const hasSaved = savedWsId && data.some((w) => w.id === savedWsId);
+
+          let targetId: string;
+          if (hasSaved) {
+            targetId = savedWsId!;
+          } else {
+            const nonDefaultWorkspaces = data.filter((w) => !w.isDefault && w.id !== "default");
+            if (nonDefaultWorkspaces.length > 0) {
+              targetId = nonDefaultWorkspaces[nonDefaultWorkspaces.length - 1].id;
+            } else {
+              const defaultWs = data.find((w) => w.isDefault || w.id === "default");
+              targetId = defaultWs ? defaultWs.id : data[0].id;
+            }
+          }
+
+          setActiveWorkspaceIdState(targetId);
+          if (typeof window !== "undefined") {
+            localStorage.setItem("activeWorkspaceId", targetId);
+          }
+          fetchWorkspaceData(targetId);
+        }
+      }
+    } catch (err) {
+      console.error("Failed to load workspaces:", err);
+    }
+  }, [fetchWorkspaceData]);
+
+  useEffect(() => {
+    fetchWorkspaces();
+
+    const handleRecheck = () => {
+      fetchWorkspaces();
+    };
+    window.addEventListener("focus", handleRecheck);
+    document.addEventListener("visibilitychange", handleRecheck);
+
+    let unlisten: (() => void) | undefined;
+    if (typeof window !== "undefined" && (window as any).__TAURI__) {
+      const tauri = (window as any).__TAURI__;
+      const eventApi = tauri.event || (tauri.core && tauri.core.event);
+      if (eventApi && typeof eventApi.listen === "function") {
+        eventApi.listen("startup_step", (event: any) => {
+          if (event.payload?.step === "all" || event.payload?.step === "backend") {
+            fetchWorkspaces();
+          }
+        }).then((fn: any) => {
+          unlisten = fn;
+        }).catch(() => {});
+      }
+    }
+
+    return () => {
+      window.removeEventListener("focus", handleRecheck);
+      document.removeEventListener("visibilitychange", handleRecheck);
+      if (unlisten) unlisten();
+    };
+  }, [fetchWorkspaces]);
 
   const refreshProjects = useCallback(async () => {
     const wsId = activeWorkspaceId || "default";
@@ -379,6 +405,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     if (!res.ok) throw new Error(data.message || "Failed to create workspace");
     setWorkspaces((prev) => [...prev, data]);
     setActiveWorkspaceId(data.id);
+    fetchWorkspaceData(data.id);
   };
 
   const renameWorkspace = async (id: string, name: string) => {

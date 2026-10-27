@@ -7,7 +7,6 @@ import { createRunModelInferenceTool } from "../agents/sparrow/tools/modelInfere
 import { createCalculateMetricTool } from "../agents/sparrow/tools/calculation.tools";
 import { createGetProjectContextTool } from "../agents/sparrow/tools/projectContext.tools";
 import { createSparrowGraph } from "../agents/sparrow/graph";
-import { ModelValidationAgent } from "../agents/ModelTrainingValidation/ModelValidation/modelValidationAgent";
 
 const now = Date.parse("2026-10-09T12:00:00Z");
 const monthly = { anchor: "calendar" as const, horizon: 3, frequency: "Monthly", startDate: "2026-01-01" };
@@ -23,9 +22,8 @@ function inferenceFixture(missing = false) {
   const calls: any[] = [];
   const tool = createRunModelInferenceTool("p1", {
     projectService: { getById: async () => ({ agentState: { splitDate: "2025-01-01", modelValidation: { report: "DO_NOT_SEND" } } }) } as any,
-    modelValidationService: {
+    modelLifecycleCandidatesService: {
       getValidationCandidates: async () => ({ candidates: [{ model_id: "m1" }] }),
-      validateModels: async () => { throw new Error("Sparrow must never launch validation."); },
     } as any,
     executionService: {
       execute: async (request: any) => {
@@ -70,11 +68,6 @@ test("execution bridges January 2026 to January 2027 but returns only November t
   assert.equal(JSON.stringify(result).includes("999999"), false);
   assert.equal(JSON.stringify(result).includes("DO_NOT_SEND"), false);
   assert.equal(result.modelResults[0].score, undefined);
-});
-
-test("calendar-past unobserved bridge periods execute as predictions rather than backtests", () => {
-  assert.equal(ModelValidationAgent.determineValidationMode("2026-01-01", "2026-10-09", "future_prediction"), "future_prediction");
-  assert.equal(ModelValidationAgent.determineValidationMode("2026-01-01", "2026-10-09"), "backtesting");
 });
 
 test("partial, duplicate and invalid dated forecasts fail instead of relabeling or fabricating months", async () => {

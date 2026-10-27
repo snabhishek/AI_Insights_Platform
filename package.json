@@ -1,0 +1,17 @@
+{
+  "name": "ai-insights-platform",
+  "version": "1.0.0",
+  "description": "AI Insights Platform - Monorepo root",
+  "private": true,
+  "scripts": {
+    "desktop:build": "npm --prefix src/ai-insights-desktop run build",
+    "desktop:dev": "npm --prefix src/ai-insights-desktop run dev",
+    "desktop:bundle": "npm --prefix src/ai-insights-desktop run bundle:services",
+    "desktop:deps": "npm --prefix src/ai-insights-desktop run deps:check",
+    "desktop:setup": "npm --prefix src/ai-insights-desktop run deps:setup",
+    "backend:dev": "npm --prefix src/ai-insights-backend run dev",
+    "backend:build": "npm --prefix src/ai-insights-backend run build",
+    "webapp:dev": "npm --prefix src/ai-insights-webapp run dev",
+    "webapp:build": "npm --prefix src/ai-insights-webapp run build"
+  }
+}

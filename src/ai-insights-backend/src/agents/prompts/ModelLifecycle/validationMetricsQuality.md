@@ -1,0 +1,3 @@
+Assess the generated validation metrics, inference outputs, and model quality from the validation objective, declared training artifacts, authored source, reports, and execution evidence.
+
+Decide whether the metrics are valid for the objective and whether model quality is acceptable. Provide candidate assessments and ranking when supported by the evidence. If the quality issue requires improvement, identify the cause in the code or observed results and recommend an actionable, evidence-grounded correction. Do not invent metric values or apply unstated fixed thresholds. Use web research when technical details need verification. Return a structured assessment.

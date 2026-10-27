@@ -13,9 +13,9 @@ const notoSans = Noto_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "AI Insights Platform",
+  title: "Compass",
   icons: {
-    icon: "/images/cei-logo.png",
+    icon: "/Compass_logo.png",
   },
 };
 

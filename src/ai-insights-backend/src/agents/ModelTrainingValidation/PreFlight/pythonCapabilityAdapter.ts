@@ -11,7 +11,7 @@ export class PythonCapabilityAdapter {
   private serviceUrl: string;
   private pythonServicePath: string;
 
-  constructor(serviceUrl = process.env.AI_INSIGHTS_SERVICE_URL!) {
+  constructor(serviceUrl = process.env.AI_INSIGHTS_SERVICE_URL || "http://127.0.0.1:22004") {
     this.serviceUrl = serviceUrl;
 
     this.pythonServicePath = path.resolve(__dirname, "../../../../../ai-insights-service");

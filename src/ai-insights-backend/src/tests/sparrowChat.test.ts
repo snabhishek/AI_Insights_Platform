@@ -253,7 +253,7 @@ test("100-second expiry survives restart and late answers resume without repeati
   let heldLocks = 0;
   const orchestrator = new SparrowOrchestrator({
     projectService: { getById: async () => ({ id: "p1", name: "Retail" }) } as any,
-    duckDBService: {} as any, modelValidationService: {} as any,
+    duckDBService: {} as any, modelLifecycleCandidatesService: {} as any,
     checkpointer: f.saver, intentRepository: { getActiveIntents: async () => intents }, now: () => now,
     withConversationLock: async (_id, work) => { heldLocks++; try { return await work(); } finally { heldLocks--; } },
   });
@@ -308,7 +308,7 @@ test("retries after a second clarification or synthesis failure do not consume a
     return { status: "complete", content: "Resumed September comparison.", thinking: [] };
   });
   const orchestrator = new SparrowOrchestrator({ projectService: { getById: async () => ({ id: "p1", name: "Retail" }) } as any,
-    duckDBService: {} as any, modelValidationService: {} as any, checkpointer: f.saver,
+    duckDBService: {} as any, modelLifecycleCandidatesService: {} as any, checkpointer: f.saver,
     intentRepository: { getActiveIntents: async () => intents } });
   const input = { projectId: "p1", conversationId: "retries", userQuery: "North and South", interactionId: first.id };
   const second = await orchestrator.run(input);
@@ -445,7 +445,7 @@ test("inference does not silently ignore unsupported segment filters or scenario
   });
   const result = await f.graph.invoke({ ...seed, intentCatalog: [...intents, { code: "PREDICT", description: "Forecast", allowsInference: true, conversational: false }] }, config("scenario"));
   assert.ok(result.toolResults.some((item) => item.error?.includes("does not apply segment filters or feature scenario changes")));
-  const inference = createRunModelInferenceTool("p1", { projectService: {} as any, modelValidationService: {} as any });
+  const inference = createRunModelInferenceTool("p1", { projectService: {} as any, modelLifecycleCandidatesService: {} as any });
   const args = { predictionHorizon: 4, predictionFrequency: "Monthly", selectedModels: ["model1"] };
   await assert.rejects(() => inference.schema.parseAsync({ ...args, filters: { region: "North" } }));
   await assert.rejects(() => inference.schema.parseAsync({ ...args, predictionFrequency: "Daily" }));
@@ -474,7 +474,7 @@ test("missing period observations are not fabricated as zero", async () => {
 test("project and checkpoint boundaries are checked before any model invocation", async () => {
   const orchestrator = new SparrowOrchestrator({
     projectService: { getById: async (id: string) => id === "p1" ? { id: "p1" } : undefined } as any,
-    duckDBService: {} as any, modelValidationService: {} as any,
+    duckDBService: {} as any, modelLifecycleCandidatesService: {} as any,
     checkpointer: new MemorySaver(), intentRepository: { getActiveIntents: async () => intents },
   });
   await assert.rejects(() => orchestrator.run({ projectId: "missing", userQuery: "Query" }), /restricted/);
@@ -495,12 +495,12 @@ test("discoverAvailableModels handles dictionary candidates object without crash
   const { createDiscoverAvailableModelsTool } = await import("../agents/sparrow/tools/modelInference.tools");
   const tool = createDiscoverAvailableModelsTool("p1", {
     projectService: { getById: async () => ({ agentState: {} }) } as any,
-    modelValidationService: {
+    modelLifecycleCandidatesService: {
       getValidationCandidates: async () => ({
-        candidates: {
-          lightgbm_sota: { model_id: "lightgbm_sota", display_name: "LightGBM Fast GBDT" },
-          xgboost_sota: { model_id: "xgboost_sota", display_name: "XGBoost Optimized Trees" },
-        },
+        candidates: [
+          { model_id: "lightgbm_sota", displayName: "LightGBM Fast GBDT" },
+          { model_id: "xgboost_sota", displayName: "XGBoost Optimized Trees" },
+        ],
         championModelId: "lightgbm_sota",
       }),
     } as any,
@@ -575,4 +575,3 @@ test("an agent-justified derived metric permits inference of the inspected train
   const res = await multiStepGraph.invoke(seedWithContext, config("rev-vol-compat"));
   assert.ok(res.toolResults.some((t: any) => t.toolName === "runModelInference" && t.success));
 });
-
