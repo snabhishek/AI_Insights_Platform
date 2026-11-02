@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from "react";
 import { Badge } from "./utils";
 import { BACKEND_URL } from "../../providers/AppContext";
+import { submitWorkflowUserInputApi } from "../../../services/aiWorkflowService";
 
 interface ModelCandidateReasoning {
   strengths?: string[];
@@ -34,6 +35,7 @@ interface ModelSelectionProps {
   modelSelection: any;
   projectId?: string;
   nextStepInProgress?: boolean;
+  isStepCompleted?: boolean;
   onSelectionConfirmed?: (selectedModels: string[]) => void;
 }
 
@@ -41,6 +43,7 @@ export default function ModelSelectionStepOutput({
   modelSelection,
   projectId,
   nextStepInProgress = false,
+  isStepCompleted = false,
   onSelectionConfirmed,
 }: ModelSelectionProps) {
   const payload = modelSelection?.decision || modelSelection?.modelSelection || modelSelection || {};
@@ -130,11 +133,20 @@ export default function ModelSelectionStepOutput({
   };
 
   const handleConfirmSelection = async () => {
-    if (selectedModelIds.length === 0) return;
+    if (selectedModelIds.length === 0 || isStepCompleted) return;
     setIsSubmitting(true);
     setSaveSuccessMessage(null);
 
     try {
+      if (projectId) {
+        await submitWorkflowUserInputApi(projectId, {
+          inputType: "model_selection",
+          payload: { selectedModelIds },
+        }).catch((err) => {
+          console.warn("[ModelSelection] submitWorkflowUserInputApi warning:", err?.message || err);
+        });
+      }
+
       const decisionId = payload.id || modelSelection?.id;
       const endpoint = decisionId
         ? `${BACKEND_URL}/model-selection/${decisionId}/select`
@@ -144,7 +156,7 @@ export default function ModelSelectionStepOutput({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ selectedModelIds }),
-      });
+      }).catch(() => null);
 
       if (res && res.ok) {
         if (payload.userSelection) {
@@ -358,12 +370,14 @@ export default function ModelSelectionStepOutput({
                 </div>
               </div>
 
-              <label className="flex items-center gap-2 cursor-pointer select-none bg-surface px-3 py-1.5 rounded-xl border border-border shadow-2xs hover:bg-surface-muted transition-colors">
+              <label className={`flex items-center gap-2 select-none bg-surface px-3 py-1.5 rounded-xl border border-border shadow-2xs transition-colors ${
+                isStepCompleted ? "opacity-75 cursor-not-allowed" : "cursor-pointer hover:bg-surface-muted"
+              }`}>
                 <input
                   type="checkbox"
                   checked={selectedModelIds.includes(primaryCandidate.model_id)}
                   onChange={() => toggleModelSelection(primaryCandidate.model_id)}
-                  disabled={nextStepInProgress}
+                  disabled={isStepCompleted || nextStepInProgress}
                   className="w-4 h-4 rounded text-primary focus:ring-primary/20 accent-primary"
                 />
                 <span className="text-xs font-bold text-foreground">Include in Training</span>
@@ -488,12 +502,14 @@ export default function ModelSelectionStepOutput({
 
                   <div className="mt-3 pt-2.5 border-t border-border flex items-center justify-between">
                     <span className="text-[11px] text-muted-foreground">AutomL Candidate</span>
-                    <label className="flex items-center gap-1.5 cursor-pointer select-none text-xs font-semibold">
+                    <label className={`flex items-center gap-1.5 select-none text-xs font-semibold ${
+                      isStepCompleted ? "opacity-75 cursor-not-allowed" : "cursor-pointer"
+                    }`}>
                       <input
                         type="checkbox"
                         checked={isSelected}
                         onChange={() => toggleModelSelection(candidate.model_id)}
-                        disabled={nextStepInProgress}
+                        disabled={isStepCompleted || nextStepInProgress}
                         className="w-3.5 h-3.5 rounded text-primary focus:ring-primary/20 accent-primary"
                       />
                       <span className={isSelected ? "text-primary font-bold" : "text-muted-foreground"}>
@@ -600,9 +616,15 @@ export default function ModelSelectionStepOutput({
             </span>
           )}
 
+          {isStepCompleted && (
+            <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+              ✓ Step Approved & Completed
+            </span>
+          )}
+
           <button
             type="button"
-            disabled={selectedModelIds.length === 0 || isSubmitting || nextStepInProgress}
+            disabled={isStepCompleted || selectedModelIds.length === 0 || isSubmitting || nextStepInProgress}
             onClick={handleConfirmSelection}
             className="flex-1 sm:flex-none inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
           >

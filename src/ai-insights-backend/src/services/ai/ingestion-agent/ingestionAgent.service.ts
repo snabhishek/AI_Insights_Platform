@@ -3,7 +3,7 @@ import "../../../utils/langgraphMemoryPatch";
 import { MemorySaver } from "@langchain/langgraph";
 import { ConnectorService } from "../../connector/connector.service";
 import { ConnectionTesterService } from "../../connector/connectionTester.service";
-import { IIngestionAgentService, IngestionAgentRunResult } from "./ingestionAgent.service.interface";
+import { IIngestionAgentService, IngestionAgentRunResult, IngestionAgentStepResult } from "./ingestionAgent.service.interface";
 import { IFileService } from "../../file/file.service.interface";
 import { ProjectService } from "../../project/project.service";
 import { createAgentGraph } from "../../../agents/graph";
@@ -18,6 +18,7 @@ import {
   applyPauseToStageStatuses,
   applyResumeToStageStatuses,
   buildGroupedStageStatuses,
+  determineActiveStepForInteraction,
   findPausedStep,
   FlatStageStatuses,
   INITIAL_STAGE_STATUSES,
@@ -31,6 +32,43 @@ import {
   TrackedAgentKey,
   WorkflowAgentState,
 } from "../../../agents/pipelineNames";
+
+const STEP_NODE_DISPLAY_MAP: Record<string, string> = {
+  inspect: "Data Inspection",
+  profileData: "Data Profiling",
+  resolveSchema: "Schema Resolver",
+  hierarchyMapperNode: "Hierarchy Mapper",
+  featureArchitectNode: "Feature Architect",
+  featureValidatorNode: "Feature Validator",
+  exogenous: "Exogenous Scout",
+  modelSelectionNode: "Model Selection",
+  trainingConfigurationNode: "Training Configuration",
+  preFlightNode: "Pre Flight",
+  modelTrainingCodeNode: "Model Training Code Generation",
+  modelTrainingExecutionNode: "Model Training Execution",
+};
+
+function recordStepCompletion(
+  steps: IngestionAgentStepResult[] = [],
+  stepKey: string,
+  summary?: string
+): IngestionAgentStepResult[] {
+  const stepLabel = STEP_NODE_DISPLAY_MAP[stepKey] || stepKey;
+  const existingIndex = steps.findIndex(
+    (s) => s.name === stepLabel || s.name === stepKey
+  );
+  const updatedEntry: IngestionAgentStepResult = {
+    name: stepLabel,
+    status: "Completed",
+    summary: summary || `${stepLabel} approved and completed.`,
+  };
+  if (existingIndex >= 0) {
+    const nextSteps = [...steps];
+    nextSteps[existingIndex] = updatedEntry;
+    return nextSteps;
+  }
+  return [...steps, updatedEntry];
+}
 import { IAgentThinkingService } from "../agent-thinking/agentThinking.service.interface";
 import { QueueService } from "../../queue/queue.service";
 import { agentJobEvents } from "../../queue/queueEvents";
@@ -883,9 +921,17 @@ export class IngestionAgentService implements IIngestionAgentService {
         signal: sessionAbortController.signal,
       };
 
-      let pipeline = getPipelineForSubstep(options?.step) || "Data Ingestion";
+      const flatSavedStatuses = normalizeFlatStageStatuses(savedAgentState?.stageStatuses);
+      const activeApproveTarget = options?.action === "approve"
+        ? (determineActiveStepForInteraction(flatSavedStatuses, "approve") ||
+           (options.step ? (options.step in LEGACY_AGENT_KEY_ALIASES ? LEGACY_AGENT_KEY_ALIASES[options.step] : options.step) : undefined))
+        : undefined;
+
+      let pipeline = (activeApproveTarget ? getPipelineForSubstep(activeApproveTarget) : undefined) ||
+        getPipelineForSubstep(options?.step) || "Data Ingestion";
 
       const isApprovingModelValidation = options?.action === "approve" && (
+        activeApproveTarget === "modelTrainingExecutionNode" ||
         options.step === "Model Validation" ||
         options.step === "modelValidation" ||
         options.step === "modelValidationNode" ||
@@ -893,6 +939,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       );
 
       const isApprovingModelTrainingCode = options?.action === "approve" && !isApprovingModelValidation && (
+        activeApproveTarget === "preFlightNode" ||
         options.step === "Model Training Code Generation" ||
         options.step === "modelTrainingCodeNode" ||
         options.step === "modelTrainingCode" ||
@@ -908,6 +955,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       );
 
       const isApprovingPreFlight = options?.action === "approve" && !isApprovingModelValidation && !isApprovingModelTrainingCode && (
+        activeApproveTarget === "trainingConfigurationNode" ||
         options.step === "Pre Flight" ||
         options.step === "preFlightNode" ||
         options.step === "preFlight" ||
@@ -915,6 +963,7 @@ export class IngestionAgentService implements IIngestionAgentService {
       );
 
       const isApprovingTrainingConfig = options?.action === "approve" && !isApprovingModelValidation && !isApprovingModelTrainingCode && !isApprovingPreFlight && (
+        activeApproveTarget === "modelSelectionNode" ||
         options.step === "Training Configuration" ||
         options.step === "trainingConfigurationNode" ||
         options.step === "trainingConfiguration" ||
@@ -925,11 +974,20 @@ export class IngestionAgentService implements IIngestionAgentService {
       );
 
       const isApprovingModel = options?.action === "approve" && !isApprovingModelValidation && !isApprovingModelTrainingCode && !isApprovingPreFlight && !isApprovingTrainingConfig && (
+        activeApproveTarget === "exogenous" ||
         options.step === "Model Selection" ||
         options.step === "modelSelection" ||
         options.step === "modelSelectionNode" ||
         options.step === "Model Training & Validation"
       );
+
+      if (options?.action === "approve" && activeApproveTarget && savedAgentState) {
+        savedAgentState.steps = recordStepCompletion(
+          savedAgentState.steps || [],
+          activeApproveTarget,
+          `${STEP_NODE_DISPLAY_MAP[activeApproveTarget] || activeApproveTarget} approved and completed.`
+        );
+      }
 
       // if (options?.action === "approve" && savedAgentState) {
       //   const approveTargetNode = isApprovingModelTrainingCode
@@ -1223,9 +1281,10 @@ export class IngestionAgentService implements IIngestionAgentService {
               updated.featureArchitectNode = "Completed";
               updated.featureValidatorNode = "Completed";
               updated.exogenous = "Completed";
-              updated.modelSelectionNode = "Completed";
-              updated.trainingConfigurationNode = "In-Progress";
+              updated.modelSelectionNode = "User Input";
+              updated.trainingConfigurationNode = "Pending";
               updated.preFlightNode = "Pending";
+              updated.modelTrainingCodeNode = "Pending";
             } else if (nodeName === "trainingConfiguration" || nodeName === "trainingConfigurationNode") {
               updated.inspect = "Completed";
               updated.profileData = "Completed";
@@ -1235,8 +1294,9 @@ export class IngestionAgentService implements IIngestionAgentService {
               updated.featureValidatorNode = "Completed";
               updated.exogenous = "Completed";
               updated.modelSelectionNode = "Completed";
-              updated.trainingConfigurationNode = "Completed";
-              updated.preFlightNode = "In-Progress";
+              updated.trainingConfigurationNode = "User Input";
+              updated.preFlightNode = "Pending";
+              updated.modelTrainingCodeNode = "Pending";
             } else if (nodeName === "preFlight" || nodeName === "preFlightNode") {
               updated.inspect = "Completed";
               updated.profileData = "Completed";
@@ -1247,8 +1307,8 @@ export class IngestionAgentService implements IIngestionAgentService {
               updated.exogenous = "Completed";
               updated.modelSelectionNode = "Completed";
               updated.trainingConfigurationNode = "Completed";
-              updated.preFlightNode = "Completed";
-              updated.modelTrainingCodeNode = "In-Progress";
+              updated.preFlightNode = "Awaiting Approval";
+              updated.modelTrainingCodeNode = "Pending";
             } else if (nodeName === "modelTrainingCodeNode" || nodeName === "modelTrainingCode" || nodeName === "modelTraining" || nodeName === "modelTrainingNode") {
               updated.inspect = "Completed";
               updated.profileData = "Completed";
@@ -2097,9 +2157,10 @@ export class IngestionAgentService implements IIngestionAgentService {
               }
               stream = await workflow.stream(null, config);
             } else {
-              const approvingTrainingConfigPhase = options.step === "Training Configuration" || options.step === "trainingConfigurationNode" || options.step === "trainingConfiguration";
-              const approvingModelPhase = approvingTrainingConfigPhase || options.step === "Model Training & Validation" || options.step === "modelSelection" || options.step === "modelSelectionNode" || options.step === "Model Selection";
-              console.warn(`[Workflow] No checkpoint found for approve. Restoring the ${approvingTrainingConfigPhase ? "Model Selection" : approvingModelPhase ? "Feature Engineering" : "Data Ingestion"} boundary.`);
+              const approvingPreFlightPhase = activeApproveTarget === "preFlightNode" || activeApproveTarget === "Pre Flight";
+              const approvingTrainingConfigPhase = approvingPreFlightPhase || activeApproveTarget === "trainingConfigurationNode" || activeApproveTarget === "Training Configuration";
+              const approvingModelPhase = approvingTrainingConfigPhase || activeApproveTarget === "modelSelectionNode" || activeApproveTarget === "Model Selection" || activeApproveTarget === "Model Training & Validation";
+              console.warn(`[Workflow] No checkpoint found for approve. Restoring the ${approvingPreFlightPhase ? "Training Configuration" : approvingTrainingConfigPhase ? "Model Selection" : approvingModelPhase ? "Feature Engineering" : "Data Ingestion"} boundary.`);
               const fallbackState = {
                 connectorId,
                 projectId: options?.projectId ?? "",
@@ -2107,7 +2168,7 @@ export class IngestionAgentService implements IIngestionAgentService {
                 runTimestamp: activeRunTimestamp,
                 status: "In-Progress",
                 nextStep: undefined,
-                summary: `Resuming workflow at ${approvingTrainingConfigPhase ? "Training Configuration" : approvingModelPhase ? "Model Training & Validation" : "Feature Engineering"}`,
+                summary: `Resuming workflow at ${approvingPreFlightPhase ? "Pre Flight" : approvingTrainingConfigPhase ? "Training Configuration" : approvingModelPhase ? "Model Training & Validation" : "Feature Engineering"}`,
                 ...(clearSplitDatesForRun ? {
                   splitDate: SPLIT_DATE_RESET_MARKER,
                   splitEndDate: SPLIT_DATE_RESET_MARKER,
@@ -2116,15 +2177,17 @@ export class IngestionAgentService implements IIngestionAgentService {
                 dataProfile: {},
                 schemaResolution: {},
                 batchedTables: [],
-                steps: [],
+                steps: (savedAgentState?.steps && savedAgentState.steps.length > 0) ? savedAgentState.steps : [],
                 stageOutputs: {},
-                stageStatuses: approvingTrainingConfigPhase
-                  ? { ...INITIAL_STAGE_STATUSES, inspect: "Completed", profileData: "Completed", resolveSchema: "Completed", hierarchyMapperNode: "Completed", featureArchitectNode: "Completed", featureValidatorNode: "Completed", exogenous: "Completed", modelSelectionNode: "Completed", trainingConfigurationNode: "In-Progress" }
-                  : approvingModelPhase
-                    ? { ...INITIAL_STAGE_STATUSES, inspect: "Completed", profileData: "Completed", resolveSchema: "Completed", hierarchyMapperNode: "Completed", featureArchitectNode: "Completed", featureValidatorNode: "Completed", exogenous: "Completed", modelSelectionNode: "In-Progress" }
-                    : { ...INITIAL_STAGE_STATUSES, inspect: "Completed", profileData: "Completed", resolveSchema: "Completed", hierarchyMapperNode: "In-Progress" }
+                stageStatuses: approvingPreFlightPhase
+                  ? { ...INITIAL_STAGE_STATUSES, inspect: "Completed", profileData: "Completed", resolveSchema: "Completed", hierarchyMapperNode: "Completed", featureArchitectNode: "Completed", featureValidatorNode: "Completed", exogenous: "Completed", modelSelectionNode: "Completed", trainingConfigurationNode: "Completed", preFlightNode: "In-Progress" }
+                  : approvingTrainingConfigPhase
+                    ? { ...INITIAL_STAGE_STATUSES, inspect: "Completed", profileData: "Completed", resolveSchema: "Completed", hierarchyMapperNode: "Completed", featureArchitectNode: "Completed", featureValidatorNode: "Completed", exogenous: "Completed", modelSelectionNode: "Completed", trainingConfigurationNode: "In-Progress" }
+                    : approvingModelPhase
+                      ? { ...INITIAL_STAGE_STATUSES, inspect: "Completed", profileData: "Completed", resolveSchema: "Completed", hierarchyMapperNode: "Completed", featureArchitectNode: "Completed", featureValidatorNode: "Completed", exogenous: "Completed", modelSelectionNode: "In-Progress" }
+                      : { ...INITIAL_STAGE_STATUSES, inspect: "Completed", profileData: "Completed", resolveSchema: "Completed", hierarchyMapperNode: "In-Progress" }
               };
-              await workflow.updateState(config, fallbackState, approvingTrainingConfigPhase ? "modelSelectionNode" : approvingModelPhase ? "exogenous" : "resolveSchema");
+              await workflow.updateState(config, fallbackState, approvingPreFlightPhase ? "trainingConfigurationNode" : approvingTrainingConfigPhase ? "modelSelectionNode" : approvingModelPhase ? "exogenous" : "resolveSchema");
               stream = await workflow.stream(null, config);
             }
           } else if (options?.action === "resume") {
@@ -2339,6 +2402,33 @@ export class IngestionAgentService implements IIngestionAgentService {
               } else if (approvalTarget === "Training Configuration" || nextNode === "trainingConfigurationNode" || nextNode === "trainingConfiguration") {
                 stageOverrides.dataIngestion = "Completed";
                 stageOverrides.featureEngineering = "Completed";
+                stageOverrides.modelTrainingValidation = "User Input";
+                pausedStatuses.inspect = "Completed";
+                pausedStatuses.profileData = "Completed";
+                pausedStatuses.resolveSchema = "Completed";
+                pausedStatuses.hierarchyMapperNode = "Completed";
+                pausedStatuses.featureArchitectNode = "Completed";
+                pausedStatuses.featureValidatorNode = "Completed";
+                pausedStatuses.exogenous = "Completed";
+                pausedStatuses.modelSelectionNode = "User Input";
+                pausedStatuses.trainingConfigurationNode = "Pending";
+              } else if (approvalTarget === "Pre Flight" || nextNode === "preFlightNode") {
+                stageOverrides.dataIngestion = "Completed";
+                stageOverrides.featureEngineering = "Completed";
+                stageOverrides.modelTrainingValidation = "User Input";
+                pausedStatuses.inspect = "Completed";
+                pausedStatuses.profileData = "Completed";
+                pausedStatuses.resolveSchema = "Completed";
+                pausedStatuses.hierarchyMapperNode = "Completed";
+                pausedStatuses.featureArchitectNode = "Completed";
+                pausedStatuses.featureValidatorNode = "Completed";
+                pausedStatuses.exogenous = "Completed";
+                pausedStatuses.modelSelectionNode = "Completed";
+                pausedStatuses.trainingConfigurationNode = "User Input";
+                pausedStatuses.preFlightNode = "Pending";
+              } else if (approvalTarget === "Model Training Code Generation" || nextNode === "modelTrainingCodeNode") {
+                stageOverrides.dataIngestion = "Completed";
+                stageOverrides.featureEngineering = "Completed";
                 stageOverrides.modelTrainingValidation = "Awaiting Approval";
                 pausedStatuses.inspect = "Completed";
                 pausedStatuses.profileData = "Completed";
@@ -2348,7 +2438,9 @@ export class IngestionAgentService implements IIngestionAgentService {
                 pausedStatuses.featureValidatorNode = "Completed";
                 pausedStatuses.exogenous = "Completed";
                 pausedStatuses.modelSelectionNode = "Completed";
-                pausedStatuses.trainingConfigurationNode = "Pending";
+                pausedStatuses.trainingConfigurationNode = "Completed";
+                pausedStatuses.preFlightNode = "Awaiting Approval";
+                pausedStatuses.modelTrainingCodeNode = "Pending";
               } else if (nextNode === "modelTrainingExecutionNode") {
                 stageOverrides.modelTrainingValidation = "User Input";
                 pausedStatuses.modelTrainingCodeNode = "User Input";
@@ -2361,9 +2453,13 @@ export class IngestionAgentService implements IIngestionAgentService {
                 ? "Model training code generation is complete. Select models in the UI and execute training."
                 : approvalTarget === "Training Configuration"
                   ? "Model Selection completed successfully. Please select candidate models and confirm for Training Configuration."
-                : `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`;
+                  : approvalTarget === "Pre Flight"
+                    ? "Training Configuration completed successfully. Review or edit configuration, then approve Pre Flight."
+                    : approvalTarget === "Model Training Code Generation"
+                      ? "Pre Flight completed successfully. Approve to generate training code."
+                      : `${completedPhase} completed successfully. Approve to proceed to ${approvalTarget}.`;
 
-              const gateStatus = nextNode === "modelTrainingExecutionNode" || approvalTarget === "Training Configuration"
+              const gateStatus = nextNode === "modelTrainingExecutionNode" || approvalTarget === "Training Configuration" || approvalTarget === "Pre Flight"
                 ? "User Input"
                 : "Awaiting Approval";
 
@@ -2578,7 +2674,13 @@ export class IngestionAgentService implements IIngestionAgentService {
                 nextNode === "modelTrainingExecutionNode" ? "User Input" : "Pending";
               if (gate.rule.id === "trainingConfigurationNode" || nextNode === "trainingConfigurationNode") {
                 pausedStatuses.trainingConfigurationNode = "Pending";
-                pausedStatuses.modelSelectionNode = "Completed";
+                pausedStatuses.modelSelectionNode = "User Input";
+              } else if (gate.rule.id === "preFlightNode" || nextNode === "preFlightNode") {
+                pausedStatuses.preFlightNode = "Pending";
+                pausedStatuses.trainingConfigurationNode = "User Input";
+              } else if (gate.rule.id === "modelTrainingCodeNode" || nextNode === "modelTrainingCodeNode") {
+                pausedStatuses.modelTrainingCodeNode = "Pending";
+                pausedStatuses.preFlightNode = "Awaiting Approval";
               }
             }
             const stageOverrides: Partial<Record<StageKey, PipelineStepStatus>> = {};
@@ -2602,6 +2704,33 @@ export class IngestionAgentService implements IIngestionAgentService {
             } else if (gate.nextStep === "Training Configuration" || nextNode === "trainingConfigurationNode" || nextNode === "trainingConfiguration") {
               stageOverrides.dataIngestion = "Completed";
               stageOverrides.featureEngineering = "Completed";
+              stageOverrides.modelTrainingValidation = "User Input";
+              pausedStatuses.inspect = "Completed";
+              pausedStatuses.profileData = "Completed";
+              pausedStatuses.resolveSchema = "Completed";
+              pausedStatuses.hierarchyMapperNode = "Completed";
+              pausedStatuses.featureArchitectNode = "Completed";
+              pausedStatuses.featureValidatorNode = "Completed";
+              pausedStatuses.exogenous = "Completed";
+              pausedStatuses.modelSelectionNode = "User Input";
+              pausedStatuses.trainingConfigurationNode = "Pending";
+            } else if (gate.nextStep === "Pre Flight" || nextNode === "preFlightNode") {
+              stageOverrides.dataIngestion = "Completed";
+              stageOverrides.featureEngineering = "Completed";
+              stageOverrides.modelTrainingValidation = "User Input";
+              pausedStatuses.inspect = "Completed";
+              pausedStatuses.profileData = "Completed";
+              pausedStatuses.resolveSchema = "Completed";
+              pausedStatuses.hierarchyMapperNode = "Completed";
+              pausedStatuses.featureArchitectNode = "Completed";
+              pausedStatuses.featureValidatorNode = "Completed";
+              pausedStatuses.exogenous = "Completed";
+              pausedStatuses.modelSelectionNode = "Completed";
+              pausedStatuses.trainingConfigurationNode = "User Input";
+              pausedStatuses.preFlightNode = "Pending";
+            } else if (gate.nextStep === "Model Training Code Generation" || nextNode === "modelTrainingCodeNode") {
+              stageOverrides.dataIngestion = "Completed";
+              stageOverrides.featureEngineering = "Completed";
               stageOverrides.modelTrainingValidation = "Awaiting Approval";
               pausedStatuses.inspect = "Completed";
               pausedStatuses.profileData = "Completed";
@@ -2611,23 +2740,28 @@ export class IngestionAgentService implements IIngestionAgentService {
               pausedStatuses.featureValidatorNode = "Completed";
               pausedStatuses.exogenous = "Completed";
               pausedStatuses.modelSelectionNode = "Completed";
-              pausedStatuses.trainingConfigurationNode = "Pending";
+              pausedStatuses.trainingConfigurationNode = "Completed";
+              pausedStatuses.preFlightNode = "Awaiting Approval";
+              pausedStatuses.modelTrainingCodeNode = "Pending";
             } else {
               stageOverrides.modelTrainingValidation = "Awaiting Approval";
             }
             const groupedPausedStatuses = buildGroupedStageStatuses(normalizeFlatStageStatuses(pausedStatuses), stageOverrides);
+            const currentGateStatus = (gate.nextStep === "Training Configuration" || gate.nextStep === "Pre Flight" || nextNode === "modelTrainingExecutionNode")
+              ? "User Input"
+              : "Awaiting Approval";
             const pausedValues = {
               ...latestGraphStateValues,
               runTimestamp: latestGraphStateValues.runTimestamp || activeRunTimestamp,
               stageStatuses: groupedPausedStatuses,
-              status: "Awaiting Approval",
+              status: currentGateStatus,
               nextStep: gate.nextStep,
               summary: gate.approvalPrompt,
               message: gate.approvalPrompt,
             };
             latestGraphStateValues = pausedValues;
             const pausedResult = buildResultFromGraphState({ values: pausedValues, next: graphState?.next }, threadId, connectorId);
-            pausedResult.status = "Awaiting Approval";
+            pausedResult.status = currentGateStatus;
             pausedResult.nextStep = gate.nextStep;
             pausedResult.stageStatuses = groupedPausedStatuses;
             if (options?.projectId) {
@@ -2712,7 +2846,13 @@ export class IngestionAgentService implements IIngestionAgentService {
                 pausedStatuses[loopGate.rule.id] = "Pending";
                 if (loopGate.rule.id === "trainingConfigurationNode" || loopNextNode === "trainingConfigurationNode") {
                   pausedStatuses.trainingConfigurationNode = "Pending";
-                  pausedStatuses.modelSelectionNode = "Completed";
+                  pausedStatuses.modelSelectionNode = "User Input";
+                } else if (loopGate.rule.id === "preFlightNode" || loopNextNode === "preFlightNode") {
+                  pausedStatuses.preFlightNode = "Pending";
+                  pausedStatuses.trainingConfigurationNode = "User Input";
+                } else if (loopGate.rule.id === "modelTrainingCodeNode" || loopNextNode === "modelTrainingCodeNode") {
+                  pausedStatuses.modelTrainingCodeNode = "Pending";
+                  pausedStatuses.preFlightNode = "Awaiting Approval";
                 }
               }
               const stageOverrides: Partial<Record<StageKey, PipelineStepStatus>> = {};
@@ -2736,6 +2876,33 @@ export class IngestionAgentService implements IIngestionAgentService {
               } else if (loopGate.nextStep === "Training Configuration" || loopNextNode === "trainingConfigurationNode" || loopNextNode === "trainingConfiguration") {
                 stageOverrides.dataIngestion = "Completed";
                 stageOverrides.featureEngineering = "Completed";
+                stageOverrides.modelTrainingValidation = "User Input";
+                pausedStatuses.inspect = "Completed";
+                pausedStatuses.profileData = "Completed";
+                pausedStatuses.resolveSchema = "Completed";
+                pausedStatuses.hierarchyMapperNode = "Completed";
+                pausedStatuses.featureArchitectNode = "Completed";
+                pausedStatuses.featureValidatorNode = "Completed";
+                pausedStatuses.exogenous = "Completed";
+                pausedStatuses.modelSelectionNode = "User Input";
+                pausedStatuses.trainingConfigurationNode = "Pending";
+              } else if (loopGate.nextStep === "Pre Flight" || loopNextNode === "preFlightNode") {
+                stageOverrides.dataIngestion = "Completed";
+                stageOverrides.featureEngineering = "Completed";
+                stageOverrides.modelTrainingValidation = "User Input";
+                pausedStatuses.inspect = "Completed";
+                pausedStatuses.profileData = "Completed";
+                pausedStatuses.resolveSchema = "Completed";
+                pausedStatuses.hierarchyMapperNode = "Completed";
+                pausedStatuses.featureArchitectNode = "Completed";
+                pausedStatuses.featureValidatorNode = "Completed";
+                pausedStatuses.exogenous = "Completed";
+                pausedStatuses.modelSelectionNode = "Completed";
+                pausedStatuses.trainingConfigurationNode = "User Input";
+                pausedStatuses.preFlightNode = "Pending";
+              } else if (loopGate.nextStep === "Model Training Code Generation" || loopNextNode === "modelTrainingCodeNode") {
+                stageOverrides.dataIngestion = "Completed";
+                stageOverrides.featureEngineering = "Completed";
                 stageOverrides.modelTrainingValidation = "Awaiting Approval";
                 pausedStatuses.inspect = "Completed";
                 pausedStatuses.profileData = "Completed";
@@ -2745,23 +2912,28 @@ export class IngestionAgentService implements IIngestionAgentService {
                 pausedStatuses.featureValidatorNode = "Completed";
                 pausedStatuses.exogenous = "Completed";
                 pausedStatuses.modelSelectionNode = "Completed";
-                pausedStatuses.trainingConfigurationNode = "Pending";
+                pausedStatuses.trainingConfigurationNode = "Completed";
+                pausedStatuses.preFlightNode = "Awaiting Approval";
+                pausedStatuses.modelTrainingCodeNode = "Pending";
               } else {
                 stageOverrides.modelTrainingValidation = "Awaiting Approval";
               }
               const groupedPausedStatuses = buildGroupedStageStatuses(normalizeFlatStageStatuses(pausedStatuses), stageOverrides);
+              const currentLoopGateStatus = (loopGate.nextStep === "Training Configuration" || loopGate.nextStep === "Pre Flight" || loopNextNode === "modelTrainingExecutionNode")
+                ? "User Input"
+                : "Awaiting Approval";
               const pausedValues = {
                 ...latestGraphStateValues,
                 runTimestamp: latestGraphStateValues.runTimestamp || activeRunTimestamp,
                 stageStatuses: groupedPausedStatuses,
-                status: "Awaiting Approval",
+                status: currentLoopGateStatus,
                 nextStep: loopGate.nextStep,
                 summary: loopGate.approvalPrompt,
                 message: loopGate.approvalPrompt,
               };
               latestGraphStateValues = pausedValues;
               const pausedResult = buildResultFromGraphState({ values: pausedValues, next: graphState?.next }, threadId, connectorId);
-              pausedResult.status = "Awaiting Approval";
+              pausedResult.status = currentLoopGateStatus;
               pausedResult.nextStep = loopGate.nextStep;
               pausedResult.stageStatuses = groupedPausedStatuses;
               if (options?.projectId) {

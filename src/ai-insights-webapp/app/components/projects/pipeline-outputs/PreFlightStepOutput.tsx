@@ -8,6 +8,7 @@ interface PreFlightStepOutputProps {
   activeRunTimestamp?: string;
   onApprovePreFlight?: () => void;
   nextStepInProgress?: boolean;
+  isStepCompleted?: boolean;
   isApproving?: boolean;
 }
 
@@ -135,6 +136,7 @@ export default function PreFlightStepOutput({
   preFlight,
   onApprovePreFlight,
   nextStepInProgress = false,
+  isStepCompleted = false,
   isApproving = false,
 }: PreFlightStepOutputProps) {
   const [filterCategory, setFilterCategory] = useState<string>("ALL");
@@ -776,12 +778,19 @@ export default function PreFlightStepOutput({
             </div>
           </div>
 
-          <button
-            type="button"
-            disabled={nextStepInProgress || isApproving || preFlight?.decision === "BLOCKED" || preFlight?.decision === "FAILED"}
-            onClick={onApprovePreFlight}
-            className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-          >
+          <div className="flex items-center gap-3 w-full sm:w-auto">
+            {isStepCompleted && (
+              <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                ✓ Step Approved & Completed
+              </span>
+            )}
+
+            <button
+              type="button"
+              disabled={isStepCompleted || nextStepInProgress || isApproving || preFlight?.decision === "BLOCKED" || preFlight?.decision === "FAILED"}
+              onClick={onApprovePreFlight}
+              className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+            >
             {isApproving ? (
               <>
                 <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
@@ -798,7 +807,8 @@ export default function PreFlightStepOutput({
                 <span>Proceed to Model Training with Selected Configuration</span>
               </>
             )}
-          </button>
+            </button>
+          </div>
         </div>
       )}
     </div>

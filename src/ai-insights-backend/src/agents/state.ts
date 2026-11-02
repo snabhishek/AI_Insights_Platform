@@ -235,6 +235,22 @@ export const AgentState = Annotation.Root({
     },
     default: () => ({ ...INITIAL_STAGE_STATUSES }),
   }),
+  userInputs: Annotation<Record<string, Record<string, unknown>>>({
+    reducer: (left = {}, right = {}) => {
+      if (right && Object.keys(right).length === 0) {
+        return left || {};
+      }
+      const merged: Record<string, Record<string, unknown>> = { ...(left || {}) };
+      for (const [stepKey, stepInputs] of Object.entries(right || {})) {
+        merged[stepKey] = {
+          ...(merged[stepKey] || {}),
+          ...(stepInputs || {}),
+        };
+      }
+      return merged;
+    },
+    default: () => ({}),
+  }),
 });
 
 export type StageStatuses = Partial<Record<StageStatusKey, StageStatusValue>>;

@@ -181,7 +181,7 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
     summary,
     stageOutputs: { modelSelectionNode: decision },
     stageStatuses: {
-      modelSelectionNode: "Completed",
+      modelSelectionNode: "User Input",
       trainingConfigurationNode: "Pending",
       preFlightNode: "Pending",
       modelTrainingCodeNode: "Pending",
@@ -189,7 +189,7 @@ export async function modelSelectionNode(state: State, config?: RunnableConfig) 
     steps: [
       {
         name: "Model Selection",
-        status: "Completed",
+        status: "User Input",
         summary,
       },
     ],
@@ -288,14 +288,14 @@ export async function trainingConfigurationNode(state: State, config?: RunnableC
     summary: output.summary,
     stageOutputs: { trainingConfigurationNode: output },
     stageStatuses: {
-      trainingConfigurationNode: "Completed",
+      trainingConfigurationNode: "User Input",
       preFlightNode: "Pending",
       modelTrainingCodeNode: "Pending",
     },
     steps: [
       {
         name: "Training Configuration",
-        status: "Completed",
+        status: "User Input",
         summary: output.summary,
       },
     ],
@@ -358,13 +358,13 @@ export async function preFlightNode(state: State, config?: RunnableConfig) {
     summary: report.summary,
     stageOutputs: { preFlightNode: report },
     stageStatuses: {
-      preFlightNode: "Completed",
+      preFlightNode: "Awaiting Approval",
       modelTrainingCodeNode: "Pending",
     },
     steps: [
       {
         name: "Pre Flight",
-        status: "Completed",
+        status: "Awaiting Approval",
         summary: report.summary,
       },
     ],

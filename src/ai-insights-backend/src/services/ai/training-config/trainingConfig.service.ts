@@ -19,14 +19,22 @@ import { TrainingConfigValidator } from "../../../agents/ModelTrainingValidation
 export class TrainingConfigService implements ITrainingConfigService {
   constructor(private projectService: ProjectService) {}
 
-  private requireCompletedTrainingConfiguration(agentState: any, timestamp?: string): void {
+  private requireTrainingConfigurationReady(agentState: any, timestamp?: string): void {
     if (timestamp && agentState?.runTimestamp !== timestamp) {
       throw new Error(`Training configuration is unavailable for run "${timestamp}".`);
     }
-    const output = agentState?.stageOutputs?.trainingConfigurationNode;
     const nodeStatus = normalizeFlatStageStatuses(agentState?.stageStatuses).trainingConfigurationNode;
-    if (nodeStatus !== "Completed") {
+    if (nodeStatus !== "User Input" && nodeStatus !== "Completed") {
       throw new Error("Training configuration is not available until the backend completes the training configuration step.");
+    }
+  }
+
+  private requireTrainingConfigurationModifiable(agentState: any): void {
+    const nodeStatus = normalizeFlatStageStatuses(agentState?.stageStatuses).trainingConfigurationNode;
+    if (nodeStatus === "Completed") {
+      const err: any = new Error("Cannot modify training configuration for a completed step.");
+      err.statusCode = 409;
+      throw err;
     }
   }
 
@@ -39,7 +47,7 @@ export class TrainingConfigService implements ITrainingConfigService {
     const workspaceName = pWs.workspaceName || "DefaultWorkspace";
     const projectName = pWs.project.projectName!;
     const existingAgentState = (pWs.project.agentState as any) || {};
-    this.requireCompletedTrainingConfiguration(existingAgentState, timestamp);
+    this.requireTrainingConfigurationReady(existingAgentState, timestamp);
     const effectiveTs = resolveProjectRunTimestamp(
       workspaceName,
       projectName,
@@ -96,7 +104,8 @@ export class TrainingConfigService implements ITrainingConfigService {
     }
 
     const existingAgentState = (pWs.project.agentState as any) || {};
-    this.requireCompletedTrainingConfiguration(existingAgentState, timestamp);
+    this.requireTrainingConfigurationReady(existingAgentState, timestamp);
+    this.requireTrainingConfigurationModifiable(existingAgentState);
     const filePath = existingAgentState.stageOutputs.trainingConfigurationNode.contractPath;
     if (typeof filePath !== "string" || !filePath.trim() || !fsSync.existsSync(filePath)) {
       throw new Error("The active Training Configuration contract file is unavailable.");
@@ -152,7 +161,8 @@ export class TrainingConfigService implements ITrainingConfigService {
       throw new Error(`Project "${projectId}" not found`);
     }
     const agentState = (pWs.project.agentState as any) || {};
-    this.requireCompletedTrainingConfiguration(agentState, timestamp);
+    this.requireTrainingConfigurationReady(agentState, timestamp);
+    this.requireTrainingConfigurationModifiable(agentState);
     const effectiveTs = resolveProjectRunTimestamp(
       pWs.workspaceName || "DefaultWorkspace",
       pWs.project.projectName!,
@@ -188,7 +198,7 @@ export class TrainingConfigService implements ITrainingConfigService {
     const workspaceName = pWs.workspaceName || "DefaultWorkspace";
     const projectName = pWs.project.projectName!;
     const existingAgentState = (pWs.project.agentState as any) || {};
-    this.requireCompletedTrainingConfiguration(existingAgentState, timestamp);
+    this.requireTrainingConfigurationReady(existingAgentState, timestamp);
 
     const { extractDatasetDateRange } = await import("../../../agents/tools/helpers/datasetDateRangeHelper");
     return await extractDatasetDateRange(workspaceName, projectName, timestamp, existingAgentState);

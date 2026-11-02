@@ -41,14 +41,70 @@ export interface WorkflowControlResponse {
   message?: string;
 }
 
+export interface UserInputSubmissionRequest {
+  inputType: string;
+  payload: Record<string, unknown>;
+  metadata?: Record<string, unknown>;
+}
+
+export interface GenericUserInputResponse {
+  success: boolean;
+  step: string;
+  data: Record<string, unknown>;
+}
+
+export async function submitWorkflowUserInputApi(
+  projectId: string,
+  submission: UserInputSubmissionRequest
+): Promise<GenericUserInputResponse> {
+  const res = await fetch(`${BACKEND_URL}/ai/user-input`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      projectId,
+      ...submission,
+    }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    const error = new Error(err.message || `Failed to submit user input: ${res.statusText}`);
+    (error as any).status = res.status;
+    throw error;
+  }
+  return res.json();
+}
+
+export async function fetchWorkflowUserInputsApi(
+  projectId: string
+): Promise<{ success: boolean; data: Record<string, any> }> {
+  const res = await fetch(`${BACKEND_URL}/ai/user-input/${encodeURIComponent(projectId)}`, {
+    method: "GET",
+    headers: { "Content-Type": "application/json" },
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to fetch user inputs: ${res.statusText}`);
+  }
+  return res.json();
+}
+
 export async function executeWorkflowApi(
   payload: WorkflowRequestPayload,
   signal?: AbortSignal
 ): Promise<Response> {
+  const effectivePayload = payload.action === "approve"
+    ? {
+        connectorId: payload.connectorId,
+        projectId: payload.projectId,
+        sessionId: payload.sessionId,
+        action: payload.action,
+        userPrompt: payload.userPrompt,
+      }
+    : payload;
+
   const res = await fetch(`${BACKEND_URL}/ai/ingestion`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
+    body: JSON.stringify(effectivePayload),
     signal,
   });
 
