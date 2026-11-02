@@ -1086,21 +1086,6 @@ export function buildResultFromGraphState(
   const isFeatureEngineeringStarted = !["None", "Pending"].includes(stageStatuses.hierarchyMapperNode ?? "None");
   const isAtFeatureApproval = nextNodes.includes("hierarchyMapperNode") && !isFeatureEngineeringStarted && isIngestionComplete;
   const isAtModelApproval = nextNodes.includes("modelSelectionNode") && (stageStatuses.exogenous === "Completed" || status === "Awaiting Approval");
-  const isAtTrainingConfigApproval = nextNodes.includes("trainingConfigurationNode") && stageStatuses.modelSelectionNode === "Completed";
-  const isAtPreFlightInput = nextNodes.includes("preFlightNode") && stageStatuses.trainingConfigurationNode === "Completed";
-  const isAtModelCodeInput = nextNodes.includes("modelTrainingCodeNode") && stageStatuses.preFlightNode === "Completed";
-  const isAtModelExecutionInput =
-    nextNodes.includes("modelTrainingExecutionNode") &&
-    stageStatuses.modelTrainingCodeNode === "User Input";
-  const awaitingNode = isAtFeatureApproval ? undefined
-    : isAtModelApproval ? (status === "Awaiting Approval" ? undefined : "modelSelectionNode")
-      : isAtTrainingConfigApproval ? "trainingConfigurationNode"
-        : isAtPreFlightInput ? "preFlightNode"
-          : isAtModelCodeInput || isAtModelExecutionInput ? "modelTrainingCodeNode"
-            : undefined;
-  if (awaitingNode) {
-    stageStatuses[awaitingNode] = "User Input";
-  }
   const stageOverrides: Partial<Record<StageKey, PipelineStepStatus>> = {};
   if (values.stageStatuses && typeof values.stageStatuses === "object") {
     for (const key of Object.keys(STAGE_CONFIG) as StageKey[]) {
@@ -1128,12 +1113,17 @@ export function buildResultFromGraphState(
     stageStatuses.featureArchitectNode = "Completed";
     stageStatuses.featureValidatorNode = "Completed";
     stageStatuses.exogenous = "Completed";
-    if (stageStatuses.modelSelectionNode !== "User Input") {
+    if (stageStatuses.modelSelectionNode !== "User Input" && stageStatuses.modelSelectionNode !== "Completed") {
       stageStatuses.modelSelectionNode = "Pending";
     }
   }
-  if (awaitingNode && awaitingNode !== "modelSelectionNode") {
+  if (
+    stageStatuses.modelSelectionNode === "User Input" ||
+    stageStatuses.trainingConfigurationNode === "User Input"
+  ) {
     stageOverrides.modelTrainingValidation = "User Input";
+  } else if (stageStatuses.preFlightNode === "Awaiting Approval") {
+    stageOverrides.modelTrainingValidation = "Awaiting Approval";
   }
   const currentStage = determineCurrentStage(nextNodes, stageStatuses);
   const groupedStageStatuses = buildGroupedStageStatuses(stageStatuses, stageOverrides);
@@ -1158,7 +1148,7 @@ export function buildResultFromGraphState(
     steps: Array.isArray(values.steps) ? values.steps : [],
     batchedTables: Array.isArray(values.batchedTables) ? values.batchedTables : [],
     sessionId: threadId,
-    nextStep: awaitingNode || (isAtFeatureApproval ? "hierarchyMapperNode" : nextNodes[0] || "inspect"),
+    nextStep: (values.nextStep as string) || (isAtFeatureApproval ? "hierarchyMapperNode" : nextNodes[0] || "inspect"),
     currentNode: currentStage,
     currentStage: NODE_CONFIG[currentStage as TrackedAgentKey]?.stage,
     stageOutputs,

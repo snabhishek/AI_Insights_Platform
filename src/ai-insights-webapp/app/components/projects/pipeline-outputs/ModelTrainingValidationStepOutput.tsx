@@ -19,6 +19,7 @@ interface ModelTrainingValidationOutputProps {
   activeRunTimestamp?: string;
   isConfigurationComplete?: boolean;
   nextStepInProgress?: boolean;
+  isStepCompleted?: boolean;
   onSelectionConfirmed?: (selectedModels: string[]) => void;
   onApproveTraining?: (selectedModels: string[], splitEndDate?: string) => void;
   onApprove?: (selectedModels?: string[], splitEndDate?: string) => void;
@@ -39,6 +40,7 @@ export default function ModelTrainingValidationStepOutput({
   activeRunTimestamp,
   isConfigurationComplete = false,
   nextStepInProgress = false,
+  isStepCompleted = false,
   onSelectionConfirmed,
   onApproveTraining,
   onApprove,
@@ -67,6 +69,7 @@ export default function ModelTrainingValidationStepOutput({
         modelSelection={modelSelection}
         projectId={projectId}
         nextStepInProgress={nextStepInProgress}
+        isStepCompleted={isStepCompleted}
         onSelectionConfirmed={onSelectionConfirmed}
       />
     );
@@ -96,6 +99,7 @@ export default function ModelTrainingValidationStepOutput({
         activeRunTimestamp={activeRunTimestamp}
         isConfigurationComplete={isConfigurationComplete}
         nextStepInProgress={nextStepInProgress}
+        isStepCompleted={isStepCompleted}
         onApprove={onApprove}
         isApproving={isApproving}
       />
@@ -123,6 +127,7 @@ export default function ModelTrainingValidationStepOutput({
         activeRunTimestamp={activeRunTimestamp}
         onApprovePreFlight={onApprovePreFlight}
         nextStepInProgress={nextStepInProgress}
+        isStepCompleted={isStepCompleted}
         isApproving={isApproving}
       />
     );

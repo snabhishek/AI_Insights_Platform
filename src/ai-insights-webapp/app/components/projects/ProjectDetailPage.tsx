@@ -976,8 +976,10 @@ export default function ProjectDetailPage({
         const effectiveTrainingConfig =
           currentOutputs.trainingConfigurationNode || savedOutputs.trainingConfigurationNode;
         const isTrainingConfigurationComplete =
-          displayPipelineStatuses.trainingConfigurationNode === "Completed" &&
-          Boolean(effectiveTrainingConfig?.contractPath);
+          (displayPipelineStatuses.trainingConfigurationNode === "Completed" ||
+           displayPipelineStatuses.trainingConfigurationNode === "User Input" ||
+           displayPipelineStatuses.trainingConfigurationNode === "Awaiting Approval") &&
+          Boolean(effectiveTrainingConfig?.contractPath || effectiveTrainingConfig?.configuration);
         const effectivePreFlight =
           currentOutputs.preFlightNode ||
           savedOutputs.preFlightNode ||
@@ -1017,10 +1019,11 @@ export default function ProjectDetailPage({
               projectId={project.id}
               activeSubstep="Model Selection"
               activeRunTimestamp={effectiveRunTimestamp}
+              isStepCompleted={displayPipelineStatuses.modelSelectionNode === "Completed"}
               nextStepInProgress={displayPipelineStatuses.trainingConfigurationNode === "In-Progress"}
-              onSelectionConfirmed={(models) => {
+              onSelectionConfirmed={() => {
                 if (onApprove) {
-                  onApprove("Training Configuration", models);
+                  onApprove();
                 }
               }}
             />
@@ -1033,10 +1036,11 @@ export default function ProjectDetailPage({
               activeSubstep="Training Configuration"
               activeRunTimestamp={effectiveRunTimestamp}
               isConfigurationComplete={isTrainingConfigurationComplete}
+              isStepCompleted={displayPipelineStatuses.trainingConfigurationNode === "Completed"}
               nextStepInProgress={displayPipelineStatuses.preFlightNode === "In-Progress"}
-              onApprove={(selectedModels, splitEndDate) => {
+              onApprove={() => {
                 if (onApprove) {
-                  onApprove("Pre Flight", selectedModels, splitEndDate);
+                  onApprove();
                 }
               }}
               isApproving={isApproving}
@@ -1048,10 +1052,11 @@ export default function ProjectDetailPage({
               projectId={project.id}
               activeSubstep="Pre Flight"
               activeRunTimestamp={effectiveRunTimestamp}
+              isStepCompleted={displayPipelineStatuses.preFlightNode === "Completed"}
               nextStepInProgress={displayPipelineStatuses.modelTrainingCodeNode === "In-Progress"}
               onApprovePreFlight={() => {
                 if (onApprove) {
-                  onApprove("Model Training");
+                  onApprove();
                 }
               }}
               isApproving={isApproving}
@@ -1070,9 +1075,9 @@ export default function ProjectDetailPage({
                 (isApproving && (displayPipelineStatuses.modelTrainingCodeNode === "User Input" || displayPipelineStatuses.modelTrainingCodeNode === "Completed")) ||
                 displayPipelineStatuses.modelTrainingCodeNode === "In-Progress"
               }
-              onExecute={(selectedModels) => {
+              onExecute={() => {
                 if (onApprove) {
-                  onApprove("Model Training", selectedModels);
+                  onApprove();
                 }
               }}
             />

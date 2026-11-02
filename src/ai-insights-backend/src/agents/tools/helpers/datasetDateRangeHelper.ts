@@ -8,7 +8,10 @@ import {
 } from "../../../config/fileServer.config";
 import { resolveProjectRunTimestamp } from "./schemaHelper";
 
+export type DateRangeStatus = "resolved" | "time_column_unresolved" | "no_time_column";
+
 export interface DatasetDateRangeResult {
+  rangeStatus: DateRangeStatus;
   hasTemporalData: boolean;
   timeColumn?: string | null;
   minDate?: string | null;
@@ -226,10 +229,12 @@ export async function extractDatasetDateRange(
     }
   }
 
+  const detectedCol = actualTimeColumn || candidateTimeCol || null;
   if (!minDateStr || !maxDateStr || !actualTimeColumn) {
     return {
+      rangeStatus: detectedCol ? "time_column_unresolved" : "no_time_column",
       hasTemporalData: false,
-      timeColumn: actualTimeColumn || candidateTimeCol || null,
+      timeColumn: detectedCol,
       datasetPath,
     };
   }
@@ -258,6 +263,7 @@ export async function extractDatasetDateRange(
 
   if (!minParsed || !maxParsed || isNaN(minParsed.year) || isNaN(maxParsed.year)) {
     return {
+      rangeStatus: "time_column_unresolved",
       hasTemporalData: false,
       timeColumn: actualTimeColumn,
       datasetPath,
@@ -278,6 +284,7 @@ export async function extractDatasetDateRange(
   const formattedMaxDate = `${maxYear}-${String(maxMonth).padStart(2, "0")}-${String(maxParsed.day || 28).padStart(2, "0")}`;
 
   return {
+    rangeStatus: "resolved",
     hasTemporalData: true,
     timeColumn: actualTimeColumn,
     minDate: formattedMinDate,

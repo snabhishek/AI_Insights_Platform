@@ -341,6 +341,23 @@ export function applyPauseToStageStatuses(
   return buildGroupedStageStatuses(flat, stageOverrides);
 }
 
+export function determineActiveStepForInteraction(
+  stageStatuses: unknown,
+  mode: "input" | "approve"
+): TrackedAgentKey | undefined {
+  const flat = normalizeFlatStageStatuses(stageStatuses);
+  for (const key of TRACKED_AGENT_KEYS) {
+    const status = flat[key];
+    if (mode === "input" && status === "User Input") {
+      return key;
+    }
+    if (mode === "approve" && (status === "User Input" || status === "Awaiting Approval")) {
+      return key;
+    }
+  }
+  return undefined;
+}
+
 export function findPausedStep(
   currentStatuses: unknown,
   fallbackNode?: string

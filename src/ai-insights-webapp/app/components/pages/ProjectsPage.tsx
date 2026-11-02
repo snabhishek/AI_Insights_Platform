@@ -1177,33 +1177,10 @@ export default function ProjectsPage() {
     void runWorkflow();
   };
 
-  const handleApprove = (
-    overrideTargetPhase?: string,
-    selectedModels?: string[],
-    splitEndDate?: string,
-    predictionHorizon?: number,
-    predictionFrequency?: string,
-    predictionObjectiveStartDate?: string
-  ) => {
+  const handleApprove = () => {
     if (isApproving || isExecutingRef.current || isSubmittingWorkflow || isPausingWorkflow || isStoppingWorkflow || isResumingWorkflow || isRetryingWorkflow) return;
     setIsApproving(true);
-
-    const targetPhase = resolveNextWorkflowPhase({
-      approvalNextStep,
-      overrideTargetPhase,
-    });
-
-
-    void runWorkflow(
-      "approve",
-      targetPhase,
-      undefined,
-      selectedModels,
-      splitEndDate,
-      predictionHorizon,
-      predictionFrequency,
-      predictionObjectiveStartDate
-    );
+    void runWorkflow("approve");
   };
 
   const runLifecycle = async (
@@ -1469,16 +1446,7 @@ export default function ProjectsPage() {
         onPauseWorkflow={handlePauseWorkflow}
         onResumeWorkflow={handleResumeWorkflow}
         onStageSelect={handleStageSelect}
-        onApprove={(override, selectedModels, splitEndDate, predictionHorizon, predictionFrequency, predictionObjectiveStartDate) =>
-          handleApprove(
-            typeof override === "string" ? override : undefined,
-            selectedModels,
-            splitEndDate,
-            predictionHorizon,
-            predictionFrequency,
-            predictionObjectiveStartDate
-          )
-        }
+        onApprove={() => handleApprove()}
         onRetry={(stepId) => handleRetry(stepId)}
       />
     );

@@ -12,7 +12,10 @@ export interface SaveTrainingContractResult {
   parsedConfig: Record<string, any>;
 }
 
+export type DateRangeStatus = "resolved" | "time_column_unresolved" | "no_time_column";
+
 export interface DateRangeResult {
+  rangeStatus?: DateRangeStatus;
   hasTemporalData: boolean;
   timeColumn?: string | null;
   minDate?: string | null;

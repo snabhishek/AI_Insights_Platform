@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 import { Badge } from "./utils";
 import { BACKEND_URL } from "../../providers/AppContext";
 import ModernSelect from "../../shared/ui/ModernSelect";
+import { submitWorkflowUserInputApi } from "../../../services/aiWorkflowService";
 
 const MonacoEditor = dynamic(() => import("@monaco-editor/react"), {
   ssr: false,
@@ -32,6 +33,7 @@ interface TrainingConfigurationStepOutputProps {
   activeRunTimestamp?: string;
   isConfigurationComplete: boolean;
   nextStepInProgress?: boolean;
+  isStepCompleted?: boolean;
   onConfigSaved?: (updatedConfig: Record<string, any>) => void;
   onApprove?: (selectedModels?: string[], splitEndDate?: string) => void;
   isApproving?: boolean;
@@ -43,6 +45,7 @@ export default function TrainingConfigurationStepOutput({
   activeRunTimestamp,
   isConfigurationComplete,
   nextStepInProgress = false,
+  isStepCompleted = false,
   onConfigSaved,
   onApprove,
   isApproving = false,
@@ -59,6 +62,7 @@ export default function TrainingConfigurationStepOutput({
   const [copied, setCopied] = useState<boolean>(false);
 
   const [dateRangeInfo, setDateRangeInfo] = useState<{
+    rangeStatus?: "resolved" | "time_column_unresolved" | "no_time_column";
     hasTemporalData: boolean;
     timeColumn?: string | null;
     minDate?: string | null;
@@ -195,26 +199,32 @@ export default function TrainingConfigurationStepOutput({
     fetchDateRange();
   }, [fetchDateRange]);
 
-  const handleApproveWithSplitDate = () => {
-    if (!onApprove || selectedYear < 1 || selectedMonth < 1 || nextStepInProgress) return;
-    const formattedSplit = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
-    onApprove(selectedModelIds, formattedSplit);
-  };
-
   const handleSyncSplitDate = async () => {
     if (!projectId || !activeRunTimestamp || selectedYear < 1 || selectedMonth < 1) {
       setErrorMsg("Project, active run, and split date are required to synchronize.");
       return;
     }
+    if (isStepCompleted) return;
     setIsSyncingSplitDate(true);
     setErrorMsg(null);
     setSaveSuccessMsg(null);
     try {
+      const splitDateStr = `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`;
+      await submitWorkflowUserInputApi(projectId, {
+        inputType: "split_date",
+        payload: {
+          splitDate: splitDateStr,
+          splitEndDate: splitDateStr,
+        },
+      }).catch((err) => {
+        console.warn("[TrainingConfig] submitWorkflowUserInputApi warning:", err?.message || err);
+      });
+
       const response = await fetch(`${BACKEND_URL}/training-config/${projectId}/split-date`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          splitDate: `${selectedYear}-${String(selectedMonth).padStart(2, "0")}`,
+          splitDate: splitDateStr,
           timestamp: activeRunTimestamp,
         }),
       });
@@ -238,6 +248,7 @@ export default function TrainingConfigurationStepOutput({
       setErrorMsg("Project ID is missing. Cannot save contract to file server.");
       return;
     }
+    if (isStepCompleted) return;
     setIsSaving(true);
     setErrorMsg(null);
     setSaveSuccessMsg(null);
@@ -303,6 +314,14 @@ export default function TrainingConfigurationStepOutput({
   }, [parsedData.model_selection?.models]);
 
   const artifacts = parsedData.artifacts || {};
+
+  const effectiveRangeStatus = useMemo(() => {
+    if (dateRangeInfo?.rangeStatus) return dateRangeInfo.rangeStatus;
+    if (dateRangeInfo?.hasTemporalData && dateRangeInfo.minYear && dateRangeInfo.maxYear) return "resolved";
+    if (dateRangeInfo?.timeColumn) return "time_column_unresolved";
+    return "no_time_column";
+  }, [dateRangeInfo]);
+
   const hasSelectedSplitDate = Boolean(
     activeRunTimestamp &&
       dateRangeInfo &&
@@ -312,6 +331,21 @@ export default function TrainingConfigurationStepOutput({
       !(selectedYear === dateRangeInfo.minYear && dateRangeInfo.minMonth && selectedMonth < dateRangeInfo.minMonth) &&
       !(selectedYear === dateRangeInfo.maxYear && dateRangeInfo.maxMonth && selectedMonth > dateRangeInfo.maxMonth)
   );
+
+  const isApproveAllowed = useMemo(() => {
+    if (isStepCompleted || nextStepInProgress || isApproving || isSaving || isApplyingModels) {
+      return false;
+    }
+    if (effectiveRangeStatus === "resolved") {
+      return hasSelectedSplitDate;
+    }
+    return true;
+  }, [isStepCompleted, nextStepInProgress, isApproving, isSaving, isApplyingModels, effectiveRangeStatus, hasSelectedSplitDate]);
+
+  const handleApproveWithSplitDate = () => {
+    if (!onApprove || !isApproveAllowed) return;
+    onApprove();
+  };
 
   const candidatePool = useMemo(() => {
     const map = new Map<string, any>();
@@ -360,6 +394,7 @@ export default function TrainingConfigurationStepOutput({
   }, [parsedData.model_selection, confirmedModels, candidatePool, hasUserEditedSelection]);
 
   const toggleModel = (modelId: string) => {
+    if (isStepCompleted || nextStepInProgress) return;
     setHasUserEditedSelection(true);
     setSelectedModelIds((prev) => {
       if (prev.includes(modelId)) {
@@ -376,11 +411,13 @@ export default function TrainingConfigurationStepOutput({
   };
 
   const selectAllCandidates = () => {
+    if (isStepCompleted || nextStepInProgress) return;
     setHasUserEditedSelection(true);
     setSelectedModelIds(candidatePool.map((c) => c.model_id));
   };
 
   const selectRecommendedCandidates = () => {
+    if (isStepCompleted || nextStepInProgress) return;
     setHasUserEditedSelection(true);
     const recommended = candidatePool.filter((c) => c.is_recommended || c.rank === 1);
     if (recommended.length > 0) {
@@ -411,6 +448,7 @@ export default function TrainingConfigurationStepOutput({
       setErrorMsg("Project ID is missing. Cannot apply models to contract.");
       return;
     }
+    if (isStepCompleted) return;
     if (selectedModelIds.length === 0) {
       setErrorMsg("Please select at least one candidate model.");
       return;
@@ -421,6 +459,13 @@ export default function TrainingConfigurationStepOutput({
     setApplySuccessMsg(null);
 
     try {
+      await submitWorkflowUserInputApi(projectId, {
+        inputType: "model_selection",
+        payload: { selectedModelIds },
+      }).catch((err) => {
+        console.warn("[TrainingConfig] submitWorkflowUserInputApi warning:", err?.message || err);
+      });
+
       const decisionId = modelSelection?.id || modelSelection?.decision?.id;
       const endpoint = decisionId
         ? `${BACKEND_URL}/model-selection/${decisionId}/select`
@@ -759,16 +804,16 @@ export default function TrainingConfigurationStepOutput({
                     <button
                       type="button"
                       onClick={selectAllCandidates}
-                      disabled={nextStepInProgress}
-                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-surface-muted hover:bg-surface border border-border text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+                      disabled={isStepCompleted || nextStepInProgress}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-surface-muted hover:bg-surface border border-border text-muted-foreground hover:text-foreground transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Select All ({candidatePool.length})
                     </button>
                     <button
                       type="button"
                       onClick={selectRecommendedCandidates}
-                      disabled={nextStepInProgress}
-                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-surface-muted hover:bg-surface border border-border text-muted-foreground hover:text-foreground transition-all cursor-pointer"
+                      disabled={isStepCompleted || nextStepInProgress}
+                      className="px-2.5 py-1 text-[11px] font-medium rounded-lg bg-surface-muted hover:bg-surface border border-border text-muted-foreground hover:text-foreground transition-all cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                     >
                       Recommended Only
                     </button>
@@ -777,11 +822,14 @@ export default function TrainingConfigurationStepOutput({
                 <button
                   type="button"
                   onClick={handleApplyModels}
-                  disabled={nextStepInProgress || isApplyingModels || !hasSelectionChanged}
-                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer shadow-xs ${hasSelectionChanged
-                      ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md ring-2 ring-primary/40 animate-pulse"
-                      : "bg-surface-muted text-muted-foreground border border-border cursor-not-allowed opacity-60"
-                    }`}
+                  disabled={isStepCompleted || nextStepInProgress || isApplyingModels || !hasSelectionChanged}
+                  className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all shadow-xs ${
+                    isStepCompleted
+                      ? "bg-surface-muted text-muted-foreground border border-border cursor-not-allowed opacity-60"
+                      : hasSelectionChanged
+                        ? "bg-primary text-primary-foreground hover:bg-primary/90 shadow-md ring-2 ring-primary/40 animate-pulse cursor-pointer"
+                        : "bg-surface-muted text-muted-foreground border border-border cursor-not-allowed opacity-60"
+                  }`}
                 >
                   {isApplyingModels ? (
                     <>
@@ -1048,107 +1096,157 @@ export default function TrainingConfigurationStepOutput({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 via-surface to-surface p-5 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/70">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
-                  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
-                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                    <line x1="16" y1="2" x2="16" y2="6" />
-                    <line x1="8" y1="2" x2="8" y2="6" />
-                    <line x1="3" y1="10" x2="21" y2="10" />
-                  </svg>
+          {effectiveRangeStatus === "resolved" && (
+            <div className="rounded-2xl border border-primary/20 bg-gradient-to-br from-primary/5 via-surface to-surface p-5 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-border/70">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-primary/10 text-primary flex items-center justify-center font-bold text-xs shrink-0">
+                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+                      <line x1="16" y1="2" x2="16" y2="6" />
+                      <line x1="8" y1="2" x2="8" y2="6" />
+                      <line x1="3" y1="10" x2="21" y2="10" />
+                    </svg>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
+                      Model Training Temporal Split Cutoff
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-bold uppercase">
+                        Month & Year
+                      </span>
+                    </h4>
+                    <p className="text-[11px] text-muted-foreground mt-0.5">
+                      Records up to the selected Split End Date will be used for training candidate models. Remaining data will be evaluated.
+                    </p>
+                  </div>
                 </div>
+
+                {dateRangeInfo?.timeColumn && (
+                  <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface border border-border shadow-2xs">
+                    <span className="text-[10px] uppercase font-bold text-muted-foreground">Time Column:</span>
+                    <span className="text-xs font-mono font-bold text-primary">{dateRangeInfo.timeColumn}</span>
+                    {dateRangeInfo.minDate && dateRangeInfo.maxDate && (
+                      <span className="text-[10px] text-muted-foreground font-mono">
+                        ({dateRangeInfo.minDate} → {dateRangeInfo.maxDate})
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <h4 className="text-sm font-bold text-foreground flex items-center gap-2">
-                    Model Training Temporal Split Cutoff
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-primary/10 text-primary border border-primary/20 font-bold uppercase">
-                      Month & Year
-                    </span>
-                  </h4>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Records up to the selected Split End Date will be used for training candidate models. Remaining data will be evaluated.
-                  </p>
+                  <label className="block text-xs font-semibold text-foreground mb-1.5">
+                    Split End Month
+                  </label>
+                  <ModernSelect
+                    value={String(selectedMonth)}
+                    onChange={(val) => setSelectedMonth(parseInt(val, 10))}
+                    disabled={isStepCompleted || isLoadingDates || nextStepInProgress || !dateRangeInfo}
+                    options={MONTH_NAMES.map((name, idx) => {
+                      const monthNum = idx + 1;
+                      const isMinYear = dateRangeInfo?.minYear != null && selectedYear === dateRangeInfo.minYear;
+                      const isMaxYear = dateRangeInfo?.maxYear != null && selectedYear === dateRangeInfo.maxYear;
+                      const isBeforeMin = isMinYear && dateRangeInfo?.minMonth != null && monthNum < dateRangeInfo.minMonth;
+                      const isAfterMax = isMaxYear && dateRangeInfo?.maxMonth != null && monthNum > dateRangeInfo.maxMonth;
+                      const disabled = isBeforeMin || isAfterMax;
+
+                      return {
+                        value: String(monthNum),
+                        label: `${name} (${String(monthNum).padStart(2, "0")})`,
+                        disabled,
+                      };
+                    })}
+                    triggerClassName="h-10 text-xs font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-foreground mb-1.5">
+                    Split End Year
+                  </label>
+                  <ModernSelect
+                    value={String(selectedYear)}
+                    onChange={(val) => setSelectedYear(parseInt(val, 10))}
+                    disabled={isStepCompleted || isLoadingDates || nextStepInProgress || !dateRangeInfo}
+                    options={(dateRangeInfo?.availableYears || []).map((yr) => ({
+                      value: String(yr),
+                      label: String(yr),
+                    }))}
+                    triggerClassName="h-10 text-xs font-medium"
+                  />
                 </div>
               </div>
 
-              {dateRangeInfo?.timeColumn && (
-                <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-surface border border-border shadow-2xs">
-                  <span className="text-[10px] uppercase font-bold text-muted-foreground">Time Column:</span>
-                  <span className="text-xs font-mono font-bold text-primary">{dateRangeInfo.timeColumn}</span>
-                  {dateRangeInfo.minDate && dateRangeInfo.maxDate && (
-                    <span className="text-[10px] text-muted-foreground font-mono">
-                      ({dateRangeInfo.minDate} → {dateRangeInfo.maxDate})
-                    </span>
-                  )}
+              <div className="p-3 rounded-xl bg-surface/80 border border-border/80 flex items-center justify-between gap-3 text-xs">
+                <div className="flex items-center gap-2">
+                  <span className="text-muted-foreground">Calculated Split Boundary:</span>
+                  <span className="font-bold text-foreground font-mono bg-surface-muted px-2 py-0.5 rounded border border-border">
+                    {selectedYear > 0 && selectedMonth > 0
+                      ? `${selectedYear}-${String(selectedMonth).padStart(2, "0")} (${MONTH_NAMES[selectedMonth - 1]} ${selectedYear})`
+                      : "Not available from backend"}
+                  </span>
                 </div>
-              )}
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1.5">
-                  Split End Month
-                </label>
-                <ModernSelect
-                  value={String(selectedMonth)}
-                  onChange={(val) => setSelectedMonth(parseInt(val, 10))}
-                  disabled={isLoadingDates || nextStepInProgress || !dateRangeInfo}
-                  options={MONTH_NAMES.map((name, idx) => {
-                    const monthNum = idx + 1;
-                    const isMinYear = dateRangeInfo?.minYear != null && selectedYear === dateRangeInfo.minYear;
-                    const isMaxYear = dateRangeInfo?.maxYear != null && selectedYear === dateRangeInfo.maxYear;
-                    const isBeforeMin = isMinYear && dateRangeInfo?.minMonth != null && monthNum < dateRangeInfo.minMonth;
-                    const isAfterMax = isMaxYear && dateRangeInfo?.maxMonth != null && monthNum > dateRangeInfo.maxMonth;
-                    const disabled = isBeforeMin || isAfterMax;
-
-                    return {
-                      value: String(monthNum),
-                      label: `${name} (${String(monthNum).padStart(2, "0")})`,
-                      disabled,
-                    };
-                  })}
-                  triggerClassName="h-10 text-xs font-medium"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-foreground mb-1.5">
-                  Split End Year
-                </label>
-                <ModernSelect
-                  value={String(selectedYear)}
-                  onChange={(val) => setSelectedYear(parseInt(val, 10))}
-                  disabled={isLoadingDates || nextStepInProgress || !dateRangeInfo}
-                  options={(dateRangeInfo?.availableYears || []).map((yr) => ({
-                    value: String(yr),
-                    label: String(yr),
-                  }))}
-                  triggerClassName="h-10 text-xs font-medium"
-                />
+                <button
+                  type="button"
+                  onClick={handleSyncSplitDate}
+                  disabled={isStepCompleted || !hasSelectedSplitDate || isSyncingSplitDate || isLoadingDates || nextStepInProgress}
+                  className="shrink-0 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isSyncingSplitDate ? "Syncing..." : "Sync Split Date"}
+                </button>
               </div>
             </div>
+          )}
 
-            <div className="p-3 rounded-xl bg-surface/80 border border-border/80 flex items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-2">
-                <span className="text-muted-foreground">Calculated Split Boundary:</span>
-                <span className="font-bold text-foreground font-mono bg-surface-muted px-2 py-0.5 rounded border border-border">
-                  {selectedYear > 0 && selectedMonth > 0
-                    ? `${selectedYear}-${String(selectedMonth).padStart(2, "0")} (${MONTH_NAMES[selectedMonth - 1]} ${selectedYear})`
-                    : "Not available from backend"}
+          {effectiveRangeStatus === "time_column_unresolved" && (
+            <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4 text-xs text-amber-700 dark:text-amber-400">
+              <div className="flex items-center gap-2 font-semibold text-sm">
+                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="10" />
+                  <line x1="12" y1="8" x2="12" y2="12" />
+                  <line x1="12" y1="16" x2="12.01" y2="16" />
+                </svg>
+                <span>Temporal Split Date Notice</span>
+              </div>
+              <p className="mt-1.5 text-xs text-foreground/80">
+                Detected column <code className="font-mono bg-amber-500/10 px-1 py-0.5 rounded font-bold text-foreground">{dateRangeInfo?.timeColumn || "time"}</code> but the agent could not process the month and year.
+              </p>
+            </div>
+          )}
+
+          {effectiveRangeStatus === "no_time_column" && (
+            <div className="rounded-2xl border border-border bg-surface p-4 text-xs">
+              <div className="flex items-center justify-between pb-2 border-b border-border/70 mb-3">
+                <div className="flex items-center gap-2">
+                  <div className="w-7 h-7 rounded-lg bg-primary/10 text-primary flex items-center justify-center font-bold text-xs">
+                    %
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-foreground">Split Ratio (Non-Temporal)</h4>
+                    <p className="text-[11px] text-muted-foreground">Standard dataset partitioning applied for training candidate models.</p>
+                  </div>
+                </div>
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-surface-muted text-muted-foreground border border-border">
+                  Ratio Split
                 </span>
               </div>
-              <button
-                type="button"
-                onClick={handleSyncSplitDate}
-                disabled={!hasSelectedSplitDate || isSyncingSplitDate || isLoadingDates || nextStepInProgress}
-                className="shrink-0 px-3 py-1.5 rounded-lg bg-primary text-primary-foreground text-xs font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {isSyncingSplitDate ? "Syncing..." : "Sync Split Date"}
-              </button>
+              <div className="grid grid-cols-3 gap-3 text-center">
+                <div className="p-2.5 rounded-xl bg-surface-muted/60 border border-border">
+                  <p className="text-[11px] text-muted-foreground font-medium">Training</p>
+                  <p className="text-sm font-bold text-primary font-mono mt-0.5">70%</p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-surface-muted/60 border border-border">
+                  <p className="text-[11px] text-muted-foreground font-medium">Validation</p>
+                  <p className="text-sm font-bold text-foreground font-mono mt-0.5">15%</p>
+                </div>
+                <div className="p-2.5 rounded-xl bg-surface-muted/60 border border-border">
+                  <p className="text-[11px] text-muted-foreground font-medium">Test</p>
+                  <p className="text-sm font-bold text-foreground font-mono mt-0.5">15%</p>
+                </div>
+              </div>
             </div>
-          </div>
+          )}
 
           {onApprove && (
             <div className="rounded-xl border border-border bg-gradient-to-r from-surface to-surface-muted p-5 shadow-sm flex flex-col sm:flex-row items-center justify-between gap-4">
@@ -1166,29 +1264,37 @@ export default function TrainingConfigurationStepOutput({
                 </div>
               </div>
 
-              <button
-                type="button"
-                disabled={!hasSelectedSplitDate || nextStepInProgress || isApproving || isSaving || isApplyingModels}
-                onClick={handleApproveWithSplitDate}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              >
-                {isApproving ? (
-                  <>
-                    <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                    </svg>
-                    <span>Starting Preflight...</span>
-                  </>
-                ) : (
-                  <>
-                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    <span>Approve & Start Preflight</span>
-                  </>
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                {isStepCompleted && (
+                  <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    ✓ Step Approved & Completed
+                  </span>
                 )}
-              </button>
+
+                <button
+                  type="button"
+                  disabled={!isApproveAllowed}
+                  onClick={handleApproveWithSplitDate}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
+                  {isApproving ? (
+                    <>
+                      <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                      </svg>
+                      <span>Starting Preflight...</span>
+                    </>
+                  ) : (
+                    <>
+                      <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="2.5">
+                        <polyline points="20 6 9 17 4 12" />
+                      </svg>
+                      <span>Approve & Start Preflight</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
           )}
         </div>
@@ -1245,7 +1351,7 @@ export default function TrainingConfigurationStepOutput({
 
               <button
                 type="button"
-                disabled={nextStepInProgress || isSaving}
+                disabled={isStepCompleted || nextStepInProgress || isSaving}
                 onClick={handleSaveYaml}
                 className="px-4 py-1.5 rounded-lg bg-primary hover:bg-primary/90 text-white text-xs font-bold tracking-wide transition-all shadow-sm cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
               >
@@ -1309,12 +1415,19 @@ export default function TrainingConfigurationStepOutput({
                 </div>
               </div>
 
-              <button
-                type="button"
-                disabled={!hasSelectedSplitDate || nextStepInProgress || isApproving || isSaving || isApplyingModels}
-                onClick={handleApproveWithSplitDate}
-                className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
-              >
+              <div className="flex items-center gap-3 w-full sm:w-auto">
+                {isStepCompleted && (
+                  <span className="px-3 py-1 text-xs font-semibold rounded-full bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                    ✓ Step Approved & Completed
+                  </span>
+                )}
+
+                <button
+                  type="button"
+                  disabled={!isApproveAllowed}
+                  onClick={handleApproveWithSplitDate}
+                  className="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-5 py-2.5 rounded-xl bg-primary text-white text-xs font-bold tracking-wide uppercase shadow-md hover:bg-primary/90 hover:scale-[1.02] active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
+                >
                 {isApproving ? (
                   <>
                     <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
@@ -1333,9 +1446,10 @@ export default function TrainingConfigurationStepOutput({
                 )}
               </button>
             </div>
-          )}
-        </div>
-      )}
+          </div>
+        )}
+      </div>
+    )}
     </div>
   );
 }

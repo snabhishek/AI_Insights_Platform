@@ -56,6 +56,9 @@ import createModelSelectionRouter from "./routes/modelSelection";
 import { TrainingConfigService } from "./services/ai/training-config/trainingConfig.service";
 import { TrainingConfigController } from "./controllers/trainingConfig.controller";
 import createTrainingConfigRouter from "./routes/trainingConfig";
+import { UserInputService } from "./services/ai/user-input/userInput.service";
+import { UserInputController } from "./controllers/userInput.controller";
+import createUserInputRouter from "./routes/userInput";
 import { ModelLifecycleService } from "./services/ai/model-lifecycle/modelLifecycle.service";
 import { ModelLifecycleCandidateService } from "./services/ai/model-lifecycle/modelLifecycleCandidates.service";
 import { ModelLifecycleController } from "./controllers/modelLifecycle.controller";
@@ -147,6 +150,8 @@ async function bootstrap() {
   const modelSelectionController = new ModelSelectionController(modelSelectionService);
   const trainingConfigService = new TrainingConfigService(projectService);
   const trainingConfigController = new TrainingConfigController(trainingConfigService);
+  const userInputService = new UserInputService(projectService, modelSelectionService, trainingConfigService);
+  const userInputController = new UserInputController(userInputService);
   const modelLifecycleService = new ModelLifecycleService(projectService, sparrowPersistence.checkpointer);
   const modelLifecycleController = new ModelLifecycleController(modelLifecycleService);
   const modelLifecycleCandidateService = new ModelLifecycleCandidateService(projectService);
@@ -179,6 +184,7 @@ async function bootstrap() {
 
   const agentRouter = express.Router();
 
+  app.use("/api/ai/user-input", createUserInputRouter(userInputController));
   app.use("/api/ai", createAIRouter(aiController));
   app.use("/api/workspaces", createWorkspaceRouter(workspaceController));
   app.use("/workspaces", express.static(getWorkspacesBasePath()));
